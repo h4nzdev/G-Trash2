@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Exclude \"node_modules\")",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(npm run *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\AdminPanel\" -Force)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\screens\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\components\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\navigation\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\src\\\\screens\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\src\\\\components\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\src\\\\navigation\" -File | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\backend\" -File -Depth 0 | ForEach-Object { $_.FullName } | Sort-Object)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\backend\" -File -Depth 0 | ForEach-Object { $_.FullName } | Sort-Object)",
+      "Bash(node -e \"require\\('./app.js'\\)\")",
+      "Bash(kill %1)",
+      "Bash(node --check \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\backend\\\\app.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\backend\\\\app.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\src\\\\screens\\\\CollectorMapScreen.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\screens\\\\MapScreen.js\")",
+      "Bash(ipconfig)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const p = require\\('./GarbageTruck/package.json'\\); console.log\\('expo:', p.dependencies?.expo\\); console.log\\('sdk:', p.dependencies?.['expo-constants']\\)\")",
+      "Bash(node -e \"const p = require\\('C:/Users/hanzc/Documents/Get-Trash/GarbageTruck/package.json'\\); console.log\\('GarbageTruck expo:', p.dependencies?.expo\\)\")",
+      "Bash(node -e \"const p = require\\('C:/Users/hanzc/Documents/Get-Trash/Resident/package.json'\\); console.log\\('Resident expo:', p.dependencies?.expo\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"
+    ]
+  }
+}
