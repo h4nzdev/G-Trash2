@@ -98,6 +98,20 @@ const scheduleSchema = new mongoose.Schema({
 });
 const Schedule = mongoose.model('Schedule', scheduleSchema);
 
+const garbageAreaSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  lat: { type: Number, required: true },
+  lng: { type: Number, required: true },
+  status: { type: String, enum: ['critical', 'moderate', 'clean'], default: 'moderate' },
+  ammonia: { type: String, default: '0 ppm' },
+  methane: { type: String, default: '0 ppm' },
+  bins: { type: Number, default: 0 },
+  intensity: { type: Number, default: 0.5 },
+  barangay: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+const GarbageArea = mongoose.model('GarbageArea', garbageAreaSchema);
+
 const collectionLogSchema = new mongoose.Schema({
   truckId:     { type: String, required: true },
   date:        { type: String, required: true }, // YYYY-MM-DD
@@ -670,6 +684,42 @@ app.put('/api/admin/barangays/:name/boundary', authMiddleware, async (req, res) 
   BARANGAY_BOUNDARIES[req.params.name] = polygon;
   console.log(`[Admin] Boundary updated for ${req.params.name}`);
   res.json({ ok: true, barangay: req.params.name, boundary: polygon });
+});
+
+// Get Barangay Boundary
+app.get('/api/barangays/:name/boundary', async (req, res) => {
+  const boundary = BARANGAY_BOUNDARIES[req.params.name] || [];
+  res.json({ barangay: req.params.name, boundary });
+});
+
+// --- Garbage Areas / Heatmap Nodes --------------------------
+app.get('/api/garbage-areas', async (req, res) => {
+  try {
+    const areas = await GarbageArea.find().sort({ createdAt: -1 });
+    res.json(areas);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/garbage-areas', async (req, res) => {
+  try {
+    const area = new GarbageArea(req.body);
+    await area.save();
+    console.log(`[Heatmap] New area added: ${area.name}`);
+    res.json(area);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/garbage-areas/:id', async (req, res) => {
+  try {
+    await GarbageArea.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Schedules -----------------------------------------------

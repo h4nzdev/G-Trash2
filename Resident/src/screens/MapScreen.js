@@ -27,13 +27,13 @@ import { WebView } from "react-native-webview";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { io } from "socket.io-client";
+import { useRoute } from "@react-navigation/native";
 import HeatmapLegend from "../components/HeatmapLegend";
 import API_URL from "../config";
 import TRUCK_B64 from "../constants/truckBase64";
 
 const TRACKING_SERVER = API_URL;
 
-// Color palette for the different route polylines
 const ROUTE_COLORS = [
   "#006A3B",
   "#2196F3",
@@ -55,10 +55,6 @@ function formatStopTime(index) {
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-// ═══════════════════════════════════════════════════════════
-// LEAFLET HTML — routes and truck icons injected via JS
-// truckB64: base64 PNG string for the truck marker image
-// ═══════════════════════════════════════════════════════════
 function buildLeafletHTML(truckB64) {
   return `<!DOCTYPE html>
 <html>
@@ -114,14 +110,30 @@ function buildLeafletHTML(truckB64) {
       });
       map.setView([10.3157, 123.8854], 14);
 
-      var tileLayer;
-      function setTileLayer(satellite) {
+      var tileLayer, hillshadeLayer, labelsLayer;
+      function setTileLayer(style) {
         if (tileLayer) map.removeLayer(tileLayer);
-        if (satellite) {
+        if (hillshadeLayer) map.removeLayer(hillshadeLayer);
+        if (labelsLayer) map.removeLayer(labelsLayer);
+
+        if (style === 'satellite') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             { maxZoom: 17, minZoom: 13, attribution: '' }
           );
+        } else if (style === 'topographic') {
+          tileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 17, minZoom: 11, attribution: '' }
+          );
+          hillshadeLayer = L.tileLayer(
+            'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
+            { opacity: 0.25, maxZoom: 17 }
+          ).addTo(map);
+          labelsLayer = L.tileLayer(
+            'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+            { opacity: 0.7, maxZoom: 17 }
+          ).addTo(map);
         } else {
           tileLayer = L.tileLayer(
             'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -130,10 +142,9 @@ function buildLeafletHTML(truckB64) {
         }
         tileLayer.addTo(map);
       }
-      setTileLayer(false);
+      setTileLayer('topographic');
       window.setMapStyle = setTileLayer;
 
-      // ── Hollow proximity circles ──
       function drawUserRadius(lat, lng) {
         radiusCircles.forEach(function(c) { map.removeLayer(c); });
         radiusCircles = [];
@@ -148,9 +159,7 @@ function buildLeafletHTML(truckB64) {
           }).addTo(map));
         });
       }
-      drawUserRadius(10.3157, 123.8854);
 
-      // ── Truck icon using truck.png ──
       function makeTruckIcon(truckId) {
         return L.divIcon({
           html: '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
@@ -179,7 +188,7 @@ function buildLeafletHTML(truckB64) {
         });
       }
 
-      window.updateTruckPosition = function(lat, lng, truckId) {
+      window.updateTruckPosition = function(lat, lng, truckId, autoPan) {
         var id = truckId || 'GT';
         var icon = makeTruckIcon(id);
         if (!truckMarkers[id]) {
@@ -188,7 +197,7 @@ function buildLeafletHTML(truckB64) {
           truckMarkers[id].setLatLng([lat, lng]);
           truckMarkers[id].setIcon(icon);
         }
-        map.panTo([lat, lng]);
+        if (autoPan) map.panTo([lat, lng]);
       };
 
       window.showIdleTruck = function(lat, lng, truckId) {
@@ -202,7 +211,6 @@ function buildLeafletHTML(truckB64) {
         if (truckMarkers[id]) { map.removeLayer(truckMarkers[id]); delete truckMarkers[id]; }
       };
 
-      // ── Multi-route support ──
       window.loadAllRoutes = function(routesPayload) {
         Object.keys(routeLayers).forEach(function(id) {
           if (routeLayers[id]) { map.removeLayer(routeLayers[id]); }
@@ -235,7 +243,6 @@ function buildLeafletHTML(truckB64) {
         });
       };
 
-      // ── User location marker ──
       window.updateUserLocation = function(lat, lng) {
         if (userMarker) { map.removeLayer(userMarker); }
         if (userPulseCircle) { map.removeLayer(userPulseCircle); }
@@ -253,7 +260,6 @@ function buildLeafletHTML(truckB64) {
       };
 
       window.gotoLocation = function(lat, lng, zoom) { map.setView([lat, lng], zoom || 15); };
-
       setTimeout(function() { map.invalidateSize(); }, 300);
     })();
   </script>
@@ -261,28 +267,26 @@ function buildLeafletHTML(truckB64) {
 </html>`;
 }
 
-// ═══════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════
 export default function MapScreen() {
+  const routeParams = useRoute();
+  const { focusTruck } = routeParams.params || {};
   const { bottom: bottomInset } = useSafeAreaInsets();
 
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
 
-  // ── State ──
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [routePayload, setRoutePayload] = useState([]); // [{id, name, coords, color}]
+  const [routePayload, setRoutePayload] = useState([]); 
   const [liveTruckOnline, setLiveTruckOnline] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [isSatellite, setIsSatellite] = useState(false);
+  const [mapStyle, setMapStyle] = useState('topographic');
+  const [isFollowing, setIsFollowing] = useState(!!focusTruck);
 
-  // ── Refs ──
   const isExpandedRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
   const webViewRef = useRef(null);
@@ -291,20 +295,13 @@ export default function MapScreen() {
   const webViewReady = useRef(false);
   const routePayloadRef = useRef([]);
   const selectedRouteIdRef = useRef(null);
+  const isFollowingRef = useRef(!!focusTruck);
+  const initialTrucks = useRef([]);
 
-  const setIsExpandedAndSync = useCallback((val) => {
-    isExpandedRef.current = val;
-    setIsExpanded(val);
-  }, []);
+  useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  useEffect(() => { routePayloadRef.current = routePayload; }, [routePayload]);
+  useEffect(() => { selectedRouteIdRef.current = selectedRouteId; }, [selectedRouteId]);
 
-  useEffect(() => {
-    routePayloadRef.current = routePayload;
-  }, [routePayload]);
-  useEffect(() => {
-    selectedRouteIdRef.current = selectedRouteId;
-  }, [selectedRouteId]);
-
-  // ── Computed: active route / schedule / stops ──
   const activeRoute = useMemo(
     () => routes.find((r) => r._id === selectedRouteId) || null,
     [routes, selectedRouteId],
@@ -330,35 +327,37 @@ export default function MapScreen() {
     }));
   }, [activeRoute]);
 
-  // ── Fetch routes + today's schedules on mount ──
   useEffect(() => {
     (async () => {
       try {
-        const [routesRes, schedRes] = await Promise.allSettled([
+        const [routesRes, schedRes, trucksRes] = await Promise.allSettled([
           fetch(`${TRACKING_SERVER}/api/routes`).then((r) => r.json()),
           fetch(`${TRACKING_SERVER}/api/schedules/today`).then((r) => r.json()),
+          fetch(`${TRACKING_SERVER}/api/trucks`).then((r) => r.json()),
         ]);
-        if (
-          routesRes.status === "fulfilled" &&
-          Array.isArray(routesRes.value)
-        ) {
+        if (routesRes.status === "fulfilled" && Array.isArray(routesRes.value)) {
           setRoutes(routesRes.value);
         }
-        if (
-          schedRes.status === "fulfilled" &&
-          Array.isArray(schedRes.value?.schedules)
-        ) {
+        if (schedRes.status === "fulfilled" && Array.isArray(schedRes.value?.schedules)) {
           setSchedules(schedRes.value.schedules);
         }
+        if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
+          const online = trucksRes.value.filter(t => t.status === 'online');
+          initialTrucks.current = online;
+          if (online.length > 0) {
+            const active = online[0];
+            liveTruckPos.current = { lat: active.lat, lng: active.lng, truckId: active.truckId };
+            setLiveTruckOnline(true);
+          }
+        }
       } catch (e) {
-        console.warn("MapScreen: fetch error:", e.message);
+        console.warn("MapScreen fetch error:", e);
       } finally {
         setDataLoading(false);
       }
     })();
   }, []);
 
-  // ── Build route payload when routes load ──
   useEffect(() => {
     if (routes.length === 0) return;
     const payload = routes
@@ -381,7 +380,6 @@ export default function MapScreen() {
     }
   }, [routes]);
 
-  // ── Inject all routes into the map when payload is ready ──
   useEffect(() => {
     if (!webViewReady.current || routePayload.length === 0) return;
     webViewRef.current?.injectJavaScript(
@@ -389,7 +387,6 @@ export default function MapScreen() {
     );
   }, [routePayload]);
 
-  // ── Highlight selected route ──
   useEffect(() => {
     if (!webViewReady.current || !selectedRouteId) return;
     webViewRef.current?.injectJavaScript(
@@ -397,13 +394,8 @@ export default function MapScreen() {
     );
   }, [selectedRouteId]);
 
-  // ═════════════════════════════════════════════════════════
-  // REAL-TIME TRUCK TRACKING
-  // ═════════════════════════════════════════════════════════
   useEffect(() => {
-    const socket = io(TRACKING_SERVER, {
-      transports: ["polling", "websocket"],
-    });
+    const socket = io(TRACKING_SERVER, { transports: ["polling", "websocket"] });
     socketRef.current = socket;
 
     socket.on("truck:location:update", ({ truckId, lat, lng }) => {
@@ -412,7 +404,7 @@ export default function MapScreen() {
       if (webViewReady.current) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(
-          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}'); true;`,
+          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}); true;`,
         );
       }
     });
@@ -422,14 +414,10 @@ export default function MapScreen() {
         setLiveTruckOnline(false);
         const pos = liveTruckPos.current;
         if (pos && webViewReady.current) {
-          const safeId = (truckId || pos.truckId || "GT").replace(/'/g, "\\'");
-          webViewRef.current?.injectJavaScript(
-            `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
-          );
+          const safeId = (truckId || "GT").replace(/'/g, "\\'");
+          webViewRef.current?.injectJavaScript(`window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`);
         } else if (webViewReady.current) {
-          webViewRef.current?.injectJavaScript(
-            `window.removeTruckMarker(); true;`,
-          );
+          webViewRef.current?.injectJavaScript(`window.removeTruckMarker(); true;`);
         }
         liveTruckPos.current = null;
       }
@@ -438,94 +426,69 @@ export default function MapScreen() {
     return () => socket.disconnect();
   }, []);
 
-  // Called when WebView finishes loading — replay state into map
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
     if (routePayloadRef.current.length > 0) {
-      webViewRef.current?.injectJavaScript(
-        `window.loadAllRoutes(${JSON.stringify(routePayloadRef.current)}); true;`,
-      );
+      webViewRef.current?.injectJavaScript(`window.loadAllRoutes(${JSON.stringify(routePayloadRef.current)}); true;`);
       if (selectedRouteIdRef.current) {
         setTimeout(() => {
-          webViewRef.current?.injectJavaScript(
-            `window.highlightRoute('${selectedRouteIdRef.current}'); true;`,
-          );
+          webViewRef.current?.injectJavaScript(`window.highlightRoute('${selectedRouteIdRef.current}'); true;`);
         }, 150);
       }
     }
-    if (liveTruckPos.current) {
+    // Inject all initial online trucks
+    initialTrucks.current.forEach(t => {
+      const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(
+        `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false); true;`
+      );
+    });
+    // Focus if following
+    if (liveTruckPos.current && isFollowingRef.current) {
       const { lat, lng, truckId } = liveTruckPos.current;
       const safeId = (truckId || "GT").replace(/'/g, "\\'");
-      webViewRef.current?.injectJavaScript(
-        `window.updateTruckPosition(${lat}, ${lng}, '${safeId}'); true;`,
-      );
+      webViewRef.current?.injectJavaScript(`window.updateTruckPosition(${lat}, ${lng}, '${safeId}', true); true;`);
     }
   }, []);
 
-  // Handle route-tap messages from Leaflet
   const handleWebViewMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
-    if (msg.startsWith("route:")) {
-      setSelectedRouteId(msg.slice(6));
-    }
+    if (msg.startsWith("route:")) setSelectedRouteId(msg.slice(6));
   }, []);
 
-  // ═════════════════════════════════════════════════════════
-  // LOCATION PERMISSION & FETCH
-  // ═════════════════════════════════════════════════════════
   useEffect(() => {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         setLocationPermission(status);
         if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           const { latitude, longitude } = loc.coords;
           setUserLocation({ lat: latitude, lng: longitude });
           setTimeout(() => {
-            webViewRef.current?.injectJavaScript(
-              `window.updateUserLocation(${latitude}, ${longitude}); true;`,
-            );
+            webViewRef.current?.injectJavaScript(`window.updateUserLocation(${latitude}, ${longitude}); true;`);
           }, 600);
         }
       } catch (e) {
-        console.warn("Location error:", e.message);
+        console.warn("Location error:", e);
       }
     })();
   }, []);
 
-  // ═════════════════════════════════════════════════════════
-  // BOTTOM SHEET DRAG HANDLING
-  // ═════════════════════════════════════════════════════════
   const expandSheet = useCallback(() => {
-    setIsExpandedAndSync(true);
-    Animated.spring(sheetAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [setIsExpandedAndSync, sheetAnim]);
+    isExpandedRef.current = true; setIsExpanded(true);
+    Animated.spring(sheetAnim, { toValue: 0, useNativeDriver: true, damping: 20, stiffness: 150 }).start();
+  }, [sheetAnim]);
 
   const collapseSheet = useCallback(() => {
-    setIsExpandedAndSync(false);
-    Animated.spring(sheetAnim, {
-      toValue: translateCollapsed,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [setIsExpandedAndSync, sheetAnim, translateCollapsed]);
+    isExpandedRef.current = false; setIsExpanded(false);
+    Animated.spring(sheetAnim, { toValue: translateCollapsed, useNativeDriver: true, damping: 20, stiffness: 150 }).start();
+  }, [sheetAnim, translateCollapsed]);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.locationY < 60,
-      onMoveShouldSetPanResponder: (evt, gs) =>
-        Math.abs(gs.dy) > Math.abs(gs.dx) &&
-        Math.abs(gs.dy) > 15 &&
-        evt.nativeEvent.locationY < 80,
+      onMoveShouldSetPanResponder: (evt, gs) => Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 15 && evt.nativeEvent.locationY < 80,
       onPanResponderRelease: (_, gs) => {
         if (gs.dy < -40 && !isExpandedRef.current) expandSheet();
         else if (gs.dy > 40 && isExpandedRef.current) collapseSheet();
@@ -540,17 +503,11 @@ export default function MapScreen() {
     extrapolate: "clamp",
   });
 
-  // Build Leaflet HTML once with the truck PNG baked in
   const leafletHTML = useMemo(() => buildLeafletHTML(TRUCK_B64), []);
 
-  // ═════════════════════════════════════════════════════════
-  // RENDER
-  // ═════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
-
-      {/* MAP */}
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
@@ -561,266 +518,96 @@ export default function MapScreen() {
           onLoad={handleWebViewLoad}
           onMessage={handleWebViewMessage}
         />
-
-        {/* Floating buttons */}
         <View style={styles.floatingActions}>
           <TouchableOpacity
-            style={[styles.floatingButton, isSatellite && styles.floatingButtonActive]}
+            style={[styles.floatingButton, isFollowing && styles.floatingButtonActive]}
+            onPress={() => {
+              setIsFollowing(!isFollowing);
+              if (!isFollowing && liveTruckPos.current) {
+                const { lat, lng } = liveTruckPos.current;
+                webViewRef.current?.injectJavaScript(`window.gotoLocation(${lat}, ${lng}, 16); true;`);
+              }
+            }}
+          >
+            <MaterialIcons name={isFollowing ? "gps-fixed" : "gps-not-fixed"} size={22} color={isFollowing ? "#006A3B" : "#1B1C1C"} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.floatingButton, (mapStyle !== 'voyager') && styles.floatingButtonActive]}
             activeOpacity={0.7}
             onPress={() => {
-              setIsSatellite((prev) => {
-                const next = !prev;
+              setMapStyle((prev) => {
+                let next;
+                if (prev === 'topographic') next = 'satellite';
+                else if (prev === 'satellite') next = 'voyager';
+                else next = 'topographic';
                 webViewRef.current?.injectJavaScript(
-                  `window.setMapStyle(${next}); true;`,
+                  `window.setMapStyle('${next}'); true;`,
                 );
                 return next;
               });
             }}
           >
             <MaterialIcons
-              name={isSatellite ? "map" : "satellite-alt"}
+              name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
               size={22}
-              color={isSatellite ? "#006A3B" : "#1B1C1C"}
+              color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.floatingButton}
-            activeOpacity={0.7}
             onPress={() => {
               if (userLocation) {
-                webViewRef.current?.injectJavaScript(
-                  `window.gotoLocation(${userLocation.lat}, ${userLocation.lng}, 15); true;`,
-                );
+                webViewRef.current?.injectJavaScript(`window.gotoLocation(${userLocation.lat}, ${userLocation.lng}, 15); true;`);
               }
             }}
           >
             <MaterialIcons name="my-location" size={22} color="#1B1C1C" />
           </TouchableOpacity>
         </View>
-
         <View style={styles.legendOverlay}>
           <HeatmapLegend />
         </View>
       </View>
 
-      {/* BOTTOM SHEET */}
-      <Animated.View
-        style={[
-          styles.bottomSheet,
-          { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
-        ]}
-      >
+      <Animated.View style={[styles.bottomSheet, { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] }]}>
         <View {...panResponder.panHandlers}>
-          <View style={styles.handleBarContainer}>
-            <View style={styles.handleBar} />
-          </View>
-
-          {/* Route pills — always visible, tap or drag on map to select */}
+          <View style={styles.handleBarContainer}><View style={styles.handleBar} /></View>
           {dataLoading ? (
-            <View style={styles.pillsLoading}>
-              <ActivityIndicator size="small" color="#006A3B" />
-              <Text style={styles.pillsLoadingText}>Loading routes…</Text>
-            </View>
-          ) : routePayload.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.pillsScroll}
-              contentContainerStyle={styles.pillsContent}
-            >
+            <View style={styles.pillsLoading}><ActivityIndicator size="small" color="#006A3B" /><Text style={styles.pillsLoadingText}>Loading routes…</Text></View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsScroll} contentContainerStyle={styles.pillsContent}>
               {routePayload.map((rp) => {
                 const isSelected = rp.id === selectedRouteId;
                 return (
-                  <TouchableOpacity
-                    key={rp.id}
-                    style={[
-                      styles.routePill,
-                      isSelected && {
-                        borderColor: rp.color,
-                        backgroundColor: `${rp.color}18`,
-                      },
-                    ]}
-                    onPress={() => setSelectedRouteId(rp.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View
-                      style={[styles.pillDot, { backgroundColor: rp.color }]}
-                    />
-                    <Text
-                      style={[
-                        styles.pillText,
-                        isSelected && { color: rp.color, fontWeight: "700" },
-                      ]}
-                    >
-                      {rp.name}
-                    </Text>
-                    {liveTruckOnline && activeRoute?._id === rp.id && (
-                      <View style={styles.pillLiveBadge} />
-                    )}
+                  <TouchableOpacity key={rp.id} style={[styles.routePill, isSelected && { borderColor: rp.color, backgroundColor: `${rp.color}18` }]} onPress={() => setSelectedRouteId(rp.id)}>
+                    <View style={[styles.pillDot, { backgroundColor: rp.color }]} />
+                    <Text style={[styles.pillText, isSelected && { color: rp.color, fontWeight: "700" }]}>{rp.name}</Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
-          ) : (
-            <View style={styles.pillsLoading}>
-              <Text style={styles.pillsLoadingText}>No routes available</Text>
-            </View>
           )}
-
           <View style={styles.sheetHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.routeTitle} numberOfLines={1}>
-                {activeRoute?.name || "Select a route above"}
-              </Text>
-              <Text style={styles.scheduleId} numberOfLines={1}>
-                {activeSchedule
-                  ? `Truck ${activeSchedule.truckId}${activeSchedule.driverName ? " · " + activeSchedule.driverName : ""}`
-                  : activeRoute?.truckId
-                    ? `Truck ${activeRoute.truckId}${activeRoute.driverName ? " · " + activeRoute.driverName : ""}`
-                    : "No schedule today"}
+              <Text style={styles.routeTitle}>{activeRoute?.name || "Select a route"}</Text>
+              <Text style={styles.scheduleId}>
+                {activeSchedule ? `Truck ${activeSchedule.truckId} · ${activeSchedule.driverName}` : "No active schedule"}
               </Text>
             </View>
           </View>
-
-          {!isExpanded && (
-            <View style={styles.swipeIndicator}>
-              <MaterialIcons
-                name="keyboard-arrow-up"
-                size={16}
-                color="#BECABE"
-              />
-              <Text style={styles.swipeText}>Swipe up for details</Text>
-            </View>
-          )}
         </View>
-
-        {/* Route timeline */}
-        <Animated.View
-          style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}
-        >
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            scrollEnabled={isExpanded}
-            contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
-          >
+        <Animated.View style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}>
+          <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={isExpanded} contentContainerStyle={{ paddingBottom: bottomInset + 8 }}>
             <View style={styles.timeline}>
-              {currentStops.length === 0 ? (
-                <View style={styles.emptyStops}>
-                  <MaterialIcons name="route" size={36} color="#BECABE" />
-                  <Text style={styles.emptyStopsText}>
-                    {dataLoading
-                      ? "Loading route data…"
-                      : !activeRoute
-                        ? "Select a route to see stops"
-                        : "No stops in this route"}
-                  </Text>
-                </View>
-              ) : (
-                currentStops.map((stop, index) => (
-                  <View key={index} style={styles.timelineStep}>
-                    <View style={styles.timelineIndicator}>
-                      <View
-                        style={[
-                          styles.timelineDot,
-                          stop.active && styles.timelineDotActive,
-                          stop.status === "Completed" &&
-                            styles.timelineDotCompleted,
-                        ]}
-                      >
-                        {stop.status === "Completed" || stop.active ? (
-                          <MaterialIcons name="check" size={14} color="#FFF" />
-                        ) : (
-                          <View style={styles.timelineDotInner} />
-                        )}
-                      </View>
-                      {index < currentStops.length - 1 && (
-                        <View
-                          style={[
-                            styles.timelineLine,
-                            stop.status === "Completed" &&
-                              styles.timelineLineCompleted,
-                          ]}
-                        />
-                      )}
-                    </View>
-                    <View
-                      style={[
-                        styles.timelineContent,
-                        stop.active && styles.timelineContentActive,
-                      ]}
-                    >
-                      <View style={styles.timelineHeader}>
-                        <Text
-                          style={[
-                            styles.timelineStopName,
-                            stop.active && styles.timelineStopNameActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {stop.name}
-                        </Text>
-                        {stop.active && (
-                          <View style={styles.activeBadge}>
-                            <Text style={styles.activeBadgeText}>Active</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.timelineTime,
-                          stop.active && styles.timelineTimeActive,
-                        ]}
-                      >
-                        {stop.status} • {stop.time}
-                      </Text>
-                    </View>
+              {currentStops.map((stop, index) => (
+                <View key={index} style={styles.timelineStep}>
+                  <View style={styles.timelineIndicator}>
+                    <View style={styles.timelineDot}><View style={styles.timelineDotInner} /></View>
+                    {index < currentStops.length - 1 && <View style={styles.timelineLine} />}
                   </View>
-                ))
-              )}
-            </View>
-
-            <View style={styles.truckInfoCard}>
-              <View
-                style={[
-                  styles.truckIconContainer,
-                  !liveTruckOnline && { backgroundColor: "#F0EDED" },
-                ]}
-              >
-                <MaterialIcons
-                  name="local-shipping"
-                  size={24}
-                  color={liveTruckOnline ? "#006A3B" : "#BECABE"}
-                />
-              </View>
-              <View style={styles.truckInfo}>
-                {activeRoute?.truckId ? (
-                  <>
-                    <Text style={styles.truckTitle}>
-                      Truck {activeRoute.truckId}
-                      {liveTruckOnline ? " · Navigating" : ""}
-                    </Text>
-                    <Text style={styles.truckETA}>
-                      {activeRoute.driverName
-                        ? `Driver: ${activeRoute.driverName}`
-                        : liveTruckOnline
-                          ? "Currently collecting"
-                          : "Not yet started"}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={[styles.truckTitle, { color: "#6B7280" }]}>
-                      No truck assigned
-                    </Text>
-                    <Text style={styles.truckETA}>Check back later</Text>
-                  </>
-                )}
-              </View>
-              {liveTruckOnline && (
-                <View style={styles.trackButton}>
-                  <Text style={styles.trackButtonText}>Live</Text>
+                  <View style={styles.timelineContent}><Text style={styles.timelineStopName}>{stop.name}</Text><Text style={styles.timelineTime}>{stop.time}</Text></View>
                 </View>
-              )}
+              ))}
             </View>
           </ScrollView>
         </Animated.View>
@@ -829,234 +616,35 @@ export default function MapScreen() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// STYLES
-// ═══════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
-  mapContainer: { flex: 1 },
-  webView: { flex: 1, backgroundColor: "#F0EDED" },
-  floatingActions: {
-    position: "absolute",
-    top: 16,
-    right: 16,
-    gap: 8,
-    zIndex: 20,
-  },
-  floatingButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  floatingButtonActive: {
-    backgroundColor: "#E4EEE9",
-    borderWidth: 1.5,
-    borderColor: "#006A3B",
-  },
-  legendOverlay: { position: "absolute", left: 16, top: 16, zIndex: 10 },
-  bottomSheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -12 },
-    shadowOpacity: 0.12,
-    shadowRadius: 40,
-    elevation: 15,
-    borderTopWidth: 1,
-    borderTopColor: "#F0EDED",
-    overflow: "hidden",
-  },
-  handleBarContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  handleBar: {
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#DCD9D9",
-    alignSelf: "center",
-  },
-
-  // ── Route pills ──
-  pillsScroll: { maxHeight: 44 },
-  pillsContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 4 },
-  routePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "#E4E2E1",
-    backgroundColor: "#F6F3F2",
-  },
-  pillDot: { width: 8, height: 8, borderRadius: 4 },
-  pillText: { fontSize: 13, fontWeight: "500", color: "#1B1C1C" },
-  pillLiveBadge: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#10B981",
-  },
-  pillsLoading: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingBottom: 6,
-    height: 36,
-  },
+  mapContainer: { flex: 1, position: "relative" },
+  webView: { flex: 1 },
+  floatingActions: { position: "absolute", top: 60, right: 16, gap: 12, zIndex: 10 },
+  floatingButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFF", justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  floatingButtonActive: { borderColor: "#006A3B", borderWidth: 2 },
+  legendOverlay: { position: "absolute", top: 60, left: 16, zIndex: 10 },
+  bottomSheet: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: "#FFF", borderTopLeftRadius: 32, borderTopRightRadius: 32, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  handleBarContainer: { paddingVertical: 12, alignItems: "center" },
+  handleBar: { width: 40, height: 4, backgroundColor: "#E5E7EB", borderRadius: 2 },
+  pillsScroll: { maxHeight: 50 },
+  pillsContent: { paddingHorizontal: 24, gap: 10 },
+  routePill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, py: 8, borderRadius: 20, borderWeight: 1, borderColor: "#F3F4F6", backgroundColor: "#F9FAFB" },
+  pillDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  pillText: { fontSize: 13, color: "#6B7280", fontWeight: "600" },
+  pillsLoading: { paddingHorizontal: 24, flexDirection: "row", alignItems: "center", gap: 8 },
   pillsLoadingText: { fontSize: 13, color: "#9CA3AF" },
-
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-  },
-  routeTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
-    lineHeight: 22,
-  },
-  scheduleId: { fontSize: 12, color: "#6F7A70", marginTop: 2, lineHeight: 16 },
-  swipeIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    paddingVertical: 4,
-  },
-  swipeText: { fontSize: 11, color: "#BECABE" },
-  routeDetails: { flex: 1, paddingHorizontal: 20, paddingTop: 4 },
-  timeline: { gap: 0, marginTop: 4 },
-  timelineStep: { flexDirection: "row", minHeight: 72 },
-  timelineIndicator: { alignItems: "center", width: 24 },
-  timelineDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#F6F3F2",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 2,
-  },
-  timelineDotActive: { backgroundColor: "#006A3B", borderColor: "#FFFFFF" },
-  timelineDotCompleted: { backgroundColor: "#006E1C", borderColor: "#FFFFFF" },
-  timelineDotInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#6F7A70",
-  },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: "#F0EDED",
-    marginTop: -2,
-    marginBottom: -2,
-  },
-  timelineLineCompleted: { backgroundColor: "#BECABE" },
-  timelineContent: { flex: 1, marginLeft: 16, paddingBottom: 32 },
-  timelineContentActive: {
-    backgroundColor: "#EBF3EE",
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#C8DDD4",
-    marginBottom: 24,
-  },
-  timelineHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  timelineStopName: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#6F7A70",
-    lineHeight: 20,
-  },
-  timelineStopNameActive: { color: "#006A3B", fontWeight: "700" },
-  activeBadge: {
-    backgroundColor: "#006A3B",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  activeBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  timelineTime: {
-    fontSize: 12,
-    color: "#6F7A70",
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  timelineTimeActive: { color: "#006A3B" },
-  truckInfoCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F6F3F2",
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 54,
-    gap: 12,
-  },
-  truckIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#E4EEE9",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  truckInfo: { flex: 1 },
-  truckTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1B1C1C",
-    lineHeight: 20,
-  },
-  truckETA: { fontSize: 13, color: "#6F7A70", lineHeight: 18 },
-  trackButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#006A3B",
-  },
-  trackButtonText: { fontSize: 13, fontWeight: "600", color: "#FFFFFF" },
-  emptyStops: { alignItems: "center", paddingVertical: 32, gap: 12 },
-  emptyStopsText: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    textAlign: "center",
-    lineHeight: 20,
-  },
+  sheetHeader: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center" },
+  routeTitle: { fontSize: 20, fontWeight: "800", color: "#1F2937" },
+  scheduleId: { fontSize: 13, color: "#6B7280", marginTop: 2 },
+  routeDetails: { flex: 1 },
+  timeline: { paddingHorizontal: 24, paddingTop: 8 },
+  timelineStep: { flexDirection: "row", gap: 16, marginBottom: 20 },
+  timelineIndicator: { alignItems: "center", width: 20 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" },
+  timelineDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#FFF" },
+  timelineLine: { width: 2, flex: 1, backgroundColor: "#F3F4F6", marginTop: 4 },
+  timelineContent: { flex: 1 },
+  timelineStopName: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
+  timelineTime: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
 });

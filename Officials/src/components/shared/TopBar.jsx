@@ -31,7 +31,7 @@ export default function TopBar() {
   const subtitle = subTitles[location.pathname] || '';
 
   return (
-    <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4 sticky top-0 z-40">
+    <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4 sticky top-0 z-[1998]">
       <div>
         <h1 className="text-lg font-bold text-slate-900 leading-tight">{title}</h1>
         <p className="text-xs text-slate-500">{subtitle}</p>

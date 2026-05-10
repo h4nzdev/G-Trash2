@@ -364,20 +364,69 @@ export default function HomeScreen({ navigation }) {
     ];
   }, [nearestTruck, onlineTrucks.length, distToTruck]);
 
-  const tarsiInsight = useMemo(() => {
-    if (distToTruck !== null) {
-      if (distToTruck < 350)
-        return "A garbage truck is very close! Get your bin to the curb right now — don't miss the collection!";
-      if (distToTruck < 700)
-        return `A truck is only ${distToTruck}m away. Bring your bin out now before it passes your area!`;
-      if (distToTruck < 1050)
-        return "A collection truck is approaching your area. Start preparing your bin — it'll be there soon!";
+  const tarsiData = useMemo(() => {
+    const hour = new Date().getHours();
+    
+    // SUCCESS: User has prepared the bin
+    if (binReady) {
+      return {
+        insight: "🌟 Great job! Your bin is ready. You and 12 other neighbors on your street are all set for collection. I'll keep a sharp eye on the truck for you!",
+        variant: "celebrate"
+      };
     }
-    if (onlineTrucks.length > 0)
-      return `${onlineTrucks.length} truck${onlineTrucks.length > 1 ? "s are" : " is"} active in your area today. Keep an eye on the map for its exact location!`;
-    if (firstSchedule)
-      return `Collection is scheduled today on ${firstSchedule.routeName || "your route"}. Have your bin at the curb by 7:30 AM!`;
-    return "No trucks active right now. Use this time to sort your recyclables and prepare for the next collection day!";
+
+    // URGENT: Truck is extremely close
+    if (distToTruck !== null && distToTruck < 350) {
+      return {
+        insight: "🚨 URGENT: The collection truck is literally right there! Get your bins out to the curb immediately if you haven't already!",
+        variant: "worrying"
+      };
+    }
+    
+    // ALERT: Truck is nearby
+    if (distToTruck !== null && distToTruck < 1000) {
+      const mins = Math.ceil(distToTruck / 200);
+      return {
+        insight: `🚚 Heads up! A truck is about ${distToTruck}m away (approx. ${mins} mins). It's the perfect time to double-check your waste sorting!`,
+        variant: "urgent"
+      };
+    }
+
+    // ACTIVE: Trucks are in the city
+    if (onlineTrucks.length > 0) {
+      return {
+        insight: `✨ Good news! There are ${onlineTrucks.length} trucks active in the city right now. Stay tuned, I'll let you know the moment one enters your zone.`,
+        variant: "default"
+      };
+    }
+
+    // SCHEDULED: Nothing live, but something planned
+    if (firstSchedule) {
+      return {
+        insight: `📅 Don't forget! You have a collection scheduled for today on the "${firstSchedule.routeName}" route. Make sure your bins are ready by 7:30 AM!`,
+        variant: "default"
+      };
+    }
+
+    // IDLE: No activity
+    if (hour < 10) {
+      return {
+        insight: "☕ Good morning! No collection trucks are out yet. Did you know that rinsing your plastic containers helps the recycling process? Try it today!",
+        variant: "default"
+      };
+    }
+    
+    if (hour > 18) {
+      return {
+        insight: "🌙 Collection for today has likely ended. Make sure to check your schedule for tomorrow and keep our streets clean!",
+        variant: "default"
+      };
+    }
+
+    return {
+      insight: "🌱 Everything looks quiet on the trash front. Remember: reducing waste starts with better sorting. Have a great day!",
+      variant: "default"
+    };
   }, [distToTruck, onlineTrucks.length, firstSchedule]);
 
   const pulseTier = useMemo(() => {
@@ -511,7 +560,10 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* Tarsi mascot assistant — anchored to a green divider, contextual insight */}
-        <TarsiAssistant insight={tarsiInsight} />
+        <TarsiAssistant 
+          insight={tarsiData.insight} 
+          variant={tarsiData.variant} 
+        />
 
         {/* Bento Grid Cards */}
         <View style={styles.cardGrid}>
@@ -578,9 +630,13 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.collectionTime}>
                       Today · {firstSchedule.routeName || "Scheduled"}
                     </Text>
+                  ) : nearestTruck ? (
+                    <Text style={styles.collectionTime}>
+                      Live · Truck {nearestTruck.truckId} Nearby
+                    </Text>
                   ) : (
                     <Text style={styles.collectionTime}>
-                      No collection today
+                      No active collection
                     </Text>
                   )}
                 </View>
@@ -588,15 +644,15 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.collectionDetails}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Route</Text>
+                  <Text style={styles.detailLabel}>Route / Status</Text>
                   <Text style={styles.detailValue}>
-                    {firstSchedule?.routeName || "—"}
+                    {firstSchedule?.routeName || (nearestTruck ? "Collection in Progress" : "No Activity")}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Driver</Text>
+                  <Text style={styles.detailLabel}>Assigned Unit</Text>
                   <Text style={styles.detailValue}>
-                    {firstSchedule?.driverName || "—"}
+                    {firstSchedule?.truckId || nearestTruck?.truckId || "—"}
                   </Text>
                 </View>
               </View>
@@ -604,23 +660,23 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 style={[
                   styles.prepareButton,
-                  (binReady || !firstSchedule) && styles.prepareButtonReady,
+                  (binReady) ? styles.trackLiveButton : ((!firstSchedule && !nearestTruck) && styles.prepareButtonReady),
                 ]}
-                onPress={firstSchedule ? handleOpenModal : undefined}
-                activeOpacity={firstSchedule ? 0.8 : 1}
+                onPress={binReady ? () => navigation.navigate("Map", { focusTruck: true }) : ((firstSchedule || nearestTruck) ? handleOpenModal : undefined)}
+                activeOpacity={(firstSchedule || nearestTruck || binReady) ? 0.8 : 1}
               >
                 <View style={styles.prepareButtonInner}>
                   <MaterialIcons
-                    name={binReady ? "check-circle" : "delete-outline"}
+                    name={binReady ? "map" : "delete-outline"}
                     size={18}
-                    color="#006A3B"
+                    color={binReady ? "#FFFFFF" : "#006A3B"}
                   />
-                  <Text style={styles.prepareButtonText}>
+                  <Text style={[styles.prepareButtonText, binReady && { color: '#FFFFFF' }]}>
                     {binReady
-                      ? "Bin Ready ✓"
-                      : firstSchedule
+                      ? "Track Live Arrival"
+                      : (firstSchedule || nearestTruck)
                         ? "Prepare My Bin"
-                        : "No Collection Today"}
+                        : "No Activity"}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -1011,7 +1067,7 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 10,
     paddingBottom: 40,
   },
   greeting: {
@@ -1171,6 +1227,15 @@ const styles = StyleSheet.create({
   },
   prepareButtonReady: {
     backgroundColor: "#D9E9E2",
+  },
+  trackLiveButton: {
+    backgroundColor: "#059669",
+    borderColor: "#059669",
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   prepareButtonInner: {
     flexDirection: "row",
