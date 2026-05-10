@@ -99,8 +99,8 @@ const styles = StyleSheet.create({
     borderColor: "#F0EDED",
   },
   cardSuccess: {
-    borderColor: "rgba(0,110,28,0.25)",
-    backgroundColor: "rgba(0,106,59,0.04)",
+    borderColor: "#B9D4BC",
+    backgroundColor: "#EBF3EE",
   },
 
   // Header Row
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "rgba(0,106,59,0.1)",
+    backgroundColor: "#E4EEE9",
     justifyContent: "center",
     alignItems: "center",
   },

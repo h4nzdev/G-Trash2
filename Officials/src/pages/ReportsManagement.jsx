@@ -4,8 +4,7 @@ import { X, MapPin, Clock, User, CheckCircle, AlertTriangle, FileText, Camera, R
 import ReportCard from '../components/reports/ReportCard';
 import ReportFilter from '../components/reports/ReportFilter';
 import Badge from '../components/shared/Badge';
-
-const API = 'http://localhost:4000';
+import API from '../config';
 
 function timeAgo(dateStr) {
   const diff = (Date.now() - new Date(dateStr)) / 1000;

@@ -32,6 +32,7 @@ export const AuthProvider = ({ children }) => {
         setIsLoading(false);
         if (xhr.status === 200) {
           const data = JSON.parse(xhr.responseText);
+          console.log(`[Auth] Login successful for truck: ${data.truckId}`, data);
           const userData = {
             truckId: data.truckId,
             driverName: data.driverName,
@@ -54,8 +55,14 @@ export const AuthProvider = ({ children }) => {
     await AsyncStorage.removeItem('@AuthData');
   };
 
+  const updateUser = async (patch) => {
+    const updated = { ...user, ...patch };
+    setUser(updated);
+    await AsyncStorage.setItem('@AuthData', JSON.stringify(updated));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

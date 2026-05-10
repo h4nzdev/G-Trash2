@@ -12,6 +12,7 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  TextInput,
 } from "react-native";
 import {
   SafeAreaView,
@@ -24,6 +25,7 @@ import * as Location from "expo-location";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
+import TRUCK_B64 from "../constants/truckBase64";
 
 const TRACKING_SERVER = API_URL;
 
@@ -61,6 +63,14 @@ function waypointsToStops(waypoints) {
     weight: null,
     type: types[i % 3],
   }));
+}
+
+function getTodayYMD() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 
@@ -114,7 +124,7 @@ const HEATMAP_ZONES = [
 ];
 
 // ── Leaflet HTML ───────────────────────────────────────────
-function buildLeafletHTML() {
+function buildLeafletHTML(truckB64) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -150,9 +160,24 @@ function buildLeafletHTML() {
       });
       map.setView([10.325, 123.893], 14);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        opacity: 0.9, maxZoom: 17, minZoom: 13
-      }).addTo(map);
+      var tileLayer;
+      function setTileLayer(satellite) {
+        if (tileLayer) map.removeLayer(tileLayer);
+        if (satellite) {
+          tileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 17, minZoom: 13, attribution: '' }
+          );
+        } else {
+          tileLayer = L.tileLayer(
+            'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+            { opacity: 0.9, maxZoom: 17, minZoom: 13 }
+          );
+        }
+        tileLayer.addTo(map);
+      }
+      setTileLayer(false);
+      window.setMapStyle = setTileLayer;
 
       // Heat zones
       var criticalZone = L.circle([10.295, 123.895], { radius:250, color:'#E53935', fillColor:'#E53935', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
@@ -200,27 +225,18 @@ function buildLeafletHTML() {
         }
       };
 
-      // Top-down truck SVG marker that rotates with the driver's heading
+      var TB = '${truckB64}';
+
+      // Truck image marker
       function createArrowMarker(lat, lng, bearing) {
         var truckHtml =
-          '<div style="transform:rotate(' + bearing + 'deg);filter:drop-shadow(0 4px 10px rgba(0,106,59,0.5));">' +
-            '<svg viewBox="0 0 40 62" width="40" height="62" xmlns="http://www.w3.org/2000/svg">' +
-              '<ellipse cx="20" cy="56" rx="13" ry="4" fill="rgba(0,0,0,0.22)"/>' +
-              '<rect x="8" y="22" width="24" height="28" rx="3" fill="#006A3B"/>' +
-              '<rect x="10" y="10" width="20" height="16" rx="3" fill="#005530"/>' +
-              '<rect x="13" y="12" width="14" height="9" rx="2" fill="#A8D9BE" opacity="0.95"/>' +
-              '<polygon points="20,2 27,11 13,11" fill="#FFFFFF" opacity="0.95"/>' +
-              '<rect x="3" y="24" width="6" height="10" rx="2" fill="#1B1C1C"/>' +
-              '<rect x="31" y="24" width="6" height="10" rx="2" fill="#1B1C1C"/>' +
-              '<rect x="3" y="37" width="6" height="10" rx="2" fill="#1B1C1C"/>' +
-              '<rect x="31" y="37" width="6" height="10" rx="2" fill="#1B1C1C"/>' +
-              '<rect x="10" y="24" width="20" height="1.5" rx="1" fill="rgba(255,255,255,0.18)"/>' +
-            '</svg>' +
+          '<div style="display:flex;align-items:center;justify-content:center;">' +
+            '<img src="data:image/png;base64,' + TB + '" style="width:48px;height:48px;object-fit:contain;display:block;" />' +
           '</div>';
         var truckIcon = L.divIcon({
           html: truckHtml,
-          iconSize: [40, 62],
-          iconAnchor: [20, 31],
+          iconSize: [48, 48],
+          iconAnchor: [24, 24],
           className: ''
         });
         return L.marker([lat, lng], { icon: truckIcon, zIndexOffset: 2000 });
@@ -243,8 +259,23 @@ function buildLeafletHTML() {
         map.panTo([lat, lng]);
       };
 
-      window.stopNavigation = function() {
+      // Gray idle truck shown at last GPS position when driver stops navigation
+      window.showIdleTruck = function(lat, lng) {
         if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+        var idleHtml =
+          '<div style="display:flex;align-items:center;justify-content:center;opacity:0.6;filter:grayscale(100%);">' +
+            '<img src="data:image/png;base64,' + TB + '" style="width:48px;height:48px;object-fit:contain;display:block;" />' +
+          '</div>';
+        var idleIcon = L.divIcon({ html: idleHtml, iconSize: [48, 48], iconAnchor: [24, 24], className: '' });
+        currentMarker = L.marker([lat, lng], { icon: idleIcon, zIndexOffset: 2000 });
+        currentMarker.addTo(map);
+      };
+
+      window.stopNavigation = function(lat, lng) {
+        if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+        if (lat !== undefined && lng !== undefined) {
+          window.showIdleTruck(lat, lng);
+        }
       };
 
       setTimeout(function() { map.invalidateSize(); }, 200);
@@ -252,6 +283,33 @@ function buildLeafletHTML() {
   </script>
 </body>
 </html>`;
+}
+
+// ── Route deviation helpers ───────────────────────────────
+function toRad(deg) { return deg * Math.PI / 180; }
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function pointToSegmentM(pLat, pLng, aLat, aLng, bLat, bLng) {
+  const dx = bLat - aLat, dy = bLng - aLng;
+  if (dx === 0 && dy === 0) return haversineM(pLat, pLng, aLat, aLng);
+  const t = Math.max(0, Math.min(1,
+    ((pLat - aLat) * dx + (pLng - aLng) * dy) / (dx * dx + dy * dy)));
+  return haversineM(pLat, pLng, aLat + t * dx, aLng + t * dy);
+}
+function minDistToPolyline(lat, lng, coords) {
+  if (!coords || coords.length < 2) return Infinity;
+  let min = Infinity;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const d = pointToSegmentM(lat, lng, coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1]);
+    if (d < min) min = d;
+  }
+  return min;
 }
 
 // ── ORS fetch helper (unchanged) ──────────────────────────
@@ -290,65 +348,141 @@ export default function CollectorMapScreen() {
   const [stops, setStops] = useState([]);
   const [routeAssigned, setRouteAssigned] = useState(false);
   const [assignedRouteName, setAssignedRouteName] = useState('');
-  const [scheduledToday, setScheduledToday] = useState(null); // null=loading, true/false
+  const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
+  const [activeScheduleId, setActiveScheduleId] = useState(null);
 
-  // Stable fetch functions — called on mount and when socket events arrive
-  const checkSchedule = useCallback(() => {
+  // Fetch all of today's scheduled routes for this truck
+  const fetchTodaySchedules = useCallback(() => {
+    const today = getTodayYMD();
+    const truckIdUpper = TRUCK_ID.toUpperCase();
+    const url = `${TRACKING_SERVER}/api/schedules/truck/${truckIdUpper}/today?date=${today}`;
+    console.log(`[App] Fetching schedules from: ${url}`);
+    
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', `${TRACKING_SERVER}/api/schedules/truck/${TRUCK_ID}/today`);
+    xhr.open('GET', url);
     xhr.timeout = 6000;
     xhr.onload = () => {
+      console.log(`[App] Schedule response status: ${xhr.status}`);
       if (xhr.status === 200) {
-        try { setScheduledToday(JSON.parse(xhr.responseText).scheduled); } catch (_) { setScheduledToday(false); }
-      } else { setScheduledToday(false); }
+        try {
+          const data = JSON.parse(xhr.responseText);
+          console.log(`[App] Received schedules:`, data);
+          const list = Array.isArray(data.schedules)
+            ? data.schedules
+            : data.schedule
+              ? [data.schedule]
+              : [];
+          
+          setTodaySchedules(list);
+          
+          setActiveScheduleId(prev => {
+            const next = (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null);
+            console.log(`[App] Setting activeScheduleId: ${next} (was: ${prev})`);
+            return next;
+          });
+        } catch (e) {
+          console.error(`[App] Parse error in schedules:`, e);
+          setTodaySchedules([]);
+          setRouteAssigned(false);
+        }
+      } else {
+        console.warn(`[App] Non-200 status for schedules: ${xhr.status}`);
+        setTodaySchedules([]);
+        setRouteAssigned(false);
+      }
     };
-    xhr.onerror = () => setScheduledToday(false);
-    xhr.ontimeout = () => setScheduledToday(false);
+    xhr.onerror = (e) => { console.error(`[App] XHR Error (Schedules):`, e); setTodaySchedules([]); setRouteAssigned(false); };
+    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Schedules)`); setTodaySchedules([]); setRouteAssigned(false); };
     xhr.send();
   }, [TRUCK_ID]);
 
-  const fetchRoute = useCallback(() => {
+  useEffect(() => {
+    console.log(`[App] Route Effect Triggered. activeScheduleId: ${activeScheduleId}, hasTodaySchedules: ${!!todaySchedules}`);
+    if (!activeScheduleId || !todaySchedules) {
+      if (todaySchedules && todaySchedules.length === 0) {
+        console.log(`[App] No schedules available, clearing route.`);
+        setRouteAssigned(false);
+        setStops([]);
+        routeCoordsRef.current = [];
+      }
+      return;
+    }
+    const sched = todaySchedules.find(s => s._id === activeScheduleId);
+    console.log(`[App] Found schedule in list:`, sched);
+    
+    if (!sched?.routeId) {
+      console.warn(`[App] Schedule has no routeId!`);
+      setRouteAssigned(false);
+      setStops([]);
+      routeCoordsRef.current = [];
+      return;
+    }
+    
+    const url = `${TRACKING_SERVER}/api/routes/${sched.routeId}`;
+    console.log(`[App] Fetching route waypoints from: ${url}`);
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', `${TRACKING_SERVER}/api/routes/truck/${TRUCK_ID}`);
+    xhr.open('GET', url);
     xhr.timeout = 6000;
     xhr.onload = () => {
+      console.log(`[App] Route response status: ${xhr.status}`);
       if (xhr.status === 200) {
         try {
           const route = JSON.parse(xhr.responseText);
-          if (route.waypoints && route.waypoints.length >= 1) {
+          console.log(`[App] Received route data:`, route);
+          if (route.waypoints?.length >= 1) {
             setStops(waypointsToStops(route.waypoints));
             setRouteAssigned(true);
             setAssignedRouteName(route.name || '');
+            routeCoordsRef.current = route.routeCoords?.length > 1
+              ? route.routeCoords
+              : route.waypoints.map(wp => [wp.lat, wp.lng]);
+            console.log(`[App] Route successfully assigned: ${route.name}`);
           } else {
+            console.warn(`[App] Route has no waypoints!`);
             setRouteAssigned(false);
             setStops([]);
+            routeCoordsRef.current = [];
           }
-        } catch (_) {
+        } catch (e) {
+          console.error(`[App] Parse error in route:`, e);
           setRouteAssigned(false);
           setStops([]);
+          routeCoordsRef.current = [];
         }
       } else {
+        console.warn(`[App] Non-200 status for route: ${xhr.status}`);
         setRouteAssigned(false);
         setStops([]);
+        routeCoordsRef.current = [];
       }
     };
-    xhr.onerror = () => { setRouteAssigned(false); setStops([]); };
-    xhr.ontimeout = () => { setRouteAssigned(false); setStops([]); };
+    xhr.onerror = (e) => { console.error(`[App] XHR Error (Route):`, e); setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
+    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Route)`); setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
     xhr.send();
-  }, [TRUCK_ID]);
+    return () => xhr.abort();
+  }, [activeScheduleId, todaySchedules]);
 
-  // Initial fetch on mount (no polling — updates come via socket events)
-  useEffect(() => { checkSchedule(); }, [checkSchedule]);
-  useEffect(() => { fetchRoute(); }, [fetchRoute]);
+  // Initial fetch on mount (updates also come via socket events)
+  useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isSatellite, setIsSatellite] = useState(false);
   const [showSuccess, setShowSuccess] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [navigationActive, setNavigationActive] = useState(false);
+  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
+  const [currentSpeed, setCurrentSpeed] = useState(0);
+  const [weightModalStop, setWeightModalStop] = useState(null);
+  const [weightInput, setWeightInput] = useState("");
+  const [deviationAlert, setDeviationAlert] = useState(false);
+  const [deviationInfo, setDeviationInfo] = useState(null);
 
   const isExpandedRef = useRef(false);
   const navigationActiveRef = useRef(false);
-  const lastGpsRef = useRef(null); // most recent GPS fix from the device
+  const lastGpsRef = useRef(null);
+  const shiftStartRef = useRef(null);
+  const offRouteCountRef = useRef(0);
+  const routeCoordsRef = useRef([]);
   const successAnim = useRef(new Animated.Value(0)).current;
   const zoneCardAnim = useRef(new Animated.Value(0)).current;
   const socketRef = useRef(null);
@@ -369,12 +503,11 @@ export default function CollectorMapScreen() {
     });
 
     // Real-time updates pushed by the Officials backend through the relay
-    socket.on("schedule:changed", ({ truckId, date }) => {
-      const today = new Date().toLocaleDateString("en-CA");
-      if (truckId === TRUCK_ID && date === today) checkSchedule();
+    socket.on("schedule:changed", ({ truckId }) => {
+      if (truckId === TRUCK_ID) fetchTodaySchedules();
     });
     socket.on("route:assigned", ({ truckId }) => {
-      if (truckId === TRUCK_ID) fetchRoute();
+      if (truckId === TRUCK_ID) fetchTodaySchedules();
     });
 
     let locationSub = null;
@@ -405,6 +538,7 @@ export default function CollectorMapScreen() {
 
           // Only stream while navigating
           if (navigationActiveRef.current) {
+            setCurrentSpeed(Math.round((speed || 0) * 3.6)); // m/s → km/h
             socket.emit("truck:location", {
               truckId: TRUCK_ID,
               lat: latitude,
@@ -416,6 +550,26 @@ export default function CollectorMapScreen() {
             webViewRef.current?.injectJavaScript(
               `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
             );
+
+            // Off-route deviation check — requires 3 consecutive updates > 150 m
+            const dist = minDistToPolyline(latitude, longitude, routeCoordsRef.current);
+            if (dist > 150) {
+              offRouteCountRef.current += 1;
+              if (offRouteCountRef.current >= 3) {
+                offRouteCountRef.current = 0;
+                setDeviationInfo({ distance: Math.round(dist) });
+                setDeviationAlert(true);
+                socket.emit('truck:off-route', {
+                  truckId: TRUCK_ID,
+                  lat: latitude,
+                  lng: longitude,
+                  distanceM: Math.round(dist),
+                  driverName: user?.driverName || '',
+                });
+              }
+            } else {
+              offRouteCountRef.current = 0;
+            }
           }
         },
       );
@@ -426,7 +580,19 @@ export default function CollectorMapScreen() {
       socket.disconnect();
       locationSub?.remove();
     };
-  }, [checkSchedule, fetchRoute]);
+  }, [fetchTodaySchedules]);
+  // Shift elapsed timer — updates every 15 s while navigating
+  useEffect(() => {
+    if (!navigationActive) return;
+    const interval = setInterval(() => {
+      if (!shiftStartRef.current) return;
+      const mins = Math.floor((Date.now() - shiftStartRef.current) / 60000);
+      const hrs = Math.floor(mins / 60);
+      setElapsedDisplay(`${String(hrs).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [navigationActive]);
+
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
@@ -550,29 +716,23 @@ export default function CollectorMapScreen() {
   };
 
   const handleMarkCleaned = (stopId) => {
-    Alert.alert("Confirm Cleanup", "Mark this location as cleaned?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Confirm",
-        onPress: () => {
-          setStops((prev) => {
-            const idx = prev.findIndex((s) => s.id === stopId);
-            return prev.map((s, i) => {
-              if (i === idx)
-                return {
-                  ...s,
-                  status: "completed",
-                  weight: `${Math.floor(Math.random() * 40 + 20)}kg`,
-                };
-              if (i === idx + 1 && s.status === "upcoming")
-                return { ...s, status: "in-progress" };
-              return s;
-            });
-          });
-          triggerSuccessAnimation(stopId);
-        },
-      },
-    ]);
+    setWeightInput("");
+    setWeightModalStop(stopId);
+  };
+
+  const confirmCleanWithWeight = (weight) => {
+    const stopId = weightModalStop;
+    const kg = parseInt(weight, 10) || Math.floor(Math.random() * 40 + 20);
+    setWeightModalStop(null);
+    setStops((prev) => {
+      const idx = prev.findIndex((s) => s.id === stopId);
+      return prev.map((s, i) => {
+        if (i === idx) return { ...s, status: "completed", weight: `${kg}kg` };
+        if (i === idx + 1 && s.status === "upcoming") return { ...s, status: "in-progress" };
+        return s;
+      });
+    });
+    triggerSuccessAnimation(stopId);
   };
 
   const handleReportIssue = () => {
@@ -586,7 +746,7 @@ export default function CollectorMapScreen() {
   };
 
   const startNavigation = () => {
-    if (!scheduledToday) {
+    if (todaySchedules !== null && todaySchedules.length === 0) {
       Alert.alert(
         'Not Scheduled Today',
         "You don't have a scheduled collection run for today. Please contact your supervisor if you believe this is an error.",
@@ -597,6 +757,8 @@ export default function CollectorMapScreen() {
     console.log("🚛 [startNavigation] button pressed");
     navigationActiveRef.current = true;
     setNavigationActive(true);
+    shiftStartRef.current = Date.now();
+    setElapsedDisplay("00:00");
 
     const pos = lastGpsRef.current;
     const lat = pos?.lat ?? truckStop?.lat ?? 10.325;
@@ -619,29 +781,32 @@ export default function CollectorMapScreen() {
     xhr.setRequestHeader("Content-Type", "application/json");
     xhr.timeout = 8000;
     xhr.onload = () => {
-      console.log(`🚛 [startNavigation] XHR status=${xhr.status} body=${xhr.responseText}`);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const body = JSON.parse(xhr.responseText);
-        Alert.alert("✅ Uploaded to DB", `lat=${body.lat}\nlng=${body.lng}`);
-      } else {
-        Alert.alert("❌ Server Error", `HTTP ${xhr.status}: ${xhr.responseText}`);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        console.warn(`🚛 [startNavigation] upload failed HTTP ${xhr.status}`);
       }
     };
-    xhr.onerror = () => {
-      console.error("🚛 [startNavigation] XHR error");
-      Alert.alert("❌ Network Error", `Could not reach ${url}`);
-    };
-    xhr.ontimeout = () => {
-      console.error("🚛 [startNavigation] XHR timeout");
-      Alert.alert("❌ Timeout", `No response from ${url}`);
-    };
+    xhr.onerror = () => console.warn('🚛 [startNavigation] network error');
+    xhr.ontimeout = () => console.warn('🚛 [startNavigation] timeout');
     xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat, lng, heading, speed: 0 }));
   };
 
   const stopNavigation = () => {
+    const pos = lastGpsRef.current;
     navigationActiveRef.current = false;
     setNavigationActive(false);
-    webViewRef.current?.injectJavaScript("window.stopNavigation(); true;");
+    shiftStartRef.current = null;
+    setElapsedDisplay("00:00");
+    setCurrentSpeed(0);
+    // Broadcast offline so Resident map shows idle truck
+    socketRef.current?.emit('truck:offline', { truckId: TRUCK_ID });
+    // Show idle gray marker at last known position
+    if (pos) {
+      webViewRef.current?.injectJavaScript(
+        `window.stopNavigation(${pos.lat}, ${pos.lng}); true;`
+      );
+    } else {
+      webViewRef.current?.injectJavaScript('window.stopNavigation(); true;');
+    }
   };
 
   const listOpacity = sheetAnim.interpolate({
@@ -667,7 +832,7 @@ export default function CollectorMapScreen() {
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
-          source={{ html: buildLeafletHTML() }}
+          source={{ html: buildLeafletHTML(TRUCK_B64) }}
           style={styles.webView}
           originWhitelist={["*"]}
           javaScriptEnabled
@@ -696,7 +861,12 @@ export default function CollectorMapScreen() {
         </Modal>
 
         {/* Top info bar — mutually exclusive: not-scheduled > progress card > no-route */}
-        {scheduledToday === false ? (
+        {todaySchedules === null ? (
+          <View style={styles.loadingBanner}>
+            <ActivityIndicator size="small" color="#006A3B" />
+            <Text style={styles.loadingBannerText}>Checking for today's routes...</Text>
+          </View>
+        ) : todaySchedules.length === 0 ? (
           <View style={styles.notScheduledBanner}>
             <MaterialIcons name="event-busy" size={15} color="#7F1D1D" />
             <Text style={styles.notScheduledText}>Not scheduled today — navigation locked</Text>
@@ -718,7 +888,8 @@ export default function CollectorMapScreen() {
               />
             </View>
             <Text style={styles.progressText}>
-              {completedCount} of {stops.length} stops completed
+              {completedCount}/{stops.length} stops
+              {navigationActive ? `  ·  ${elapsedDisplay}  ·  ${currentSpeed} km/h` : ""}
             </Text>
           </View>
         ) : (
@@ -728,10 +899,23 @@ export default function CollectorMapScreen() {
           </View>
         )}
 
-        {/* Floating buttons */}
         <View style={styles.floatingActions}>
-          <TouchableOpacity style={styles.floatingBtn} activeOpacity={0.7}>
-            <MaterialIcons name="layers" size={22} color="#1B1C1C" />
+          <TouchableOpacity
+            style={[styles.floatingBtn, isSatellite && styles.activeFloatingBtn]}
+            activeOpacity={0.7}
+            onPress={() => {
+              setIsSatellite(prev => {
+                const next = !prev;
+                webViewRef.current?.injectJavaScript(`window.setMapStyle(${next}); true;`);
+                return next;
+              });
+            }}
+          >
+            <MaterialIcons
+              name={isSatellite ? "map" : "satellite-alt"}
+              size={22}
+              color={isSatellite ? "#006A3B" : "#1B1C1C"}
+            />
           </TouchableOpacity>
           {navigationActive ? (
             <TouchableOpacity
@@ -742,7 +926,17 @@ export default function CollectorMapScreen() {
               <MaterialIcons name="close" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.floatingBtn} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.floatingBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (lastGpsRef.current && webViewReady.current) {
+                  webViewRef.current.injectJavaScript(
+                    `window.updateDriverPosition(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}, ${lastGpsRef.current.heading || 0}); true;`
+                  );
+                }
+              }}
+            >
               <MaterialIcons name="my-location" size={22} color="#1B1C1C" />
             </TouchableOpacity>
           )}
@@ -954,6 +1148,38 @@ export default function CollectorMapScreen() {
               </Text>
             </View>
           )}
+
+          {/* Route switcher — only visible when more than one route is scheduled today */}
+          {todaySchedules && todaySchedules.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.routeSwitcherScroll}
+              contentContainerStyle={styles.routeSwitcherContent}
+            >
+              {todaySchedules.map(s => {
+                const isActive = s._id === activeScheduleId;
+                return (
+                  <TouchableOpacity
+                    key={s._id}
+                    style={[styles.routeSwitchPill, isActive && styles.routeSwitchPillActive]}
+                    onPress={() => setActiveScheduleId(s._id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.routeSwitchDot, isActive && styles.routeSwitchDotActive]} />
+                    <Text style={[styles.routeSwitchText, isActive && styles.routeSwitchTextActive]} numberOfLines={1}>
+                      {s.routeName || 'Route'}
+                    </Text>
+                    {s.startTime ? (
+                      <Text style={[styles.routeSwitchTime, isActive && styles.routeSwitchTimeActive]}>
+                        {s.startTime}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
 
         <Animated.View style={[styles.stopList, { opacity: listOpacity }]}>
@@ -968,9 +1194,13 @@ export default function CollectorMapScreen() {
                 <View style={styles.unassignedIconWrap}>
                   <MaterialIcons name="local-shipping" size={36} color="#6F7A70" />
                 </View>
-                <Text style={styles.unassignedTitle}>Awaiting Route Assignment</Text>
+                <Text style={styles.unassignedTitle}>
+                  {todaySchedules && todaySchedules.length > 0 ? 'No Route in Schedule' : 'Awaiting Route Assignment'}
+                </Text>
                 <Text style={styles.unassignedBody}>
-                  Your truck hasn't been assigned a collection route yet. Please wait for your supervisor to assign you a route, or contact your dispatch office.
+                  {todaySchedules && todaySchedules.length > 0
+                    ? "You're scheduled today but no route was assigned to your schedule. Ask your supervisor to edit the schedule and select a route."
+                    : "Your truck hasn't been assigned a collection route yet. Please wait for your supervisor to assign you a route, or contact your dispatch office."}
                 </Text>
                 <View style={styles.unassignedHint}>
                   <MaterialIcons name="map" size={14} color="#006A3B" />
@@ -1025,17 +1255,17 @@ export default function CollectorMapScreen() {
                 <View style={styles.actionButtons}>
                   {!navigationActive ? (
                     <TouchableOpacity
-                      style={[styles.navigateBtn, scheduledToday === false && styles.navigateBtnBlocked]}
+                      style={[styles.navigateBtn, todaySchedules !== null && todaySchedules.length === 0 && styles.navigateBtnBlocked]}
                       onPress={startNavigation}
                       activeOpacity={0.8}
                     >
                       <MaterialIcons
-                        name={scheduledToday === false ? "block" : "navigation"}
+                        name={todaySchedules !== null && todaySchedules.length === 0 ? "block" : "navigation"}
                         size={18}
                         color="#FFFFFF"
                       />
                       <Text style={styles.navigateBtnText} numberOfLines={1}>
-                        {scheduledToday === null ? 'Checking...' : scheduledToday === false ? 'Not Scheduled' : 'Start Navigation'}
+                        {todaySchedules === null ? 'Checking...' : todaySchedules.length === 0 ? 'Not Scheduled' : 'Start Navigation'}
                       </Text>
                     </TouchableOpacity>
                   ) : (
@@ -1218,6 +1448,125 @@ export default function CollectorMapScreen() {
           </ScrollView>
         </Animated.View>
       </Animated.View>
+
+      {/* Weight entry modal — shown when marking a stop as cleaned */}
+      <Modal
+        visible={!!weightModalStop}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setWeightModalStop(null)}
+      >
+        <TouchableOpacity
+          style={styles.weightOverlay}
+          activeOpacity={1}
+          onPress={() => setWeightModalStop(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.weightSheet}>
+            <View style={styles.weightHandle} />
+            <Text style={styles.weightTitle}>Enter Collected Weight</Text>
+            <Text style={styles.weightSub}>
+              {stops.find((s) => s.id === weightModalStop)?.name || "This stop"}
+            </Text>
+            <View style={styles.weightInputRow}>
+              <TextInput
+                style={styles.weightInput}
+                value={weightInput}
+                onChangeText={setWeightInput}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
+                maxLength={4}
+                autoFocus
+              />
+              <Text style={styles.weightUnit}>kg</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.weightConfirmBtn}
+              onPress={() => confirmCleanWithWeight(weightInput)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.weightConfirmText}>Confirm Cleaned</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.weightSkipBtn}
+              onPress={() => confirmCleanWithWeight("")}
+            >
+              <Text style={styles.weightSkipText}>Skip — log weight later</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Route deviation warning modal */}
+      <Modal
+        visible={deviationAlert}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeviationAlert(false)}
+      >
+        <View style={styles.deviationBackdrop}>
+          <View style={styles.deviationCard}>
+            <TouchableOpacity
+              style={styles.deviationClose}
+              onPress={() => setDeviationAlert(false)}
+            >
+              <MaterialIcons name="close" size={20} color="#6F7A70" />
+            </TouchableOpacity>
+
+            <View style={styles.deviationIconWrap}>
+              <MaterialIcons name="warning" size={38} color="#F59E0B" />
+            </View>
+            <Text style={styles.deviationTitle}>Off Route Warning</Text>
+            <Text style={styles.deviationBody}>
+              You are approximately{' '}
+              <Text style={{ fontWeight: '700', color: '#BA1A1A' }}>
+                {deviationInfo?.distance}m
+              </Text>{' '}
+              from your assigned route.{'\n'}
+              Please return to your designated collection path.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.deviationBtnPrimary}
+              onPress={() => { setDeviationAlert(false); offRouteCountRef.current = 0; }}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+              <Text style={styles.deviationBtnPrimaryText}>I'm Back on Route</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deviationBtnSecondary}
+              onPress={() => { setDeviationAlert(false); handleReportIssue(); }}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="report-problem" size={18} color="#B45309" />
+              <Text style={styles.deviationBtnSecondaryText}>Report Issue</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deviationBtnOutline}
+              onPress={() => {
+                setDeviationAlert(false);
+                socketRef.current?.emit('truck:contact-dispatch', {
+                  truckId: TRUCK_ID,
+                  driverName: user?.driverName || '',
+                  message: 'Driver requesting assistance — off assigned route',
+                });
+                Alert.alert(
+                  'Dispatch Notified',
+                  'Your supervisor has been alerted. Help is on the way.',
+                  [{ text: 'OK' }]
+                );
+              }}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="phone" size={18} color="#006A3B" />
+              <Text style={styles.deviationBtnOutlineText}>Contact Dispatch</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1260,6 +1609,30 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
     lineHeight: 20,
+  },
+
+  loadingBanner: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    right: 80,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 5,
+    zIndex: 15,
+  },
+  loadingBannerText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#006A3B",
   },
 
   progressCard: {
@@ -1316,6 +1689,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   activeNavBtn: { backgroundColor: "#006A3B" },
+  activeFloatingBtn: { borderColor: "#006A3B", borderWidth: 1.5 },
 
   legendCard: {
     position: "absolute",
@@ -1458,7 +1832,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
@@ -1605,7 +1979,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-  stopContentActive: { backgroundColor: "rgba(0,106,59,0.04)" },
+  stopContentActive: { backgroundColor: "#EBF3EE" },
   stopRowHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1641,7 +2015,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
@@ -1658,7 +2032,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
@@ -1911,7 +2285,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "rgba(0,106,59,0.06)",
+    backgroundColor: "#EBF3EE",
     borderRadius: 12,
     padding: 12,
     width: "100%",
@@ -1921,5 +2295,214 @@ const styles = StyleSheet.create({
     color: "#006A3B",
     lineHeight: 18,
     flex: 1,
+  },
+
+  // ── Weight entry modal ──
+  weightOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  weightSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 48,
+    alignItems: "center",
+  },
+  weightHandle: {
+    width: 40, height: 4, backgroundColor: "#D1D5DB",
+    borderRadius: 2, alignSelf: "center", marginBottom: 24,
+  },
+  weightTitle: {
+    fontSize: 20, fontWeight: "700", color: "#1B1C1C", marginBottom: 4,
+  },
+  weightSub: {
+    fontSize: 14, color: "#6B7280", marginBottom: 28,
+  },
+  weightInputRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#F3F4F6", borderRadius: 20,
+    paddingHorizontal: 28, paddingVertical: 12,
+    marginBottom: 28, width: "100%", justifyContent: "center",
+  },
+  weightInput: {
+    fontSize: 48, fontWeight: "800", color: "#1B1C1C",
+    minWidth: 80, textAlign: "center",
+  },
+  weightUnit: {
+    fontSize: 24, fontWeight: "600", color: "#6B7280",
+    paddingTop: 12,
+  },
+  weightConfirmBtn: {
+    backgroundColor: "#006A3B", paddingVertical: 16, borderRadius: 14,
+    alignItems: "center", width: "100%", marginBottom: 12,
+  },
+  weightConfirmText: {
+    fontSize: 17, fontWeight: "600", color: "#FFFFFF",
+  },
+  weightSkipBtn: {
+    paddingVertical: 12, alignItems: "center", width: "100%",
+  },
+  weightSkipText: {
+    fontSize: 14, color: "#9CA3AF",
+  },
+
+  // ── Route switcher ──
+  routeSwitcherScroll: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  routeSwitcherContent: {
+    gap: 8,
+    paddingRight: 4,
+  },
+  routeSwitchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#DCD9D9',
+    backgroundColor: '#FAFAF9',
+    maxWidth: 180,
+  },
+  routeSwitchPillActive: {
+    borderColor: '#006A3B',
+    backgroundColor: '#EBF3EE',
+  },
+  routeSwitchDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#C6D1C6',
+    flexShrink: 0,
+  },
+  routeSwitchDotActive: {
+    backgroundColor: '#006A3B',
+  },
+  routeSwitchText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6F7A70',
+    flexShrink: 1,
+  },
+  routeSwitchTextActive: {
+    color: '#006A3B',
+  },
+  routeSwitchTime: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    flexShrink: 0,
+  },
+  routeSwitchTimeActive: {
+    color: '#4D9E72',
+  },
+
+  // ── Route deviation modal ──
+  deviationBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  deviationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 40,
+    elevation: 20,
+  },
+  deviationClose: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F6F3F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deviationIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  deviationTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1B1C1C',
+    marginBottom: 10,
+  },
+  deviationBody: {
+    fontSize: 14,
+    color: '#6F7A70',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  deviationBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#006A3B',
+    paddingVertical: 14,
+    borderRadius: 14,
+    width: '100%',
+    marginBottom: 10,
+  },
+  deviationBtnPrimaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  deviationBtnSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 14,
+    borderRadius: 14,
+    width: '100%',
+    marginBottom: 10,
+  },
+  deviationBtnSecondaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  deviationBtnOutline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#006A3B',
+    paddingVertical: 14,
+    borderRadius: 14,
+    width: '100%',
+  },
+  deviationBtnOutlineText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#006A3B',
   },
 });

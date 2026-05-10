@@ -30,8 +30,6 @@ export default function BottomTabNavigator() {
         tabBarInactiveTintColor: 'grey',
         tabBarStyle: {
           backgroundColor: colors.white,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.1,

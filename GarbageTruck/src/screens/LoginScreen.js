@@ -59,6 +59,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. GT-A3F"
+                placeholderTextColor="#9CA3AF"
                 value={truckId}
                 onChangeText={setTruckId}
                 autoCapitalize="characters"
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#CCE1D8',
     marginTop: 4,
   },
   form: {

@@ -192,14 +192,14 @@ export default function CollectorHistoryScreen() {
             {/* Stats Cards Row */}
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
-                <View style={[styles.statIconBg, { backgroundColor: "rgba(0,106,59,0.08)" }]}>
+                <View style={[styles.statIconBg, { backgroundColor: "#E4EEE9" }]}>
                   <MaterialIcons name="monitor-weight" size={20} color="#006A3B" />
                 </View>
                 <Text style={styles.statValue}>{totalKg}kg</Text>
                 <Text style={styles.statLabel}>Collected</Text>
               </View>
               <View style={styles.statCard}>
-                <View style={[styles.statIconBg, { backgroundColor: "rgba(0,110,28,0.08)" }]}>
+                <View style={[styles.statIconBg, { backgroundColor: "#E4EEE9" }]}>
                   <MaterialIcons name="location-on" size={20} color="#006E1C" />
                 </View>
                 <Text style={styles.statValue}>
@@ -208,7 +208,7 @@ export default function CollectorHistoryScreen() {
                 <Text style={styles.statLabel}>Stops</Text>
               </View>
               <View style={styles.statCard}>
-                <View style={[styles.statIconBg, { backgroundColor: "rgba(245,158,11,0.08)" }]}>
+                <View style={[styles.statIconBg, { backgroundColor: "#FEF4DC" }]}>
                   <MaterialIcons name="speed" size={20} color="#F59E0B" />
                 </View>
                 <Text style={styles.statValue}>{efficiency}%</Text>
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
@@ -519,18 +519,18 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 16,
   },
-  summaryLabel: { fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 4 },
+  summaryLabel: { fontSize: 13, color: "#B3D2C4", marginBottom: 4 },
   summaryValue: { fontSize: 28, fontWeight: "800", color: "#FFFFFF" },
   progressBar: {
     height: 6,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "#338862",
     borderRadius: 3,
     overflow: "hidden",
     marginBottom: 10,
   },
   progressFill: { height: "100%", backgroundColor: "#FFFFFF", borderRadius: 3 },
   summaryBottom: { flexDirection: "row", justifyContent: "space-between" },
-  summaryMeta: { fontSize: 12, color: "rgba(255,255,255,0.6)" },
+  summaryMeta: { fontSize: 12, color: "#99C3B1" },
 
   // Section
   section: { marginBottom: 28 },
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
 
   // Weekly Card
   weekTotalBadge: {
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 20,

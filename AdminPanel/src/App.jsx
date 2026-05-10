@@ -1,37 +1,44 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import OfficialLayout from './layouts/OfficialLayout';
-import OfficialDashboard from './pages/official/OfficialDashboard';
-import CollectionTracking from './pages/official/CollectionTracking';
-import BarangayReports from './pages/official/BarangayReports';
-import LocalHeatmap from './pages/official/LocalHeatmap';
-import NotificationsPage from './pages/official/NotificationsPage';
-import OfficialSettings from './pages/official/OfficialSettings';
-import ResidentLayout from './layouts/ResidentLayout';
-import ResidentMap from './pages/resident/ResidentMap';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import AdminLayout from './layouts/AdminLayout';
+import LoginPage from './pages/LoginPage';
+import Dashboard from './pages/superadmin/Dashboard';
+import Officials from './pages/superadmin/Officials';
+import MasterMap from './pages/superadmin/MasterMap';
+
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="flex h-screen items-center justify-center"><div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/official/dashboard" replace />} />
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<LoginPage />} />
 
-        {/* Official routes */}
-        <Route path="/official" element={<OfficialLayout />}>
-          <Route index element={<Navigate to="/official/dashboard" replace />} />
-          <Route path="dashboard" element={<OfficialDashboard />} />
-          <Route path="collection" element={<CollectionTracking />} />
-          <Route path="reports" element={<BarangayReports />} />
-          <Route path="heatmap" element={<LocalHeatmap />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="settings" element={<OfficialSettings />} />
-        </Route>
+          {/* Superadmin routes */}
+          <Route path="/admin" element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="officials" element={<Officials />} />
+            <Route path="map" element={<MasterMap />} />
+            <Route path="reports" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Reports coming soon...</div>} />
+            <Route path="settings" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Settings coming soon...</div>} />
+          </Route>
 
-        {/* Resident routes */}
-        <Route path="/resident" element={<ResidentLayout />}>
-          <Route index element={<Navigate to="/resident/map" replace />} />
-          <Route path="map" element={<ResidentMap />} />
-        </Route>
-      </Routes>
+          {/* Legacy routes - hidden for now */}
+          <Route path="/official" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

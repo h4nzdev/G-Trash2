@@ -351,7 +351,7 @@ export default function CollectorHomeScreen() {
                 <Text style={styles.driverChipText}>{routeName}</Text>
               </View>
             ) : (
-              <View style={[styles.driverChip, { borderColor: "rgba(146,64,14,0.2)", backgroundColor: "rgba(254,243,199,0.6)" }]}>
+              <View style={[styles.driverChip, { borderColor: "#EBD5C6", backgroundColor: "#FEF8E1" }]}>
                 <MaterialIcons name="schedule" size={14} color="#92400E" />
                 <Text style={[styles.driverChipText, { color: "#92400E" }]}>Unassigned</Text>
               </View>
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
@@ -577,12 +577,12 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerLogo: { width: 90, height: 36 },
   collectorBadge: {
-    backgroundColor: "rgba(0,106,59,0.10)",
+    backgroundColor: "#E4EEE9",
     borderRadius: 9999,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: "rgba(0,106,59,0.18)",
+    borderColor: "#C8DDD4",
   },
   collectorBadgeText: {
     fontSize: 10,
@@ -627,12 +627,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "rgba(0,106,59,0.15)",
+    borderColor: "#C8DDD4",
   },
   driverChipText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
 
@@ -714,12 +714,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: "rgba(0,106,59,0.18)",
+    borderColor: "#C8DDD4",
   },
   routeNameBadgeText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
 
@@ -753,7 +753,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "rgba(186,26,26,0.08)",
+    backgroundColor: "#FDE9E9",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 4,
@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "rgba(0,106,59,0.08)",
+    backgroundColor: "#E4EEE9",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 4,

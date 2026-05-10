@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Truck, Plus, Trash2, RefreshCw, Copy, Check, X } from 'lucide-react';
-
-const API = 'http://localhost:4000';
+import API from '../config';
 
 export default function FleetManagement() {
   const [fleet, setFleet] = useState([]);
@@ -34,7 +33,7 @@ export default function FleetManagement() {
       if (status === 401) {
         setError('Session expired. Please log out and log in again.');
       } else if (!status) {
-        setError('Cannot reach the backend at localhost:4000. Make sure it is running.');
+        setError(`Cannot reach the backend at ${API}. Make sure it is running.`);
       } else {
         setError(`Server error (${status}). Check the backend console.`);
       }

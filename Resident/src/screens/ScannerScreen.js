@@ -1012,7 +1012,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 16, // Increased from 16
+    paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 16,
   },
@@ -1106,7 +1106,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   viewfinderSubtext: {
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "#CCCCCC",
     fontSize: 14,
     textAlign: "center",
     marginTop: 8,

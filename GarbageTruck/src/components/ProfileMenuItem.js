@@ -15,7 +15,7 @@ export default function ProfileMenuItem({
   isLast,
   danger,
 }) {
-  const bgColor    = iconBg    || (danger ? 'rgba(186,26,26,0.10)' : 'rgba(0,106,59,0.10)');
+  const bgColor    = iconBg    || (danger ? '#FDE9E9' : '#E4EEE9');
   const iconTint   = iconColor || (danger ? '#BA1A1A' : '#006A3B');
 
   return (
@@ -34,7 +34,7 @@ export default function ProfileMenuItem({
           <Switch
             value={toggleValue}
             onValueChange={onToggle}
-            trackColor={{ false: '#E4E2E1', true: 'rgba(0,106,59,0.45)' }}
+            trackColor={{ false: '#E4E2E1', true: '#7FB89A' }}
             thumbColor={toggleValue ? '#006A3B' : '#FFFFFF'}
           />
         ) : (

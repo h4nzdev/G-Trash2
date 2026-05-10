@@ -27,7 +27,22 @@
       "Bash(node -e ' *)",
       "Bash(node -e \"const p = require\\('./GarbageTruck/package.json'\\); console.log\\('expo:', p.dependencies?.expo\\); console.log\\('sdk:', p.dependencies?.['expo-constants']\\)\")",
       "Bash(node -e \"const p = require\\('C:/Users/hanzc/Documents/Get-Trash/GarbageTruck/package.json'\\); console.log\\('GarbageTruck expo:', p.dependencies?.expo\\)\")",
-      "Bash(node -e \"const p = require\\('C:/Users/hanzc/Documents/Get-Trash/Resident/package.json'\\); console.log\\('Resident expo:', p.dependencies?.expo\\)\")"
+      "Bash(node -e \"const p = require\\('C:/Users/hanzc/Documents/Get-Trash/Resident/package.json'\\); console.log\\('Resident expo:', p.dependencies?.expo\\)\")",
+      "Bash(node --check app.js)",
+      "Bash(npx vite *)",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\GarbageTruck\\\\backend\")",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Officials\\\\backend\")",
+      "Bash(Test-Path *)",
+      "PowerShell(node -e \"const p=require\\('./package.json'\\); console.log\\('expo:', p.dependencies.expo, 'rn:', p.dependencies['react-native'], 'react:', p.dependencies.react\\)\" 2>&1)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20)",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\assets\\\\truck.png\"\\); $b64 = [Convert]::ToBase64String\\($bytes\\); Write-Output \"Length: $\\($b64.Length\\)\"; Write-Output $b64.Substring\\(0, 80\\))",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\assets\\\\truck.png\"\\); $b64 = [Convert]::ToBase64String\\($bytes\\); $content = \"// Auto-generated — do not edit manually`nconst TRUCK_B64 = '$b64';`nexport default TRUCK_B64;`n\"; [System.IO.File]::WriteAllText\\(\"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\constants\\\\truckBase64.js\", $content, [System.Text.Encoding]::UTF8\\); Write-Output \"Written $\\($content.Length\\) chars\")",
+      "PowerShell($content = Get-Content \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\constants\\\\truckBase64.js\" -TotalCount 1; Write-Output $content.Substring\\(0, 80\\))",
+      "PowerShell($lines = Get-Content \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\constants\\\\truckBase64.js\" -TotalCount 3; $lines | ForEach-Object { $_.Substring\\(0, [Math]::Min\\(60, $_.Length\\)\\) })",
+      "Bash(python -c \"import base64; data=open\\('GarbageTruck/assets/truck-icon.png','rb'\\).read\\(\\); print\\(base64.b64encode\\(data\\).decode\\(\\)\\)\")",
+      "Bash(curl *)",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const arr=JSON.parse\\(d\\); console.log\\(arr.map\\(r=>r._id+' - '+r.name\\).join\\('\\\\n'\\)\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"

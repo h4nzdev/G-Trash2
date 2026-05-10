@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,44 +7,116 @@ import {
   TouchableOpacity,
   Alert,
   StatusBar,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import ProfileMenuItem from '../components/ProfileMenuItem';
 import { useAuth } from '../context/AuthContext';
-
-const STATS = [
-  { label: 'Total Collected', value: '1,245kg', icon: 'scale',          color: '#006A3B' },
-  { label: 'Stops Completed', value: '186',      icon: 'local-shipping', color: '#006E1C' },
-  { label: 'Rating',          value: '4.8 ⭐',   icon: 'star',           color: '#D97706' },
-  { label: 'On-Time Rate',    value: '94%',       icon: 'schedule',       color: '#006A3B' },
-];
+import API_URL from '../config';
 
 export default function CollectorProfileScreen() {
+  const { user, logout, updateUser } = useAuth();
+  const truckId = user?.truckId ?? '';
+
   const [notifEnabled, setNotifEnabled] = useState(true);
-  const { user, logout } = useAuth();
+
+  // Live fleet + route data fetched from backend
+  const [fleetData, setFleetData] = useState(null);
+  const [routeData, setRouteData] = useState(null);
+  const [truckStatus, setTruckStatus] = useState(null);
+  const [loadingData, setLoadingData] = useState(true);
+
+  // Edit modal
+  const [editModal, setEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const fetchProfileData = useCallback(async () => {
+    if (!truckId) return;
+    setLoadingData(true);
+    try {
+      const [fleetRes, routeRes, truckRes] = await Promise.allSettled([
+        fetch(`${API_URL}/api/fleet/${truckId}`).then((r) => r.json()),
+        fetch(`${API_URL}/api/routes/truck/${truckId}`).then((r) => r.json()),
+        fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
+      ]);
+
+      if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
+        setFleetData(fleetRes.value);
+        // Keep local auth cache in sync with DB
+        await updateUser({ driverName: fleetRes.value.driverName, route: fleetRes.value.route });
+      }
+      if (routeRes.status === 'fulfilled' && routeRes.value?.name) {
+        setRouteData(routeRes.value);
+      }
+      if (truckRes.status === 'fulfilled' && Array.isArray(truckRes.value)) {
+        const mine = truckRes.value.find((t) => t.truckId === truckId);
+        setTruckStatus(mine ?? null);
+      }
+    } catch (_) {
+      // Silently fall back to local auth data
+    } finally {
+      setLoadingData(false);
+    }
+  }, [truckId]);
+
+  useEffect(() => { fetchProfileData(); }, [fetchProfileData]);
+
+  // Derived display values — DB data takes priority over cached auth
+  const driverName = fleetData?.driverName || user?.driverName || 'Driver';
+  const routeName  = routeData?.name || fleetData?.route || user?.route || 'No route assigned';
+  const isOnline   = truckStatus?.status === 'online';
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel',  style: 'cancel' },
-        { text: 'Logout',  style: 'destructive', onPress: logout },
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: logout },
+    ]);
   };
 
-  const collectorInfo = {
-    id:       user?.truckId || 'GT-402',
-    name:     user?.name || 'Juan Dela Cruz',
-    route:    'North Cebu Route',
-    truck:    user?.truckId || 'GT-402',
-    capacity: '2.5 tons',
+  const openEditModal = () => {
+    setEditName(driverName);
+    setEditModal(true);
   };
+
+  const handleSave = async () => {
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      Alert.alert('Name required', 'Please enter your name.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/fleet/${truckId}/self`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverName: trimmed }),
+      });
+      if (!res.ok) throw new Error('Update failed');
+      const updated = await res.json();
+      setFleetData(updated);
+      await updateUser({ driverName: updated.driverName });
+      setEditModal(false);
+    } catch (e) {
+      Alert.alert('Error', 'Could not save changes. Check your connection.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Avatar initials
+  const initials = driverName
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
-    <SafeAreaView style={styles.safeArea} >
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
@@ -52,34 +124,82 @@ export default function CollectorProfileScreen() {
         <View style={styles.profileHeader}>
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
-              <MaterialIcons name="person" size={52} color="#BECABE" />
+              {loadingData ? (
+                <ActivityIndicator size="large" color="#006A3B" />
+              ) : (
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              )}
             </View>
-            <TouchableOpacity style={styles.editBtn} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.editBtn} activeOpacity={0.8} onPress={openEditModal}>
               <MaterialIcons name="edit" size={14} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.collectorName}>{collectorInfo.name}</Text>
-          <Text style={styles.collectorId}>{collectorInfo.id}</Text>
+          <Text style={styles.collectorName}>{driverName}</Text>
+          <Text style={styles.collectorId}>{truckId}</Text>
           <View style={styles.routeChip}>
             <MaterialIcons name="location-on" size={14} color="#006A3B" />
-            <Text style={styles.routeChipText}>{collectorInfo.route}</Text>
+            <Text style={styles.routeChipText} numberOfLines={1}>{routeName}</Text>
           </View>
         </View>
 
-        {/* Stats 2×2 grid */}
-        <View style={styles.statsGrid}>
-          {STATS.map((stat, i) => (
-            <View key={i} style={styles.statCard}>
-              <View style={[styles.statIconWrap, { backgroundColor: stat.color + '18' }]}>
-                <MaterialIcons name={stat.icon} size={20} color={stat.color} />
-              </View>
-              <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
+        {/* Truck status card */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Assigned Truck</Text>
+          <View style={styles.truckCard}>
+            <View style={[styles.truckIconWrap, isOnline && styles.truckIconWrapOnline]}>
+              <MaterialIcons name="local-shipping" size={28} color={isOnline ? '#006A3B' : '#BECABE'} />
             </View>
-          ))}
+            <View style={styles.truckInfo}>
+              <Text style={styles.truckTitle}>Truck {truckId}</Text>
+              {routeData ? (
+                <>
+                  <Text style={styles.truckMeta}>Route: {routeData.name}</Text>
+                  {routeData.barangay && (
+                    <Text style={styles.truckMeta}>Area: {routeData.barangay}</Text>
+                  )}
+                  {routeData.totalStops != null && (
+                    <Text style={styles.truckMeta}>Total stops: {routeData.totalStops}</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.truckMeta}>
+                  {loadingData ? 'Loading route info…' : 'No route assigned yet'}
+                </Text>
+              )}
+              <View style={styles.operationalRow}>
+                <View style={[styles.operationalDot, !isOnline && styles.operationalDotOff]} />
+                <Text style={[styles.operationalText, !isOnline && styles.operationalTextOff]}>
+                  {isOnline ? 'Currently Active' : 'Standby'}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
 
-        {/* Settings — Preferences */}
+        {/* Quick stats row */}
+        <View style={styles.statsRow}>
+          <View style={styles.statPill}>
+            <MaterialIcons name="route" size={16} color="#006A3B" />
+            <Text style={styles.statPillValue}>
+              {routeData?.waypoints?.length ?? routeData?.totalStops ?? '—'}
+            </Text>
+            <Text style={styles.statPillLabel}>Stops</Text>
+          </View>
+          <View style={styles.statPillDivider} />
+          <View style={styles.statPill}>
+            <MaterialIcons name="local-shipping" size={16} color="#2196F3" />
+            <Text style={styles.statPillValue}>{truckId || '—'}</Text>
+            <Text style={styles.statPillLabel}>Truck</Text>
+          </View>
+          <View style={styles.statPillDivider} />
+          <View style={styles.statPill}>
+            <MaterialIcons name="fiber-manual-record" size={16} color={isOnline ? '#10B981' : '#BECABE'} />
+            <Text style={styles.statPillValue}>{isOnline ? 'Online' : 'Offline'}</Text>
+            <Text style={styles.statPillLabel}>Status</Text>
+          </View>
+        </View>
+
+        {/* Preferences */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
           <View style={styles.menuCard}>
@@ -98,14 +218,14 @@ export default function CollectorProfileScreen() {
             <ProfileMenuItem
               icon="local-shipping"
               label="Vehicle Info"
-              value={collectorInfo.truck}
+              value={truckId}
               onPress={() => {}}
               isLast
             />
           </View>
         </View>
 
-        {/* Settings — Resources */}
+        {/* Resources */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Resources</Text>
           <View style={styles.menuCard}>
@@ -116,7 +236,7 @@ export default function CollectorProfileScreen() {
             />
             <ProfileMenuItem
               icon="report-problem"
-              iconBg="rgba(245,166,35,0.12)"
+              iconBg="#FEF4DC"
               iconColor="#92400E"
               label="Report Problem"
               onPress={() => {}}
@@ -130,27 +250,8 @@ export default function CollectorProfileScreen() {
           </View>
         </View>
 
-        {/* Assigned truck card */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Assigned Truck</Text>
-          <View style={styles.truckCard}>
-            <View style={styles.truckIconWrap}>
-              <MaterialIcons name="local-shipping" size={28} color="#006A3B" />
-            </View>
-            <View style={styles.truckInfo}>
-              <Text style={styles.truckTitle}>Truck {collectorInfo.truck}</Text>
-              <Text style={styles.truckMeta}>Capacity: {collectorInfo.capacity}</Text>
-              <Text style={styles.truckMeta}>Last Maintenance: Dec 15, 2024</Text>
-              <View style={styles.operationalRow}>
-                <View style={styles.operationalDot} />
-                <Text style={styles.operationalText}>Operational</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
         {/* Logout */}
-        <View style={styles.menuCard}>
+        <View style={[styles.menuCard, { marginBottom: 0 }]}>
           <ProfileMenuItem
             icon="logout"
             label="Logout"
@@ -162,6 +263,68 @@ export default function CollectorProfileScreen() {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={editModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setEditModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+
+            <View style={styles.modalTitleRow}>
+              <View style={styles.modalIconWrap}>
+                <MaterialIcons name="person" size={20} color="#006A3B" />
+              </View>
+              <View>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                <Text style={styles.modalSub}>Update your display name</Text>
+              </View>
+            </View>
+
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="e.g. Juan Dela Cruz"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="words"
+              autoCorrect={false}
+              maxLength={60}
+            />
+
+            <View style={styles.truckIdRow}>
+              <MaterialIcons name="local-shipping" size={16} color="#6B7280" />
+              <Text style={styles.truckIdHint}>Truck ID: {truckId} (cannot be changed)</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.saveBtn, (!editName.trim() || saving) && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              activeOpacity={0.85}
+              disabled={!editName.trim() || saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Changes</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditModal(false)}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -170,135 +333,115 @@ const styles = StyleSheet.create({
   safeArea:  { flex: 1, backgroundColor: '#FBF9F8' },
   container: { paddingHorizontal: 16, paddingTop: 24 },
 
-  profileHeader: { alignItems: 'center', marginBottom: 32 },
+  profileHeader: { alignItems: 'center', marginBottom: 28 },
   avatarWrap:    { position: 'relative', marginBottom: 16 },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#F0EDED',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: '#E4EEE9',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 4, borderColor: '#FFFFFF',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1, shadowRadius: 16, elevation: 6,
   },
+  avatarInitials: { fontSize: 32, fontWeight: '700', color: '#006A3B', letterSpacing: -0.5 },
   editBtn: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#006A3B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    position: 'absolute', bottom: 0, right: 0,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#006A3B', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#FFFFFF',
   },
   collectorName: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1B1C1C',
-    letterSpacing: -0.3,
-    lineHeight: 34,
-    marginBottom: 4,
+    fontSize: 26, fontWeight: '700', color: '#1B1C1C',
+    letterSpacing: -0.3, lineHeight: 32, marginBottom: 4, textAlign: 'center',
   },
   collectorId: { fontSize: 15, color: '#6F7A70', lineHeight: 20, marginBottom: 10 },
   routeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(0,106,59,0.08)',
-    borderRadius: 9999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0,106,59,0.18)',
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#E4EEE9', borderRadius: 9999,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#C8DDD4', maxWidth: '80%',
   },
   routeChipText: { fontSize: 13, fontWeight: '600', color: '#006A3B' },
-
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 32,
-  },
-  statCard: {
-    width: '47.5%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    alignItems: 'flex-start',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F0EDED',
-  },
-  statIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statValue: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
-  statLabel: { fontSize: 12, color: '#6F7A70', lineHeight: 16 },
 
   section:      { marginBottom: 24 },
   sectionTitle: { fontSize: 17, fontWeight: '600', color: '#1B1C1C', lineHeight: 22, marginBottom: 12 },
 
-  menuCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F0EDED',
-  },
-
   truckCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F0EDED',
+    flexDirection: 'row', alignItems: 'flex-start', gap: 16,
+    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
+    borderWidth: 1, borderColor: '#F0EDED',
   },
   truckIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,106,59,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 56, height: 56, borderRadius: 16,
+    backgroundColor: '#F0EDED',
+    justifyContent: 'center', alignItems: 'center',
   },
-  truckInfo:        { flex: 1, gap: 4 },
-  truckTitle:       { fontSize: 17, fontWeight: '600', color: '#1B1C1C', lineHeight: 22 },
-  truckMeta:        { fontSize: 13, color: '#6F7A70', lineHeight: 18 },
-  operationalRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  operationalDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#006A3B' },
-  operationalText:  { fontSize: 13, fontWeight: '600', color: '#006A3B' },
+  truckIconWrapOnline: { backgroundColor: '#E4EEE9' },
+  truckInfo:    { flex: 1, gap: 4 },
+  truckTitle:   { fontSize: 17, fontWeight: '600', color: '#1B1C1C', lineHeight: 22 },
+  truckMeta:    { fontSize: 13, color: '#6F7A70', lineHeight: 18 },
+  operationalRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  operationalDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#006A3B' },
+  operationalDotOff: { backgroundColor: '#BECABE' },
+  operationalText: { fontSize: 13, fontWeight: '600', color: '#006A3B' },
+  operationalTextOff: { color: '#9CA3AF' },
 
-  bottomSpacer: { height: 16 },
+  statsRow: {
+    flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20,
+    padding: 16, marginBottom: 24, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
+    borderWidth: 1, borderColor: '#F0EDED',
+  },
+  statPill:      { flex: 1, alignItems: 'center', gap: 4 },
+  statPillValue: { fontSize: 15, fontWeight: '700', color: '#1B1C1C' },
+  statPillLabel: { fontSize: 11, color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.5 },
+  statPillDivider: { width: 1, height: 32, backgroundColor: '#F0EDED' },
+
+  menuCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, marginBottom: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
+    borderWidth: 1, borderColor: '#F0EDED',
+  },
+
+  bottomSpacer: { height: 32 },
+
+  // ── Edit modal ──
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  modalSheet: {
+    backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40, height: 4, backgroundColor: '#D1D5DB', borderRadius: 2,
+    alignSelf: 'center', marginBottom: 24,
+  },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
+  modalIconWrap: {
+    width: 44, height: 44, borderRadius: 14, backgroundColor: '#E4EEE9',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1B1C1C', letterSpacing: -0.3 },
+  modalSub:   { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 8, marginTop: 4 },
+  textInput: {
+    backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 16,
+    paddingVertical: 14, fontSize: 16, color: '#1B1C1C', marginBottom: 12,
+    borderWidth: 1.5, borderColor: '#E5E7EB',
+  },
+  truckIdRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 24,
+  },
+  truckIdHint: { fontSize: 13, color: '#9CA3AF' },
+  saveBtn: {
+    backgroundColor: '#006A3B', paddingVertical: 16, borderRadius: 14,
+    alignItems: 'center', marginBottom: 12,
+  },
+  saveBtnDisabled: { backgroundColor: '#6DA880' },
+  saveBtnText: { fontSize: 17, fontWeight: '600', color: '#FFFFFF' },
+  cancelBtn: { paddingVertical: 12, alignItems: 'center' },
+  cancelBtnText: { fontSize: 15, color: '#9CA3AF' },
 });

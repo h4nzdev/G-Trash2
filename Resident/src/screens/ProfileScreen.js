@@ -121,7 +121,7 @@ export default function ProfileScreen() {
                 <View
                   style={[
                     styles.iconContainer,
-                    { backgroundColor: "rgba(0,106,59,0.1)" },
+                    { backgroundColor: "#E4EEE9" },
                   ]}
                 >
                   <MaterialIcons
@@ -154,7 +154,7 @@ export default function ProfileScreen() {
                 <View
                   style={[
                     styles.iconContainer,
-                    { backgroundColor: "rgba(0,110,28,0.1)" },
+                    { backgroundColor: "#E4EEE9" },
                   ]}
                 >
                   <MaterialIcons
@@ -231,7 +231,7 @@ export default function ProfileScreen() {
             <MaterialIcons
               name="forest"
               size={100}
-              color="rgba(255,255,255,0.15)"
+              color="#268058"
             />
           </View>
         </View>
@@ -311,6 +311,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingTop: 24,
+   paddingBottom: 24
   },
 
   // Profile Header
@@ -500,7 +501,7 @@ const styles = StyleSheet.create({
   },
   impactText: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.9)",
+    color: "#E6F1EC",
     lineHeight: 18,
   },
   impactIcon: {

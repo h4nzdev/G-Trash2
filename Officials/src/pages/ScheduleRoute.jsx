@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock } from 'lucide-react';
-
-const API = 'http://localhost:4000';
+import API from '../config';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -12,7 +11,11 @@ function toYMD(year, month, day) {
 }
 
 function todayYMD() {
-  return new Date().toLocaleDateString('en-CA');
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export default function ScheduleRoute() {
@@ -32,6 +35,7 @@ export default function ScheduleRoute() {
   // Modal form state
   const [selTruck, setSelTruck] = useState('');
   const [selRoute, setSelRoute] = useState('');
+  const [startTime, setStartTime] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -85,7 +89,7 @@ export default function ScheduleRoute() {
 
   const handleAddSchedule = async (e) => {
     e.preventDefault();
-    if (!selTruck) return;
+    if (!selTruck || !selRoute) return;
     setSubmitting(true);
     setError('');
     try {
@@ -97,11 +101,13 @@ export default function ScheduleRoute() {
         driverName: truck?.driverName || '',
         routeId: selRoute || '',
         routeName: route?.name || '',
+        startTime,
         notes,
       });
       setShowModal(false);
       setSelTruck('');
       setSelRoute('');
+      setStartTime('');
       setNotes('');
       await fetchAll();
     } catch (e) {
@@ -122,6 +128,7 @@ export default function ScheduleRoute() {
   const openModal = () => {
     setSelTruck('');
     setSelRoute('');
+    setStartTime('');
     setNotes('');
     setError('');
     setShowModal(true);
@@ -274,6 +281,12 @@ export default function ScheduleRoute() {
                       ) : (
                         <span className="text-xs text-slate-300 italic">No route assigned</span>
                       )}
+                      {s.startTime && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span className="text-xs text-slate-400">{s.startTime}</span>
+                        </div>
+                      )}
                       {s.notes && <p className="text-xs text-slate-400 mt-1 italic">"{s.notes}"</p>}
                     </div>
                     <button
@@ -340,19 +353,31 @@ export default function ScheduleRoute() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Route (optional)</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Route *</label>
                 <select
                   value={selRoute}
                   onChange={e => setSelRoute(e.target.value)}
+                  required
                   className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
                 >
-                  <option value="">— No route (standby) —</option>
+                  <option value="">— Select a route —</option>
                   {routes.map(r => (
                     <option key={r._id} value={r._id}>
                       {r.name}{r.truckId ? ` (${r.truckId})` : ''}
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Start Time (optional)</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={e => setStartTime(e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
+                />
+                <p className="text-xs text-slate-400 mt-1">Required when assigning multiple routes to the same truck on the same day.</p>
               </div>
 
               <div>

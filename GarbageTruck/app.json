@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "GarbageTruck",
-    "slug": "GarbageTruck",
+    "name": "G-Trash Truck",
+    "slug": "G-Trash",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/truck.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/truck.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -16,13 +16,19 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/truck.png",
         "backgroundColor": "#ffffff"
       },
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "package": "com.medora.GTrash"
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/truck.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "14b4bf4d-e5d0-4482-83af-e1d06d0b33ac"
+      }
     }
   }
 }

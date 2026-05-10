@@ -88,11 +88,11 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   contentActive: {
-    backgroundColor: "rgba(0,106,59,0.05)",
+    backgroundColor: "#EBF3EE",
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(0,106,59,0.1)",
+    borderColor: "#C8DDD4",
     marginBottom: 24,
   },
   header: {

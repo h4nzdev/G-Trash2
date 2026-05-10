@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { io } from 'socket.io-client';
 import colors from '../constants/colors';
 import API_URL from '../config';
 
@@ -78,7 +79,9 @@ const NotificationItem = ({ item }) => {
 
 export default function NotificationScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
+  const [truckNotifs, setTruckNotifs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const seenTrucksRef = useRef(new Set());
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -122,6 +125,46 @@ export default function NotificationScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Live truck notifications via socket
+  useEffect(() => {
+    const socket = io(API_URL, { transports: ['polling', 'websocket'] });
+
+    socket.on('truck:location:update', ({ truckId }) => {
+      if (seenTrucksRef.current.has(truckId)) return;
+      seenTrucksRef.current.add(truckId);
+      setTruckNotifs((prev) => [
+        {
+          id: `truck-online-${truckId}-${Date.now()}`,
+          title: 'Truck Active',
+          message: `Truck ${truckId} is currently collecting in your area.`,
+          time: 'Just now',
+          type: 'truck',
+          read: false,
+        },
+        ...prev,
+      ]);
+    });
+
+    socket.on('truck:status', ({ truckId, status }) => {
+      if (status === 'offline') {
+        seenTrucksRef.current.delete(truckId);
+        setTruckNotifs((prev) => [
+          {
+            id: `truck-done-${truckId}-${Date.now()}`,
+            title: 'Collection Complete',
+            message: `Truck ${truckId} has finished collection in your area.`,
+            time: 'Just now',
+            type: 'truck',
+            read: false,
+          },
+          ...prev,
+        ]);
+      }
+    });
+
+    return () => socket.disconnect();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
@@ -140,7 +183,7 @@ export default function NotificationScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
-          data={notifications}
+          data={[...truckNotifs, ...notifications]}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <NotificationItem item={item} />}
           contentContainerStyle={styles.listContainer}

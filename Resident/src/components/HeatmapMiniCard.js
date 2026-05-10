@@ -4,20 +4,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 const CONFIG = {
   critical: {
-    bg: 'rgba(186,26,26,0.07)',
-    border: 'rgba(186,26,26,0.18)',
+    bg: '#FDE9E9',
+    border: '#F8D0D0',
     color: '#BA1A1A',
     icon: 'warning',
   },
   moderate: {
-    bg: 'rgba(245,166,35,0.09)',
-    border: 'rgba(245,166,35,0.22)',
+    bg: '#FEF4DC',
+    border: '#FBE4B3',
     color: '#92400E',
     icon: 'remove-circle-outline',
   },
   clean: {
-    bg: 'rgba(0,106,59,0.06)',
-    border: 'rgba(0,106,59,0.14)',
+    bg: '#EBF3EE',
+    border: '#C8DDD4',
     color: '#006A3B',
     icon: 'check-circle-outline',
   },

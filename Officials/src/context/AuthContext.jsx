@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
-
-const API = 'http://localhost:4000';
+import API from '../config';
 const TOKEN_KEY = 'gtrash_token';
 
 const AuthContext = createContext(null);

@@ -1,16 +1,50 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Polygon, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import {
   Route, Trash2, Save, MapPin, Truck, Navigation,
-  CheckCircle, AlertCircle, X, RotateCcw,
+  CheckCircle, AlertCircle, X, RotateCcw, Undo2
 } from 'lucide-react';
-
-const API = 'http://localhost:4000';
+import API from '../config';
+import { useAuth } from '../context/AuthContext';
 const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=';
 const CEBU_CENTER = [10.3157, 123.8854];
+
+const BARANGAY_BOUNDARIES = {
+  "Lahug": [
+    [10.320, 123.880],
+    [10.340, 123.880],
+    [10.340, 123.900],
+    [10.320, 123.900]
+  ],
+  "Apas": [
+    [10.340, 123.900],
+    [10.360, 123.900],
+    [10.360, 123.920],
+    [10.340, 123.920]
+  ],
+  "Guadalupe": [
+    [10.310, 123.870],
+    [10.330, 123.870],
+    [10.330, 123.890],
+    [10.310, 123.890]
+  ]
+};
+
+function isInsidePolygon(point, polygon) {
+  const x = point[0], y = point[1];
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
 // Numbered marker for each waypoint
 function makeWaypointIcon(n, isFirst, isLast) {
@@ -45,6 +79,7 @@ async function fetchORSRoute(waypoints) {
 }
 
 export default function RouteBuilder() {
+  const { official } = useAuth();
   const [waypoints, setWaypoints] = useState([]);
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -62,6 +97,16 @@ export default function RouteBuilder() {
   useEffect(() => {
     axios.get(`${API}/api/fleet`).then(r => setFleet(r.data)).catch(() => {});
     loadSavedRoutes();
+
+    // Keyboard shortcut for Undo (Ctrl+Z)
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const loadSavedRoutes = async () => {
@@ -84,10 +129,24 @@ export default function RouteBuilder() {
     return () => { cancelled = true; };
   }, [waypoints]);
 
+  const handleUndo = useCallback(() => {
+    setWaypoints(prev => prev.length > 0 ? prev.slice(0, -1) : prev);
+  }, []);
+
   const handleMapClick = useCallback((latlng) => {
+    // Jurisdiction Check
+    const brgy = official?.barangay;
+    if (brgy && BARANGAY_BOUNDARIES[brgy]) {
+      const isOk = isInsidePolygon([latlng.lat, latlng.lng], BARANGAY_BOUNDARIES[brgy]);
+      if (!isOk) {
+        setToast({ msg: `Outside ${brgy} jurisdiction!`, type: 'error' });
+        return;
+      }
+    }
+
     const n = waypointsRef.current.length + 1;
     setWaypoints(prev => [...prev, { lat: latlng.lat, lng: latlng.lng, name: `Stop ${n}` }]);
-  }, []);
+  }, [official]);
 
   const removeWaypoint = (idx) => {
     setWaypoints(prev => {
@@ -169,6 +228,21 @@ export default function RouteBuilder() {
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             attribution=""
           />
+          
+          {/* Jurisdiction boundary line */}
+          {official?.barangay && BARANGAY_BOUNDARIES[official.barangay] && (
+            <Polygon
+              positions={BARANGAY_BOUNDARIES[official.barangay]}
+              pathOptions={{ 
+                color: '#DC2626', 
+                fillColor: '#DC2626', 
+                fillOpacity: 0.05, 
+                weight: 2, 
+                dashArray: '8, 8' 
+              }}
+            />
+          )}
+
           <MapClickHandler onClick={handleMapClick} />
 
           {/* Waypoint markers */}
@@ -256,12 +330,20 @@ export default function RouteBuilder() {
                 Waypoints ({n})
               </span>
               {n > 0 && (
-                <button
-                  onClick={clearAll}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors"
-                >
-                  <RotateCcw className="w-3 h-3" /> Clear all
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleUndo}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    <Undo2 className="w-3 h-3" /> Undo
+                  </button>
+                  <button
+                    onClick={clearAll}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Clear all
+                  </button>
+                </div>
               )}
             </div>
 

@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "column",
     gap: 8,
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.1)",
+    borderColor: "#E5E5E5",
   },
   label: {
     fontSize: 12,

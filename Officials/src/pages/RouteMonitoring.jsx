@@ -4,20 +4,22 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
 import axios from 'axios';
-import { RefreshCw, Truck, MapPin, Navigation, UserPlus, X, Check, AlertCircle } from 'lucide-react';
+import { RefreshCw, Truck, MapPin, Navigation, UserPlus, X, Check, AlertCircle, AlertTriangle, Phone, Layers } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-const API = 'http://localhost:4000';
+import API from '../config';
+import truckIconUrl from '../../assets/truck-icon.png';
 const CEBU_CENTER = [10.3157, 123.8854];
 
 function makeTruckIcon(status) {
-  const color = status === 'online' ? '#059669' : status === 'offline' ? '#94a3b8' : '#d97706';
+  const isOnline = status === 'online';
   return L.divIcon({
-    html: `<div style="background:${color};width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;${isOnline ? '' : 'opacity:0.55;'}">
+      <div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 3px 12px rgba(0,0,0,0.22);border:2.5px solid ${isOnline ? '#059669' : '#94a3b8'};${isOnline ? '' : 'filter:grayscale(100%);'}">
+        <img src="${truckIconUrl}" style="width:38px;height:38px;object-fit:contain;display:block;" />
+      </div>
     </div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
+    iconSize: [46, 50],
+    iconAnchor: [23, 50],
     className: '',
   });
 }
@@ -172,6 +174,8 @@ export default function RouteMonitoring() {
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null); // route to assign
   const [loading, setLoading] = useState(true);
+  const [deviationAlerts, setDeviationAlerts] = useState([]);
+  const [isSatellite, setIsSatellite] = useState(false);
   const socketRef = useRef(null);
 
   const fetchData = async () => {
@@ -205,6 +209,16 @@ export default function RouteMonitoring() {
     });
     socket.on('route:updated', updated => {
       setRoutes(prev => prev.map(r => r._id === updated._id ? updated : r));
+    });
+    socket.on('truck:off-route', data => {
+      setDeviationAlerts(prev =>
+        [{ ...data, id: Date.now(), ts: new Date(), type: 'off-route' }, ...prev].slice(0, 5)
+      );
+    });
+    socket.on('truck:contact-dispatch', data => {
+      setDeviationAlerts(prev =>
+        [{ ...data, id: Date.now(), ts: new Date(), type: 'contact' }, ...prev].slice(0, 5)
+      );
     });
 
     return () => socket.disconnect();
@@ -246,11 +260,54 @@ export default function RouteMonitoring() {
         </div>
       </div>
 
+      {/* Deviation / dispatch alerts */}
+      {deviationAlerts.length > 0 && (
+        <div className="px-6 pb-2 space-y-2">
+          {deviationAlerts.map(alert => {
+            const isContact = alert.type === 'contact';
+            return (
+              <div
+                key={alert.id}
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
+                  isContact
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'bg-amber-50 border-amber-200'
+                }`}
+              >
+                {isContact
+                  ? <Phone className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  : <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                }
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-bold ${isContact ? 'text-blue-800' : 'text-amber-800'}`}>
+                    {isContact ? 'Dispatch Request' : 'Off Route Alert'} — {alert.truckId}
+                  </p>
+                  <p className={`text-xs ${isContact ? 'text-blue-600' : 'text-amber-600'}`}>
+                    {alert.driverName && `${alert.driverName} · `}
+                    {isContact
+                      ? alert.message
+                      : `~${alert.distanceM}m from assigned route`
+                    }
+                    {' · '}{new Date(alert.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDeviationAlerts(prev => prev.filter(a => a.id !== alert.id))}
+                  className={`flex-shrink-0 ${isContact ? 'text-blue-400 hover:text-blue-600' : 'text-amber-400 hover:text-amber-600'}`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 px-6 pb-6 flex flex-col gap-4 min-h-0">
 
         {/* Map */}
-        <div className="flex-1 min-h-[400px] bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="flex-1 min-h-[400px] bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden relative">
           {loading ? (
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-center">
@@ -259,8 +316,16 @@ export default function RouteMonitoring() {
               </div>
             </div>
           ) : (
+            <>
             <MapContainer center={CEBU_CENTER} zoom={13} className="w-full h-full" zoomControl>
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution="" />
+              <TileLayer
+                key={isSatellite ? 'satellite' : 'street'}
+                url={isSatellite
+                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                  : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+                }
+                attribution=""
+              />
 
               {mappableRoutes.map(route => {
                 const isSelected = selectedRoute?._id === route._id;
@@ -293,6 +358,20 @@ export default function RouteMonitoring() {
                 </Marker>
               ))}
             </MapContainer>
+
+            {/* Satellite toggle button — floats over map top-right */}
+            <button
+              onClick={() => setIsSatellite(prev => !prev)}
+              className={`absolute top-3 right-3 z-[1000] flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
+                isSatellite
+                  ? 'bg-emerald-700 text-white border-emerald-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              {isSatellite ? 'Street View' : 'Satellite'}
+            </button>
+            </>
           )}
         </div>
 
