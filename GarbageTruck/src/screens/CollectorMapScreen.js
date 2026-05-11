@@ -135,7 +135,7 @@ function buildLeafletHTML(truckB64) {
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; width:100%; overflow:hidden; }
     #map-perspective {
-      perspective: 1000px;
+      perspective: 2000px;
       width: 100%;
       height: 100%;
       overflow: hidden;
@@ -143,9 +143,9 @@ function buildLeafletHTML(truckB64) {
     }
     #map {
       width: 100%;
-      height: 120%; /* Extra height to cover the tilted edges */
-      transform: translateY(-5%) rotateX(35deg);
-      transform-origin: bottom center;
+      height: 100%; 
+      transform: translateY(-15%) rotateX(35deg) scale(1.8);
+      transform-origin: center center;
     }
     .leaflet-marker-icon, .leaflet-marker-shadow {
       transform-style: preserve-3d;
@@ -167,7 +167,7 @@ function buildLeafletHTML(truckB64) {
       map = new L.Map('map', {
         zoomControl: false, attributionControl: false, dragging: true,
         scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true,
-        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 13, maxZoom: 17,
+        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 10, maxZoom: 18,
         inertia: true, inertiaDeceleration: 3000,
       });
       map.setView([10.325, 123.893], 14);
@@ -181,20 +181,20 @@ function buildLeafletHTML(truckB64) {
         if (style === 'satellite') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 17, minZoom: 13, attribution: '' }
+            { maxZoom: 18, minZoom: 10, attribution: '' }
           );
         } else if (style === 'topographic') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 17, minZoom: 11, attribution: '' }
+            { maxZoom: 18, minZoom: 10, attribution: '' }
           );
           hillshadeLayer = L.tileLayer(
             'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
-            { opacity: 0.25, maxZoom: 17 }
+            { opacity: 0.25, maxZoom: 18 }
           ).addTo(map);
           labelsLayer = L.tileLayer(
             'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-            { opacity: 0.7, maxZoom: 17 }
+            { opacity: 0.7, maxZoom: 18 }
           ).addTo(map);
         } else {
           tileLayer = L.tileLayer(
@@ -301,6 +301,13 @@ function buildLeafletHTML(truckB64) {
         var idleIcon = L.divIcon({ html: idleHtml, iconSize: [40, 40], iconAnchor: [20, 20], className: '' });
         currentMarker = L.marker([lat, lng], { icon: idleIcon, zIndexOffset: 2000 });
         currentMarker.addTo(map);
+      };
+
+      window.centerMap = function(lat, lng) {
+        map.flyTo([lat, lng], 16, {
+          duration: 1.5,
+          easeLinearity: 0.25
+        });
       };
 
       window.stopNavigation = function(lat, lng) {
@@ -518,6 +525,8 @@ export default function CollectorMapScreen() {
   const successAnim = useRef(new Animated.Value(0)).current;
   const zoneCardAnim = useRef(new Animated.Value(0)).current;
   const socketRef = useRef(null);
+  const webViewRef = useRef(null);
+  const webViewReady = useRef(false);
 
   // ── Real-time location tracking ────────────────────────
   useEffect(() => {
@@ -628,7 +637,6 @@ export default function CollectorMapScreen() {
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
-  const webViewRef = useRef(null);
 
   const currentStopIndex = stops.findIndex((s) => s.status === "in-progress");
   const completedCount = stops.filter((s) => s.status === "completed").length;
@@ -835,6 +843,10 @@ export default function CollectorMapScreen() {
     xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat, lng, heading, speed: 0 }));
   };
 
+  const handleWebViewLoad = useCallback(() => {
+    webViewReady.current = true;
+  }, []);
+
   const stopNavigation = () => {
     const pos = lastGpsRef.current;
     navigationActiveRef.current = false;
@@ -884,6 +896,7 @@ export default function CollectorMapScreen() {
           domStorageEnabled
           scrollEnabled={false}
           bounces={false}
+          onLoad={handleWebViewLoad}
           onMessage={handleWebViewMessage}
         />
 
@@ -964,6 +977,22 @@ export default function CollectorMapScreen() {
               color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
+
+          {/* New Re-center Button */}
+          <TouchableOpacity
+            style={styles.floatingBtn}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (lastGpsRef.current && webViewReady.current) {
+                webViewRef.current.injectJavaScript(
+                  `window.centerMap(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}); true;`
+                );
+              }
+            }}
+          >
+            <MaterialIcons name="gps-fixed" size={22} color="#006A3B" />
+          </TouchableOpacity>
+
           {navigationActive ? (
             <TouchableOpacity
               style={[styles.floatingBtn, styles.activeNavBtn]}
@@ -976,15 +1005,9 @@ export default function CollectorMapScreen() {
             <TouchableOpacity
               style={styles.floatingBtn}
               activeOpacity={0.7}
-              onPress={() => {
-                if (lastGpsRef.current && webViewReady.current) {
-                  webViewRef.current.injectJavaScript(
-                    `window.updateDriverPosition(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}, ${lastGpsRef.current.heading || 0}); true;`
-                  );
-                }
-              }}
+              onPress={startNavigation}
             >
-              <MaterialIcons name="my-location" size={22} color="#1B1C1C" />
+              <MaterialIcons name="navigation" size={22} color="#1B1C1C" />
             </TouchableOpacity>
           )}
         </View>

@@ -64,20 +64,7 @@ function buildLeafletHTML(truckB64) {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; width: 100%; overflow: hidden; }
-    #map-perspective {
-      perspective: 1200px;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #f0eded;
-    }
-    #map {
-      width: 100%;
-      height: 130%; 
-      transform: translateY(-10%) rotateX(32deg);
-      transform-origin: bottom center;
-    }
+    html, body, #map { height: 100%; width: 100%; overflow: hidden; background: #f0eded; }
     .leaflet-control-zoom { display: none; }
     .leaflet-container { background: #f0eded; }
     img { pointer-events: none; }
@@ -100,9 +87,7 @@ function buildLeafletHTML(truckB64) {
   </style>
 </head>
 <body>
-  <div id="map-perspective">
-    <div id="map"></div>
-  </div>
+  <div id="map"></div>
   <script>
     (function() {
       var TB = '${truckB64}';

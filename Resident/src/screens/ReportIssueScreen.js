@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,21 +23,80 @@ const BACKEND_URL = API_URL;
 
 const BARANGAYS = ['Lahug', 'Apas', 'Mabolo', 'IT Park', 'Ayala', 'Banilad', 'Talamban', 'Ermita', 'Sto. Niño', 'Carbon Market', 'Colon'];
 
-// Placeholder for Map (since react-native-maps might not be installed yet)
-const MapPlaceholder = ({ location, onSelectLocation }) => (
-  <View style={styles.mapPlaceholder}>
-    <MaterialIcons name="map" size={40} color="#9CA3AF" />
-    <Text style={styles.mapPlaceholderText}>
-      {location ? `Location pinned ✓` : 'Tap to pin your current location'}
-    </Text>
-    <TouchableOpacity
-      style={styles.selectLocationBtn}
-      onPress={onSelectLocation}
-    >
-      <Text style={styles.selectLocationBtnText}>{location ? 'Re-pin Location' : 'Pin Location'}</Text>
-    </TouchableOpacity>
-  </View>
-);
+
+const MapPickerHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body, #map { height:100%; width:100%; background:#f3f4f6; }
+    .center-crosshair {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -100%);
+      z-index: 1000; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="center-crosshair">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#006A3B" stroke="white" stroke-width="2"/>
+    </svg>
+  </div>
+  <script>
+    var map = L.map('map', { zoomControl: false }).setView([10.3157, 123.8854], 14);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 18, attribution: ''
+    }).addTo(map);
+    
+    // Send location whenever map stops moving
+    map.on('moveend', function() {
+      var center = map.getCenter();
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        lat: center.lat,
+        lng: center.lng
+      }));
+    });
+
+    // Initial send
+    setTimeout(function() {
+      var center = map.getCenter();
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        lat: center.lat,
+        lng: center.lng
+      }));
+    }, 500);
+  </script>
+</body>
+</html>
+`;
+
+const InteractiveMapPicker = ({ onLocationSelect }) => {
+  return (
+    <View style={styles.mapContainer}>
+      <WebView
+        originWhitelist={['*']}
+        source={{ html: MapPickerHTML }}
+        style={{ flex: 1 }}
+        onMessage={(event) => {
+          try {
+            const coord = JSON.parse(event.nativeEvent.data);
+            onLocationSelect(coord);
+          } catch (e) {}
+        }}
+        scrollEnabled={false}
+      />
+      <View style={styles.mapOverlay}>
+        <Text style={styles.mapOverlayText}>Move map to pin location</Text>
+      </View>
+    </View>
+  );
+};
 
 export default function ReportIssueScreen({ navigation }) {
   const [image, setImage] = useState(null);
@@ -256,8 +316,8 @@ export default function ReportIssueScreen({ navigation }) {
 
           {/* Location Pin (optional GPS) */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pin Location (Optional)</Text>
-            <MapPlaceholder location={location} onSelectLocation={handleSelectLocation} />
+            <Text style={styles.sectionTitle}>Pin Location</Text>
+            <InteractiveMapPicker onLocationSelect={(coords) => setLocation({ latitude: coords.lat, longitude: coords.lng })} />
           </View>
 
           {/* Submit Button */}
@@ -390,35 +450,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1B1C1C',
   },
-  mapPlaceholder: {
-    height: 180,
+  mapContainer: {
+    height: 250,
     backgroundColor: '#F3F4F6',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingVertical: 8,
     borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  mapPlaceholderText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  selectLocationBtn: {
-    marginTop: 16,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.primaryGreen,
-  },
-  selectLocationBtnText: {
-    color: colors.primaryGreen,
+  mapOverlayText: {
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 14,
+    color: colors.primaryGreen,
   },
   submitBtn: {
     backgroundColor: colors.primaryGreen,
