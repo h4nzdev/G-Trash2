@@ -14,7 +14,7 @@ export default function CollectionLogItem({ time, location, type, weight }) {
 
       <View style={styles.right}>
         <Text style={styles.weight}>{weight}</Text>
-        <MaterialIcons name="check-circle" size={16} color="#006A3B" />
+        <MaterialIcons name="navigation" size={16} color="#006A3B" style={{ transform: [{ rotate: '45deg' }] }} />
       </View>
     </View>
   );

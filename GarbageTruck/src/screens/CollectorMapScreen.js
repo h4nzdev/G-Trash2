@@ -134,16 +134,28 @@ function buildLeafletHTML(truckB64) {
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; width:100%; overflow:hidden; }
-    #map { width:100%; height:100%; }
-    .leaflet-control-zoom { display:none; }
-    .leaflet-container { background:#f0eded; }
-    img { pointer-events:none; }
-    .zone-circle { cursor:pointer; }
-
+    #map-perspective {
+      perspective: 1000px;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f0eded;
+    }
+    #map {
+      width: 100%;
+      height: 120%; /* Extra height to cover the tilted edges */
+      transform: translateY(-5%) rotateX(35deg);
+      transform-origin: bottom center;
+    }
+    .leaflet-marker-icon, .leaflet-marker-shadow {
+      transform-style: preserve-3d;
+    }
   </style>
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map-perspective">
+    <div id="map"></div>
+  </div>
   <script>
     (function() {
       var map, routeLayer, currentMarker;
@@ -160,14 +172,30 @@ function buildLeafletHTML(truckB64) {
       });
       map.setView([10.325, 123.893], 14);
 
-      var tileLayer;
-      function setTileLayer(satellite) {
+      var tileLayer, hillshadeLayer, labelsLayer;
+      function setTileLayer(style) {
         if (tileLayer) map.removeLayer(tileLayer);
-        if (satellite) {
+        if (hillshadeLayer) map.removeLayer(hillshadeLayer);
+        if (labelsLayer) map.removeLayer(labelsLayer);
+
+        if (style === 'satellite') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             { maxZoom: 17, minZoom: 13, attribution: '' }
           );
+        } else if (style === 'topographic') {
+          tileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 17, minZoom: 11, attribution: '' }
+          );
+          hillshadeLayer = L.tileLayer(
+            'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
+            { opacity: 0.25, maxZoom: 17 }
+          ).addTo(map);
+          labelsLayer = L.tileLayer(
+            'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+            { opacity: 0.7, maxZoom: 17 }
+          ).addTo(map);
         } else {
           tileLayer = L.tileLayer(
             'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -176,7 +204,7 @@ function buildLeafletHTML(truckB64) {
         }
         tileLayer.addTo(map);
       }
-      setTileLayer(false);
+      setTileLayer('topographic');
       window.setMapStyle = setTileLayer;
 
       // Heat zones
@@ -227,19 +255,21 @@ function buildLeafletHTML(truckB64) {
 
       var TB = '${truckB64}';
 
-      // Truck image marker
+      // Navigation Arrow (Directional Triangle)
       function createArrowMarker(lat, lng, bearing) {
-        var truckHtml =
-          '<div style="display:flex;align-items:center;justify-content:center;">' +
-            '<img src="data:image/png;base64,' + TB + '" style="width:48px;height:48px;object-fit:contain;display:block;" />' +
+        var arrowHtml =
+          '<div style="transform: rotate(' + (bearing || 0) + 'deg); filter: drop-shadow(0 4px 10px rgba(0,106,59,0.3));">' +
+            '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+              '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#2196F3" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
+            '</svg>' +
           '</div>';
-        var truckIcon = L.divIcon({
-          html: truckHtml,
-          iconSize: [48, 48],
-          iconAnchor: [24, 24],
+        var navIcon = L.divIcon({
+          html: arrowHtml,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
           className: ''
         });
-        return L.marker([lat, lng], { icon: truckIcon, zIndexOffset: 2000 });
+        return L.marker([lat, lng], { icon: navIcon, zIndexOffset: 2000 });
       }
 
       function getBearing(lat1, lng1, lat2, lng2) {
@@ -259,14 +289,16 @@ function buildLeafletHTML(truckB64) {
         map.panTo([lat, lng]);
       };
 
-      // Gray idle truck shown at last GPS position when driver stops navigation
+      // Gray idle navigation arrow
       window.showIdleTruck = function(lat, lng) {
         if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
         var idleHtml =
-          '<div style="display:flex;align-items:center;justify-content:center;opacity:0.6;filter:grayscale(100%);">' +
-            '<img src="data:image/png;base64,' + TB + '" style="width:48px;height:48px;object-fit:contain;display:block;" />' +
+          '<div style="opacity:0.6; filter: grayscale(100%);">' +
+            '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+              '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#9CA3AF" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
+            '</svg>' +
           '</div>';
-        var idleIcon = L.divIcon({ html: idleHtml, iconSize: [48, 48], iconAnchor: [24, 24], className: '' });
+        var idleIcon = L.divIcon({ html: idleHtml, iconSize: [40, 40], iconAnchor: [20, 20], className: '' });
         currentMarker = L.marker([lat, lng], { icon: idleIcon, zIndexOffset: 2000 });
         currentMarker.addTo(map);
       };
@@ -465,7 +497,7 @@ export default function CollectorMapScreen() {
   // Initial fetch on mount (updates also come via socket events)
   useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isSatellite, setIsSatellite] = useState(false);
+  const [mapStyle, setMapStyle] = useState('topographic');
   const [showSuccess, setShowSuccess] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -610,30 +642,43 @@ export default function CollectorMapScreen() {
 
   useEffect(() => {
     if (!routeAssigned || stops.length === 0) {
-      // Clear polyline and markers when unassigned
       webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${JSON.stringify([])}'); window.clearStopMarkers(); true;`);
       return;
     }
     let cancelled = false;
     (async () => {
       setRouteLoading(true);
-      const waypoints = stops.map((s) => [s.lng, s.lat]);
+      
+      // Filter only upcoming and in-progress stops
+      const activeStops = stops.filter(s => s.status !== 'completed');
+      if (activeStops.length === 0) {
+        setRouteLoading(false);
+        return;
+      }
+
+      let waypoints = activeStops.map((s) => [s.lng, s.lat]);
+      
+      // If navigation is active, prepend the truck's current GPS location
+      if (navigationActive && lastGpsRef.current) {
+        const { lat, lng } = lastGpsRef.current;
+        waypoints = [[lng, lat], ...waypoints];
+      }
+
       const coords = await fetchORSRoute(waypoints);
       if (cancelled) return;
+      
       const finalCoords = coords || [];
       setRouteLoading(false);
       webViewRef.current?.injectJavaScript(
         `window.updateTruckRoute('${JSON.stringify(finalCoords)}'); true;`,
       );
-      // Inject dynamic stop markers
+      
       const markersPayload = stops.map((s) => ({ lat: s.lat, lng: s.lng, status: s.status, name: s.name }));
       const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       webViewRef.current?.injectJavaScript(`window.addStopMarkers('${markersJson}'); true;`);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stops, routeAssigned]);
+    return () => { cancelled = true; };
+  }, [stops, routeAssigned, navigationActive]);
 
   const handleWebViewMessage = (event) => {
     const message = event.nativeEvent.data;
@@ -871,7 +916,7 @@ export default function CollectorMapScreen() {
             <MaterialIcons name="event-busy" size={15} color="#7F1D1D" />
             <Text style={styles.notScheduledText}>Not scheduled today — navigation locked</Text>
           </View>
-        ) : routeAssigned ? (
+        ) : (routeAssigned && !navigationActive) ? (
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <MaterialIcons name="route" size={16} color="#006A3B" />
@@ -888,8 +933,7 @@ export default function CollectorMapScreen() {
               />
             </View>
             <Text style={styles.progressText}>
-              {completedCount}/{stops.length} stops
-              {navigationActive ? `  ·  ${elapsedDisplay}  ·  ${currentSpeed} km/h` : ""}
+              Collection in progress...
             </Text>
           </View>
         ) : (
@@ -901,20 +945,23 @@ export default function CollectorMapScreen() {
 
         <View style={styles.floatingActions}>
           <TouchableOpacity
-            style={[styles.floatingBtn, isSatellite && styles.activeFloatingBtn]}
+            style={[styles.floatingBtn, (mapStyle !== 'voyager') && styles.activeFloatingBtn]}
             activeOpacity={0.7}
             onPress={() => {
-              setIsSatellite(prev => {
-                const next = !prev;
-                webViewRef.current?.injectJavaScript(`window.setMapStyle(${next}); true;`);
+              setMapStyle(prev => {
+                let next;
+                if (prev === 'topographic') next = 'satellite';
+                else if (prev === 'satellite') next = 'voyager';
+                else next = 'topographic';
+                webViewRef.current?.injectJavaScript(`window.setMapStyle('${next}'); true;`);
                 return next;
               });
             }}
           >
             <MaterialIcons
-              name={isSatellite ? "map" : "satellite-alt"}
+              name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
               size={22}
-              color={isSatellite ? "#006A3B" : "#1B1C1C"}
+              color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
           {navigationActive ? (
@@ -1076,6 +1123,30 @@ export default function CollectorMapScreen() {
           </Animated.View>
         )}
 
+        {/* Navigation Overlay System */}
+        <View style={styles.navOverlayContainer} pointerEvents="box-none">
+          {!navigationActive ? (
+            /* Discovery Mode */
+            <View style={styles.discoveryMode} pointerEvents="box-none">
+              {!isExpanded && (
+                <TouchableOpacity 
+                  style={[styles.bigStartBtn, todaySchedules?.length === 0 && { opacity: 0.5 }]} 
+                  onPress={startNavigation}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.bigStartBtnText}>START</Text>
+                  <MaterialIcons name="navigation" size={24} color="#FFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            /* Active Guidance Mode */
+            <View style={styles.guidanceMode} pointerEvents="box-none">
+              {/* Overlays removed for minimalist view */}
+            </View>
+          )}
+        </View>
+
         {/* Success toast */}
         {showSuccess && (
           <Animated.View
@@ -1088,6 +1159,7 @@ export default function CollectorMapScreen() {
                     translateY: successAnim.interpolate({
                       inputRange: [0, 1],
                       outputRange: [-20, 0],
+                      extrapolate: 'clamp',
                     }),
                   },
                 ],
@@ -1118,7 +1190,7 @@ export default function CollectorMapScreen() {
               </Text>
               <Text style={styles.sheetSub}>
                 {routeAssigned
-                  ? `${remainingCount} stop${remainingCount !== 1 ? 's' : ''} remaining`
+                  ? 'Swipe up for details'
                   : 'Waiting for route assignment'}
               </Text>
             </View>
@@ -1253,31 +1325,6 @@ export default function CollectorMapScreen() {
                   </View>
                 </View>
                 <View style={styles.actionButtons}>
-                  {!navigationActive ? (
-                    <TouchableOpacity
-                      style={[styles.navigateBtn, todaySchedules !== null && todaySchedules.length === 0 && styles.navigateBtnBlocked]}
-                      onPress={startNavigation}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons
-                        name={todaySchedules !== null && todaySchedules.length === 0 ? "block" : "navigation"}
-                        size={18}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.navigateBtnText} numberOfLines={1}>
-                        {todaySchedules === null ? 'Checking...' : todaySchedules.length === 0 ? 'Not Scheduled' : 'Start Navigation'}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.stopNavBtn}
-                      onPress={stopNavigation}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons name="stop" size={18} color="#FFFFFF" />
-                      <Text style={styles.stopNavBtnText}>Stop</Text>
-                    </TouchableOpacity>
-                  )}
                   <TouchableOpacity
                     style={styles.reportBtn}
                     onPress={handleReportIssue}
@@ -1608,7 +1655,162 @@ const styles = StyleSheet.create({
     color: "#6F7A70",
     marginTop: 8,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  deviationBtn: {
+    backgroundColor: '#006A3B',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 16,
+    width: '100%',
+    alignItems: 'center',
+  },
+  deviationBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+
+  // Navigation Overlay Styles
+  navOverlayContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  discoveryMode: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    justifyContent: 'space-between',
+    paddingBottom: 100,
+  },
+  navSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 54,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  navSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1B1C1C',
+  },
+  bigStartBtn: {
+    position: 'absolute',
+    bottom: 60,
+    right: 20,
+    backgroundColor: '#006A3B',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 30,
+    gap: 8,
+    elevation: 8,
+    shadowColor: '#006A3B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  bigStartBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  guidanceMode: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  guidanceHeader: {
+    position: 'absolute',
+    top: 60,
+    width: '92%',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    elevation: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  turnIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 18,
+  },
+  guideDistance: {
+    color: '#FFF',
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  guideStreet: {
+    color: '#BECABE',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  guidanceFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  guideTime: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1B1C1C',
+  },
+  guideStats: {
+    fontSize: 16,
+    color: '#6F7A70',
+    fontWeight: '600',
+  },
+  guideExitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  guideExitText: {
+    color: '#EF4444',
+    fontSize: 15,
+    fontWeight: '800',
   },
 
   loadingBanner: {
@@ -1800,11 +2002,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 18,
     marginBottom: 16,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 4,
   },
   actionCardHeader: {
     flexDirection: "row",

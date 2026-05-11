@@ -65,7 +65,19 @@ function buildLeafletHTML(truckB64) {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; width: 100%; overflow: hidden; }
-    #map { width: 100%; height: 100%; }
+    #map-perspective {
+      perspective: 1200px;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f0eded;
+    }
+    #map {
+      width: 100%;
+      height: 130%; 
+      transform: translateY(-10%) rotateX(32deg);
+      transform-origin: bottom center;
+    }
     .leaflet-control-zoom { display: none; }
     .leaflet-container { background: #f0eded; }
     img { pointer-events: none; }
@@ -88,7 +100,9 @@ function buildLeafletHTML(truckB64) {
   </style>
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map-perspective">
+    <div id="map"></div>
+  </div>
   <script>
     (function() {
       var TB = '${truckB64}';
@@ -160,37 +174,39 @@ function buildLeafletHTML(truckB64) {
         });
       }
 
-      function makeTruckIcon(truckId) {
+      function makeTruckIcon(truckId, heading) {
         return L.divIcon({
-          html: '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
-                  '<div style="background:#fff;border-radius:10px;padding:3px;box-shadow:0 3px 10px rgba(0,106,59,0.35);border:2px solid #006A3B;">' +
-                    '<img src="data:image/png;base64,' + TB + '" style="width:34px;height:34px;object-fit:contain;display:block;" />' +
+          html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
+                  '<div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 4px 15px rgba(0,106,59,0.4);border:2.5px solid #006A3B;position:relative;z-index:2;">' +
+                    '<img src="data:image/png;base64,' + TB + '" style="width:36px;height:36px;object-fit:contain;display:block;" />' +
                   '</div>' +
-                  '<div style="background:#006A3B;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;margin-top:1px;">' + (truckId || 'GT') + '</div>' +
+                  '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #006A3B;margin-top:-3px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2));"></div>' +
+                  '<div style="background:#006A3B;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;white-space:nowrap;margin-top:2px;box-shadow:0 2px 8px rgba(0,0,0,0.15);"> ' + (truckId || 'GT') + ' </div>' +
                 '</div>',
-          iconSize: [48, 62],
-          iconAnchor: [24, 62],
+          iconSize: [50, 90],
+          iconAnchor: [25, 60],
           className: '',
         });
       }
 
       function makeIdleIcon(truckId) {
         return L.divIcon({
-          html: '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:0.65;">' +
-                  '<div style="background:#fff;border-radius:10px;padding:3px;box-shadow:0 2px 8px rgba(0,0,0,0.18);border:2px solid #9CA3AF;filter:grayscale(100%);">' +
-                    '<img src="data:image/png;base64,' + TB + '" style="width:34px;height:34px;object-fit:contain;display:block;" />' +
+          html: '<div style="display:flex;flex-direction:column;align-items:center;opacity:0.7;">' +
+                  '<div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);border:2.5px solid #6B7280;filter:grayscale(100%);">' +
+                    '<img src="data:image/png;base64,' + TB + '" style="width:36px;height:36px;object-fit:contain;display:block;" />' +
                   '</div>' +
-                  '<div style="background:#6B7280;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;margin-top:1px;">' + (truckId || 'GT') + ' · Idle</div>' +
+                  '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #6B7280;margin-top:-3px;"></div>' +
+                  '<div style="background:#6B7280;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;white-space:nowrap;margin-top:2px;"> Idle </div>' +
                 '</div>',
-          iconSize: [70, 62],
-          iconAnchor: [35, 62],
+          iconSize: [50, 75],
+          iconAnchor: [25, 52],
           className: '',
         });
       }
 
-      window.updateTruckPosition = function(lat, lng, truckId, autoPan) {
+      window.updateTruckPosition = function(lat, lng, truckId, autoPan, heading) {
         var id = truckId || 'GT';
-        var icon = makeTruckIcon(id);
+        var icon = makeTruckIcon(id, heading);
         if (!truckMarkers[id]) {
           truckMarkers[id] = L.marker([lat, lng], { icon: icon }).addTo(map);
         } else {
@@ -281,10 +297,10 @@ export default function MapScreen() {
   const [locationPermission, setLocationPermission] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [routePayload, setRoutePayload] = useState([]); 
+  const [routePayload, setRoutePayload] = useState([]);
   const [liveTruckOnline, setLiveTruckOnline] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [mapStyle, setMapStyle] = useState('topographic');
+  const [mapStyle, setMapStyle] = useState("topographic");
   const [isFollowing, setIsFollowing] = useState(!!focusTruck);
 
   const isExpandedRef = useRef(false);
@@ -298,9 +314,15 @@ export default function MapScreen() {
   const isFollowingRef = useRef(!!focusTruck);
   const initialTrucks = useRef([]);
 
-  useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
-  useEffect(() => { routePayloadRef.current = routePayload; }, [routePayload]);
-  useEffect(() => { selectedRouteIdRef.current = selectedRouteId; }, [selectedRouteId]);
+  useEffect(() => {
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
+  useEffect(() => {
+    routePayloadRef.current = routePayload;
+  }, [routePayload]);
+  useEffect(() => {
+    selectedRouteIdRef.current = selectedRouteId;
+  }, [selectedRouteId]);
 
   const activeRoute = useMemo(
     () => routes.find((r) => r._id === selectedRouteId) || null,
@@ -335,18 +357,31 @@ export default function MapScreen() {
           fetch(`${TRACKING_SERVER}/api/schedules/today`).then((r) => r.json()),
           fetch(`${TRACKING_SERVER}/api/trucks`).then((r) => r.json()),
         ]);
-        if (routesRes.status === "fulfilled" && Array.isArray(routesRes.value)) {
+        if (
+          routesRes.status === "fulfilled" &&
+          Array.isArray(routesRes.value)
+        ) {
           setRoutes(routesRes.value);
         }
-        if (schedRes.status === "fulfilled" && Array.isArray(schedRes.value?.schedules)) {
+        if (
+          schedRes.status === "fulfilled" &&
+          Array.isArray(schedRes.value?.schedules)
+        ) {
           setSchedules(schedRes.value.schedules);
         }
-        if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
-          const online = trucksRes.value.filter(t => t.status === 'online');
+        if (
+          trucksRes.status === "fulfilled" &&
+          Array.isArray(trucksRes.value)
+        ) {
+          const online = trucksRes.value.filter((t) => t.status === "online");
           initialTrucks.current = online;
           if (online.length > 0) {
             const active = online[0];
-            liveTruckPos.current = { lat: active.lat, lng: active.lng, truckId: active.truckId };
+            liveTruckPos.current = {
+              lat: active.lat,
+              lng: active.lng,
+              truckId: active.truckId,
+            };
             setLiveTruckOnline(true);
           }
         }
@@ -395,16 +430,18 @@ export default function MapScreen() {
   }, [selectedRouteId]);
 
   useEffect(() => {
-    const socket = io(TRACKING_SERVER, { transports: ["polling", "websocket"] });
+    const socket = io(TRACKING_SERVER, {
+      transports: ["polling", "websocket"],
+    });
     socketRef.current = socket;
 
-    socket.on("truck:location:update", ({ truckId, lat, lng }) => {
-      liveTruckPos.current = { lat, lng, truckId };
+    socket.on("truck:location:update", ({ truckId, lat, lng, heading }) => {
+      liveTruckPos.current = { lat, lng, truckId, heading };
       setLiveTruckOnline(true);
       if (webViewReady.current) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(
-          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}); true;`,
+          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}); true;`,
         );
       }
     });
@@ -415,9 +452,13 @@ export default function MapScreen() {
         const pos = liveTruckPos.current;
         if (pos && webViewReady.current) {
           const safeId = (truckId || "GT").replace(/'/g, "\\'");
-          webViewRef.current?.injectJavaScript(`window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`);
+          webViewRef.current?.injectJavaScript(
+            `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
+          );
         } else if (webViewReady.current) {
-          webViewRef.current?.injectJavaScript(`window.removeTruckMarker(); true;`);
+          webViewRef.current?.injectJavaScript(
+            `window.removeTruckMarker(); true;`,
+          );
         }
         liveTruckPos.current = null;
       }
@@ -429,25 +470,31 @@ export default function MapScreen() {
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
     if (routePayloadRef.current.length > 0) {
-      webViewRef.current?.injectJavaScript(`window.loadAllRoutes(${JSON.stringify(routePayloadRef.current)}); true;`);
+      webViewRef.current?.injectJavaScript(
+        `window.loadAllRoutes(${JSON.stringify(routePayloadRef.current)}); true;`,
+      );
       if (selectedRouteIdRef.current) {
         setTimeout(() => {
-          webViewRef.current?.injectJavaScript(`window.highlightRoute('${selectedRouteIdRef.current}'); true;`);
+          webViewRef.current?.injectJavaScript(
+            `window.highlightRoute('${selectedRouteIdRef.current}'); true;`,
+          );
         }, 150);
       }
     }
     // Inject all initial online trucks
-    initialTrucks.current.forEach(t => {
+    initialTrucks.current.forEach((t) => {
       const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
       webViewRef.current?.injectJavaScript(
-        `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false); true;`
+        `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false); true;`,
       );
     });
     // Focus if following
     if (liveTruckPos.current && isFollowingRef.current) {
       const { lat, lng, truckId } = liveTruckPos.current;
       const safeId = (truckId || "GT").replace(/'/g, "\\'");
-      webViewRef.current?.injectJavaScript(`window.updateTruckPosition(${lat}, ${lng}, '${safeId}', true); true;`);
+      webViewRef.current?.injectJavaScript(
+        `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', true); true;`,
+      );
     }
   }, []);
 
@@ -462,11 +509,15 @@ export default function MapScreen() {
         const { status } = await Location.requestForegroundPermissionsAsync();
         setLocationPermission(status);
         if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
           const { latitude, longitude } = loc.coords;
           setUserLocation({ lat: latitude, lng: longitude });
           setTimeout(() => {
-            webViewRef.current?.injectJavaScript(`window.updateUserLocation(${latitude}, ${longitude}); true;`);
+            webViewRef.current?.injectJavaScript(
+              `window.updateUserLocation(${latitude}, ${longitude}); true;`,
+            );
           }, 600);
         }
       } catch (e) {
@@ -476,19 +527,34 @@ export default function MapScreen() {
   }, []);
 
   const expandSheet = useCallback(() => {
-    isExpandedRef.current = true; setIsExpanded(true);
-    Animated.spring(sheetAnim, { toValue: 0, useNativeDriver: true, damping: 20, stiffness: 150 }).start();
+    isExpandedRef.current = true;
+    setIsExpanded(true);
+    Animated.spring(sheetAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 20,
+      stiffness: 150,
+    }).start();
   }, [sheetAnim]);
 
   const collapseSheet = useCallback(() => {
-    isExpandedRef.current = false; setIsExpanded(false);
-    Animated.spring(sheetAnim, { toValue: translateCollapsed, useNativeDriver: true, damping: 20, stiffness: 150 }).start();
+    isExpandedRef.current = false;
+    setIsExpanded(false);
+    Animated.spring(sheetAnim, {
+      toValue: translateCollapsed,
+      useNativeDriver: true,
+      damping: 20,
+      stiffness: 150,
+    }).start();
   }, [sheetAnim, translateCollapsed]);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.locationY < 60,
-      onMoveShouldSetPanResponder: (evt, gs) => Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 15 && evt.nativeEvent.locationY < 80,
+      onMoveShouldSetPanResponder: (evt, gs) =>
+        Math.abs(gs.dy) > Math.abs(gs.dx) &&
+        Math.abs(gs.dy) > 15 &&
+        evt.nativeEvent.locationY < 80,
       onPanResponderRelease: (_, gs) => {
         if (gs.dy < -40 && !isExpandedRef.current) expandSheet();
         else if (gs.dy > 40 && isExpandedRef.current) collapseSheet();
@@ -520,26 +586,38 @@ export default function MapScreen() {
         />
         <View style={styles.floatingActions}>
           <TouchableOpacity
-            style={[styles.floatingButton, isFollowing && styles.floatingButtonActive]}
+            style={[
+              styles.floatingButton,
+              isFollowing && styles.floatingButtonActive,
+            ]}
             onPress={() => {
               setIsFollowing(!isFollowing);
               if (!isFollowing && liveTruckPos.current) {
                 const { lat, lng } = liveTruckPos.current;
-                webViewRef.current?.injectJavaScript(`window.gotoLocation(${lat}, ${lng}, 16); true;`);
+                webViewRef.current?.injectJavaScript(
+                  `window.gotoLocation(${lat}, ${lng}, 16); true;`,
+                );
               }
             }}
           >
-            <MaterialIcons name={isFollowing ? "gps-fixed" : "gps-not-fixed"} size={22} color={isFollowing ? "#006A3B" : "#1B1C1C"} />
+            <MaterialIcons
+              name={isFollowing ? "gps-fixed" : "gps-not-fixed"}
+              size={22}
+              color={isFollowing ? "#006A3B" : "#1B1C1C"}
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.floatingButton, (mapStyle !== 'voyager') && styles.floatingButtonActive]}
+            style={[
+              styles.floatingButton,
+              mapStyle !== "voyager" && styles.floatingButtonActive,
+            ]}
             activeOpacity={0.7}
             onPress={() => {
               setMapStyle((prev) => {
                 let next;
-                if (prev === 'topographic') next = 'satellite';
-                else if (prev === 'satellite') next = 'voyager';
-                else next = 'topographic';
+                if (prev === "topographic") next = "satellite";
+                else if (prev === "satellite") next = "voyager";
+                else next = "topographic";
                 webViewRef.current?.injectJavaScript(
                   `window.setMapStyle('${next}'); true;`,
                 );
@@ -548,16 +626,24 @@ export default function MapScreen() {
             }}
           >
             <MaterialIcons
-              name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
+              name={
+                mapStyle === "satellite"
+                  ? "map"
+                  : mapStyle === "topographic"
+                    ? "satellite-alt"
+                    : "terrain"
+              }
               size={22}
-              color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
+              color={mapStyle !== "voyager" ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.floatingButton}
             onPress={() => {
               if (userLocation) {
-                webViewRef.current?.injectJavaScript(`window.gotoLocation(${userLocation.lat}, ${userLocation.lng}, 15); true;`);
+                webViewRef.current?.injectJavaScript(
+                  `window.gotoLocation(${userLocation.lat}, ${userLocation.lng}, 15); true;`,
+                );
               }
             }}
           >
@@ -569,19 +655,53 @@ export default function MapScreen() {
         </View>
       </View>
 
-      <Animated.View style={[styles.bottomSheet, { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] }]}>
+      <Animated.View
+        style={[
+          styles.bottomSheet,
+          { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
+        ]}
+      >
         <View {...panResponder.panHandlers}>
-          <View style={styles.handleBarContainer}><View style={styles.handleBar} /></View>
+          <View style={styles.handleBarContainer}>
+            <View style={styles.handleBar} />
+          </View>
           {dataLoading ? (
-            <View style={styles.pillsLoading}><ActivityIndicator size="small" color="#006A3B" /><Text style={styles.pillsLoadingText}>Loading routes…</Text></View>
+            <View style={styles.pillsLoading}>
+              <ActivityIndicator size="small" color="#006A3B" />
+              <Text style={styles.pillsLoadingText}>Loading routes…</Text>
+            </View>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsScroll} contentContainerStyle={styles.pillsContent}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.pillsScroll}
+              contentContainerStyle={styles.pillsContent}
+            >
               {routePayload.map((rp) => {
                 const isSelected = rp.id === selectedRouteId;
                 return (
-                  <TouchableOpacity key={rp.id} style={[styles.routePill, isSelected && { borderColor: rp.color, backgroundColor: `${rp.color}18` }]} onPress={() => setSelectedRouteId(rp.id)}>
-                    <View style={[styles.pillDot, { backgroundColor: rp.color }]} />
-                    <Text style={[styles.pillText, isSelected && { color: rp.color, fontWeight: "700" }]}>{rp.name}</Text>
+                  <TouchableOpacity
+                    key={rp.id}
+                    style={[
+                      styles.routePill,
+                      isSelected && {
+                        borderColor: rp.color,
+                        backgroundColor: `${rp.color}18`,
+                      },
+                    ]}
+                    onPress={() => setSelectedRouteId(rp.id)}
+                  >
+                    <View
+                      style={[styles.pillDot, { backgroundColor: rp.color }]}
+                    />
+                    <Text
+                      style={[
+                        styles.pillText,
+                        isSelected && { color: rp.color, fontWeight: "700" },
+                      ]}
+                    >
+                      {rp.name}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -589,23 +709,40 @@ export default function MapScreen() {
           )}
           <View style={styles.sheetHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.routeTitle}>{activeRoute?.name || "Select a route"}</Text>
+              <Text style={styles.routeTitle}>
+                {activeRoute?.name || "Select a route"}
+              </Text>
               <Text style={styles.scheduleId}>
-                {activeSchedule ? `Truck ${activeSchedule.truckId} · ${activeSchedule.driverName}` : "No active schedule"}
+                {activeSchedule
+                  ? `Truck ${activeSchedule.truckId} · ${activeSchedule.driverName}`
+                  : "No active schedule"}
               </Text>
             </View>
           </View>
         </View>
-        <Animated.View style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}>
-          <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={isExpanded} contentContainerStyle={{ paddingBottom: bottomInset + 8 }}>
+        <Animated.View
+          style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={isExpanded}
+            contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
+          >
             <View style={styles.timeline}>
               {currentStops.map((stop, index) => (
                 <View key={index} style={styles.timelineStep}>
                   <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot}><View style={styles.timelineDotInner} /></View>
-                    {index < currentStops.length - 1 && <View style={styles.timelineLine} />}
+                    <View style={styles.timelineDot}>
+                      <View style={styles.timelineDotInner} />
+                    </View>
+                    {index < currentStops.length - 1 && (
+                      <View style={styles.timelineLine} />
+                    )}
                   </View>
-                  <View style={styles.timelineContent}><Text style={styles.timelineStopName}>{stop.name}</Text><Text style={styles.timelineTime}>{stop.time}</Text></View>
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.timelineStopName}>{stop.name}</Text>
+                    <Text style={styles.timelineTime}>{stop.time}</Text>
+                  </View>
                 </View>
               ))}
             </View>
@@ -620,29 +757,94 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
   mapContainer: { flex: 1, position: "relative" },
   webView: { flex: 1 },
-  floatingActions: { position: "absolute", top: 60, right: 16, gap: 12, zIndex: 10 },
-  floatingButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFF", justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  floatingActions: {
+    position: "absolute",
+    top: 60,
+    right: 16,
+    gap: 12,
+    zIndex: 10,
+  },
+  floatingButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   floatingButtonActive: { borderColor: "#006A3B", borderWidth: 2 },
   legendOverlay: { position: "absolute", top: 60, left: 16, zIndex: 10 },
-  bottomSheet: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: "#FFF", borderTopLeftRadius: 32, borderTopRightRadius: 32, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  bottomSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
   handleBarContainer: { paddingVertical: 12, alignItems: "center" },
-  handleBar: { width: 40, height: 4, backgroundColor: "#E5E7EB", borderRadius: 2 },
+  handleBar: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 2,
+  },
   pillsScroll: { maxHeight: 50 },
   pillsContent: { paddingHorizontal: 24, gap: 10 },
-  routePill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, py: 8, borderRadius: 20, borderWeight: 1, borderColor: "#F3F4F6", backgroundColor: "#F9FAFB" },
+  routePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    py: 8,
+    borderRadius: 20,
+    borderWeight: 1,
+    borderColor: "#F3F4F6",
+    backgroundColor: "#F9FAFB",
+  },
   pillDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   pillText: { fontSize: 13, color: "#6B7280", fontWeight: "600" },
-  pillsLoading: { paddingHorizontal: 24, flexDirection: "row", alignItems: "center", gap: 8 },
+  pillsLoading: {
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   pillsLoadingText: { fontSize: 13, color: "#9CA3AF" },
-  sheetHeader: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center" },
+  sheetHeader: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
   routeTitle: { fontSize: 20, fontWeight: "800", color: "#1F2937" },
   scheduleId: { fontSize: 13, color: "#6B7280", marginTop: 2 },
   routeDetails: { flex: 1 },
   timeline: { paddingHorizontal: 24, paddingTop: 8 },
   timelineStep: { flexDirection: "row", gap: 16, marginBottom: 20 },
   timelineIndicator: { alignItems: "center", width: 20 },
-  timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" },
-  timelineDotInner: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#FFF" },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  timelineDotInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#FFF",
+  },
   timelineLine: { width: 2, flex: 1, backgroundColor: "#F3F4F6", marginTop: 4 },
   timelineContent: { flex: 1 },
   timelineStopName: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
