@@ -150,6 +150,11 @@ function buildLeafletHTML(truckB64) {
     .leaflet-marker-icon, .leaflet-marker-shadow {
       transform-style: preserve-3d;
     }
+    @keyframes pulse-red {
+      0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+    }
   </style>
 </head>
 <body>
@@ -167,7 +172,7 @@ function buildLeafletHTML(truckB64) {
       map = new L.Map('map', {
         zoomControl: false, attributionControl: false, dragging: true,
         scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true,
-        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 10, maxZoom: 18,
+        minZoom: 10, maxZoom: 18,
         inertia: true, inertiaDeceleration: 3000,
       });
       map.setView([10.325, 123.893], 14);
@@ -206,13 +211,45 @@ function buildLeafletHTML(truckB64) {
       }
       setTileLayer('topographic');
       window.setMapStyle = setTileLayer;
+ 
+      // Report marker icons
+      function makeBinHtml(score) {
+        var isHigh = score >= 5;
+        var color = isHigh ? '#EF4444' : '#F59E0B';
+        return '<div style="position:relative;display:flex;flex-direction:column;align-items:center;">' +
+          '<div style="background:#fff;padding:2px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid #e2e8f0;'+(isHigh ? 'animation:pulse-red 2s infinite;' : '')+'">' +
+            '<div style="background:'+color+';width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 -1px 0 rgba(0,0,0,0.15);">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></svg>' +
+            '</div>' +
+          '</div>' +
+          '<div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #fff;margin-top:-2px;"></div>' +
+          (isHigh ? '<div style="position:absolute;top:-4px;right:-4px;background:#EF4444;color:#fff;width:14px;height:14px;border-radius:7px;font-size:7px;font-weight:900;display:flex;align-items:center;justify-content:center;border:1px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);z-index:2;">' + score + '</div>' : '') +
+        '</div>';
+      }
+ 
+      var reportMarkers = [];
+      window.clearReportMarkers = function() {
+        reportMarkers.forEach(function(m) { map.removeLayer(m); });
+        reportMarkers = [];
+      };
+      window.addReportMarkers = function(reportsJson) {
+        window.clearReportMarkers();
+        var arr = JSON.parse(reportsJson);
+        arr.forEach(function(r) {
+          var icon = L.divIcon({ html: makeBinHtml(r.score), iconSize:[20,26], iconAnchor:[10,26], className:'' });
+          var m = L.marker([r.lat, r.lng], { icon: icon });
+          m.on('click', function() { window.ReactNativeWebView.postMessage('report:' + r.id); });
+          m.addTo(map);
+          reportMarkers.push(m);
+        });
+      };
 
       // Heat zones
-      var criticalZone = L.circle([10.295, 123.895], { radius:250, color:'#E53935', fillColor:'#E53935', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
+      var criticalZone = L.circleMarker([10.295, 123.895], { radius:35, color:'#E53935', fillColor:'#E53935', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
       criticalZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:critical'); });
-      var moderateZone = L.circle([10.308, 123.895], { radius:250, color:'#FDD835', fillColor:'#FDD835', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
+      var moderateZone = L.circleMarker([10.308, 123.895], { radius:35, color:'#FDD835', fillColor:'#FDD835', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
       moderateZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:moderate'); });
-      var cleanZone = L.circle([10.328, 123.900], { radius:250, color:'#4CAF50', fillColor:'#4CAF50', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
+      var cleanZone = L.circleMarker([10.328, 123.900], { radius:35, color:'#4CAF50', fillColor:'#4CAF50', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
       cleanZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:clean'); });
 
       // Stop marker icons
@@ -317,7 +354,10 @@ function buildLeafletHTML(truckB64) {
         }
       };
 
-      setTimeout(function() { map.invalidateSize(); }, 200);
+      setTimeout(function() { 
+        map.invalidateSize(); 
+        window.ReactNativeWebView.postMessage('map_ready');
+      }, 200);
     })();
   </script>
 </body>
@@ -382,6 +422,20 @@ async function fetchORSRoute(waypoints) {
 // ── Main Component (identical to yours) ──────────────────
 export default function CollectorMapScreen() {
   const { user } = useAuth();
+  // Helper for distance calculation
+  const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; // meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   const TRUCK_ID = user?.truckId ?? 'GT-000';
   const { bottom: bottomInset } = useSafeAreaInsets();
   const [stops, setStops] = useState([]);
@@ -507,7 +561,53 @@ export default function CollectorMapScreen() {
   const [mapStyle, setMapStyle] = useState('topographic');
   const [showSuccess, setShowSuccess] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [showTrashBins, setShowTrashBins] = useState(true);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
+
+  // Fetch overflowing bin reports
+  const fetchReports = useCallback(() => {
+    const url = `${TRACKING_SERVER}/api/reports?category=Overflowing Bin`;
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          setReports(data.filter(r => r.status !== 'resolved'));
+        } catch (e) {}
+      }
+    };
+    xhr.send();
+  }, []);
+
+  useEffect(() => {
+    fetchReports();
+    const interval = setInterval(fetchReports, 30000); // refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchReports]);
+
+  // Inject report markers into WebView
+  useEffect(() => {
+    if (webViewReady.current) {
+      if (!showTrashBins || reports.length === 0) {
+        webViewRef.current?.injectJavaScript(`window.clearReportMarkers(); true;`);
+        return;
+      }
+      const payload = reports.map(r => ({
+        id: r._id,
+        lat: r.lat,
+        lng: r.lng,
+        score: (r.upvotes?.length || 0) - (r.downvotes?.length || 0)
+      }));
+      const json = JSON.stringify(payload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(`window.addReportMarkers('${json}'); true;`);
+    }
+  }, [reports, showTrashBins]);
   const [navigationActive, setNavigationActive] = useState(false);
   const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
   const [currentSpeed, setCurrentSpeed] = useState(0);
@@ -576,6 +676,7 @@ export default function CollectorMapScreen() {
           const { latitude, longitude, heading, speed } = coords;
 
           lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
+          setCurrentLocation({ lat: latitude, lng: longitude });
 
           // Only stream while navigating
           if (navigationActiveRef.current) {
@@ -690,6 +791,20 @@ export default function CollectorMapScreen() {
 
   const handleWebViewMessage = (event) => {
     const message = event.nativeEvent.data;
+    if (message === 'map_ready') {
+      webViewReady.current = true;
+      // trigger initial markers
+      if (reports.length > 0) {
+        const payload = reports.map(r => ({
+          id: r._id, lat: r.lat, lng: r.lng,
+          score: (r.upvotes?.length || 0) - (r.downvotes?.length || 0)
+        }));
+        const json = JSON.stringify(payload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(`window.addReportMarkers('${json}'); true;`);
+      }
+      return;
+    }
+
     if (message.startsWith("heatmap:")) {
       const zoneId = message.replace("heatmap:", "");
       const zone = HEATMAP_ZONES.find((z) => z.id === zoneId);
@@ -701,6 +816,12 @@ export default function CollectorMapScreen() {
           damping: 20,
           stiffness: 150,
         }).start();
+      }
+    } else if (message.startsWith("report:")) {
+      const reportId = message.replace("report:", "");
+      const report = reports.find(r => r._id === reportId);
+      if (report) {
+        setSelectedReport(report);
       }
     }
   };
@@ -823,7 +944,7 @@ export default function CollectorMapScreen() {
 
     // Show truck on driver's own map
     webViewRef.current?.injectJavaScript(
-      `window.updateDriverPosition(${lat}, ${lng}, ${heading}); true;`,
+      `window.updateDriverPosition(${lat}, ${lng}, ${heading}); window.centerMap(${lat}, ${lng}); true;`,
     );
 
     // Upload location to MongoDB via XHR (more reliable than fetch on Android)
@@ -919,124 +1040,186 @@ export default function CollectorMapScreen() {
         </Modal>
 
         {/* Top info bar — mutually exclusive: not-scheduled > progress card > no-route */}
-        {todaySchedules === null ? (
-          <View style={styles.loadingBanner}>
-            <ActivityIndicator size="small" color="#006A3B" />
-            <Text style={styles.loadingBannerText}>Checking for today's routes...</Text>
-          </View>
-        ) : todaySchedules.length === 0 ? (
-          <View style={styles.notScheduledBanner}>
-            <MaterialIcons name="event-busy" size={15} color="#7F1D1D" />
-            <Text style={styles.notScheduledText}>Not scheduled today — navigation locked</Text>
-          </View>
-        ) : (routeAssigned && !navigationActive) ? (
-          <View style={styles.progressCard}>
-            <View style={styles.progressHeader}>
-              <MaterialIcons name="route" size={16} color="#006A3B" />
-              <Text style={styles.progressTitle} numberOfLines={1}>
-                {assignedRouteName || 'Route Progress'}
-              </Text>
-              <Text style={styles.progressPercent}>
-                {Math.round(progressPercent)}%
-              </Text>
-            </View>
-            <View style={styles.progressBar}>
-              <View
-                style={[styles.progressFill, { width: `${progressPercent}%` }]}
-              />
-            </View>
-            <Text style={styles.progressText}>
-              Collection in progress...
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.noRouteBanner}>
-            <MaterialIcons name="info-outline" size={15} color="#92400E" />
-            <Text style={styles.noRouteBannerText}>No route assigned</Text>
-          </View>
+        {!isFocusMode && (
+          <>
+            {todaySchedules === null ? (
+              <View style={styles.loadingBanner}>
+                <ActivityIndicator size="small" color="#006A3B" />
+                <Text style={styles.loadingBannerText}>Checking for today's routes...</Text>
+              </View>
+            ) : todaySchedules.length === 0 ? (
+              <View style={styles.notScheduledBanner}>
+                <MaterialIcons name="event-busy" size={15} color="#7F1D1D" />
+                <Text style={styles.notScheduledText}>Not scheduled today — navigation locked</Text>
+              </View>
+            ) : (routeAssigned && !navigationActive) ? (
+              <View style={styles.progressCard}>
+                <View style={styles.progressHeader}>
+                  <MaterialIcons name="route" size={16} color="#006A3B" />
+                  <Text style={styles.progressTitle} numberOfLines={1}>
+                    {assignedRouteName || 'Route Progress'}
+                  </Text>
+                  <Text style={styles.progressPercent}>
+                    {Math.round(progressPercent)}%
+                  </Text>
+                </View>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[styles.progressFill, { width: `${progressPercent}%` }]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  Collection in progress...
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.noRouteBanner}>
+                <MaterialIcons name="info-outline" size={15} color="#92400E" />
+                <Text style={styles.noRouteBannerText}>No route assigned</Text>
+              </View>
+            )}
+          </>
         )}
 
-        <View style={styles.floatingActions}>
-          <TouchableOpacity
-            style={[styles.floatingBtn, (mapStyle !== 'voyager') && styles.activeFloatingBtn]}
-            activeOpacity={0.7}
-            onPress={() => {
-              setMapStyle(prev => {
-                let next;
-                if (prev === 'topographic') next = 'satellite';
-                else if (prev === 'satellite') next = 'voyager';
-                else next = 'topographic';
-                webViewRef.current?.injectJavaScript(`window.setMapStyle('${next}'); true;`);
-                return next;
-              });
-            }}
-          >
-            <MaterialIcons
-              name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
-              size={22}
-              color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
-            />
-          </TouchableOpacity>
-
-          {/* New Re-center Button */}
-          <TouchableOpacity
-            style={styles.floatingBtn}
-            activeOpacity={0.7}
-            onPress={() => {
-              if (lastGpsRef.current && webViewReady.current) {
-                webViewRef.current.injectJavaScript(
-                  `window.centerMap(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}); true;`
-                );
-              }
-            }}
-          >
-            <MaterialIcons name="gps-fixed" size={22} color="#006A3B" />
-          </TouchableOpacity>
-
-          {navigationActive ? (
+        {/* Floating Actions */}
+        {!isFocusMode ? (
+          <View style={styles.floatingActions}>
             <TouchableOpacity
-              style={[styles.floatingBtn, styles.activeNavBtn]}
-              onPress={stopNavigation}
+              style={[styles.floatingBtn, showTools && styles.activeFloatingBtn]}
+              onPress={() => setShowTools(!showTools)}
               activeOpacity={0.7}
             >
-              <MaterialIcons name="close" size={22} color="#FFFFFF" />
+              <MaterialIcons name="build" size={20} color={showTools ? "#006A3B" : "#1B1C1C"} />
             </TouchableOpacity>
-          ) : (
+
+            {showTools && (
+              <View style={styles.toolsMenu}>
+                <TouchableOpacity 
+                  style={styles.toolItem}
+                  onPress={() => { setShowTrashBins(!showTrashBins); setShowTools(false); }}
+                >
+                  <MaterialIcons name={showTrashBins ? "visibility-off" : "visibility"} size={18} color="#6F7A70" />
+                  <Text style={styles.toolText}>{showTrashBins ? "Hide Bins" : "Show Bins"}</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.toolItem}
+                  onPress={() => { setIsFocusMode(true); setShowTools(false); }}
+                >
+                  <MaterialIcons name="fullscreen" size={18} color="#6F7A70" />
+                  <Text style={styles.toolText}>Focus Mode</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.toolItem, { borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 4 }]}
+                  onPress={() => { 
+                    setShowTools(false);
+                    Alert.alert("Report Hazard", "Identify a road hazard at your location:", [
+                      { text: "Road Blocked", onPress: () => Alert.alert("Reported", "Road blockage reported to command center.") },
+                      { text: "Illegal Parking", onPress: () => Alert.alert("Reported", "Illegal parking reported.") },
+                      { text: "Accident", onPress: () => Alert.alert("Reported", "Accident reported.") },
+                      { text: "Cancel", style: "cancel" }
+                    ]);
+                  }}
+                >
+                  <MaterialIcons name="warning" size={18} color="#EF4444" />
+                  <Text style={[styles.toolText, { color: '#EF4444' }]}>Report Hazard</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.floatingBtn, (mapStyle !== 'voyager') && styles.activeFloatingBtn]}
+              activeOpacity={0.7}
+              onPress={() => {
+                setMapStyle(prev => {
+                  let next;
+                  if (prev === 'topographic') next = 'satellite';
+                  else if (prev === 'satellite') next = 'voyager';
+                  else next = 'topographic';
+                  webViewRef.current?.injectJavaScript(`window.setMapStyle('${next}'); true;`);
+                  return next;
+                });
+              }}
+            >
+              <MaterialIcons
+                name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
+                size={22}
+                color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
+              />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.floatingBtn}
               activeOpacity={0.7}
-              onPress={startNavigation}
-            >
-              <MaterialIcons name="navigation" size={22} color="#1B1C1C" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Legend */}
-        <View style={styles.legendCard}>
-          <Text style={styles.legendTitle}>Air Quality</Text>
-          {HEATMAP_ZONES.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.legendRow}
               onPress={() => {
-                setSelectedZone(item);
-                Animated.spring(zoneCardAnim, {
-                  toValue: 1,
-                  useNativeDriver: true,
-                  damping: 20,
-                  stiffness: 150,
-                }).start();
+                if (lastGpsRef.current && webViewReady.current) {
+                  webViewRef.current.injectJavaScript(
+                    `window.centerMap(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}); true;`
+                  );
+                }
               }}
+            >
+              <MaterialIcons name="gps-fixed" size={22} color="#006A3B" />
+            </TouchableOpacity>
+
+            {navigationActive ? (
+              <TouchableOpacity
+                style={[styles.floatingBtn, styles.activeNavBtn]}
+                onPress={stopNavigation}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.floatingBtn}
+                activeOpacity={0.7}
+                onPress={startNavigation}
+              >
+                <MaterialIcons name="navigation" size={22} color="#1B1C1C" />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View style={styles.floatingActions}>
+            <TouchableOpacity
+              style={[styles.floatingBtn, styles.activeNavBtn]}
+              onPress={() => setIsFocusMode(false)}
               activeOpacity={0.7}
             >
-              <View
-                style={[styles.legendDot, { backgroundColor: item.color }]}
-              />
-              <Text style={styles.legendText}>{item.name}</Text>
+              <MaterialIcons name="fullscreen-exit" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-          ))}
-        </View>
+          </View>
+        )}
+
+        {/* Legend */}
+        {!isFocusMode && (
+          <View style={styles.legendCard}>
+            <Text style={styles.legendTitle}>Air Quality</Text>
+            {HEATMAP_ZONES.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.legendRow}
+                onPress={() => {
+                  setSelectedZone(item);
+                  Animated.spring(zoneCardAnim, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                    damping: 20,
+                    stiffness: 150,
+                  }).start();
+                }}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[styles.legendDot, { backgroundColor: item.color }]}
+                />
+                <Text style={styles.legendText}>{item.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Zone overlay (unchanged) */}
         {selectedZone && (
@@ -1165,7 +1348,37 @@ export default function CollectorMapScreen() {
           ) : (
             /* Active Guidance Mode */
             <View style={styles.guidanceMode} pointerEvents="box-none">
-              {/* Overlays removed for minimalist view */}
+              {isFocusMode && (
+                <View style={styles.focusGuidanceBanner}>
+                  <View style={styles.focusGuidanceTop}>
+                    <View style={styles.focusTurnIconBox}>
+                      <MaterialIcons name="navigation" size={32} color="#FFF" style={{ transform: [{ rotate: '45deg' }] }} />
+                    </View>
+                    <View style={styles.focusGuidanceText}>
+                      <Text style={styles.focusDistanceText}>150m</Text>
+                      <Text style={styles.focusStreetText}>Next Stop: {truckStop?.name || 'Assigned Area'}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.focusGuidanceDivider} />
+                  <View style={styles.focusGuidanceBottom}>
+                    <View style={styles.focusStatsBox}>
+                      <Text style={styles.focusStatLabel}>ETA</Text>
+                      <Text style={styles.focusStatValue}>3 min</Text>
+                    </View>
+                    <View style={styles.focusStatDivider} />
+                    <View style={styles.focusStatsBox}>
+                      <Text style={styles.focusStatLabel}>DISTANCE</Text>
+                      <Text style={styles.focusStatValue}>0.8 km</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.focusStopBtn}
+                      onPress={stopNavigation}
+                    >
+                      <Text style={styles.focusStopBtnText}>EXIT</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -1196,13 +1409,14 @@ export default function CollectorMapScreen() {
       </View>
 
       {/* Bottom Sheet – exactly as in your code */}
-      <Animated.View
-        style={[
-          styles.bottomSheet,
-          { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
-        ]}
-      >
-        <View {...panResponder.panHandlers}>
+      {!isFocusMode && (
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
+          ]}
+        >
+          <View {...panResponder.panHandlers}>
           <View style={styles.handleContainer}>
             <View style={styles.handleBar} />
           </View>
@@ -1347,30 +1561,46 @@ export default function CollectorMapScreen() {
                     <Text style={styles.actionMetaText}>{truckStop.type}</Text>
                   </View>
                 </View>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={styles.reportBtn}
-                    onPress={handleReportIssue}
-                    activeOpacity={0.8}
-                  >
-                    <MaterialIcons name="warning" size={18} color="#BA1A1A" />
-                    <Text style={styles.reportBtnText} numberOfLines={1}>
-                      Report
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity
-                  style={styles.cleanBtn}
-                  onPress={() => handleMarkCleaned(truckStop.id)}
-                  activeOpacity={0.8}
-                >
-                  <MaterialIcons
-                    name="check-circle"
-                    size={18}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.cleanBtnText}>Mark Cleaned</Text>
-                </TouchableOpacity>
+                 <View style={styles.actionButtons}>
+                   <TouchableOpacity
+                     style={styles.reportBtn}
+                     onPress={handleReportIssue}
+                     activeOpacity={0.8}
+                   >
+                     <MaterialIcons name="warning" size={18} color="#BA1A1A" />
+                     <Text style={styles.reportBtnText} numberOfLines={1}>
+                       Report
+                     </Text>
+                   </TouchableOpacity>
+                 </View>
+
+                 {(() => {
+                   const dist = currentLocation ? getDistanceMeters(currentLocation.lat, currentLocation.lng, truckStop.lat, truckStop.lng) : 999;
+                   const isAtStop = dist <= 50;
+                   return (
+                     <View>
+                       <TouchableOpacity
+                         style={[styles.cleanBtn, !isAtStop && styles.cleanBtnDisabled]}
+                         onPress={() => isAtStop && handleMarkCleaned(truckStop.id)}
+                         activeOpacity={isAtStop ? 0.8 : 1}
+                       >
+                         <MaterialIcons
+                           name={isAtStop ? "check-circle" : "location-off"}
+                           size={18}
+                           color="#FFFFFF"
+                         />
+                         <Text style={styles.cleanBtnText}>
+                           {isAtStop ? 'Mark Cleaned' : 'Too Far from Stop'}
+                         </Text>
+                       </TouchableOpacity>
+                       {!isAtStop && (
+                         <Text style={styles.distanceHint}>
+                           Get within 50m to collect ({Math.round(dist)}m away)
+                         </Text>
+                       )}
+                     </View>
+                   );
+                 })()}
               </View>
             )}
 
@@ -1518,6 +1748,7 @@ export default function CollectorMapScreen() {
           </ScrollView>
         </Animated.View>
       </Animated.View>
+      )}
 
       {/* Weight entry modal — shown when marking a stop as cleaned */}
       <Modal
@@ -1637,6 +1868,70 @@ export default function CollectorMapScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Overflowing Bin Detail Modal */}
+      <Modal
+        visible={!!selectedReport}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedReport(null)}
+      >
+        <View style={styles.reportModalBackdrop}>
+          <View style={styles.reportModalCard}>
+            <View style={styles.reportModalHeader}>
+              <View style={styles.reportModalIconWrap}>
+                <MaterialIcons name="delete-sweep" size={24} color="#BA1A1A" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.reportModalTitle}>Overflowing Bin</Text>
+                <Text style={styles.reportModalSub}>Reported near your route</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedReport(null)} style={styles.reportCloseBtn}>
+                <MaterialIcons name="close" size={20} color="#6F7A70" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.reportUrgencyRow}>
+              <Text style={styles.reportUrgencyLabel}>Community Urgency</Text>
+              <View style={[styles.reportUrgencyBadge, (selectedReport?.upvotes?.length - (selectedReport?.downvotes?.length || 0)) >= 5 ? styles.reportUrgencyHigh : styles.reportUrgencyMed]}>
+                <Text style={styles.reportUrgencyText}>
+                  Score: {(selectedReport?.upvotes?.length || 0) - (selectedReport?.downvotes?.length || 0)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.reportContentBox}>
+              <Text style={styles.reportDescription}>{selectedReport?.description}</Text>
+              <View style={styles.reportLocationRow}>
+                <MaterialIcons name="location-on" size={14} color="#6F7A70" />
+                <Text style={styles.reportLocationText}>{selectedReport?.location || selectedReport?.barangay}</Text>
+              </View>
+            </View>
+
+            {selectedReport?.reportImage ? (
+              <View style={styles.reportImageContainer}>
+                <ActivityIndicator size="small" color="#006A3B" style={styles.imageLoader} />
+                <Animated.Image 
+                  source={{ uri: selectedReport.reportImage }} 
+                  style={styles.reportImage} 
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.reportModalFooter}>
+              <Text style={styles.reportTimestamp}>
+                {selectedReport ? new Date(selectedReport.createdAt).toLocaleString() : ''}
+              </Text>
+              <TouchableOpacity 
+                style={styles.reportActionBtn}
+                onPress={() => setSelectedReport(null)}
+              >
+                <Text style={styles.reportActionBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1730,9 +2025,138 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1B1C1C',
   },
+  reportModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  reportModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  reportModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  reportModalIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reportModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  reportModalSub: {
+    fontSize: 12,
+    color: '#6F7A70',
+  },
+  reportCloseBtn: {
+    padding: 8,
+  },
+  reportUrgencyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  reportUrgencyLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6F7A70',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  reportUrgencyBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  reportUrgencyMed: {
+    backgroundColor: '#FFFBEB',
+  },
+  reportUrgencyHigh: {
+    backgroundColor: '#BA1A1A',
+  },
+  reportUrgencyText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  reportContentBox: {
+    backgroundColor: '#FBF9F8',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  reportDescription: {
+    fontSize: 15,
+    color: '#1B1C1C',
+    fontWeight: '500',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  reportLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reportLocationText: {
+    fontSize: 12,
+    color: '#6F7A70',
+  },
+  reportImageContainer: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    backgroundColor: '#F0EDED',
+    marginBottom: 20,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reportImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageLoader: {
+    position: 'absolute',
+  },
+  reportModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reportTimestamp: {
+    fontSize: 11,
+    color: '#BECABE',
+  },
+  reportActionBtn: {
+    backgroundColor: '#1B1C1C',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  reportActionBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   bigStartBtn: {
     position: 'absolute',
-    bottom: 60,
+    bottom: 70,
     right: 20,
     backgroundColor: '#006A3B',
     flexDirection: 'row',
@@ -1836,6 +2260,91 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  focusGuidanceBanner: {
+    position: 'absolute',
+    bottom: 20,
+    left: 12,
+    right: 12,
+    backgroundColor: '#1A1C1E',
+    borderRadius: 28,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  focusGuidanceTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  focusTurnIconBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: '#006A3B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  focusGuidanceText: {
+    flex: 1,
+  },
+  focusDistanceText: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  focusStreetText: {
+    color: '#BECABE',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  focusGuidanceDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 4,
+  },
+  focusGuidanceBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  focusStatsBox: {
+    flex: 1,
+  },
+  focusStatLabel: {
+    color: '#6F7A70',
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  focusStatValue: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  focusStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: 12,
+  },
+  focusStopBtn: {
+    backgroundColor: '#BA1A1A',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  focusStopBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
   loadingBanner: {
     position: "absolute",
     top: 16,
@@ -1915,6 +2424,112 @@ const styles = StyleSheet.create({
   },
   activeNavBtn: { backgroundColor: "#006A3B" },
   activeFloatingBtn: { borderColor: "#006A3B", borderWidth: 1.5 },
+ 
+  toolsMenu: {
+    position: 'absolute',
+    right: 56,
+    top: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 8,
+    minWidth: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 100,
+  },
+  toolItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    gap: 10,
+  },
+  toolText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1B1C1C',
+  },
+  truckStatusBar: {
+    position: 'absolute',
+    top: 4,
+    left: 12,
+    right: 12,
+    height: 64,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    zIndex: 100,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  statusLeft: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  truckIdBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  truckIdText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  weatherBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  weatherText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  capacityContainer: {
+    width: 140,
+  },
+  capacityLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 6,
+  },
+  capacityLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6F7A70',
+    textTransform: 'uppercase',
+  },
+  capacityValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#006A3B',
+  },
+  capacityBarBG: {
+    height: 8,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  capacityBarFill: {
+    height: '100%',
+    backgroundColor: '#006A3B',
+    borderRadius: 4,
+  },
 
   legendCard: {
     position: "absolute",
@@ -2152,6 +2767,19 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
     flexShrink: 1,
+  },
+  cleanBtnDisabled: {
+    backgroundColor: "#94A3B8",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  distanceHint: {
+    fontSize: 10,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 6,
+    fontWeight: "600",
+    fontStyle: 'italic',
   },
 
   sectionTitle: {

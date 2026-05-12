@@ -10,6 +10,7 @@ import {
   Animated,
   Dimensions,
   Image,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -80,6 +81,18 @@ export default function CollectorHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [showCleanedConfetti, setShowCleanedConfetti] = useState(false);
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [truckCapacity, setTruckCapacity] = useState(0);
+  const [weather, setWeather] = useState({ temp: 31, condition: 'Sunny' });
+
+  useEffect(() => {
+    // Simulate capacity based on weight collected (max 1000kg for this truck)
+    const maxWeight = 1000;
+    const currentWeight = stops
+      .filter((s) => s.status === "completed")
+      .reduce((sum, s) => sum + parseInt(s.weight || "0", 10), 0);
+    setTruckCapacity(Math.min(Math.round((currentWeight / maxWeight) * 100), 100));
+  }, [stops]);
 
   const scrollRef = useRef(null);
   const actionRef = useRef(null);
@@ -328,6 +341,35 @@ export default function CollectorHomeScreen() {
         </View>
       </View>
 
+      {/* Truck Status Bar */}
+      <View style={styles.truckStatusBar}>
+        <View style={styles.statusLeft}>
+          <View style={styles.truckIdBadge}>
+            <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
+          </View>
+          <View style={styles.weatherBox}>
+            <MaterialIcons name="wb-sunny" size={16} color="#F59E0B" />
+            <Text style={styles.weatherText}>{weather.temp}°C {weather.condition}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.capacityContainer}>
+          <View style={styles.capacityLabelRow}>
+            <Text style={styles.capacityLabel}>Bin Capacity</Text>
+            <Text style={[styles.capacityValue, truckCapacity > 85 && { color: '#EF4444' }]}>
+              {truckCapacity}%
+            </Text>
+          </View>
+          <View style={styles.capacityBarBG}>
+            <View style={[
+              styles.capacityBarFill, 
+              { width: `${truckCapacity}%` },
+              truckCapacity > 85 && { backgroundColor: '#EF4444' }
+            ]} />
+          </View>
+        </View>
+      </View>
+
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.scrollContainer}
@@ -335,27 +377,33 @@ export default function CollectorHomeScreen() {
         nestedScrollEnabled
       >
         {/* Greeting Section */}
-        <View style={styles.greetingSection}>
-          <Text style={styles.greeting}>Good Morning,{"\n"}{driverName.split(" ")[0]}!</Text>
-          <Text style={styles.greetingSub}>
-            {routeAssigned ? `Your route today: ${routeName}` : "Waiting for route assignment."}
-          </Text>
-          <View style={styles.driverRow}>
-            <View style={styles.driverChip}>
-              <MaterialIcons name="badge" size={14} color="#006A3B" />
-              <Text style={styles.driverChipText}>{TRUCK_ID}</Text>
-            </View>
-            {routeAssigned ? (
+        <View style={styles.welcomeCard}>
+          <View style={styles.welcomeInfo}>
+            <Text style={styles.greeting}>Good Morning,</Text>
+            <Text style={styles.driverName}>{driverName.split(" ")[0]}!</Text>
+            <Text style={styles.greetingSub}>
+              {routeAssigned ? `Active Route: ${routeName}` : "Waiting for route assignment."}
+            </Text>
+            <View style={styles.driverRow}>
               <View style={styles.driverChip}>
-                <MaterialIcons name="route" size={14} color="#006A3B" />
-                <Text style={styles.driverChipText}>{routeName}</Text>
+                <MaterialIcons name="badge" size={14} color="#FFFFFF" />
+                <Text style={styles.driverChipText}>{TRUCK_ID}</Text>
               </View>
-            ) : (
-              <View style={[styles.driverChip, { borderColor: "#EBD5C6", backgroundColor: "#FEF8E1" }]}>
-                <MaterialIcons name="schedule" size={14} color="#92400E" />
-                <Text style={[styles.driverChipText, { color: "#92400E" }]}>Unassigned</Text>
-              </View>
-            )}
+              {routeAssigned ? (
+                <View style={styles.driverChip}>
+                  <MaterialIcons name="route" size={14} color="#FFFFFF" />
+                  <Text style={styles.driverChipText}>{routeName}</Text>
+                </View>
+              ) : (
+                <View style={[styles.driverChip, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                  <MaterialIcons name="schedule" size={14} color="#FFFFFF" />
+                  <Text style={styles.driverChipText}>Unassigned</Text>
+                </View>
+              )}
+            </View>
+          </View>
+          <View style={styles.welcomeIconBox}>
+            <MaterialIcons name="eco" size={80} color="rgba(255,255,255,0.15)" />
           </View>
         </View>
 
@@ -549,10 +597,101 @@ export default function CollectorHomeScreen() {
         </Animated.View>
       ) : null}
 
-      {/* FAB */}
+      {/* AI Assistant Modal */}
+      <Modal
+        visible={showAiAssistant}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+      >
+        <View style={styles.aiModalOverlay}>
+          <TouchableOpacity 
+            style={styles.aiModalCloseArea} 
+            onPress={() => setShowAiAssistant(false)} 
+          />
+          <View style={styles.aiModalContent}>
+            <View style={styles.aiHeader}>
+              <View style={styles.aiIconCircle}>
+                <MaterialIcons name="psychology" size={32} color="#006A3B" />
+              </View>
+              <View>
+                <Text style={styles.aiTitle}>EcoAssist AI</Text>
+                <Text style={styles.aiSubtitle}>Your Intelligent Route Companion</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.aiCloseBtn} 
+                onPress={() => setShowAiAssistant(false)}
+              >
+                <MaterialIcons name="close" size={24} color="#6F7A70" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.aiMessageContainer}>
+              <Text style={styles.aiGreeting}>
+                Hello {driverName.split(" ")[0]}, I've analyzed your current route and city data.
+              </Text>
+              
+              <View style={styles.aiSuggestionCard}>
+                <View style={styles.aiSuggestionHeader}>
+                  <MaterialIcons name="auto-awesome" size={16} color="#F59E0B" />
+                  <Text style={styles.aiSuggestionTitle}>Smart Insight</Text>
+                </View>
+                <Text style={styles.aiSuggestionText}>
+                  Traffic is increasing near {currentStop?.name || 'your next stop'}. I recommend staying on the current path as it's still 4 minutes faster than alternatives.
+                </Text>
+              </View>
+
+              <Text style={styles.aiSectionTitle}>Quick Actions</Text>
+              
+              <TouchableOpacity style={styles.aiActionItem} onPress={() => { setShowAiAssistant(false); scrollToAction(); }}>
+                <View style={[styles.aiActionIcon, { backgroundColor: '#E4EEE9' }]}>
+                  <MaterialIcons name="my-location" size={20} color="#006A3B" />
+                </View>
+                <View style={styles.aiActionText}>
+                  <Text style={styles.aiActionTitle}>Focus on Current Stop</Text>
+                  <Text style={styles.aiActionSub}>Instantly scroll to your active task</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.aiActionItem}>
+                <View style={[styles.aiActionIcon, { backgroundColor: '#FEF3F2' }]}>
+                  <MaterialIcons name="report-problem" size={20} color="#BA1A1A" />
+                </View>
+                <View style={styles.aiActionText}>
+                  <Text style={styles.aiActionTitle}>Report Blocked Route</Text>
+                  <Text style={styles.aiActionSub}>Let AI recalculate for the whole fleet</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.aiActionItem}>
+                <View style={[styles.aiActionIcon, { backgroundColor: '#F0F9FF' }]}>
+                  <MaterialIcons name="wb-sunny" size={20} color="#0284C7" />
+                </View>
+                <View style={styles.aiActionText}>
+                  <Text style={styles.aiActionTitle}>Weather Optimization</Text>
+                  <Text style={styles.aiActionSub}>Sunny weather confirmed for next 4 hours</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.aiFooter}>
+              <Text style={styles.aiFooterText}>Powered by EcoAssist AI</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* AI Assistant FAB */}
       {!isLoading && !hasError && currentStop ? (
-        <TouchableOpacity style={styles.fab} onPress={scrollToAction} activeOpacity={0.85}>
-          <MaterialIcons name="flag" size={24} color="#FFFFFF" />
+        <TouchableOpacity 
+          style={styles.fab} 
+          onPress={() => setShowAiAssistant(true)} 
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="psychology" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
     </SafeAreaView>
@@ -576,65 +715,171 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerLogo: { width: 90, height: 36 },
-  collectorBadge: {
-    backgroundColor: "#E4EEE9",
-    borderRadius: 9999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "#C8DDD4",
+  truckStatusBar: {
+    height: 70,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EDED',
   },
-  collectorBadgeText: {
+  statusLeft: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  truckIdBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  truckIdText: {
     fontSize: 10,
-    fontWeight: "700",
-    color: "#006A3B",
-    textTransform: "uppercase",
+    fontWeight: '800',
+    color: '#64748B',
     letterSpacing: 0.5,
   },
+  weatherBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  weatherText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  capacityContainer: {
+    width: 140,
+  },
+  capacityLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 6,
+  },
+  capacityLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6F7A70',
+    textTransform: 'uppercase',
+  },
+  capacityValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#006A3B',
+  },
+  capacityBarBG: {
+    height: 8,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  capacityBarFill: {
+    height: '100%',
+    backgroundColor: '#006A3B',
+    borderRadius: 4,
+  },
+  collectorBadge: {
+    backgroundColor: "#ECFDF5",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  collectorBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#059669",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
   headerIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F6F3F2",
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F0EDED",
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   scrollContainer: { paddingHorizontal: 16, paddingTop: 24 },
 
-  greetingSection: { marginBottom: 28 },
-  greeting: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: "#1B1C1C",
-    letterSpacing: -0.4,
-    lineHeight: 41,
-    marginBottom: 6,
+  welcomeCard: {
+    backgroundColor: "#006A3B",
+    borderRadius: 28,
+    padding: 24,
+    marginBottom: 28,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    overflow: "hidden",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  greetingSub: { fontSize: 15, color: "#6F7A70", lineHeight: 20, marginBottom: 14 },
+  welcomeInfo: { flex: 1, zIndex: 2 },
+  greeting: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.7)",
+    marginBottom: 2,
+  },
+  driverName: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  greetingSub: { 
+    fontSize: 14, 
+    color: "rgba(255,255,255,0.85)", 
+    lineHeight: 20, 
+    marginBottom: 20,
+    fontWeight: "500",
+  },
+  welcomeIconBox: {
+    position: "absolute",
+    right: -10,
+    bottom: -20,
+    zIndex: 1,
+  },
   driverRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   driverChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#E4EEE9",
+    backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "#C8DDD4",
+    borderColor: "rgba(255,255,255,0.2)",
   },
-  driverChipText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
+  driverChipText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
 
   section: { marginBottom: 32 },
   sectionHeaderRow: {
@@ -645,24 +890,25 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: "600",
+    fontSize: 18,
+    fontWeight: "800",
     color: "#1B1C1C",
     lineHeight: 22,
     marginBottom: 16,
+    letterSpacing: -0.5,
   },
 
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 28,
+    padding: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: "#F0EDED",
+    borderColor: "#F1F5F9",
   },
   skeletonCard: {
     backgroundColor: "#FFFFFF",
@@ -680,19 +926,23 @@ const styles = StyleSheet.create({
   analyticsHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 18,
+    gap: 10,
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
   },
-  analyticsTitle: { fontSize: 15, fontWeight: "600", color: "#1B1C1C", flex: 1 },
+  analyticsTitle: { fontSize: 16, fontWeight: "700", color: "#1B1C1C", flex: 1 },
 
   summaryGrid: { flexDirection: "row", alignItems: "center" },
   summaryItem: { flex: 1, alignItems: "center" },
-  summaryValue: { fontSize: 20, fontWeight: "700", color: "#006A3B", marginBottom: 4 },
+  summaryValue: { fontSize: 22, fontWeight: "800", color: "#006A3B", marginBottom: 2 },
   summaryLabel: {
-    fontSize: 11,
-    color: "#6F7A70",
+    fontSize: 10,
+    color: "#64748B",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    fontWeight: "700",
   },
   summaryDivider: { width: 1, height: 36, backgroundColor: "#F0EDED" },
 
@@ -824,8 +1074,8 @@ const styles = StyleSheet.create({
 
   fab: {
     position: "absolute",
-    bottom: 90,
-    right: 16,
+    right: 20,
+    bottom: 20,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -833,11 +1083,145 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowRadius: 10,
+    elevation: 8,
     zIndex: 50,
+  },
+
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  aiModalCloseArea: {
+    flex: 1,
+  },
+  aiModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 12,
+    paddingBottom: 40,
+    maxHeight: '85%',
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EDED',
+  },
+  aiIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#E4EEE9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  aiTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  aiSubtitle: {
+    fontSize: 12,
+    color: '#6F7A70',
+    fontWeight: '500',
+  },
+  aiCloseBtn: {
+    marginLeft: 'auto',
+    padding: 4,
+  },
+  aiMessageContainer: {
+    padding: 24,
+  },
+  aiGreeting: {
+    fontSize: 15,
+    color: '#1B1C1C',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  aiSuggestionCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    marginBottom: 28,
+  },
+  aiSuggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  aiSuggestionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  aiSuggestionText: {
+    fontSize: 14,
+    color: '#92400E',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  aiSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6F7A70',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 16,
+  },
+  aiActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  aiActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  aiActionText: {
+    flex: 1,
+  },
+  aiActionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1B1C1C',
+    marginBottom: 2,
+  },
+  aiActionSub: {
+    fontSize: 12,
+    color: '#6F7A70',
+  },
+  aiFooter: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  aiFooterText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#BECABE',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 
   bottomSpacer: { height: 40 },

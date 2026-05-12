@@ -44,9 +44,9 @@ function generateCollectorMapHTML(stops, truckLat, truckLng) {
       }).addTo(map);
 
       // Heatmap circles
-      L.circle([10.295, 123.895], { radius: 280, color: '#E53935', fillColor: '#E53935', fillOpacity: 0.22, weight: 2 }).addTo(map);
-      L.circle([10.308, 123.895], { radius: 280, color: '#FDD835', fillColor: '#FDD835', fillOpacity: 0.22, weight: 2 }).addTo(map);
-      L.circle([10.328, 123.900], { radius: 280, color: '#4CAF50', fillColor: '#4CAF50', fillOpacity: 0.22, weight: 2 }).addTo(map);
+      L.circleMarker([10.295, 123.895], { radius: 35, color: '#E53935', fillColor: '#E53935', fillOpacity: 0.22, weight: 2 }).addTo(map);
+      L.circleMarker([10.308, 123.895], { radius: 35, color: '#FDD835', fillColor: '#FDD835', fillOpacity: 0.22, weight: 2 }).addTo(map);
+      L.circleMarker([10.328, 123.900], { radius: 35, color: '#4CAF50', fillColor: '#4CAF50', fillOpacity: 0.22, weight: 2 }).addTo(map);
 
       // Route polyline connecting all stops
       var coords = [];

@@ -20,6 +20,7 @@ export default function ReportsManagement() {
     status: 'All',
     barangay: 'All Barangays',
     priority: 'All Priorities',
+    sortBy: 'Newest',
   });
   const [selectedReport, setSelectedReport] = useState(null);
   const [reportList, setReportList] = useState([]);
@@ -31,7 +32,12 @@ export default function ReportsManagement() {
     setError(null);
     try {
       const { data } = await axios.get(`${API}/api/reports`);
-      setReportList(data.map((r) => ({ ...r, id: r._id, time: timeAgo(r.createdAt) })));
+      setReportList(data.map((r) => ({ 
+        ...r, 
+        id: r._id, 
+        time: timeAgo(r.createdAt),
+        urgency: (r.upvotes?.length || 0) - (r.downvotes?.length || 0)
+      })));
     } catch (err) {
       setError('Could not load reports. Is the backend running?');
     } finally {
@@ -65,6 +71,10 @@ export default function ReportsManagement() {
       r.title.toLowerCase().includes(filters.search.toLowerCase()) ||
       r.location.toLowerCase().includes(filters.search.toLowerCase());
     return statusMatch && barangayMatch && priorityMatch && searchMatch;
+  }).sort((a, b) => {
+    if (filters.sortBy === 'Highest Urgency') return b.urgency - a.urgency;
+    if (filters.sortBy === 'Oldest') return new Date(a.createdAt) - new Date(b.createdAt);
+    return new Date(b.createdAt) - new Date(a.createdAt); // Newest
   });
 
   const counts = {
@@ -151,6 +161,9 @@ export default function ReportsManagement() {
                   <Badge variant={selectedReport.priority.toLowerCase()} size="xs">
                     {selectedReport.priority}
                   </Badge>
+                  <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${selectedReport.urgency > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                    {selectedReport.urgency} Urgency Score
+                  </div>
                 </div>
                 <h2 className="text-base font-bold text-slate-900 leading-snug">{selectedReport.title}</h2>
               </div>
@@ -161,13 +174,19 @@ export default function ReportsManagement() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5">
-              {/* Image Placeholder */}
-              <div className="w-full h-40 bg-slate-100 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-200">
-                <div className="text-center">
-                  <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-                  <p className="text-xs text-slate-400">No images attached</p>
+              {/* Image Display */}
+              {selectedReport.reportImage ? (
+                <div className="w-full overflow-hidden rounded-xl border border-slate-100">
+                  <img src={selectedReport.reportImage} alt="Report" className="w-full h-auto object-cover max-h-60" />
                 </div>
-              </div>
+              ) : (
+                <div className="w-full h-40 bg-slate-100 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-200">
+                  <div className="text-center">
+                    <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                    <p className="text-xs text-slate-400">No images attached</p>
+                  </div>
+                </div>
+              )}
 
               {/* Details */}
               <div className="space-y-3">

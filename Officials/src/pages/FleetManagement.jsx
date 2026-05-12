@@ -12,6 +12,7 @@ export default function FleetManagement() {
 
   // Form state
   const [driverName, setDriverName] = useState('');
+  const [driverImage, setDriverImage] = useState(null);
   const [route, setRoute] = useState('');
 
   // Success modal
@@ -44,6 +45,17 @@ export default function FleetManagement() {
 
   useEffect(() => { fetchFleet(); }, []);
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDriverImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     if (!driverName.trim()) return;
@@ -51,11 +63,13 @@ export default function FleetManagement() {
     try {
       const { data } = await axios.post(`${API}/api/fleet`, {
         driverName: driverName.trim(),
+        driverImage,
         route,
       });
       setGeneratedEntry(data);
       setFleet((prev) => [data, ...prev]);
       setDriverName('');
+      setDriverImage(null);
       setRoute('');
     } catch (err) {
       alert(err?.response?.data?.error || 'Registration failed');
@@ -130,6 +144,16 @@ export default function FleetManagement() {
             </select>
           </div>
 
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Driver ID Picture</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+            />
+          </div>
+
           <button
             type="submit"
             disabled={submitting || !driverName.trim()}
@@ -172,7 +196,7 @@ export default function FleetManagement() {
             <thead>
               <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
                 <th className="px-6 py-3">Truck ID</th>
-                <th className="px-6 py-3">Driver Name</th>
+                <th className="px-6 py-3">Driver</th>
                 <th className="px-6 py-3">Route</th>
                 <th className="px-6 py-3">Registered</th>
                 <th className="px-6 py-3" />
@@ -187,7 +211,20 @@ export default function FleetManagement() {
                       {t.truckId}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm font-medium text-slate-800">{t.driverName}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex-shrink-0">
+                        {t.driverImage ? (
+                          <img src={t.driverImage} alt={t.driverName} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-400">
+                            <Truck className="w-5 h-5" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-slate-800">{t.driverName}</span>
+                    </div>
+                  </td>
                   <td className="px-6 py-4 text-sm text-slate-500">{t.route || <span className="text-slate-300">—</span>}</td>
                   <td className="px-6 py-4 text-xs text-slate-400">
                     {new Date(t.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}

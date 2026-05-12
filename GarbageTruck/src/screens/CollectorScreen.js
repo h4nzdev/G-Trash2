@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,62 +8,67 @@ import {
   Alert,
   StatusBar,
   Animated,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
-import { MaterialIcons } from '@expo/vector-icons';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
+import { MaterialIcons } from "@expo/vector-icons";
 
-import StatsCard from '../components/StatsCard';
-import RouteTimelineCollector from '../components/RouteTimelineCollector';
-import PickupActionCard from '../components/PickupActionCard';
-import HeatmapMiniCard from '../components/HeatmapMiniCard';
-import CollectionLogItem from '../components/CollectionLogItem';
+import StatsCard from "../components/StatsCard";
+import RouteTimelineCollector from "../components/RouteTimelineCollector";
+import PickupActionCard from "../components/PickupActionCard";
+import HeatmapMiniCard from "../components/HeatmapMiniCard";
+import CollectionLogItem from "../components/CollectionLogItem";
 
 // ─── Static data ─────────────────────────────────────────────────────────────
-const ROUTES = ['North Cebu', 'South Cebu', 'IT Corridor', 'Lahug District'];
+const ROUTES = ["North Cebu", "South Cebu", "IT Corridor", "Lahug District"];
 
 // null → error state, [] → empty state, [...] → normal
 const ROUTE_DATA = {
-  'North Cebu': [
-    { name: 'Ayala',    time: '08:30 AM', status: 'completed'   },
-    { name: 'IT Park',  time: '09:15 AM', status: 'completed'   },
-    { name: 'Apas',     time: '09:45 AM', status: 'completed'   },
-    { name: 'Lahug',    time: '10:45 AM', status: 'in-progress' },
-    { name: 'Banilad',  time: '11:30 AM', status: 'upcoming'    },
-    { name: 'Talamban', time: '12:15 PM', status: 'upcoming'    },
+  "North Cebu": [
+    { name: "Ayala", time: "08:30 AM", status: "completed" },
+    { name: "IT Park", time: "09:15 AM", status: "completed" },
+    { name: "Apas", time: "09:45 AM", status: "completed" },
+    { name: "Lahug", time: "10:45 AM", status: "in-progress" },
+    { name: "Banilad", time: "11:30 AM", status: "upcoming" },
+    { name: "Talamban", time: "12:15 PM", status: "upcoming" },
   ],
-  'South Cebu': [],
-  'IT Corridor': null,
-  'Lahug District': [
-    { name: 'Banilad',     time: '08:00 AM', status: 'completed'   },
-    { name: 'Talamban',    time: '09:30 AM', status: 'in-progress' },
-    { name: 'Mandaue',     time: '11:00 AM', status: 'upcoming'    },
-    { name: 'Consolacion', time: '12:30 PM', status: 'upcoming'    },
+  "South Cebu": [],
+  "IT Corridor": null,
+  "Lahug District": [
+    { name: "Banilad", time: "08:00 AM", status: "completed" },
+    { name: "Talamban", time: "09:30 AM", status: "in-progress" },
+    { name: "Mandaue", time: "11:00 AM", status: "upcoming" },
+    { name: "Consolacion", time: "12:30 PM", status: "upcoming" },
   ],
 };
 
 const LOG_DATA = [
-  { time: '08:30 AM', location: 'Ayala',   type: 'General',     weight: '52kg' },
-  { time: '09:15 AM', location: 'IT Park', type: 'Recyclables', weight: '38kg' },
-  { time: '09:45 AM', location: 'Apas',    type: 'Mixed',       weight: '45kg' },
+  { time: "08:30 AM", location: "Ayala", type: "General", weight: "52kg" },
+  {
+    time: "09:15 AM",
+    location: "IT Park",
+    type: "Recyclables",
+    weight: "38kg",
+  },
+  { time: "09:45 AM", location: "Apas", type: "Mixed", weight: "45kg" },
 ];
 
 const HEATMAP_DATA = [
-  { status: 'critical', location: 'Carbon Market', count: '2 areas'   },
-  { status: 'moderate', location: 'Colon Street',  count: '1 area'    },
-  { status: 'clean',    location: 'IT Park',       count: 'All clear' },
+  { status: "critical", location: "Carbon Market", count: "2 areas" },
+  { status: "moderate", location: "Colon Street", count: "1 area" },
+  { status: "clean", location: "IT Park", count: "All clear" },
 ];
 
 // ─── Map stop coordinates (Cebu City) ────────────────────────────────────────
 const STOP_COORDS = {
-  'Ayala':       [10.3181, 123.9068],
-  'IT Park':     [10.3315, 123.9069],
-  'Apas':        [10.3440, 123.8962],
-  'Lahug':       [10.3288, 123.8850],
-  'Banilad':     [10.3477, 123.8680],
-  'Talamban':    [10.3600, 123.9020],
-  'Mandaue':     [10.3500, 123.9200],
-  'Consolacion': [10.3750, 123.9500],
+  Ayala: [10.3181, 123.9068],
+  "IT Park": [10.3315, 123.9069],
+  Apas: [10.344, 123.8962],
+  Lahug: [10.3288, 123.885],
+  Banilad: [10.3477, 123.868],
+  Talamban: [10.36, 123.902],
+  Mandaue: [10.35, 123.92],
+  Consolacion: [10.375, 123.95],
 };
 
 // ─── Leaflet HTML generator ───────────────────────────────────────────────────
@@ -71,8 +76,8 @@ const STOP_COORDS = {
 // All JS inside the HTML uses var/function style for max WebView compatibility.
 function generateMapHTML(stops) {
   const stopsWithCoords = stops
-    .filter(s => STOP_COORDS[s.name])
-    .map(s => ({
+    .filter((s) => STOP_COORDS[s.name])
+    .map((s) => ({
       name: s.name,
       status: s.status,
       lat: STOP_COORDS[s.name][0],
@@ -82,12 +87,12 @@ function generateMapHTML(stops) {
   const stopsJSON = JSON.stringify(stopsWithCoords);
 
   const centerStop =
-    stopsWithCoords.find(s => s.status === 'in-progress') ||
-    [...stopsWithCoords].reverse().find(s => s.status === 'completed') ||
+    stopsWithCoords.find((s) => s.status === "in-progress") ||
+    [...stopsWithCoords].reverse().find((s) => s.status === "completed") ||
     stopsWithCoords[0];
 
   const centerLat = centerStop ? centerStop.lat : 10.3288;
-  const centerLng = centerStop ? centerStop.lng : 123.8960;
+  const centerLng = centerStop ? centerStop.lng : 123.896;
 
   return `<!DOCTYPE html>
 <html>
@@ -183,11 +188,11 @@ function generateMapHTML(stops) {
 }
 
 // ─── Skeleton block ───────────────────────────────────────────────────────────
-function SkeletonBlock({ width = '100%', height = 16, radius = 8, style }) {
+function SkeletonBlock({ width = "100%", height = 16, radius = 8, style }) {
   return (
     <View
       style={[
-        { width, height, borderRadius: radius, backgroundColor: '#E4E2E1' },
+        { width, height, borderRadius: radius, backgroundColor: "#E4E2E1" },
         style,
       ]}
     />
@@ -197,26 +202,39 @@ function SkeletonBlock({ width = '100%', height = 16, radius = 8, style }) {
 // ─── Screen ──────────────────────────────────────────────────────────────────
 export default function CollectorScreen() {
   const [stops, setStops] = useState([]);
-  const [selectedRoute, setSelectedRoute] = useState('North Cebu');
+  const [selectedRoute, setSelectedRoute] = useState("North Cebu");
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [pickupStatus, setPickupStatus] = useState('pending');
+  const [pickupStatus, setPickupStatus] = useState("pending");
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  const scrollRef  = useRef(null);
-  const actionRef  = useRef(null);
-  const pulseAnim  = useRef(new Animated.Value(1)).current;
+  const scrollRef = useRef(null);
+  const actionRef = useRef(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const successScale = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => { fetchRouteData('North Cebu'); }, []);
+  useEffect(() => {
+    fetchRouteData("North Cebu");
+  }, []);
 
   useEffect(() => {
-    if (!isLoading) { pulseAnim.setValue(1); return; }
+    if (!isLoading) {
+      pulseAnim.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.3, duration: 700, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,   duration: 700, useNativeDriver: true }),
-      ])
+        Animated.timing(pulseAnim, {
+          toValue: 0.3,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
     );
     loop.start();
     return () => loop.stop();
@@ -226,11 +244,14 @@ export default function CollectorScreen() {
     setIsLoading(true);
     setHasError(false);
     setDropdownOpen(false);
-    setPickupStatus('pending');
+    setPickupStatus("pending");
     setTimeout(() => {
       const data = ROUTE_DATA[route];
-      if (data === null) { setHasError(true); }
-      else { setStops(data); }
+      if (data === null) {
+        setHasError(true);
+      } else {
+        setStops(data);
+      }
       setIsLoading(false);
     }, 1200);
   };
@@ -241,48 +262,54 @@ export default function CollectorScreen() {
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const currentStopIndex = stops.findIndex(s => s.status === 'in-progress');
-  const currentStop      = stops[currentStopIndex];
-  const completedCount   = stops.filter(s => s.status === 'completed').length;
-  const progressPct      = stops.length > 0 ? Math.round((completedCount / stops.length) * 100) : 0;
+  const currentStopIndex = stops.findIndex((s) => s.status === "in-progress");
+  const currentStop = stops[currentStopIndex];
+  const completedCount = stops.filter((s) => s.status === "completed").length;
+  const progressPct =
+    stops.length > 0 ? Math.round((completedCount / stops.length) * 100) : 0;
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleMarkCleaned = () => {
     Animated.sequence([
-      Animated.timing(successScale, { toValue: 1.03, duration: 120, useNativeDriver: true }),
-      Animated.timing(successScale, { toValue: 1,    duration: 200, useNativeDriver: true }),
+      Animated.timing(successScale, {
+        toValue: 1.03,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+      Animated.timing(successScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
     ]).start();
-    setPickupStatus('cleaned');
+    setPickupStatus("cleaned");
     setTimeout(() => {
-      setStops(prev =>
+      setStops((prev) =>
         prev.map((stop, i) => {
-          if (i === currentStopIndex) return { ...stop, status: 'completed' };
-          if (i === currentStopIndex + 1 && stop.status === 'upcoming') return { ...stop, status: 'in-progress' };
+          if (i === currentStopIndex) return { ...stop, status: "completed" };
+          if (i === currentStopIndex + 1 && stop.status === "upcoming")
+            return { ...stop, status: "in-progress" };
           return stop;
-        })
+        }),
       );
-      setPickupStatus('pending');
+      setPickupStatus("pending");
     }, 1500);
   };
 
   const handleReportIssue = () => {
-    Alert.alert(
-      'Report Issue',
-      'Select the type of issue at this location:',
-      [
-        { text: 'Overflowing Bin',  onPress: () => {} },
-        { text: 'Hazardous Waste',  onPress: () => {} },
-        { text: 'Access Blocked',   onPress: () => {} },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    Alert.alert("Report Issue", "Select the type of issue at this location:", [
+      { text: "Overflowing Bin", onPress: () => {} },
+      { text: "Hazardous Waste", onPress: () => {} },
+      { text: "Access Blocked", onPress: () => {} },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const scrollToAction = () => {
     actionRef.current?.measureLayout(
       scrollRef.current,
       (_x, y) => scrollRef.current?.scrollTo({ y, animated: true }),
-      () => {}
+      () => {},
     );
   };
 
@@ -290,11 +317,24 @@ export default function CollectorScreen() {
   const renderSkeleton = () => (
     <Animated.View style={{ opacity: pulseAnim }}>
       <View style={styles.statsRow}>
-        {[0, 1].map(i => (
+        {[0, 1].map((i) => (
           <View key={i} style={[styles.card, { flex: 1 }]}>
-            <SkeletonBlock width={36} height={36} radius={10} style={{ marginBottom: 12 }} />
-            <SkeletonBlock width="55%" height={26} style={{ marginBottom: 8 }} />
-            <SkeletonBlock width="75%" height={11} style={{ marginBottom: 10 }} />
+            <SkeletonBlock
+              width={36}
+              height={36}
+              radius={10}
+              style={{ marginBottom: 12 }}
+            />
+            <SkeletonBlock
+              width="55%"
+              height={26}
+              style={{ marginBottom: 8 }}
+            />
+            <SkeletonBlock
+              width="75%"
+              height={11}
+              style={{ marginBottom: 10 }}
+            />
             <SkeletonBlock height={6} radius={3} />
           </View>
         ))}
@@ -306,16 +346,28 @@ export default function CollectorScreen() {
         <SkeletonBlock width="45%" height={13} style={{ marginBottom: 20 }} />
         <SkeletonBlock height={20} style={{ marginBottom: 8 }} />
         <SkeletonBlock width="55%" height={13} style={{ marginBottom: 28 }} />
-        <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ flexDirection: "row", gap: 12 }}>
           <SkeletonBlock height={48} radius={12} style={{ flex: 1 }} />
           <SkeletonBlock height={48} radius={12} style={{ flex: 1 }} />
         </View>
       </View>
       <View style={[styles.card, styles.skeletonSection]}>
         <SkeletonBlock width="40%" height={13} style={{ marginBottom: 24 }} />
-        {[0, 1, 2, 3].map(i => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-            <SkeletonBlock width={28} height={28} radius={14} style={{ marginRight: 14, flexShrink: 0 }} />
+        {[0, 1, 2, 3].map((i) => (
+          <View
+            key={i}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 24,
+            }}
+          >
+            <SkeletonBlock
+              width={28}
+              height={28}
+              radius={14}
+              style={{ marginRight: 14, flexShrink: 0 }}
+            />
             <View style={{ flex: 1, gap: 6 }}>
               <SkeletonBlock width="50%" height={13} />
               <SkeletonBlock width="30%" height={11} />
@@ -349,7 +401,9 @@ export default function CollectorScreen() {
   const renderEmpty = () => (
     <View style={[styles.card, styles.stateFeedback]}>
       <MaterialIcons name="event-busy" size={40} color="#BECABE" />
-      <Text style={[styles.stateTitle, { color: '#6F7A70' }]}>No route assigned for today</Text>
+      <Text style={[styles.stateTitle, { color: "#6F7A70" }]}>
+        No route assigned for today
+      </Text>
       <Text style={styles.stateSub}>Check back later or contact dispatch.</Text>
     </View>
   );
@@ -368,27 +422,41 @@ export default function CollectorScreen() {
     <View style={styles.dropdownWrapper}>
       <TouchableOpacity
         style={styles.routeSelector}
-        onPress={() => setDropdownOpen(v => !v)}
+        onPress={() => setDropdownOpen((v) => !v)}
         activeOpacity={0.7}
       >
         <MaterialIcons name="route" size={14} color="#006A3B" />
         <Text style={styles.routeSelectorText}>{selectedRoute}</Text>
-        <MaterialIcons name={dropdownOpen ? 'expand-less' : 'expand-more'} size={18} color="#6F7A70" />
+        <MaterialIcons
+          name={dropdownOpen ? "expand-less" : "expand-more"}
+          size={18}
+          color="#6F7A70"
+        />
       </TouchableOpacity>
 
       {dropdownOpen ? (
         <View style={styles.dropdown}>
-          {ROUTES.map(route => (
+          {ROUTES.map((route) => (
             <TouchableOpacity
               key={route}
-              style={[styles.dropdownItem, route === selectedRoute && styles.dropdownItemActive]}
+              style={[
+                styles.dropdownItem,
+                route === selectedRoute && styles.dropdownItemActive,
+              ]}
               onPress={() => handleSelectRoute(route)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.dropdownItemText, route === selectedRoute && styles.dropdownItemTextActive]}>
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  route === selectedRoute && styles.dropdownItemTextActive,
+                ]}
+              >
                 {route}
               </Text>
-              {route === selectedRoute ? <MaterialIcons name="check" size={16} color="#006A3B" /> : null}
+              {route === selectedRoute ? (
+                <MaterialIcons name="check" size={16} color="#006A3B" />
+              ) : null}
             </TouchableOpacity>
           ))}
         </View>
@@ -398,7 +466,7 @@ export default function CollectorScreen() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safeArea} >
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
 
       {/* Top app bar */}
@@ -412,7 +480,11 @@ export default function CollectorScreen() {
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}>
-            <MaterialIcons name="notifications-none" size={22} color="#1B1C1C" />
+            <MaterialIcons
+              name="notifications-none"
+              size={22}
+              color="#1B1C1C"
+            />
             <View style={styles.notifDot} />
           </TouchableOpacity>
           <View style={styles.avatar}>
@@ -428,7 +500,7 @@ export default function CollectorScreen() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greeting}>Good Morning,{'\n'}Collector!</Text>
+          <Text style={styles.greeting}>Good Morning,{"\n"}Collector!</Text>
           <View style={styles.driverRow}>
             <View style={styles.driverChip}>
               <MaterialIcons name="badge" size={14} color="#006A3B" />
@@ -454,19 +526,23 @@ export default function CollectorScreen() {
             <View style={styles.statsRow}>
               <StatsCard
                 icon="local-shipping"
-                value={stops.length > 0 ? `${completedCount}/${stops.length}` : '—'}
+                value={
+                  stops.length > 0 ? `${completedCount}/${stops.length}` : "—"
+                }
                 label="Stops Completed"
                 progress={progressPct}
               />
               <StatsCard
                 icon="schedule"
-                value={currentStop ? currentStop.time : '—'}
+                value={currentStop ? currentStop.time : "—"}
                 label={
                   currentStop
                     ? `${currentStop.name}, Block 5`
-                    : stops.length > 0 ? 'All done' : 'No stops'
+                    : stops.length > 0
+                      ? "All done"
+                      : "No stops"
                 }
-                sublabel={currentStop ? 'On Time' : undefined}
+                sublabel={currentStop ? "On Time" : undefined}
               />
             </View>
 
@@ -486,7 +562,7 @@ export default function CollectorScreen() {
                     key={selectedRoute}
                     source={{ html: generateMapHTML(stops) }}
                     style={styles.mapWebView}
-                    originWhitelist={['*']}
+                    originWhitelist={["*"]}
                     javaScriptEnabled
                     domStorageEnabled
                     scrollEnabled={false}
@@ -509,7 +585,10 @@ export default function CollectorScreen() {
             ) : (
               <Animated.View
                 ref={actionRef}
-                style={[styles.section, { transform: [{ scale: successScale }] }]}
+                style={[
+                  styles.section,
+                  { transform: [{ scale: successScale }] },
+                ]}
               >
                 <Text style={styles.sectionTitle}>Current Pickup</Text>
                 <PickupActionCard
@@ -545,7 +624,12 @@ export default function CollectorScreen() {
                     status={item.status}
                     location={item.location}
                     count={item.count}
-                    onPress={() => Alert.alert(item.location, `Status: ${item.status}\n${item.count}`)}
+                    onPress={() =>
+                      Alert.alert(
+                        item.location,
+                        `Status: ${item.status}\n${item.count}`,
+                      )
+                    }
                   />
                 ))}
               </View>
@@ -566,7 +650,9 @@ export default function CollectorScreen() {
                     />
                   ))
                 ) : (
-                  <Text style={styles.logEmpty}>No collections logged yet.</Text>
+                  <Text style={styles.logEmpty}>
+                    No collections logged yet.
+                  </Text>
                 )}
               </View>
             </View>
@@ -578,7 +664,11 @@ export default function CollectorScreen() {
 
       {/* FAB — scroll to current pickup when a stop is active */}
       {!isLoading && !hasError && currentStop ? (
-        <TouchableOpacity style={styles.fab} onPress={scrollToAction} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={scrollToAction}
+          activeOpacity={0.85}
+        >
           <MaterialIcons name="flag" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
@@ -588,64 +678,64 @@ export default function CollectorScreen() {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FBF9F8' },
+  safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
 
   // Header
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandTitle: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#065F46',
+    fontWeight: "900",
+    color: "#065F46",
     letterSpacing: -0.5,
   },
   collectorBadge: {
-    backgroundColor: '#E4EEE9',
+    backgroundColor: "#E4EEE9",
     borderRadius: 9999,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: '#C8DDD4',
+    borderColor: "#C8DDD4",
   },
-  collectorBadgeText: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  collectorBadgeText: { fontSize: 11, fontWeight: "700", color: "#006A3B" },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerIconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F6F3F2',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F6F3F2",
+    justifyContent: "center",
+    alignItems: "center",
   },
   notifDot: {
-    position: 'absolute',
+    position: "absolute",
     top: 8,
     right: 8,
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#BA1A1A',
+    backgroundColor: "#BA1A1A",
     borderWidth: 1.5,
-    borderColor: '#F6F3F2',
+    borderColor: "#F6F3F2",
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F0EDED',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F0EDED",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
 
   // Scroll content
@@ -655,218 +745,218 @@ const styles = StyleSheet.create({
   greetingSection: { marginBottom: 28 },
   greeting: {
     fontSize: 34,
-    fontWeight: '700',
-    color: '#1B1C1C',
+    fontWeight: "700",
+    color: "#1B1C1C",
     letterSpacing: -0.4,
     lineHeight: 41,
     marginBottom: 12,
   },
-  driverRow: { flexDirection: 'row', gap: 8 },
+  driverRow: { flexDirection: "row", gap: 8 },
   driverChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
-    backgroundColor: '#E4EEE9',
+    backgroundColor: "#E4EEE9",
     borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: '#C8DDD4',
+    borderColor: "#C8DDD4",
   },
-  driverChipText: { fontSize: 12, fontWeight: '600', color: '#006A3B' },
+  driverChipText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
 
   // Layout
-  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 32 },
+  statsRow: { flexDirection: "row", gap: 12, marginBottom: 32 },
   section: { marginBottom: 32 },
   skeletonSection: { marginBottom: 32 },
   sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 16,
     zIndex: 10,
   },
   sectionTitle: {
     fontSize: 17,
-    fontWeight: '600',
-    color: '#1B1C1C',
+    fontWeight: "600",
+    color: "#1B1C1C",
     lineHeight: 22,
     marginBottom: 16,
   },
 
   // Base card
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 30,
     elevation: 3,
     borderWidth: 1,
-    borderColor: '#F0EDED',
+    borderColor: "#F0EDED",
   },
 
   // Map
   mapCard: {
     borderRadius: 24,
-    overflow: 'hidden',
+    overflow: "hidden",
     height: 230,
     borderWidth: 1,
-    borderColor: '#F0EDED',
-    shadowColor: '#000',
+    borderColor: "#F0EDED",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
     shadowRadius: 24,
     elevation: 4,
   },
-  mapWebView: { flex: 1, backgroundColor: '#F0EDED' },
+  mapWebView: { flex: 1, backgroundColor: "#F0EDED" },
   mapOverlayChip: {
-    position: 'absolute',
+    position: "absolute",
     top: 12,
     left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
-  mapOverlayText: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
+  mapOverlayText: { fontSize: 11, fontWeight: "700", color: "#006A3B" },
 
   // Live badge
   liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
-    backgroundColor: '#E4EEE9',
+    backgroundColor: "#E4EEE9",
     borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: '#C8DDD4',
+    borderColor: "#C8DDD4",
   },
   liveDot: {
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: '#006A3B',
+    backgroundColor: "#006A3B",
   },
-  liveBadgeText: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
+  liveBadgeText: { fontSize: 11, fontWeight: "700", color: "#006A3B" },
 
   // Heatmap
-  heatmapRow: { flexDirection: 'row', gap: 10 },
+  heatmapRow: { flexDirection: "row", gap: 10 },
 
   // State feedback
   stateFeedback: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: 8,
     paddingVertical: 32,
     marginBottom: 32,
   },
   stateTitle: {
     fontSize: 17,
-    fontWeight: '600',
-    color: '#006A3B',
+    fontWeight: "600",
+    color: "#006A3B",
     lineHeight: 22,
-    textAlign: 'center',
+    textAlign: "center",
   },
   stateSub: {
     fontSize: 13,
-    color: '#6F7A70',
+    color: "#6F7A70",
     lineHeight: 18,
-    textAlign: 'center',
+    textAlign: "center",
   },
   errorIconWrap: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FDE9E9',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#FDE9E9",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 4,
   },
   retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     marginTop: 8,
-    backgroundColor: '#006A3B',
+    backgroundColor: "#006A3B",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
   },
-  retryBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  retryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
 
   // Route dropdown
-  dropdownWrapper: { position: 'relative', zIndex: 20 },
+  dropdownWrapper: { position: "relative", zIndex: 20 },
   routeSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    backgroundColor: '#E4EEE9',
+    backgroundColor: "#E4EEE9",
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: '#C8DDD4',
+    borderColor: "#C8DDD4",
   },
-  routeSelectorText: { fontSize: 12, fontWeight: '600', color: '#006A3B' },
+  routeSelectorText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
   dropdown: {
-    position: 'absolute',
+    position: "absolute",
     top: 38,
     right: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     paddingVertical: 6,
     minWidth: 180,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 12,
     borderWidth: 1,
-    borderColor: '#E4E2E1',
+    borderColor: "#E4E2E1",
     zIndex: 30,
   },
   dropdownItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  dropdownItemActive: { backgroundColor: '#F6F3F2' },
-  dropdownItemText: { fontSize: 15, color: '#1B1C1C' },
-  dropdownItemTextActive: { color: '#006A3B', fontWeight: '600' },
+  dropdownItemActive: { backgroundColor: "#F6F3F2" },
+  dropdownItemText: { fontSize: 15, color: "#1B1C1C" },
+  dropdownItemTextActive: { color: "#006A3B", fontWeight: "600" },
 
   // Log
   logEmpty: {
     fontSize: 13,
-    color: '#6F7A70',
-    textAlign: 'center',
+    color: "#6F7A70",
+    textAlign: "center",
     paddingVertical: 12,
   },
 
   // FAB
   fab: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 32,
     right: 16,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#006A3B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#006A3B',
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#006A3B",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,

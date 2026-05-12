@@ -1,66 +1,38 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Alert, ActivityIndicator, Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
-import colors from "../constants/colors";
 import API_URL from "../config";
 
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const { width } = Dimensions.get("window");
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 export default function CalendarScreen() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth()); // 0-based
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [selectedDay, setSelectedDay] = useState(null);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-
   const today = new Date();
 
-  const handleQuickReport = (type) => {
-    const messages = {
-      overflowing:
-        "Thank you! We've received your report about an overflowing bin.",
-      odor: "Thank you! We've received your report about bad odor.",
-    };
-    Alert.alert("Quick Report", messages[type] || "Report submitted.");
-  };
-
   const goToPreviousMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear((y) => y - 1);
-    } else {
-      setCurrentMonth((m) => m - 1);
-    }
+    if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(y => y - 1); }
+    else setCurrentMonth(m => m - 1);
+    setSelectedDay(null);
   };
   const goToNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear((y) => y + 1);
-    } else {
-      setCurrentMonth((m) => m + 1);
-    }
+    if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(y => y + 1); }
+    else setCurrentMonth(m => m + 1);
+    setSelectedDay(null);
+  };
+  const goToToday = () => {
+    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getMonth());
+    setSelectedDay(today.getDate());
   };
 
   const fetchSchedules = useCallback(async (year, month) => {
@@ -68,453 +40,353 @@ export default function CalendarScreen() {
     try {
       const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
       const res = await fetch(`${API_URL}/api/schedules?month=${monthStr}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSchedules(data);
-      }
-    } catch (_) {
-      // silently fail — calendar still works showing no highlights
-    } finally {
-      setIsLoading(false);
-    }
+      if (res.ok) setSchedules(await res.json());
+    } catch (_) {}
+    finally { setIsLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchSchedules(currentYear, currentMonth);
-  }, [fetchSchedules, currentYear, currentMonth]);
+  useEffect(() => { fetchSchedules(currentYear, currentMonth); }, [fetchSchedules, currentYear, currentMonth]);
 
-  // Set of day-of-month numbers that have a scheduled collection
   const collectionDays = useMemo(() => {
     const days = new Set();
-    schedules.forEach((s) => {
-      const d = parseInt(s.date?.split("-")[2], 10);
-      if (!isNaN(d)) days.add(d);
-    });
+    schedules.forEach(s => { const d = parseInt(s.date?.split("-")[2], 10); if (!isNaN(d)) days.add(d); });
     return days;
   }, [schedules]);
+
+  const schedulesForDay = useMemo(() => {
+    if (!selectedDay) return [];
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+    return schedules.filter(s => s.date === dateStr);
+  }, [selectedDay, schedules, currentYear, currentMonth]);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const days = [];
-    for (let i = 0; i < firstDay; i++)
-      days.push({ day: null, key: `empty-${i}` });
-    for (let d = 1; d <= daysInMonth; d++)
-      days.push({ day: d, key: `day-${d}` });
+    for (let i = 0; i < firstDay; i++) days.push({ day: null, key: `e-${i}` });
+    for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, key: `d-${d}` });
     return days;
   }, [currentYear, currentMonth]);
 
   const nextPickup = useMemo(() => {
-    const todayDate = new Date();
-    if (
-      todayDate.getFullYear() === currentYear &&
-      todayDate.getMonth() === currentMonth
-    ) {
-      const todayDay = todayDate.getDate();
-      const upcoming = [...collectionDays]
-        .filter((d) => d >= todayDay)
-        .sort((a, b) => a - b);
+    if (today.getFullYear() === currentYear && today.getMonth() === currentMonth) {
+      const todayDay = today.getDate();
+      const upcoming = [...collectionDays].filter(d => d >= todayDay).sort((a, b) => a - b);
       if (upcoming.length > 0) {
-        const daysUntil = upcoming[0] - todayDay;
-        if (daysUntil === 0) return "Today!";
-        if (daysUntil === 1) return "Tomorrow";
-        return `in ${daysUntil} days`;
+        const diff = upcoming[0] - todayDay;
+        if (diff === 0) return { label: "Today!", sub: "Collection scheduled for today", urgent: true };
+        if (diff === 1) return { label: "Tomorrow", sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}`, urgent: false };
+        return { label: `In ${diff} days`, sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}`, urgent: false };
       }
-      return collectionDays.size > 0
-        ? "No more pickups this month"
-        : "No pickups scheduled";
+      return { label: "None left", sub: "No more pickups this month", urgent: false };
     }
     const sorted = [...collectionDays].sort((a, b) => a - b);
     return sorted.length > 0
-      ? `${MONTH_NAMES[currentMonth]} ${sorted[0]}`
-      : "No pickups scheduled";
+      ? { label: `${MONTH_NAMES[currentMonth]} ${sorted[0]}`, sub: `${sorted.length} collection days`, urgent: false }
+      : { label: "No schedule", sub: "No pickups scheduled", urgent: false };
   }, [currentYear, currentMonth, collectionDays]);
 
+  const handleQuickReport = (type) => {
+    const msgs = {
+      overflowing: "We've received your report about an overflowing bin. Our team will address it shortly.",
+      odor: "We've received your report about bad odor. Environmental team has been notified.",
+      missed: "We've noted your missed collection. A truck will be rerouted to your area.",
+    };
+    Alert.alert("Report Submitted ✓", msgs[type] || "Report submitted.");
+  };
+
+  const isCurrentMonth = today.getFullYear() === currentYear && today.getMonth() === currentMonth;
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Title Section */}
-        <View style={styles.titleSection}>
-          <Text style={styles.title}>Waste Collection</Text>
-          <Text style={styles.subtitle}>
-            {MONTH_NAMES[currentMonth]} {currentYear}
-          </Text>
+    <SafeAreaView style={s.safe} edges={["top"]}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Header */}
+        <View style={s.header}>
+          <View>
+            <Text style={s.headerTitle}>Collection Schedule</Text>
+            <Text style={s.headerSub}>{MONTH_NAMES[currentMonth]} {currentYear}</Text>
+          </View>
+          {!isCurrentMonth && (
+            <TouchableOpacity style={s.todayBtn} onPress={goToToday}>
+              <MaterialIcons name="today" size={16} color="#006A3B" />
+              <Text style={s.todayBtnText}>Today</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Next Pickup Card */}
-        <View style={styles.nextPickupCard}>
-          <MaterialIcons
-            name="notifications-active"
-            size={22}
-            color="#006A3B"
-          />
-          <View style={styles.nextPickupContent}>
-            <Text style={styles.nextPickupTitle}>Next pickup</Text>
-            <Text style={styles.nextPickupDate}>{nextPickup}</Text>
+        {/* Next Pickup Banner */}
+        <View style={[s.pickupBanner, nextPickup.urgent && s.pickupBannerUrgent]}>
+          <View style={[s.pickupIcon, nextPickup.urgent && s.pickupIconUrgent]}>
+            <MaterialIcons
+              name={nextPickup.urgent ? "local-shipping" : "notifications-active"}
+              size={22} color={nextPickup.urgent ? "#FFFFFF" : "#006A3B"}
+            />
+          </View>
+          <View style={s.pickupContent}>
+            <Text style={s.pickupLabel}>Next Pickup</Text>
+            <Text style={[s.pickupValue, nextPickup.urgent && s.pickupValueUrgent]}>{nextPickup.label}</Text>
+            <Text style={s.pickupSub}>{nextPickup.sub}</Text>
           </View>
           {isLoading && <ActivityIndicator size="small" color="#006A3B" />}
         </View>
 
-        {/* Monthly Calendar Card */}
-        <View style={styles.calendarCard}>
-          {/* Month Navigation */}
-          <View style={styles.monthNav}>
-            <TouchableOpacity
-              onPress={goToPreviousMonth}
-              style={styles.navButton}
-            >
-              <MaterialIcons name="chevron-left" size={24} color="#6F7A70" />
+        {/* Calendar Card */}
+        <View style={s.calCard}>
+          <View style={s.monthNav}>
+            <TouchableOpacity onPress={goToPreviousMonth} style={s.navBtn}>
+              <MaterialIcons name="chevron-left" size={24} color="#3F4941" />
             </TouchableOpacity>
-            <Text style={styles.monthText}>
-              {MONTH_NAMES[currentMonth]} {currentYear}
-            </Text>
-            <TouchableOpacity onPress={goToNextMonth} style={styles.navButton}>
-              <MaterialIcons name="chevron-right" size={24} color="#6F7A70" />
+            <View style={s.monthCenter}>
+              <Text style={s.monthText}>{MONTH_NAMES[currentMonth]}</Text>
+              <Text style={s.yearText}>{currentYear}</Text>
+            </View>
+            <TouchableOpacity onPress={goToNextMonth} style={s.navBtn}>
+              <MaterialIcons name="chevron-right" size={24} color="#3F4941" />
             </TouchableOpacity>
           </View>
 
-          {/* Day Headers */}
-          <View style={styles.dayHeaders}>
-            {DAY_NAMES.map((day) => (
-              <Text key={day} style={styles.dayLabel}>
-                {day}
-              </Text>
+          <View style={s.dayHeaders}>
+            {DAY_NAMES.map(d => (
+              <Text key={d} style={[s.dayLabel, (d === "Sun" || d === "Sat") && s.dayLabelWE]}>{d}</Text>
             ))}
           </View>
 
-          {/* Calendar Grid */}
-          <View style={styles.grid}>
-            {calendarGrid.map((item) => {
-              if (item.day === null) {
-                return <View key={item.key} style={styles.dayCell} />;
-              }
+          <View style={s.grid}>
+            {calendarGrid.map(item => {
+              if (!item.day) return <View key={item.key} style={s.cell} />;
               const day = item.day;
-              const isCollection = collectionDays.has(day);
-              const isToday =
-                today.getFullYear() === currentYear &&
-                today.getMonth() === currentMonth &&
-                today.getDate() === day;
-
+              const isCol = collectionDays.has(day);
+              const isToday = isCurrentMonth && today.getDate() === day;
+              const isSel = selectedDay === day;
               return (
-                <View
+                <TouchableOpacity
                   key={item.key}
-                  style={[
-                    styles.dayCell,
-                    isToday && !isCollection && styles.todayCell,
-                  ]}
+                  style={s.cell}
+                  onPress={() => setSelectedDay(isSel ? null : day)}
+                  activeOpacity={0.6}
                 >
-                  {isCollection ? (
-                    <View style={styles.collectionDayContainer}>
-                      <View
-                        style={[
-                          styles.collectionDayCircle,
-                          isToday && styles.collectionTodayCircle,
-                        ]}
-                      >
-                        <Text style={styles.collectionDayNumber}>{day}</Text>
-                      </View>
-                      <MaterialIcons
-                        name="local-shipping"
-                        size={10}
-                        color="#00731E"
-                      />
-                    </View>
-                  ) : (
-                    <Text
-                      style={[styles.dayNumber, isToday && styles.todayNumber]}
-                    >
-                      {day}
-                    </Text>
+                  <View style={[
+                    s.dayCir,
+                    isCol && s.dayCirCol,
+                    isToday && !isCol && s.dayCirToday,
+                    isSel && s.dayCirSel,
+                    isToday && isCol && s.dayCirTodayCol,
+                  ]}>
+                    <Text style={[
+                      s.dayNum,
+                      isCol && s.dayNumCol,
+                      isToday && s.dayNumToday,
+                      isSel && s.dayNumSel,
+                    ]}>{day}</Text>
+                  </View>
+                  {isCol && (
+                    <View style={[s.colDot, isToday && s.colDotToday]} />
                   )}
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
 
           {/* Legend */}
-          {collectionDays.size > 0 && (
-            <View style={styles.legend}>
-              <View style={styles.legendDot} />
-              <Text style={styles.legendText}>Collection day</Text>
+          <View style={s.legend}>
+            <View style={s.legendItem}>
+              <View style={[s.legendDot, { backgroundColor: "#D4FCDD", borderColor: "#006A3B" }]} />
+              <Text style={s.legendText}>Collection day</Text>
             </View>
-          )}
-        </View>
-
-        {/* Quick Report Section */}
-        <View style={styles.quickReportSection}>
-          <Text style={styles.sectionTitle}>Quick Report</Text>
-          <View style={styles.quickReportGrid}>
-            <TouchableOpacity
-              style={styles.reportCard}
-              onPress={() => handleQuickReport("overflowing")}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.reportIcon, styles.overflowIcon]}>
-                <MaterialIcons name="delete" size={28} color="#BA1A1A" />
-              </View>
-              <Text style={styles.reportLabel}>Overflowing Bin</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.reportCard}
-              onPress={() => handleQuickReport("odor")}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.reportIcon, styles.odorIcon]}>
-                <MaterialIcons name="air" size={28} color="#EA580C" />
-              </View>
-              <Text style={styles.reportLabel}>Bad Odor</Text>
-            </TouchableOpacity>
+            <View style={s.legendItem}>
+              <View style={[s.legendDot, { backgroundColor: "#FFFFFF", borderColor: "#006A3B" }]} />
+              <Text style={s.legendText}>Today</Text>
+            </View>
+            <Text style={s.legendCount}>{collectionDays.size} day{collectionDays.size !== 1 ? "s" : ""}</Text>
           </View>
         </View>
 
-        {/* Today's Reminders Card */}
-        <View style={styles.remindersCard}>
-          <Text style={styles.remindersHeader}>Today's Reminders</Text>
-          <View style={styles.reminderItem}>
-            <View style={styles.reminderIconContainer}>
-              <MaterialIcons name="inventory-2" size={20} color="#3F4941" />
-            </View>
-            <View style={styles.reminderContent}>
-              <Text style={styles.reminderTitle}>Curbside Pickup</Text>
-              <Text style={styles.reminderText}>
-                Ensure bins are out by 7:00 AM
+        {/* Selected Day Details */}
+        {selectedDay && (
+          <View style={s.detailCard}>
+            <View style={s.detailHeader}>
+              <MaterialIcons name="event" size={20} color="#006A3B" />
+              <Text style={s.detailTitle}>
+                {MONTH_NAMES[currentMonth]} {selectedDay}, {currentYear}
               </Text>
             </View>
+            {schedulesForDay.length > 0 ? (
+              schedulesForDay.map((sched, i) => (
+                <View key={sched._id || i} style={s.schedItem}>
+                  <View style={s.schedIcon}>
+                    <MaterialIcons name="local-shipping" size={18} color="#006A3B" />
+                  </View>
+                  <View style={s.schedContent}>
+                    <Text style={s.schedRoute}>{sched.routeName || "Scheduled Route"}</Text>
+                    <Text style={s.schedMeta}>
+                      Truck {sched.truckId}{sched.driverName ? ` · ${sched.driverName}` : ""}
+                      {sched.startTime ? ` · ${sched.startTime}` : ""}
+                    </Text>
+                    {sched.notes ? <Text style={s.schedNotes}>{sched.notes}</Text> : null}
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={s.noSched}>
+                <MaterialIcons name="event-busy" size={32} color="#BECABE" />
+                <Text style={s.noSchedText}>No collection scheduled</Text>
+              </View>
+            )}
           </View>
-          <View style={styles.reminderItem}>
-            <View style={styles.reminderIconContainer}>
-              <MaterialIcons name="recycling" size={20} color="#3F4941" />
-            </View>
-            <View style={styles.reminderContent}>
-              <Text style={styles.reminderTitle}>Sort Your Waste</Text>
-              <Text style={styles.reminderText}>
-                Place recyclables in blue bins
-              </Text>
-            </View>
+        )}
+
+        {/* Quick Report */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Quick Report</Text>
+          <Text style={s.sectionSub}>Report an issue in your area</Text>
+          <View style={s.reportGrid}>
+            {[
+              { key: "overflowing", icon: "delete", color: "#BA1A1A", bg: "#FFDAD6", label: "Overflowing\nBin" },
+              { key: "odor", icon: "air", color: "#EA580C", bg: "#FED7AA", label: "Bad\nOdor" },
+              { key: "missed", icon: "event-busy", color: "#7C3AED", bg: "#EDE9FE", label: "Missed\nPickup" },
+            ].map(r => (
+              <TouchableOpacity key={r.key} style={s.reportCard} onPress={() => handleQuickReport(r.key)} activeOpacity={0.7}>
+                <View style={[s.reportIcon, { backgroundColor: r.bg }]}>
+                  <MaterialIcons name={r.icon} size={26} color={r.color} />
+                </View>
+                <Text style={s.reportLabel}>{r.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
-        <View style={styles.bottomSpacer} />
+        {/* Reminders */}
+        <View style={s.remCard}>
+          <View style={s.remHeader}>
+            <MaterialIcons name="lightbulb-outline" size={18} color="#006A3B" />
+            <Text style={s.remTitle}>Collection Tips</Text>
+          </View>
+          {[
+            { icon: "inventory-2", title: "Curbside Pickup", text: "Place bins at the curb by 7:00 AM" },
+            { icon: "recycling", title: "Sort Your Waste", text: "Recyclables in blue, organic in green" },
+            { icon: "cleaning-services", title: "Keep It Clean", text: "Rinse containers before placing in bin" },
+          ].map((tip, i) => (
+            <View key={i} style={s.remItem}>
+              <View style={s.remIcon}>
+                <MaterialIcons name={tip.icon} size={20} color="#3F4941" />
+              </View>
+              <View style={s.remContent}>
+                <Text style={s.remItemTitle}>{tip.title}</Text>
+                <Text style={s.remItemText}>{tip.text}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
-  container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#FBF9F8" },
+  scroll: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
 
-  titleSection: { paddingVertical: 16, marginBottom: 12 },
-  title: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: "#1B1C1C",
-    letterSpacing: -0.4,
-    lineHeight: 41,
-  },
-  subtitle: { fontSize: 15, color: "#6F7A70", marginTop: 4, lineHeight: 20 },
+  // Header
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 16, marginBottom: 8 },
+  headerTitle: { fontSize: 34, fontWeight: "700", color: "#1B1C1C", letterSpacing: -0.4, lineHeight: 41 },
+  headerSub: { fontSize: 15, color: "#6F7A70", marginTop: 4, lineHeight: 20 },
+  todayBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#D4FCDD", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  todayBtnText: { fontSize: 13, fontWeight: "600", color: "#006A3B" },
 
-  nextPickupCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#D4FCDD",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
+  // Pickup Banner
+  pickupBanner: {
+    flexDirection: "row", alignItems: "center", backgroundColor: "#D4FCDD",
+    borderRadius: 20, padding: 16, marginBottom: 16, gap: 14,
+    shadowColor: "#006A3B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
   },
-  nextPickupContent: { flex: 1 },
-  nextPickupTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#00522D",
-    lineHeight: 20,
-  },
-  nextPickupDate: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#006A3B",
-    lineHeight: 22,
-    marginTop: 2,
-  },
+  pickupBannerUrgent: { backgroundColor: "#006A3B" },
+  pickupIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFF20", justifyContent: "center", alignItems: "center" },
+  pickupIconUrgent: { backgroundColor: "#FFFFFF30" },
+  pickupContent: { flex: 1 },
+  pickupLabel: { fontSize: 11, fontWeight: "600", color: "#00522D", textTransform: "uppercase", letterSpacing: 1.5, lineHeight: 14 },
+  pickupValue: { fontSize: 20, fontWeight: "800", color: "#006A3B", lineHeight: 26, marginTop: 2 },
+  pickupValueUrgent: { color: "#FFFFFF" },
+  pickupSub: { fontSize: 13, color: "#3F4941", lineHeight: 18, marginTop: 1 },
 
-  calendarCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#E4E2E1",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
-    marginBottom: 24,
+  // Calendar Card
+  calCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20, marginBottom: 20,
+    borderWidth: 1, borderColor: "#F0EDED",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 30, elevation: 3,
   },
-  monthNav: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  navButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F6F3F2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  monthText: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
-    lineHeight: 22,
-  },
+  monthNav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  navBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F6F3F2", justifyContent: "center", alignItems: "center" },
+  monthCenter: { alignItems: "center" },
+  monthText: { fontSize: 18, fontWeight: "700", color: "#1B1C1C", lineHeight: 24 },
+  yearText: { fontSize: 12, color: "#6F7A70", marginTop: 1 },
 
-  dayHeaders: { flexDirection: "row", marginBottom: 16 },
-  dayLabel: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 12,
-    color: "#6F7A70",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    lineHeight: 16,
-    paddingVertical: 8,
-  },
+  dayHeaders: { flexDirection: "row", marginBottom: 8 },
+  dayLabel: { flex: 1, textAlign: "center", fontSize: 11, fontWeight: "600", color: "#6F7A70", textTransform: "uppercase", letterSpacing: 1.2, paddingVertical: 8 },
+  dayLabelWE: { color: "#BECABE" },
 
   grid: { flexDirection: "row", flexWrap: "wrap" },
-  dayCell: {
-    width: "14.28%",
-    aspectRatio: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dayNumber: { fontSize: 15, color: "#1B1C1C" },
-  todayCell: { borderRadius: 20, borderWidth: 1.5, borderColor: "#006A3B" },
-  todayNumber: { color: "#006A3B", fontWeight: "600" },
+  cell: { width: "14.28%", aspectRatio: 1, justifyContent: "center", alignItems: "center" },
+  dayCir: { width: 38, height: 38, borderRadius: 19, justifyContent: "center", alignItems: "center" },
+  dayCirCol: { backgroundColor: "#D4FCDD" },
+  dayCirToday: { borderWidth: 2, borderColor: "#006A3B" },
+  dayCirTodayCol: { backgroundColor: "#BDF5BE", borderWidth: 2, borderColor: "#006A3B" },
+  dayCirSel: { backgroundColor: "#006A3B" },
+  dayNum: { fontSize: 15, color: "#1B1C1C", fontWeight: "500" },
+  dayNumCol: { color: "#006A3B", fontWeight: "600" },
+  dayNumToday: { color: "#006A3B", fontWeight: "700" },
+  dayNumSel: { color: "#FFFFFF", fontWeight: "700" },
+  colDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#006A3B", marginTop: 2 },
+  colDotToday: { backgroundColor: "#006A3B" },
 
-  collectionDayContainer: { alignItems: "center", justifyContent: "center" },
-  collectionDayCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#D9F8DA",
-    borderWidth: 1,
-    borderColor: "#006E1C",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 2,
-  },
-  collectionTodayCircle: {
-    backgroundColor: "#BDF5BE",
-    borderColor: "#006A3B",
-    borderWidth: 2,
-  },
-  collectionDayNumber: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#006E1C",
-    lineHeight: 22,
-  },
-
-  legend: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F0EDED",
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#BDF5BE",
-    borderWidth: 1,
-    borderColor: "#006E1C",
-  },
+  legend: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "#F0EDED" },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5 },
   legendText: { fontSize: 12, color: "#6F7A70" },
+  legendCount: { marginLeft: "auto", fontSize: 12, fontWeight: "600", color: "#006A3B", backgroundColor: "#D4FCDD", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
 
-  quickReportSection: { marginBottom: 24 },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
-    marginBottom: 12,
-    paddingHorizontal: 4,
-    lineHeight: 22,
+  // Selected Day Detail
+  detailCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 18, marginBottom: 20,
+    borderWidth: 1, borderColor: "#F0EDED",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 12, elevation: 2,
   },
-  quickReportGrid: { flexDirection: "row", gap: 16 },
+  detailHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#F0EDED" },
+  detailTitle: { fontSize: 16, fontWeight: "700", color: "#1B1C1C" },
+  schedItem: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 12 },
+  schedIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#D4FCDD", justifyContent: "center", alignItems: "center", marginTop: 2 },
+  schedContent: { flex: 1 },
+  schedRoute: { fontSize: 15, fontWeight: "600", color: "#1B1C1C", lineHeight: 20 },
+  schedMeta: { fontSize: 13, color: "#6B7280", lineHeight: 18, marginTop: 2 },
+  schedNotes: { fontSize: 12, color: "#6F7A70", fontStyle: "italic", marginTop: 4 },
+  noSched: { alignItems: "center", paddingVertical: 20, gap: 8 },
+  noSchedText: { fontSize: 14, color: "#BECABE" },
+
+  // Quick Report
+  section: { marginBottom: 20 },
+  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1B1C1C", lineHeight: 22, marginBottom: 2 },
+  sectionSub: { fontSize: 13, color: "#6B7280", marginBottom: 14 },
+  reportGrid: { flexDirection: "row", gap: 12 },
   reportCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E4E2E1",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    flex: 1, backgroundColor: "#FFFFFF", borderRadius: 20, paddingVertical: 22, paddingHorizontal: 12,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: "#F0EDED",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  reportIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  overflowIcon: { backgroundColor: "#FFDAD6" },
-  odorIcon: { backgroundColor: "#FED7AA" },
-  reportLabel: {
-    fontSize: 15,
-    color: "#1B1C1C",
-    fontWeight: "500",
-    textAlign: "center",
-    lineHeight: 20,
-  },
+  reportIcon: { width: 50, height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginBottom: 10 },
+  reportLabel: { fontSize: 13, color: "#1B1C1C", fontWeight: "600", textAlign: "center", lineHeight: 18 },
 
-  remindersCard: {
-    backgroundColor: "#F6F3F2",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+  // Reminders / Tips
+  remCard: {
+    backgroundColor: "#F6F3F2", borderRadius: 20, padding: 18,
   },
-  remindersHeader: {
-    fontSize: 12,
-    color: "#6F7A70",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    marginBottom: 12,
-    lineHeight: 16,
-  },
-  reminderItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 16,
-  },
-  reminderIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E4E2E1",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  reminderContent: { flex: 1 },
-  reminderTitle: { fontSize: 17, color: "#1B1C1C", lineHeight: 22 },
-  reminderText: { fontSize: 13, color: "#6F7A70", lineHeight: 18 },
-
-  bottomSpacer: { height: 40 },
+  remHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
+  remTitle: { fontSize: 13, fontWeight: "700", color: "#3F4941", textTransform: "uppercase", letterSpacing: 1.2 },
+  remItem: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
+  remIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#E4E2E1", justifyContent: "center", alignItems: "center" },
+  remContent: { flex: 1 },
+  remItemTitle: { fontSize: 15, fontWeight: "600", color: "#1B1C1C", lineHeight: 20 },
+  remItemText: { fontSize: 13, color: "#6B7280", lineHeight: 18 },
 });

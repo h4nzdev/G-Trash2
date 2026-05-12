@@ -16,6 +16,7 @@ import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useAuth } from '../context/AuthContext';
 import colors from '../constants/colors';
 
 import API_URL from '../config';
@@ -99,10 +100,12 @@ const InteractiveMapPicker = ({ onLocationSelect }) => {
 };
 
 export default function ReportIssueScreen({ navigation }) {
+  const { user } = useAuth();
   const [image, setImage] = useState(null);
+  const [imageBase64, setImageBase64] = useState(null);
   const [description, setDescription] = useState('');
   const [locationText, setLocationText] = useState('');
-  const [barangay, setBarangay] = useState('Lahug');
+  const [barangay, setBarangay] = useState(user?.barangay || 'Lahug');
   const [category, setCategory] = useState('Illegal Dumping');
   const [location, setLocation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -126,11 +129,13 @@ export default function ReportIssueScreen({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.8,
+      quality: 0.5,
+      base64: true,
     });
 
     if (!result.canceled) {
       setImage(result.assets[0].uri);
+      setImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
     }
   };
 
@@ -144,11 +149,13 @@ export default function ReportIssueScreen({ navigation }) {
     let result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.8,
+      quality: 0.5,
+      base64: true,
     });
 
     if (!result.canceled) {
       setImage(result.assets[0].uri);
+      setImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
     }
   };
 
@@ -177,13 +184,15 @@ export default function ReportIssueScreen({ navigation }) {
       barangay,
       lat: location?.latitude,
       lng: location?.longitude,
-      reportedBy: 'Resident',
+      userId: user?.id,
+      reportedBy: user?.name || 'Resident',
+      reportImage: imageBase64,
     });
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/reports`);
     xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.timeout = 8000;
+    xhr.timeout = 30000;
 
     xhr.onload = () => {
       setIsSubmitting(false);

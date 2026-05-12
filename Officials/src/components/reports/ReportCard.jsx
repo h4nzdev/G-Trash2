@@ -7,9 +7,11 @@ const priorityBadge = { Critical: 'critical', High: 'high', Medium: 'medium', Lo
 
 export default function ReportCard({ report, onView, onAssign, onResolve }) {
   const [expanded, setExpanded] = useState(false);
+  const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
+  const isHighUrgency = urgencyScore >= 5;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
+    <div className={`bg-white rounded-2xl shadow-sm border ${isHighUrgency ? 'border-red-200 bg-red-50/10' : 'border-slate-100'} overflow-hidden hover:shadow-md transition-shadow duration-200`}>
       {/* Priority stripe */}
       <div className={`h-1 ${priorityDot[report.priority]} w-full`} />
 
@@ -18,7 +20,14 @@ export default function ReportCard({ report, onView, onAssign, onResolve }) {
         <div className="flex items-start gap-3 mb-3">
           <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[report.priority]}`} />
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-slate-900 leading-snug">{report.title}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 leading-snug">{report.title}</h3>
+              {isHighUrgency && (
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-100 rounded text-[10px] font-bold text-red-600 animate-pulse">
+                  <AlertTriangle className="w-2.5 h-2.5" /> URGENT
+                </div>
+              )}
+            </div>
             <div className="flex items-center flex-wrap gap-2 mt-1.5">
               <Badge variant={report.status} showDot size="xs">
                 {report.status === 'in-progress' ? 'In Progress' : report.status.charAt(0).toUpperCase() + report.status.slice(1)}
@@ -26,6 +35,10 @@ export default function ReportCard({ report, onView, onAssign, onResolve }) {
               <Badge variant={priorityBadge[report.priority]} size="xs">
                 {report.priority}
               </Badge>
+              <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${urgencyScore > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                {urgencyScore > 0 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {urgencyScore} Urgency
+              </div>
             </div>
           </div>
         </div>

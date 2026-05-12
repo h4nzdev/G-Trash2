@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_URL from '../config';
 
 const AuthContext = createContext();
 
@@ -27,21 +28,72 @@ export const AuthProvider = ({ children }) => {
   }
 
   const login = async (email, password) => {
-    // Mock login logic
     setIsLoading(true);
     try {
-      // In a real app, you'd call an API here
-      const mockUser = {
-        id: '1',
-        name: 'Jane Doe',
-        email: email,
-        address: 'Block 5, Lahug, Cebu City',
-      };
+      const res = await fetch(`${API_URL}/api/residents/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
 
-      setUser(mockUser);
-      await AsyncStorage.setItem('@AuthData', JSON.stringify(mockUser));
+      const userData = { ...data.user, token: data.token };
+      setUser(userData);
+      await AsyncStorage.setItem('@AuthData', JSON.stringify(userData));
+      return userData;
     } catch (error) {
       console.error('Login failed', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (formData) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/residents/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Registration failed');
+
+      const userData = { ...data.user, token: data.token };
+      setUser(userData);
+      await AsyncStorage.setItem('@AuthData', JSON.stringify(userData));
+      return userData;
+    } catch (error) {
+      console.error('Register failed', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateProfile = async (updatedData) => {
+    if (!user?.id) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/residents/${user.id}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
+        },
+        body: JSON.stringify(updatedData),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+
+      const newUser = { ...user, ...data.user };
+      setUser(newUser);
+      await AsyncStorage.setItem('@AuthData', JSON.stringify(newUser));
+      return newUser;
+    } catch (error) {
+      console.error('Update profile failed', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -58,7 +110,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, register, updateProfile, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

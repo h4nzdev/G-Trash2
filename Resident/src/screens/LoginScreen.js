@@ -16,7 +16,7 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import colors from '../constants/colors';
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -31,7 +31,7 @@ export default function LoginScreen() {
     try {
       await login(email, password);
     } catch (error) {
-      Alert.alert('Login Failed', 'Please check your credentials and try again.');
+      Alert.alert('Login Failed', error.message || 'Please check your credentials and try again.');
     }
   };
 
@@ -109,7 +109,7 @@ export default function LoginScreen() {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>Don't have an account? </Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
                 <Text style={styles.signupText}>Sign Up</Text>
               </TouchableOpacity>
             </View>

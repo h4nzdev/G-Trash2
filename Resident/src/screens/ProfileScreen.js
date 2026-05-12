@@ -9,9 +9,15 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from 'expo-image-picker';
 import colors from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
@@ -26,12 +32,91 @@ export default function ProfileScreen() {
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [myReports, setMyReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
+
+  // Edit Profile States
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [showBarangayModal, setShowBarangayModal] = useState(false);
+  const [barangaySearch, setBarangaySearch] = useState('');
+  const [editForm, setEditForm] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    barangay: "",
+    street: "",
+    houseNo: "",
+    profilePicture: null,
+  });
+
+  const CEBU_BARANGAYS = [
+    'Adlaon','Agsungot','Apas','Babag','Bacayan','Banilad','Basak Pardo',
+    'Basak San Nicolas','Binaliw','Bonbon','Budla-an','Buhisan','Bulacao',
+    'Buot-Taup','Busay','Calamba','Cambinocot','Capitol Site','Carreta',
+    'Cogon Pardo','Cogon Ramos','Day-as','Duljo Fatima','Ermita',
+    'Guadalupe','Guba','Hippodromo','Inayawan','IT Park','Kalubihan',
+    'Kalunasan','Kamagayan','Kamputhaw','Kasambagan','Kinasang-an',
+    'Labangon','Lahug','Lorega San Miguel','Lusaran','Luz','Mabini',
+    'Mabolo','Malubog','Mambaling','Pahina Central','Pahina San Nicolas',
+    'Pardo','Pari-an','Paril','Pasil','Pit-os','Poblacion Pardo',
+    'Pulangbato','Pung-ol Sibugay','Punta Princesa','Quiot','Sambag I',
+    'Sambag II','San Antonio','San Jose','San Nicolas Proper','San Roque',
+    'Santa Cruz','Sapangdaku','Sawang Calero','Sinsin','Sirao',
+    'Suba','Sudlon I','Sudlon II','T. Padilla','Tabunan','Tagbao',
+    'Talamban','Taptap','Tejero','Tinago','Tisa','To-ong','Zapatera',
+  ];
+
+  const filteredBarangays = CEBU_BARANGAYS.filter(b =>
+    b.toLowerCase().includes(barangaySearch.toLowerCase())
+  );
+
+  useEffect(() => {
+    if (user) {
+      const nameParts = user.name ? user.name.split(" ") : ["", ""];
+      setEditForm({
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
+        phone: user.phone || "",
+        barangay: user.barangay || "",
+        street: user.street || "",
+        houseNo: user.houseNo || "",
+        profilePicture: user.profilePicture || null,
+      });
+    }
+  }, [user]);
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (!result.canceled) {
+      setEditForm({ ...editForm, profilePicture: `data:image/jpeg;base64,${result.assets[0].base64}` });
+    }
+  };
+
+  const handleEditPress = () => {
+    setIsEditModalVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      await updateProfile(editForm);
+      setIsEditModalVisible(false);
+      Alert.alert("Success", "Profile updated successfully!");
+    } catch (error) {
+      Alert.alert("Error", error.message || "Failed to update profile");
+    }
+  };
 
   const fetchReports = useCallback(async () => {
+    if (!user?.id) return;
     setReportsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/reports`);
+      const res = await fetch(`${API_URL}/api/reports?userId=${user.id}`);
       if (res.ok) {
         const data = await res.json();
         setMyReports(data);
@@ -41,12 +126,39 @@ export default function ProfileScreen() {
     } finally {
       setReportsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
+  const handleDeleteReport = async (reportId) => {
+    Alert.alert(
+      "Delete Report",
+      "Are you sure you want to delete this report? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/reports/${reportId}`, { method: 'DELETE' });
+              if (res.ok) {
+                setMyReports(prev => prev.filter(r => r._id !== reportId));
+                Alert.alert("Success", "Report deleted successfully");
+              } else {
+                throw new Error("Failed to delete report");
+              }
+            } catch (error) {
+              Alert.alert("Error", error.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const resolvedCount = myReports.filter(r => r.status === 'resolved').length;
-  const recentReports = myReports.slice(0, 2);
+  const recentReports = myReports.slice(0, 5);
 
   const handleMenuPress = (label) => {
     if (label === "Logout") {
@@ -75,9 +187,13 @@ export default function ProfileScreen() {
           <View style={styles.avatarContainer}>
             <View style={styles.avatarWrapper}>
               <View style={styles.avatar}>
-                <MaterialIcons name="person" size={48} color="#BECABE" />
+                {user?.profilePicture ? (
+                  <Image source={{ uri: user.profilePicture }} style={styles.avatarImage} />
+                ) : (
+                  <MaterialIcons name="person" size={48} color="#BECABE" />
+                )}
               </View>
-              <TouchableOpacity style={styles.editButton} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.editButton} activeOpacity={0.7} onPress={handleEditPress}>
                 <MaterialIcons name="edit" size={14} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -89,6 +205,18 @@ export default function ProfileScreen() {
             <MaterialIcons name="location-on" size={16} color="#6F7A70" />
             <Text style={styles.address}>{user?.address || "Location not set"}</Text>
           </View>
+          {user?.email && (
+            <View style={[styles.addressRow, { marginTop: 4 }]}>
+              <MaterialIcons name="email" size={16} color="#6F7A70" />
+              <Text style={styles.address}>{user.email}</Text>
+            </View>
+          )}
+          {user?.barangay && (
+            <View style={styles.barangayBadge}>
+              <MaterialIcons name="location-city" size={14} color="#006A3B" />
+              <Text style={styles.barangayBadgeText}>Brgy. {user.barangay}</Text>
+            </View>
+          )}
         </View>
 
         {/* Stats Bento Grid */}
@@ -288,6 +416,14 @@ export default function ProfileScreen() {
                           </Text>
                         </View>
                       </View>
+                      {!isResolved && (
+                        <TouchableOpacity 
+                          onPress={() => handleDeleteReport(report._id)} 
+                          style={styles.deleteBtn}
+                        >
+                          <MaterialIcons name="delete-outline" size={20} color="#BA1A1A" />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </React.Fragment>
                 );
@@ -299,6 +435,166 @@ export default function ProfileScreen() {
         {/* Bottom Spacing for Tab Bar */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalContainer}
+        >
+          <View style={styles.editModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color="#1B1C1C" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.editAvatarSection}>
+                <View style={styles.modalAvatar}>
+                  {editForm.profilePicture ? (
+                    <Image source={{ uri: editForm.profilePicture }} style={styles.avatarImage} />
+                  ) : (
+                    <MaterialIcons name="person" size={40} color="#BECABE" />
+                  )}
+                </View>
+                <TouchableOpacity style={styles.changePicButton} onPress={pickImage}>
+                  <Text style={styles.changePicText}>Change Profile Picture</Text>
+                  <Text style={styles.cooldownHint}>10-day cooldown applies</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>First Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.firstName}
+                  onChangeText={(text) => setEditForm({ ...editForm, firstName: text })}
+                  placeholder="Enter first name"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Last Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.lastName}
+                  onChangeText={(text) => setEditForm({ ...editForm, lastName: text })}
+                  placeholder="Enter last name"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Phone Number</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.phone}
+                  onChangeText={(text) => setEditForm({ ...editForm, phone: text })}
+                  placeholder="Enter phone number"
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Barangay</Text>
+                <TouchableOpacity
+                  style={styles.selectorInput}
+                  onPress={() => setShowBarangayModal(true)}
+                >
+                  <Text style={editForm.barangay ? styles.selectorText : styles.placeholderText}>
+                    {editForm.barangay || "Select Barangay"}
+                  </Text>
+                  <MaterialIcons name="keyboard-arrow-down" size={24} color="#6F7A70" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Street / Sitio</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.street}
+                  onChangeText={(text) => setEditForm({ ...editForm, street: text })}
+                  placeholder="Enter street or sitio"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>House / Unit No.</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.houseNo}
+                  onChangeText={(text) => setEditForm({ ...editForm, houseNo: text })}
+                  placeholder="Enter house or unit number"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveProfile}
+              >
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Barangay Picker Modal (Reuse from RegisterScreen) */}
+      <Modal visible={showBarangayModal} animationType="fade" transparent>
+        <View style={styles.barangayModalOverlay}>
+          <View style={styles.barangayModalContent}>
+            <View style={styles.barangayModalHeader}>
+              <Text style={styles.barangayModalTitle}>Select Barangay</Text>
+              <TouchableOpacity onPress={() => { setShowBarangayModal(false); setBarangaySearch(''); }}>
+                <MaterialIcons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.barangayModalSearch}>
+              <MaterialIcons name="search" size={18} color="#9CA3AF" />
+              <TextInput 
+                style={styles.barangayModalSearchInput} 
+                placeholder="Search barangay..."
+                placeholderTextColor="#9CA3AF" 
+                value={barangaySearch}
+                onChangeText={setBarangaySearch} 
+                autoFocus 
+              />
+            </View>
+
+            <FlatList
+              data={filteredBarangays}
+              keyExtractor={item => item}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.barangayModalItem, editForm.barangay === item && styles.barangayModalItemActive]}
+                  onPress={() => {
+                    setEditForm({ ...editForm, barangay: item });
+                    setShowBarangayModal(false);
+                    setBarangaySearch('');
+                  }}
+                >
+                  <MaterialIcons name="location-on" size={18}
+                    color={editForm.barangay === item ? colors.primaryGreen : '#9CA3AF'} />
+                  <Text style={[styles.barangayModalItemText, editForm.barangay === item && styles.barangayModalItemTextActive]}>
+                    {item}
+                  </Text>
+                  {editForm.barangay === item && (
+                    <MaterialIcons name="check-circle" size={20} color={colors.primaryGreen} />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -341,6 +637,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  editAvatarSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 32,
+    backgroundColor: "#F9FAFB",
+    padding: 16,
+    borderRadius: 16,
+  },
+  modalAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  changePicButton: {
+    flex: 1,
+  },
+  changePicText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#006A3B",
+  },
+  cooldownHint: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
   },
   editButton: {
     position: "absolute",
@@ -362,6 +695,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     lineHeight: 41,
     marginBottom: 4,
+    textAlign: "center",
   },
   addressRow: {
     flexDirection: "row",
@@ -372,6 +706,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#6F7A70",
     lineHeight: 20,
+  },
+  barangayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  barangayBadgeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#006A3B",
   },
 
   // Stats Grid
@@ -596,5 +945,149 @@ const styles = StyleSheet.create({
 
   bottomSpacer: {
     height: 40,
+  },
+
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  editModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    maxHeight: "90%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#1B1C1C",
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6F7A70",
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    fontSize: 16,
+    color: "#1B1C1C",
+  },
+  selectorInput: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+  },
+  selectorText: {
+    fontSize: 16,
+    color: "#1B1C1C",
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: "#9CA3AF",
+  },
+  saveButton: {
+    backgroundColor: "#006A3B",
+    borderRadius: 14,
+    height: 56,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    marginBottom: 32,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  saveButtonText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Barangay Picker Modal Styles
+  barangayModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  barangayModalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '80%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+  },
+  barangayModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  barangayModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  barangayModalSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 24,
+    marginBottom: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    gap: 10,
+  },
+  barangayModalSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1B1C1C',
+  },
+  barangayModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  barangayModalItemActive: {
+    backgroundColor: '#ECFDF5',
+  },
+  barangayModalItemText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#374151',
+  },
+  barangayModalItemTextActive: {
+    color: colors.primaryGreen,
+    fontWeight: '700',
+  },
+  deleteBtn: {
+    padding: 8,
+    justifyContent: 'center',
   },
 });

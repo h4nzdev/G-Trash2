@@ -3,6 +3,7 @@ import { Search, Filter } from 'lucide-react';
 const statuses = ['All', 'Pending', 'In Progress', 'Resolved'];
 const barangays = ['All Barangays', 'IT Park', 'Lahug', 'Ayala', 'Banilad', 'Talamban', 'Mabolo', 'Carbon Market', 'Ermita', 'Sto. Niño'];
 const priorities = ['All Priorities', 'Critical', 'High', 'Medium', 'Low'];
+const sortOptions = ['Newest', 'Oldest', 'Highest Urgency'];
 
 export default function ReportFilter({ filters, onChange }) {
   return (
@@ -35,6 +36,18 @@ export default function ReportFilter({ filters, onChange }) {
               {s}
             </button>
           ))}
+        </div>
+
+        {/* Sort By */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase">Sort By:</span>
+          <select
+            value={filters.sortBy}
+            onChange={(e) => onChange({ ...filters, sortBy: e.target.value })}
+            className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 cursor-pointer"
+          >
+            {sortOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
 
         {/* Barangay */}

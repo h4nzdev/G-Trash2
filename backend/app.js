@@ -14,7 +14,8 @@ const io     = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -59,9 +60,18 @@ const reportSchema = new mongoose.Schema({
   barangay:    { type: String, default: '' },
   lat:         Number,
   lng:         Number,
+  userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Resident' },
   reportedBy:  { type: String, default: 'Resident' },
+  reportImage: { type: String, default: null },
   priority:    { type: String, default: 'Medium' },
   status:      { type: String, default: 'pending' },
+  upvotes:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resident' }],
+  downvotes:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resident' }],
+  comments: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resident' },
+    text: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
   createdAt:   { type: Date, default: Date.now },
 });
 const Report = mongoose.model('Report', reportSchema);
@@ -69,6 +79,7 @@ const Report = mongoose.model('Report', reportSchema);
 const fleetSchema = new mongoose.Schema({
   truckId:    { type: String, required: true, unique: true },
   driverName: { type: String, required: true },
+  driverImage: { type: String, default: null },
   route:      { type: String, default: '' },
   createdAt:  { type: Date, default: Date.now },
 });
@@ -126,6 +137,43 @@ const collectionLogSchema = new mongoose.Schema({
 });
 const CollectionLog = mongoose.model('CollectionLog', collectionLogSchema);
 
+// --- IoT Sensor Readings ---
+const sensorReadingSchema = new mongoose.Schema({
+  sensorId:    { type: String, required: true },              // e.g. "SENSOR-001"
+  deviceType:  { type: String, default: 'ESP32' },             // ESP32, Arduino, etc.
+  location:    { type: String, default: '' },                  // human-readable location
+  barangay:    { type: String, default: '' },
+  lat:         { type: Number },
+  lng:         { type: Number },
+  ammonia:     { type: Number, default: 0 },                   // ppm from MQ-135
+  methane:     { type: Number, default: 0 },                   // % LEL
+  hydrogen:    { type: Number, default: 0 },                   // ppm (optional)
+  co2:         { type: Number, default: 0 },                   // ppm (optional)
+  temperature: { type: Number, default: 0 },                   // °C from DHT11
+  humidity:    { type: Number, default: 0 },                   // % from DHT11
+  binLevel:    { type: Number, default: 0 },                   // % from Ultrasonic
+  rawValue:    { type: Number, default: 0 },                   // raw analog value
+  airQuality:  { type: String, enum: ['Good', 'Moderate', 'Unhealthy', 'Hazardous'], default: 'Good' },
+  timestamp:   { type: Date, default: Date.now },
+});
+sensorReadingSchema.index({ sensorId: 1, timestamp: -1 });
+const SensorReading = mongoose.model('SensorReading', sensorReadingSchema);
+
+const iotAlertSchema = new mongoose.Schema({
+  sensorId:   { type: String, required: true },
+  location:   { type: String, default: '' },
+  barangay:   { type: String, default: '' },
+  severity:   { type: String, enum: ['critical', 'moderate', 'low'], default: 'moderate' },
+  message:    { type: String, required: true },
+  gasType:    { type: String, default: '' },                    // which gas triggered
+  value:      { type: Number, default: 0 },                     // the reading value
+  threshold:  { type: Number, default: 0 },                     // the threshold exceeded
+  acknowledged: { type: Boolean, default: false },
+  createdAt:  { type: Date, default: Date.now },
+});
+iotAlertSchema.index({ createdAt: -1 });
+const IoTAlert = mongoose.model('IoTAlert', iotAlertSchema);
+
 const officialSchema = new mongoose.Schema({
   name:         { type: String, required: true },
   email:        { type: String, required: true, unique: true, lowercase: true },
@@ -135,6 +183,21 @@ const officialSchema = new mongoose.Schema({
   createdAt:    { type: Date, default: Date.now },
 });
 const Official = mongoose.model('Official', officialSchema);
+
+const residentSchema = new mongoose.Schema({
+  firstName:    { type: String, required: true },
+  lastName:     { type: String, required: true },
+  email:        { type: String, required: true, unique: true, lowercase: true },
+  passwordHash: { type: String, required: true },
+  phone:        { type: String, default: '' },
+  barangay:     { type: String, required: true },
+  street:       { type: String, default: '' },
+  houseNo:      { type: String, default: '' },
+  profilePicture: { type: String, default: null },
+  lastProfilePictureUpdate: { type: Date, default: null },
+  createdAt:    { type: Date, default: Date.now },
+});
+const Resident = mongoose.model('Resident', residentSchema);
 
 // --- Helpers -------------------------------------------------
 
@@ -223,6 +286,211 @@ function barangayFilter(official, field = 'barangay') {
   if (official.barangay === 'All' || official.role === 'superadmin') return {};
   return { [field]: official.barangay };
 }
+
+// --- Resident Auth -------------------------------------------
+app.post('/api/residents/register', async (req, res) => {
+  const { firstName, lastName, email, password, phone, barangay, street, houseNo } = req.body;
+  if (!firstName || !lastName || !email || !password || !barangay) {
+    return res.status(400).json({ error: 'firstName, lastName, email, password, and barangay are required' });
+  }
+  try {
+    const existing = await Resident.findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(409).json({ error: 'Email already registered' });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const resident = await Resident.create({
+      firstName, lastName, email: email.toLowerCase(), passwordHash,
+      phone: phone || '', barangay, street: street || '', houseNo: houseNo || '',
+    });
+    const token = jwt.sign(
+      { id: resident._id, name: `${resident.firstName} ${resident.lastName}`,
+        email: resident.email, barangay: resident.barangay, role: 'resident' },
+      JWT_SECRET, { expiresIn: '30d' }
+    );
+    res.status(201).json({
+      token,
+      user: { id: resident._id, name: `${resident.firstName} ${resident.lastName}`,
+        email: resident.email, barangay: resident.barangay,
+        address: `${resident.houseNo ? resident.houseNo + ', ' : ''}${resident.street ? resident.street + ', ' : ''}${resident.barangay}, Cebu City` },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/residents/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  try {
+    const resident = await Resident.findOne({ email: email.toLowerCase() });
+    if (!resident) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!await bcrypt.compare(password, resident.passwordHash))
+      return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign(
+      { id: resident._id, name: `${resident.firstName} ${resident.lastName}`,
+        email: resident.email, barangay: resident.barangay, role: 'resident' },
+      JWT_SECRET, { expiresIn: '30d' }
+    );
+    res.json({
+      token,
+      user: { id: resident._id, name: `${resident.firstName} ${resident.lastName}`,
+        email: resident.email, barangay: resident.barangay,
+        address: `${resident.houseNo ? resident.houseNo + ', ' : ''}${resident.street ? resident.street + ', ' : ''}${resident.barangay}, Cebu City` },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/residents/:id', async (req, res) => {
+  try {
+    const { firstName, lastName, phone, barangay, street, houseNo, profilePicture } = req.body;
+    const resident = await Resident.findById(req.params.id);
+    if (!resident) return res.status(404).json({ error: 'Resident not found' });
+
+    const updateData = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (phone !== undefined) updateData.phone = phone;
+    if (barangay) updateData.barangay = barangay;
+    if (street !== undefined) updateData.street = street;
+    if (houseNo !== undefined) updateData.houseNo = houseNo;
+
+    // Profile Picture Cooldown Logic (10 days)
+    if (profilePicture !== undefined && profilePicture !== resident.profilePicture) {
+      const now = new Date();
+      if (resident.lastProfilePictureUpdate) {
+        const diffTime = Math.abs(now - resident.lastProfilePictureUpdate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 10) {
+          return res.status(403).json({ 
+            error: `You can only change your profile picture once every 10 days. ${10 - diffDays} days remaining.` 
+          });
+        }
+      }
+      updateData.profilePicture = profilePicture;
+      updateData.lastProfilePictureUpdate = now;
+    }
+
+    const updatedResident = await Resident.findByIdAndUpdate(req.params.id, updateData, { new: true });
+
+    res.json({
+      user: {
+        id: updatedResident._id,
+        name: `${updatedResident.firstName} ${updatedResident.lastName}`,
+        email: updatedResident.email,
+        barangay: updatedResident.barangay,
+        profilePicture: updatedResident.profilePicture,
+        lastProfilePictureUpdate: updatedResident.lastProfilePictureUpdate,
+        address: `${updatedResident.houseNo ? updatedResident.houseNo + ', ' : ''}${updatedResident.street ? updatedResident.street + ', ' : ''}${updatedResident.barangay}, Cebu City`
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Community Feed & Voting ---------------------------------
+app.get('/api/reports', async (req, res) => {
+  try {
+    const { barangay, userId } = req.query;
+    const filter = {};
+    if (barangay) filter.barangay = barangay;
+    if (userId) {
+      if (mongoose.Types.ObjectId.isValid(userId)) {
+        filter.userId = new mongoose.Types.ObjectId(userId);
+      } else {
+        filter.userId = userId; // fallback
+      }
+    }
+
+    const reports = await Report.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('userId', 'firstName lastName profilePicture')
+      .populate('comments.userId', 'firstName lastName profilePicture');
+    res.json(reports);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reports', async (req, res) => {
+  try {
+    const report = await Report.create({
+      ...req.body,
+      title: req.body.title || req.body.category, // fallback
+    });
+    res.status(201).json(report);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/reports/:id/vote', async (req, res) => {
+  const { userId, type } = req.body; // type: 'up' or 'down'
+  if (!userId || !['up', 'down'].includes(type)) {
+    return res.status(400).json({ error: 'userId and type (up/down) required' });
+  }
+
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    // Remove user from both arrays first to prevent double voting/switching
+    report.upvotes = report.upvotes.filter(id => id.toString() !== userId);
+    report.downvotes = report.downvotes.filter(id => id.toString() !== userId);
+
+    if (type === 'up') {
+      report.upvotes.push(userId);
+    } else {
+      report.downvotes.push(userId);
+    }
+
+    await report.save();
+    res.json({
+      upvotes: report.upvotes.length,
+      downvotes: report.downvotes.length,
+      userVote: type
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reports/:id/comments', async (req, res) => {
+  const { userId, text } = req.body;
+  if (!userId || !text) return res.status(400).json({ error: 'userId and text required' });
+
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    report.comments.push({ userId, text });
+    await report.save();
+
+    const updatedReport = await Report.findById(req.params.id)
+      .populate('comments.userId', 'firstName lastName profilePicture');
+    
+    res.json(updatedReport.comments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/reports/:id', async (req, res) => {
+  console.log(`[DELETE] Request to delete report: ${req.params.id}`);
+  try {
+    const report = await Report.findByIdAndDelete(req.params.id);
+    if (!report) {
+      console.log(`[DELETE] Report NOT FOUND: ${req.params.id}`);
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    console.log(`[DELETE] Successfully deleted report: ${req.params.id}`);
+    res.json({ message: 'Report deleted successfully' });
+  } catch (err) {
+    console.error(`[DELETE] Error deleting report: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // --- Health --------------------------------------------------
 app.get('/ping', (req, res) =>
@@ -430,11 +698,16 @@ app.get('/api/fleet/:truckId', async (req, res) => {
 
 // Mutations require Officials auth
 app.post('/api/fleet', authMiddleware, async (req, res) => {
-  const { driverName, route } = req.body;
+  const { driverName, driverImage, route } = req.body;
   if (!driverName) return res.status(400).json({ error: 'driverName is required' });
   try {
     const truckId = await generateUniqueTruckId();
-    const entry = await Fleet.create({ truckId, driverName, route: route || '' });
+    const entry = await Fleet.create({ 
+      truckId, 
+      driverName, 
+      driverImage: driverImage || null,
+      route: route || '' 
+    });
     io.emit('fleet:new', entry);
     res.status(201).json(entry);
   } catch (err) {
@@ -856,6 +1129,287 @@ app.post('/api/collections', async (req, res) => {
     });
     io.emit('collection:new', log);
     res.status(201).json(log);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- IoT Sensor API ------------------------------------------
+
+// Thresholds (rule-based AI)
+const IOT_THRESHOLDS = {
+  ammonia:  { moderate: 25, critical: 45 },    // ppm
+  methane:  { moderate: 1.5, critical: 2.5 },  // % LEL
+  hydrogen: { moderate: 30, critical: 50 },    // ppm
+  co2:      { moderate: 800, critical: 1500 }, // ppm
+  binLevel: { moderate: 70, critical: 90 },    // %
+};
+
+function classifyAirQuality(ammonia, methane) {
+  if (ammonia >= 45 || methane >= 2.5) return 'Hazardous';
+  if (ammonia >= 25 || methane >= 1.5) return 'Unhealthy';
+  if (ammonia >= 15 || methane >= 0.8) return 'Moderate';
+  return 'Good';
+}
+
+function generateIoTAlerts(reading) {
+  const alerts = [];
+  const checks = [
+    { field: 'ammonia',  label: 'Ammonia',   unit: 'ppm' },
+    { field: 'methane',  label: 'Methane',   unit: '% LEL' },
+    { field: 'hydrogen', label: 'Hydrogen',  unit: 'ppm' },
+    { field: 'co2',      label: 'CO₂',       unit: 'ppm' },
+    { field: 'binLevel', label: 'Bin Level', unit: '%' },
+  ];
+  for (const { field, label, unit } of checks) {
+    const val = reading[field] || 0;
+    const thresh = IOT_THRESHOLDS[field];
+    if (!thresh) continue;
+    if (val >= thresh.critical) {
+      alerts.push({
+        sensorId: reading.sensorId, location: reading.location || '',
+        barangay: reading.barangay || '', severity: 'critical',
+        gasType: field, value: val, threshold: thresh.critical,
+        message: `CRITICAL: ${label} level at ${val} ${unit} — exceeds safe limit of ${thresh.critical} ${unit}`,
+      });
+    } else if (val >= thresh.moderate) {
+      alerts.push({
+        sensorId: reading.sensorId, location: reading.location || '',
+        barangay: reading.barangay || '', severity: 'moderate',
+        gasType: field, value: val, threshold: thresh.moderate,
+        message: `WARNING: ${label} level at ${val} ${unit} — approaching unsafe threshold of ${thresh.critical} ${unit}`,
+      });
+    }
+  }
+  return alerts;
+}
+
+// POST: Receive sensor data (from ESP32 or Postman/ThunderClient)
+app.post('/api/iot/sensor-data', async (req, res) => {
+  const {
+    sensorId, deviceType, location, barangay, lat, lng,
+    ammonia = 0, methane = 0, hydrogen = 0, co2 = 0,
+    temperature = 0, humidity = 0, binLevel = 0, rawValue = 0,
+  } = req.body;
+
+  if (!sensorId) {
+    return res.status(400).json({ error: 'sensorId is required' });
+  }
+
+  try {
+    const airQuality = classifyAirQuality(ammonia, methane);
+
+    // 1. Save reading
+    const reading = await SensorReading.create({
+      sensorId, deviceType: deviceType || 'ESP32',
+      location: location || '', barangay: barangay || '',
+      lat, lng, ammonia, methane, hydrogen, co2,
+      temperature, humidity, binLevel, rawValue, airQuality,
+    });
+
+    // 2. AI analysis — generate alerts if thresholds exceeded
+    const alertDefs = generateIoTAlerts(reading);
+    const savedAlerts = [];
+    for (const a of alertDefs) {
+      const alert = await IoTAlert.create(a);
+      savedAlerts.push(alert);
+      io.emit('iot:alert', alert);   // real-time push
+    }
+
+    // 3. Auto-create a report when air quality is Unhealthy or Hazardous
+    let autoReport = null;
+    if (airQuality === 'Unhealthy' || airQuality === 'Hazardous') {
+      const severity = airQuality === 'Hazardous' ? 'Critical' : 'High';
+      autoReport = await Report.create({
+        title: `IoT Alert: ${airQuality} Air Quality at ${location || sensorId}`,
+        category: airQuality === 'Hazardous' ? 'Hazardous Waste' : 'Overflowing Bin',
+        description: `Automated IoT detection — Ammonia: ${ammonia} ppm, Methane: ${methane}%, Bin Level: ${binLevel}%. Sensor: ${sensorId}`,
+        location: location || '', barangay: barangay || '',
+        lat, lng,
+        reportedBy: `IoT Sensor ${sensorId}`,
+        priority: severity,
+      });
+      io.emit('report:new', autoReport);
+    }
+
+    // 4. Update garbage-area heatmap node if it exists for this sensor
+    const areaStatus = airQuality === 'Hazardous' ? 'critical'
+                     : airQuality === 'Unhealthy' ? 'critical'
+                     : airQuality === 'Moderate'  ? 'moderate'
+                     : 'clean';
+    const areaIntensity = airQuality === 'Hazardous' ? 1.0
+                        : airQuality === 'Unhealthy' ? 0.8
+                        : airQuality === 'Moderate'  ? 0.5
+                        : 0.2;
+    if (lat != null && lng != null) {
+      const updatedArea = await GarbageArea.findOneAndUpdate(
+        { name: location || sensorId },
+        {
+          lat, lng,
+          status: areaStatus,
+          ammonia: `${ammonia} ppm`,
+          methane: `${methane}%`,
+          intensity: areaIntensity,
+          barangay: barangay || '',
+        },
+        { upsert: true, new: true }
+      );
+      io.emit('garbage-area:updated', updatedArea);
+    }
+
+    // 5. Emit real-time sensor update to all dashboard clients
+    io.emit('iot:reading', reading);
+
+    console.log(`[IoT] Sensor ${sensorId}: NH₃=${ammonia}ppm CH₄=${methane}% AQ=${airQuality} Alerts=${savedAlerts.length}`);
+
+    res.status(201).json({
+      reading,
+      airQuality,
+      alerts: savedAlerts,
+      autoReport: autoReport || null,
+      thresholds: IOT_THRESHOLDS,
+    });
+  } catch (err) {
+    console.error('[IoT] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: All readings for a sensor (with optional limit/time range)
+app.get('/api/iot/readings', async (req, res) => {
+  try {
+    const { sensorId, limit = 100, hours } = req.query;
+    const filter = {};
+    if (sensorId) filter.sensorId = sensorId;
+    if (hours) {
+      filter.timestamp = { $gte: new Date(Date.now() - Number(hours) * 3600 * 1000) };
+    }
+    const readings = await SensorReading.find(filter)
+      .sort({ timestamp: -1 })
+      .limit(Number(limit));
+    res.json(readings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: Latest reading per sensor
+app.get('/api/iot/readings/latest', async (req, res) => {
+  try {
+    const latest = await SensorReading.aggregate([
+      { $sort: { timestamp: -1 } },
+      { $group: {
+        _id: '$sensorId',
+        reading: { $first: '$$ROOT' }
+      }},
+      { $replaceRoot: { newRoot: '$reading' } },
+      { $sort: { sensorId: 1 } }
+    ]);
+    res.json(latest);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: Pollution trends — aggregated by hour for the last N hours
+app.get('/api/iot/trends', async (req, res) => {
+  try {
+    const { sensorId, hours = 168 } = req.query;   // default = 7 days
+    const since = new Date(Date.now() - Number(hours) * 3600 * 1000);
+    const match = { timestamp: { $gte: since } };
+    if (sensorId) match.sensorId = sensorId;
+
+    const trends = await SensorReading.aggregate([
+      { $match: match },
+      { $group: {
+        _id: {
+          year:  { $year: '$timestamp' },
+          month: { $month: '$timestamp' },
+          day:   { $dayOfMonth: '$timestamp' },
+          hour:  { $hour: '$timestamp' },
+        },
+        avgAmmonia:     { $avg: '$ammonia' },
+        avgMethane:     { $avg: '$methane' },
+        avgTemperature: { $avg: '$temperature' },
+        avgHumidity:    { $avg: '$humidity' },
+        avgBinLevel:    { $avg: '$binLevel' },
+        maxAmmonia:     { $max: '$ammonia' },
+        maxMethane:     { $max: '$methane' },
+        count:          { $sum: 1 },
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1, '_id.hour': 1 } },
+    ]);
+
+    // Format for chart consumption
+    const formatted = trends.map(t => {
+      const { year, month, day, hour } = t._id;
+      const dateStr = `${month}/${day} ${String(hour).padStart(2, '0')}:00`;
+      return {
+        date: dateStr,
+        ammonia:     Math.round(t.avgAmmonia * 10) / 10,
+        methane:     Math.round(t.avgMethane * 100) / 100,
+        temperature: Math.round(t.avgTemperature * 10) / 10,
+        humidity:    Math.round(t.avgHumidity * 10) / 10,
+        binLevel:    Math.round(t.avgBinLevel),
+        maxAmmonia:  t.maxAmmonia,
+        maxMethane:  t.maxMethane,
+        samples:     t.count,
+      };
+    });
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: IoT alerts
+app.get('/api/iot/alerts', async (req, res) => {
+  try {
+    const { limit = 50, severity, acknowledged } = req.query;
+    const filter = {};
+    if (severity) filter.severity = severity;
+    if (acknowledged !== undefined) filter.acknowledged = acknowledged === 'true';
+    const alerts = await IoTAlert.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(Number(limit));
+    res.json(alerts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: Acknowledge an alert
+app.patch('/api/iot/alerts/:id/acknowledge', async (req, res) => {
+  try {
+    const alert = await IoTAlert.findByIdAndUpdate(
+      req.params.id,
+      { acknowledged: true },
+      { new: true }
+    );
+    if (!alert) return res.status(404).json({ error: 'Alert not found' });
+    io.emit('iot:alert:acknowledged', alert);
+    res.json(alert);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: IoT dashboard summary
+app.get('/api/iot/summary', async (req, res) => {
+  try {
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    const [totalSensors, recentReadings, activeAlerts, criticalAlerts] = await Promise.all([
+      SensorReading.distinct('sensorId'),
+      SensorReading.countDocuments({ timestamp: { $gte: oneHourAgo } }),
+      IoTAlert.countDocuments({ acknowledged: false }),
+      IoTAlert.countDocuments({ acknowledged: false, severity: 'critical' }),
+    ]);
+    res.json({
+      totalSensors: totalSensors.length,
+      recentReadings,
+      activeAlerts,
+      criticalAlerts,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

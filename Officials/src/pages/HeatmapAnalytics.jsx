@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents, Polygon } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -31,6 +32,16 @@ function MapClickHandler({ onMapClick }) {
   return null;
 }
 
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function HeatmapAnalytics() {
   const { official } = useAuth();
   const [zones, setZones] = useState([]);
@@ -41,6 +52,8 @@ export default function HeatmapAnalytics() {
   const [saving, setSaving] = useState(false);
   const [boundary, setBoundary] = useState(null);
   const [outOfBoundsError, setOutOfBoundsError] = useState(false);
+  const [iotFlash, setIotFlash] = useState(null); // flash notification for real-time updates
+  const socketRef = useRef(null);
 
   const fetchZonesAndBoundary = async () => {
     setLoading(true);
@@ -62,6 +75,45 @@ export default function HeatmapAnalytics() {
 
   useEffect(() => {
     fetchZonesAndBoundary();
+
+    // Connect Socket.IO for live IoT heatmap updates
+    const socket = io(API, { transports: ['websocket', 'polling'] });
+    socketRef.current = socket;
+
+    // When IoT sensor updates a garbage area, update the heatmap in real-time
+    socket.on('garbage-area:updated', (updatedArea) => {
+      setZones(prev => {
+        const exists = prev.find(z => z._id === updatedArea._id);
+        if (exists) {
+          return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
+        } else {
+          return [updatedArea, ...prev];
+        }
+      });
+
+      // Flash notification
+      setIotFlash({
+        name: updatedArea.name,
+        status: updatedArea.status,
+        ammonia: updatedArea.ammonia,
+        methane: updatedArea.methane,
+      });
+      setTimeout(() => setIotFlash(null), 5000);
+    });
+
+    // When a new IoT alert arrives, flash it
+    socket.on('iot:alert', (alert) => {
+      if (alert.severity === 'critical') {
+        setIotFlash({
+          name: alert.location || alert.sensorId,
+          status: 'critical',
+          message: alert.message,
+        });
+        setTimeout(() => setIotFlash(null), 6000);
+      }
+    });
+
+    return () => socket.disconnect();
   }, [official]);
 
   const handleMapClick = (latlng) => {
@@ -123,7 +175,7 @@ export default function HeatmapAnalytics() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Garbage Areas & Heatmap</h1>
-          <p className="text-xs text-slate-500">Mark collection hotspots and monitor environmental impact</p>
+          <p className="text-xs text-slate-500">Mark collection hotspots and monitor environmental impact — <span className="text-emerald-600 font-medium">auto-updated by IoT sensors</span></p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -153,8 +205,8 @@ export default function HeatmapAnalytics() {
 
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-          <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold">{criticalCt}</div>
+        <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${criticalCt > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
+          <div className={`w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold ${criticalCt > 0 ? 'animate-pulse' : ''}`}>{criticalCt}</div>
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Areas</p>
             <p className="text-xs text-slate-600">Immediate attention needed</p>
@@ -189,6 +241,24 @@ export default function HeatmapAnalytics() {
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-white px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 animate-bounce border border-red-400">
             <ShieldAlert className="w-5 h-5" />
             OUT OF JURISDICTION: You can only mark areas inside {official?.barangay}!
+          </div>
+        )}
+
+        {/* IoT Real-time Flash Notification */}
+        {iotFlash && (
+          <div className={`absolute top-6 left-1/2 -translate-x-1/2 z-[1000] px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border ${
+            iotFlash.status === 'critical'
+              ? 'bg-red-600 text-white border-red-400'
+              : iotFlash.status === 'moderate'
+              ? 'bg-amber-500 text-white border-amber-400'
+              : 'bg-emerald-600 text-white border-emerald-400'
+          }`} style={{ animation: 'fadeInDown 0.4s ease-out' }}>
+            <Radio className="w-4 h-4 animate-pulse" />
+            <span>
+              IoT Update: <span className="font-black">{iotFlash.name}</span> → {' '}
+              <span className="uppercase">{iotFlash.status}</span>
+              {iotFlash.ammonia && <span className="ml-2 text-xs opacity-80">NH₃: {iotFlash.ammonia}</span>}
+            </span>
           </div>
         )}
 
@@ -238,24 +308,59 @@ export default function HeatmapAnalytics() {
               radius={zone.status === 'critical' ? 30 : zone.status === 'moderate' ? 22 : 15}
               pathOptions={{
                 fillColor: zoneColor[zone.status],
-                fillOpacity: 0.35,
+                fillOpacity: zone.status === 'critical' ? 0.5 : 0.35,
                 color: zoneColor[zone.status],
-                weight: 2,
+                weight: zone.status === 'critical' ? 3 : 2,
                 opacity: 0.7,
               }}
               eventHandlers={{ click: () => setSelectedZone(zone) }}
             >
               <Popup>
-                <div className="p-1 min-w-[140px]">
+                <div className="p-1 min-w-[180px]">
                   <p className="font-bold text-slate-900 text-sm">{zone.name}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <span className="w-2 h-2 rounded-full" style={{ background: zoneColor[zone.status] }} />
                     <span className="text-xs capitalize font-semibold" style={{ color: zoneColor[zone.status] }}>{zone.status}</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-2">Added {new Date(zone.createdAt).toLocaleDateString()}</p>
+
+                  {/* IoT Sensor Data in Popup */}
+                  {(zone.ammonia || zone.methane) && (
+                    <div style={{ marginTop: '8px', padding: '6px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        🔬 Sensor Readings
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
+                        </div>
+                        {zone.bins > 0 && (
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Bins: </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.bins}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {zone.barangay && (
+                    <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>📍 {zone.barangay}</p>
+                  )}
+                  <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                    Updated {timeAgo(zone.createdAt)}
+                  </p>
                   <button 
                     onClick={() => handleDeleteArea(zone._id)}
-                    className="mt-3 flex items-center gap-1 text-[10px] font-bold text-red-600 hover:text-red-700"
+                    style={{
+                      marginTop: '10px', display: 'flex', alignItems: 'center', gap: '4px',
+                      fontSize: '10px', fontWeight: 'bold', color: '#dc2626', cursor: 'pointer',
+                      background: 'none', border: 'none', padding: 0
+                    }}
                   >
                     <Trash2 className="w-3 h-3" /> DELETE AREA
                   </button>
@@ -291,9 +396,9 @@ export default function HeatmapAnalytics() {
       <div className="flex items-center gap-6 px-2">
         <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest text-[10px]">Legend</span>
         {[
-          { color: 'bg-red-500', label: 'Critical' },
-          { color: 'bg-amber-500', label: 'Moderate' },
-          { color: 'bg-emerald-500', label: 'Clean Zone' },
+          { color: 'bg-red-500', label: 'Critical — IoT detected hazardous levels' },
+          { color: 'bg-amber-500', label: 'Moderate — Elevated readings' },
+          { color: 'bg-emerald-500', label: 'Clean Zone — Safe levels' },
         ].map((l) => (
           <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
             <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
@@ -301,6 +406,14 @@ export default function HeatmapAnalytics() {
           </span>
         ))}
       </div>
+
+      {/* CSS for flash animation */}
+      <style>{`
+        @keyframes fadeInDown {
+          from { transform: translate(-50%, -20px); opacity: 0; }
+          to   { transform: translate(-50%, 0);     opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

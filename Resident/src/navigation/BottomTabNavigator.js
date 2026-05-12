@@ -6,7 +6,7 @@ import MapScreen from '../screens/MapScreen';
 import ScannerScreen from '../screens/ScannerScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import LeaderboardScreen from '../screens/LeaderboardScreen';
+import CommunityFeedScreen from '../screens/CommunityFeedScreen';
 import colors from '../constants/colors';
 
 const Tab = createBottomTabNavigator();
@@ -23,7 +23,7 @@ export default function BottomTabNavigator() {
           else if (route.name === 'Report') iconName = 'alert-circle-outline';
           else if (route.name === 'Calendar') iconName = 'calendar-outline';
           else if (route.name === 'Profile') iconName = 'person-outline';
-          else if (route.name === 'Leaderboard') iconName = 'trophy-outline';
+          else if (route.name === 'Community') iconName = 'megaphone-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.primaryGreen,
@@ -44,8 +44,8 @@ export default function BottomTabNavigator() {
       <Tab.Screen name="Map" component={MapScreen} />
       <Tab.Screen name="Scanner" component={ScannerScreen} />
       <Tab.Screen name="Calendar" component={CalendarScreen} />
+      <Tab.Screen name="Community" component={CommunityFeedScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
     </Tab.Navigator>
   );
 }
