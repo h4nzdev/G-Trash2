@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -319,10 +319,10 @@ export default function HeatmapAnalytics() {
           <MapClickHandler onMapClick={handleMapClick} />
 
           {zones.map((zone) => (
-            <CircleMarker
+            <Circle
               key={zone._id}
               center={[zone.lat, zone.lng]}
-              radius={zone.status === 'critical' ? 30 : zone.status === 'moderate' ? 22 : 15}
+              radius={zone.status === 'critical' ? 200 : zone.status === 'moderate' ? 130 : 70}
               pathOptions={{
                 fillColor: zoneColor[zone.status],
                 fillOpacity: zone.status === 'critical' ? 0.5 : 0.35,
@@ -400,13 +400,13 @@ export default function HeatmapAnalytics() {
                   </button>
                 </div>
               </Popup>
-            </CircleMarker>
+            </Circle>
           ))}
 
           {newArea && (
-            <CircleMarker 
+            <Circle
               center={[newArea.lat, newArea.lng]}
-              radius={20}
+              radius={130}
               pathOptions={{ fillColor: '#059669', fillOpacity: 0.6, color: '#fff', weight: 2 }}
             >
               <Popup>
@@ -421,7 +421,7 @@ export default function HeatmapAnalytics() {
                   </button>
                 </div>
               </Popup>
-            </CircleMarker>
+            </Circle>
           )}
         </MapContainer>
       </div>

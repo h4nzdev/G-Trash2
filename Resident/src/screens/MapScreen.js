@@ -435,15 +435,18 @@ export default function MapScreen() {
       if (status === "offline") {
         setLiveTruckOnline(false);
         const pos = liveTruckPos.current;
-        if (pos && webViewReady.current) {
-          const safeId = (truckId || "GT").replace(/'/g, "\\'");
-          webViewRef.current?.injectJavaScript(
-            `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
-          );
-        } else if (webViewReady.current) {
-          webViewRef.current?.injectJavaScript(
-            `window.removeTruckMarker(); true;`,
-          );
+        const safeId = (truckId || "GT").replace(/'/g, "\\'");
+        if (webViewReady.current) {
+          if (pos) {
+            webViewRef.current?.injectJavaScript(
+              `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
+            );
+          } else {
+            // No last position — remove the marker entirely by truckId
+            webViewRef.current?.injectJavaScript(
+              `window.removeTruckMarker('${safeId}'); true;`,
+            );
+          }
         }
         liveTruckPos.current = null;
       }

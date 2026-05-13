@@ -100,39 +100,90 @@ export default function CollectorHomeScreen() {
   const successScale = useRef(new Animated.Value(1)).current;
   const cleanedOpacity = useRef(new Animated.Value(0)).current;
 
-  const fetchRouteData = useCallback(() => {
-    setIsLoading(true);
-    setHasError(false);
+  const applyRoute = useCallback((route) => {
+    if (route?.waypoints?.length >= 1) {
+      setStops(waypointsToStops(route.waypoints));
+      setRouteName(route.name || "");
+      setRouteAssigned(true);
+    } else {
+      setRouteAssigned(false);
+      setStops([]);
+    }
+    setIsLoading(false);
+  }, []);
+
+  // Fallback: route assigned directly to this truck
+  const fetchRouteDirect = useCallback(() => {
     const xhr = new XMLHttpRequest();
     xhr.open("GET", `${API_URL}/api/routes/truck/${TRUCK_ID}`);
     xhr.timeout = 8000;
     xhr.onload = () => {
       if (xhr.status === 200) {
-        try {
-          const route = JSON.parse(xhr.responseText);
-          if (route.waypoints && route.waypoints.length >= 1) {
-            setStops(waypointsToStops(route.waypoints));
-            setRouteName(route.name || "");
-            setRouteAssigned(true);
-          } else {
-            setRouteAssigned(false);
-            setStops([]);
-          }
-        } catch (_) {
-          setHasError(true);
-        }
+        try { applyRoute(JSON.parse(xhr.responseText)); }
+        catch (_) { setHasError(true); setIsLoading(false); }
       } else if (xhr.status === 404) {
         setRouteAssigned(false);
         setStops([]);
+        setIsLoading(false);
       } else {
         setHasError(true);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     xhr.onerror = () => { setHasError(true); setIsLoading(false); };
     xhr.ontimeout = () => { setHasError(true); setIsLoading(false); };
     xhr.send();
-  }, [TRUCK_ID]);
+  }, [TRUCK_ID, applyRoute]);
+
+  // Fetch a route by its ID
+  const fetchRouteById = useCallback((routeId) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", `${API_URL}/api/routes/${routeId}`);
+    xhr.timeout = 8000;
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try { applyRoute(JSON.parse(xhr.responseText)); }
+        catch (_) { fetchRouteDirect(); }
+      } else {
+        fetchRouteDirect();
+      }
+    };
+    xhr.onerror = fetchRouteDirect;
+    xhr.ontimeout = fetchRouteDirect;
+    xhr.send();
+  }, [applyRoute, fetchRouteDirect]);
+
+  const fetchRouteData = useCallback(() => {
+    setIsLoading(true);
+    setHasError(false);
+
+    // Device-local date (YYYY-MM-DD) sent to avoid server UTC vs device timezone mismatch
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // Step 1: check today's schedule for this truck (Officials create schedules, not direct route assignments)
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", `${API_URL}/api/schedules/truck/${TRUCK_ID}/today?date=${today}`);
+    xhr.timeout = 8000;
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          const { schedules } = JSON.parse(xhr.responseText);
+          const first = schedules?.[0];
+          if (first?.routeId) {
+            // Step 2: load the route linked from the schedule
+            fetchRouteById(first.routeId);
+            return;
+          }
+        } catch (_) {}
+      }
+      // No schedule today — fall back to directly-assigned route
+      fetchRouteDirect();
+    };
+    xhr.onerror = fetchRouteDirect;
+    xhr.ontimeout = fetchRouteDirect;
+    xhr.send();
+  }, [TRUCK_ID, fetchRouteById, fetchRouteDirect]);
 
   useEffect(() => { fetchRouteData(); }, [fetchRouteData]);
 

@@ -254,6 +254,16 @@ const BarangayBoundary = mongoose.model(
   barangayBoundarySchema,
 );
 
+const barangayScoreSchema = new mongoose.Schema({
+  barangay: { type: String, required: true, unique: true },
+  points: { type: Number, default: 0 },
+  pickupCount: { type: Number, default: 0 },    // confirmed trash pickups
+  reportVoteCount: { type: Number, default: 0 }, // community report votes
+  areaQualityPts: { type: Number, default: 0 },  // bonus from clean heatmap
+  updatedAt: { type: Date, default: Date.now },
+});
+const BarangayScore = mongoose.model("BarangayScore", barangayScoreSchema);
+
 // --- Helpers -------------------------------------------------
 
 async function generateUniqueTruckId() {
@@ -276,6 +286,18 @@ function getTodayYMD() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// Award points to a barangay — upserts the score document
+async function addBarangayScore(barangay, points, field) {
+  if (!barangay || !points) return;
+  const inc = { points, updatedAt: Date.now() };
+  if (field) inc[field] = points;
+  return BarangayScore.findOneAndUpdate(
+    { barangay },
+    { $inc: inc },
+    { upsert: true, new: true },
+  );
 }
 
 const BARANGAY_BOUNDARIES = {};
@@ -643,6 +665,10 @@ app.post("/api/reports/:id/vote", async (req, res) => {
     }
 
     await report.save();
+    // +1 pt to barangay for every vote cast (community engagement)
+    if (report.barangay) {
+      addBarangayScore(report.barangay, 1, "reportVoteCount").catch(() => {});
+    }
     res.json({
       upvotes: report.upvotes.length,
       downvotes: report.downvotes.length,
@@ -1266,6 +1292,74 @@ app.get("/api/admin/stats", authMiddleware, async (req, res) => {
   }
 });
 
+// --- Leaderboard (public) -----------------------------------
+
+// GET ranked barangays by total points
+app.get("/api/leaderboard", async (req, res) => {
+  try {
+    const scores = await BarangayScore.find()
+      .sort({ points: -1 })
+      .lean();
+    res.json(scores);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST award points to a barangay (called by resident app — no auth needed)
+app.post("/api/leaderboard/add-score", async (req, res) => {
+  const { barangay, reason } = req.body;
+  if (!barangay || !reason) {
+    return res.status(400).json({ error: "barangay and reason required" });
+  }
+
+  const CONFIG = {
+    pickup:       { points: 1, field: "pickupCount" },
+    vote:         { points: 1, field: "reportVoteCount" },
+    area_clean:   { points: 3, field: "areaQualityPts" },
+    area_moderate:{ points: 1, field: "areaQualityPts" },
+  };
+  const cfg = CONFIG[reason];
+  if (!cfg) return res.status(400).json({ error: "unknown reason" });
+
+  try {
+    const score = await addBarangayScore(barangay, cfg.points, cfg.field);
+    res.json({ ok: true, points: cfg.points, total: score.points });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST seed leaderboard with demo data (dev only — idempotent)
+app.post("/api/leaderboard/seed", async (req, res) => {
+  const seedData = [
+    { barangay: "IT Park",       points: 142, pickupCount: 58, reportVoteCount: 52, areaQualityPts: 32 },
+    { barangay: "Lahug",         points: 119, pickupCount: 47, reportVoteCount: 45, areaQualityPts: 27 },
+    { barangay: "Banilad",       points: 98,  pickupCount: 39, reportVoteCount: 38, areaQualityPts: 21 },
+    { barangay: "Talamban",      points: 85,  pickupCount: 34, reportVoteCount: 33, areaQualityPts: 18 },
+    { barangay: "Mabolo",        points: 74,  pickupCount: 29, reportVoteCount: 27, areaQualityPts: 18 },
+    { barangay: "Ayala",         points: 63,  pickupCount: 25, reportVoteCount: 24, areaQualityPts: 14 },
+    { barangay: "Carbon Market", points: 51,  pickupCount: 20, reportVoteCount: 19, areaQualityPts: 12 },
+    { barangay: "Ermita",        points: 44,  pickupCount: 17, reportVoteCount: 16, areaQualityPts: 11 },
+    { barangay: "Sto. Niño",     points: 37,  pickupCount: 14, reportVoteCount: 14, areaQualityPts: 9  },
+    { barangay: "Mandaue",       points: 28,  pickupCount: 11, reportVoteCount: 10, areaQualityPts: 7  },
+  ];
+  try {
+    const results = await Promise.all(
+      seedData.map(({ barangay, points, pickupCount, reportVoteCount, areaQualityPts }) =>
+        BarangayScore.findOneAndUpdate(
+          { barangay },
+          { $set: { points, pickupCount, reportVoteCount, areaQualityPts, updatedAt: new Date() } },
+          { upsert: true, new: true },
+        )
+      )
+    );
+    res.json({ ok: true, seeded: results.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Bug Reports --------------------------------------------
 app.post("/api/bugs", async (req, res) => {
   try {
@@ -1722,6 +1816,41 @@ app.delete("/api/schedules/:id", authMiddleware, async (req, res) => {
 });
 
 // --- Collection logs -----------------------------------------
+// GET: All collection logs — supports ?period=today|week|month, ?truckId, ?date
+app.get("/api/collections", optionalAuth, async (req, res) => {
+  const { period, truckId, date } = req.query;
+  try {
+    const today = new Date().toLocaleDateString("en-CA");
+    const filter = {};
+
+    if (truckId) filter.truckId = truckId.toUpperCase();
+
+    if (date) {
+      filter.date = date;
+    } else if (period === "today") {
+      filter.date = today;
+    } else if (period === "week") {
+      const now = new Date();
+      const dow = now.getDay();
+      const diffToMon = dow === 0 ? -6 : 1 - dow;
+      const mon = new Date(now);
+      mon.setDate(now.getDate() + diffToMon);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      const fmt = (d) => d.toLocaleDateString("en-CA");
+      filter.date = { $gte: fmt(mon), $lte: fmt(sun) };
+    } else if (period === "month") {
+      const [y, m] = today.split("-");
+      filter.date = { $gte: `${y}-${m}-01`, $lte: `${y}-${m}-31` };
+    }
+
+    const logs = await CollectionLog.find(filter).sort({ completedAt: -1 });
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/collections/truck/:truckId", async (req, res) => {
   const { truckId } = req.params;
   const { period = "today" } = req.query;
@@ -1948,6 +2077,13 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         { upsert: true, new: true },
       );
       io.emit("garbage-area:updated", updatedArea);
+      // Area quality bonus — clean areas earn points for their barangay
+      if (updatedArea.barangay) {
+        const qualityPts = areaStatus === "clean" ? 3 : areaStatus === "moderate" ? 1 : 0;
+        if (qualityPts > 0) {
+          addBarangayScore(updatedArea.barangay, qualityPts, "areaQualityPts").catch(() => {});
+        }
+      }
     }
 
     // 5. Emit real-time sensor update to all dashboard clients
@@ -2163,7 +2299,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Truck marks itself offline
+  // Truck marks itself offline — broadcast to ALL clients including sender
   socket.on("truck:offline", async ({ truckId }) => {
     if (!truckId) return;
     try {
@@ -2171,7 +2307,7 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("DB write error:", err.message);
     }
-    socket.broadcast.emit("truck:status", { truckId, status: "offline" });
+    io.emit("truck:status", { truckId, status: "offline" });
   });
 
   // Truck reports it is off its assigned route â€” relay to Officials dashboard

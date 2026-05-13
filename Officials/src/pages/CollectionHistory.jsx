@@ -1,42 +1,158 @@
-import { useState } from 'react';
-import { Search, Download, Calendar, Package, Truck, Star } from 'lucide-react';
-import Badge from '../components/shared/Badge';
-import { collectionHistory, summaryStats } from '../data/mockData';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Download, Package, Truck, Weight, Archive } from 'lucide-react';
+import axios from 'axios';
+import API from '../config';
 
-const ROWS_PER_PAGE = 8;
+const ROWS_PER_PAGE = 10;
+const PERIODS = [
+  { label: 'All Time', value: 'all' },
+  { label: 'Today',    value: 'today' },
+  { label: 'This Week', value: 'week' },
+  { label: 'This Month', value: 'month' },
+];
+
+const WASTE_COLORS = {
+  General:    'bg-slate-100 text-slate-600',
+  Recyclable: 'bg-blue-100 text-blue-700',
+  Hazardous:  'bg-red-100 text-red-700',
+  Organic:    'bg-emerald-100 text-emerald-700',
+  Bulky:      'bg-amber-100 text-amber-700',
+};
+
+function exportCSV(data) {
+  const headers = ['Date', 'Truck ID', 'Stop Name', 'Stop Address', 'Route', 'Waste Type', 'Weight (kg)', 'Bins', 'Completed At'];
+  const rows = data.map((r) => [
+    r.date,
+    r.truckId,
+    r.stopName   || '',
+    r.stopAddress || '',
+    r.routeName  || '',
+    r.wasteType  || 'General',
+    r.weight     ?? 0,
+    r.bins       ?? 0,
+    new Date(r.completedAt).toLocaleString(),
+  ]);
+  const csv = [headers, ...rows]
+    .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `collection-history-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function CollectionHistory() {
-  const [search, setSearch] = useState('');
+  const [logs,       setLogs]       = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [period,     setPeriod]     = useState('month');
+  const [search,     setSearch]     = useState('');
   const [dateFilter, setDateFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [page, setPage] = useState(0);
+  const [truckFilter,setTruckFilter]= useState('');
+  const [page,       setPage]       = useState(0);
 
-  const filtered = collectionHistory.filter((row) => {
-    const searchMatch = !search ||
-      row.barangay.toLowerCase().includes(search.toLowerCase()) ||
-      row.truckId.toLowerCase().includes(search.toLowerCase()) ||
-      row.route.toLowerCase().includes(search.toLowerCase());
-    const dateMatch = !dateFilter || row.date === dateFilter;
-    const statusMatch = statusFilter === 'All' || row.status === statusFilter.toLowerCase();
-    return searchMatch && dateMatch && statusMatch;
-  });
+  // Fetch logs whenever period or dateFilter changes
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setLoading(true);
+      try {
+        const params = {};
+        if (dateFilter) {
+          params.date = dateFilter;
+        } else if (period !== 'all') {
+          params.period = period;
+        }
+        if (truckFilter) params.truckId = truckFilter;
 
-  const paged = filtered.slice(page * ROWS_PER_PAGE, page * ROWS_PER_PAGE + ROWS_PER_PAGE);
+        const { data } = await axios.get(`${API}/api/collections`, { params });
+        setLogs(data);
+      } catch (err) {
+        console.error('Failed to fetch collection logs:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLogs();
+  }, [period, dateFilter, truckFilter]);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(0); }, [search, dateFilter, truckFilter, period]);
+
+  // Unique truck IDs for the filter dropdown
+  const truckIds = useMemo(
+    () => [...new Set(logs.map((l) => l.truckId))].sort(),
+    [logs],
+  );
+
+  // Client-side search filter (on top of server-side period/truck filter)
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return logs.filter((r) =>
+      !q ||
+      r.truckId?.toLowerCase().includes(q) ||
+      r.stopName?.toLowerCase().includes(q) ||
+      r.routeName?.toLowerCase().includes(q) ||
+      r.wasteType?.toLowerCase().includes(q),
+    );
+  }, [logs, search]);
+
+  const paged      = filtered.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
   const totalPages = Math.ceil(filtered.length / ROWS_PER_PAGE);
 
-  const totalWeight = collectionHistory
-    .reduce((sum, r) => sum + parseFloat(r.weight.replace('kg', '')), 0)
-    .toFixed(0);
+  // Summary stats — derived from fetched (pre-filtered) logs
+  const stats = useMemo(() => {
+    const totalWeight = logs.reduce((s, r) => s + (r.weight ?? 0), 0);
+    const totalBins   = logs.reduce((s, r) => s + (r.bins   ?? 0), 0);
+
+    const truckCounts = {};
+    logs.forEach((r) => { truckCounts[r.truckId] = (truckCounts[r.truckId] || 0) + 1; });
+    const mostActive = Object.entries(truckCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
+
+    return { totalWeight, totalBins, totalStops: logs.length, mostActive };
+  }, [logs]);
+
+  const handlePeriodChange = (val) => {
+    setPeriod(val);
+    setDateFilter(''); // clear specific date when switching period
+  };
+
+  const handleDateChange = (val) => {
+    setDateFilter(val);
+    setPeriod('all'); // clear period when pinning a specific date
+  };
 
   return (
     <div className="p-6 space-y-6">
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { icon: Package, label: 'Total This Month', value: summaryStats.monthlyCollected, color: 'bg-emerald-100 text-emerald-700' },
-          { icon: Calendar, label: 'Avg Daily Collection', value: summaryStats.avgDailyCollection, color: 'bg-blue-100 text-blue-700' },
-          { icon: Truck, label: 'Most Active Truck', value: summaryStats.mostActiveTruck, color: 'bg-purple-100 text-purple-700' },
-          { icon: Star, label: 'Peak Day', value: summaryStats.peakDay, color: 'bg-amber-100 text-amber-700' },
+          {
+            icon: Weight,
+            label: 'Total Weight',
+            value: loading ? '…' : `${stats.totalWeight.toLocaleString()} kg`,
+            color: 'bg-emerald-100 text-emerald-700',
+          },
+          {
+            icon: Package,
+            label: 'Total Stops',
+            value: loading ? '…' : stats.totalStops.toLocaleString(),
+            color: 'bg-blue-100 text-blue-700',
+          },
+          {
+            icon: Truck,
+            label: 'Most Active Truck',
+            value: loading ? '…' : stats.mostActive,
+            color: 'bg-purple-100 text-purple-700',
+          },
+          {
+            icon: Archive,
+            label: 'Total Bins',
+            value: loading ? '…' : stats.totalBins.toLocaleString(),
+            color: 'bg-amber-100 text-amber-700',
+          },
         ].map(({ icon: Icon, label, value, color }) => (
           <div key={label} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
@@ -50,49 +166,87 @@ export default function CollectionHistory() {
         ))}
       </div>
 
-      {/* Filters & Table */}
+      {/* Table card */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        {/* Table Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-          <div className="flex-1">
-            <h2 className="text-sm font-bold text-slate-900">Collection Log</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{filtered.length} records found</p>
+
+        {/* Toolbar */}
+        <div className="px-6 py-4 border-b border-slate-100 space-y-3">
+
+          {/* Title + Export */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Collection Log</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {loading ? 'Loading…' : `${filtered.length} record${filtered.length !== 1 ? 's' : ''} found`}
+              </p>
+            </div>
+            <button
+              onClick={() => exportCSV(filtered)}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Period toggle */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+            {PERIODS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => handlePeriodChange(p.value)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  period === p.value && !dateFilter
+                    ? 'bg-white text-emerald-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Filters row */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search stop, route, type…"
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                className="pl-8 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 w-44"
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 w-52"
               />
             </div>
 
-            {/* Date */}
+            {/* Truck filter */}
+            <select
+              value={truckFilter}
+              onChange={(e) => setTruckFilter(e.target.value)}
+              className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700"
+            >
+              <option value="">All Trucks</option>
+              {truckIds.map((id) => <option key={id} value={id}>{id}</option>)}
+            </select>
+
+            {/* Specific date */}
             <input
               type="date"
               value={dateFilter}
-              onChange={(e) => { setDateFilter(e.target.value); setPage(0); }}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700"
             />
 
-            {/* Status */}
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
-              className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700"
-            >
-              {['All', 'Completed', 'Partial', 'Missed'].map((s) => <option key={s}>{s}</option>)}
-            </select>
-
-            {/* Export */}
-            <button className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors">
-              <Download className="w-3.5 h-3.5" /> Export CSV
-            </button>
+            {/* Clear date */}
+            {dateFilter && (
+              <button
+                onClick={() => { setDateFilter(''); setPeriod('month'); }}
+                className="text-xs text-slate-500 hover:text-slate-700 underline"
+              >
+                Clear date
+              </button>
+            )}
           </div>
         </div>
 
@@ -101,7 +255,7 @@ export default function CollectionHistory() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {['Date', 'Barangay', 'Truck ID', 'Route', 'Weight', 'Type', 'Status'].map((h) => (
+                {['Date', 'Truck ID', 'Stop Name', 'Route', 'Waste Type', 'Weight', 'Bins'].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -109,29 +263,54 @@ export default function CollectionHistory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {paged.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-3.5 text-sm text-slate-700 font-medium">{row.date}</td>
-                  <td className="px-5 py-3.5 text-sm font-semibold text-slate-900">{row.barangay}</td>
-                  <td className="px-5 py-3.5">
-                    <span className="text-sm font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{row.truckId}</span>
-                  </td>
-                  <td className="px-5 py-3.5 text-sm text-slate-600">{row.route}</td>
-                  <td className="px-5 py-3.5 text-sm font-bold text-emerald-700">{row.weight}</td>
-                  <td className="px-5 py-3.5">
-                    <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-full">{row.type}</span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <Badge variant={row.status} showDot size="xs">
-                      {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-              {paged.length === 0 && (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <td key={j} className="px-5 py-4">
+                        <div className="h-3 bg-slate-100 rounded w-3/4" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : paged.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center text-sm text-slate-400">No records match your filters</td>
+                  <td colSpan={7} className="px-5 py-16 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <Package className="w-8 h-8 text-slate-300" />
+                      <p className="text-sm text-slate-400 font-medium">No collection logs found</p>
+                      <p className="text-xs text-slate-400">Try a different period or clear your filters</p>
+                    </div>
+                  </td>
                 </tr>
+              ) : (
+                paged.map((row) => (
+                  <tr key={row._id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3.5 text-sm text-slate-700 font-medium whitespace-nowrap">{row.date}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="text-sm font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                        {row.truckId}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-slate-800 font-semibold max-w-[180px] truncate">
+                      {row.stopName || <span className="text-slate-400 italic text-xs">No stop name</span>}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600 max-w-[160px] truncate">
+                      {row.routeName || '—'}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-full ${WASTE_COLORS[row.wasteType] ?? WASTE_COLORS.General}`}>
+                        {row.wasteType || 'General'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-emerald-700 whitespace-nowrap">
+                      {(row.weight ?? 0).toLocaleString()} kg
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-semibold text-slate-700">
+                      {row.bins ?? 0}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

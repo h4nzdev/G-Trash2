@@ -43,7 +43,8 @@
       "Bash(python -c \"import base64; data=open\\('GarbageTruck/assets/truck-icon.png','rb'\\).read\\(\\); print\\(base64.b64encode\\(data\\).decode\\(\\)\\)\")",
       "Bash(curl *)",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const arr=JSON.parse\\(d\\); console.log\\(arr.map\\(r=>r._id+' - '+r.name\\).join\\('\\\\n'\\)\\)\")",
-      "Bash(Get-Content \"C:\\\\Users\\\\hanzc\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-hanzc-Documents-Get-Trash\\\\16db2cf3-e601-4a04-b6c4-9c7e6d050193\\\\tasks\\\\bqo6v7vkg.output\")"
+      "Bash(Get-Content \"C:\\\\Users\\\\hanzc\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-hanzc-Documents-Get-Trash\\\\16db2cf3-e601-4a04-b6c4-9c7e6d050193\\\\tasks\\\\bqo6v7vkg.output\")",
+      "Bash(python -m json.tool)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"

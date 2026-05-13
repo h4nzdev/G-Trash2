@@ -122,7 +122,7 @@ export default function TopBar() {
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4 sticky top-0 z-[30]">
+    <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4 sticky top-0 z-[1050]">
       <div>
         <h1 className="text-lg font-bold text-slate-900 leading-tight">{title}</h1>
         <p className="text-xs text-slate-500">{subtitle}</p>

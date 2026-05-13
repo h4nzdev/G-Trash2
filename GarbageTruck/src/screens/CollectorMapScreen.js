@@ -730,6 +730,19 @@ export default function CollectorMapScreen() {
       });
     });
 
+    // Receive the offline echo back from server (io.emit broadcasts to all, including self)
+    socket.on("truck:status", ({ truckId, status }) => {
+      if (truckId === TRUCK_ID && status === "offline") {
+        // Local state was already set by stopNavigation() — just ensure the map marker is idle
+        const pos = lastGpsRef.current;
+        if (pos && webViewRef.current) {
+          webViewRef.current?.injectJavaScript(
+            `window.showIdleTruck(${pos.lat}, ${pos.lng}); true;`,
+          );
+        }
+      }
+    });
+
     let locationSub = null;
 
     (async () => {

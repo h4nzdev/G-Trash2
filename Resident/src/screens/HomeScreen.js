@@ -22,7 +22,6 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
-import { WebView } from "react-native-webview";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
@@ -49,56 +48,6 @@ function getDistanceM(lat1, lng1, lat2, lng2) {
 }
 
 const { width } = Dimensions.get("window");
-
-function buildTrackingHTML(resLat, resLng) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    html, body, #map { width:100%; height:100%; overflow:hidden; background:#e8f5e9; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var map = L.map('map', {
-      zoomControl:false, attributionControl:false,
-      dragging:false, scrollWheelZoom:false, doubleClickZoom:false, touchZoom:false,
-    });
-    map.setView([${resLat}, ${resLng}], 16);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom:19 }).addTo(map);
-
-    // Zone rings centred on resident
-    L.circle([${resLat},${resLng}], { radius:1050, color:'#F59E0B', fillColor:'#F59E0B', fillOpacity:0.04, weight:1.5, opacity:0.5, dashArray:'6 4' }).addTo(map);
-    L.circle([${resLat},${resLng}], { radius:700,  color:'#10B981', fillColor:'#10B981', fillOpacity:0.06, weight:1.5, opacity:0.6, dashArray:'6 4' }).addTo(map);
-    L.circle([${resLat},${resLng}], { radius:350,  color:'#006A3B', fillColor:'#006A3B', fillOpacity:0.1,  weight:2,   opacity:0.9 }).addTo(map);
-
-    // Resident blue dot
-    L.marker([${resLat},${resLng}], { icon: L.divIcon({
-      html:'<div style="width:14px;height:14px;background:#2563EB;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-      iconSize:[14,14], iconAnchor:[7,7], className:''
-    }) }).addTo(map);
-
-    var truckMarker = null;
-    window.setTruckPosition = function(lat, lng) {
-      var html = '<div style="background:#006A3B;border:2px solid #fff;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);">' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M20 8H17L15 4H5C3.9 4 3 4.9 3 6V17H5C5 18.7 6.3 20 8 20s3-1.3 3-3h6c0 1.7 1.3 3 3 3s3-1.3 3-3h2V12L20 8zM8 18c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm12 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1z"/></svg>' +
-      '</div>';
-      if (truckMarker) map.removeLayer(truckMarker);
-      truckMarker = L.marker([lat, lng], { icon: L.divIcon({ html:html, iconSize:[28,28], iconAnchor:[14,14], className:'' }) }).addTo(map);
-      var bounds = L.latLngBounds([[${resLat},${resLng}],[lat,lng]]).pad(0.35);
-      map.fitBounds(bounds, { maxZoom:16, animate:false });
-    };
-
-    setTimeout(function() { map.invalidateSize(); }, 150);
-  </script>
-</body>
-</html>`;
-}
 
 // Radar pulse speed (ms) and ring color per proximity tier
 // Tier 0=idle, 1=trucks online, 2=<1050m, 3=<700m, 4=<350m
@@ -173,8 +122,6 @@ export default function HomeScreen({ navigation }) {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [binReady, setBinReady] = useState(false);
-  const [trackingMapHtml, setTrackingMapHtml] = useState('');
-  const trackingWebViewRef = useRef(null);
   const [checklist, setChecklist] = useState(
     CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
   );
@@ -369,10 +316,6 @@ export default function HomeScreen({ navigation }) {
   const checkedCount = checklist.filter((item) => item.checked).length;
 
   const handleConfirm = () => {
-    const loc = userLocationRef.current;
-    const lat = loc?.lat ?? 10.3157;
-    const lng = loc?.lng ?? 123.8854;
-    setTrackingMapHtml(buildTrackingHTML(lat, lng));
     setBinReady(true);
     setModalVisible(false);
   };
@@ -382,6 +325,14 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleTrashPickedUp = () => {
+    // +1 pt to this resident's barangay leaderboard
+    if (user?.barangay) {
+      fetch(`${API_URL}/api/leaderboard/add-score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barangay: user.barangay, reason: "pickup" }),
+      }).catch(() => {});
+    }
     // Reset the full session so the next collection cycle can start fresh
     setBinReady(false);
     setChecklist(CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })));
@@ -400,11 +351,6 @@ export default function HomeScreen({ navigation }) {
       },
       trigger: null,
     }).catch(() => {});
-  };
-
-  const handleCancelTracking = () => {
-    setBinReady(false);
-    setChecklist(CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })));
   };
 
   // Zone visual driven by real distance when available
@@ -527,14 +473,6 @@ export default function HomeScreen({ navigation }) {
   // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
-  // Push live truck position into the tracking Leaflet map
-  useEffect(() => {
-    if (!binReady || !nearestTruck?.lat || !nearestTruck?.lng) return;
-    trackingWebViewRef.current?.injectJavaScript(
-      `window.setTruckPosition(${nearestTruck.lat}, ${nearestTruck.lng}); true;`
-    );
-  }, [binReady, nearestTruck?.lat, nearestTruck?.lng]);
-
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
     const duration = PULSE_DURATIONS[pulseTier];
@@ -643,9 +581,6 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── NORMAL VIEW ─────────────────────────────────────── */}
-        {!binReady && (
-        <>
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
@@ -729,13 +664,9 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.collectionTime}>
                       Today · {firstSchedule.routeName || "Scheduled"}
                     </Text>
-                  ) : nearestTruck ? (
-                    <Text style={styles.collectionTime}>
-                      Live · Truck {nearestTruck.truckId} Nearby
-                    </Text>
                   ) : (
                     <Text style={styles.collectionTime}>
-                      No active collection
+                      No collection today
                     </Text>
                   )}
                 </View>
@@ -743,15 +674,15 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.collectionDetails}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Route / Status</Text>
+                  <Text style={styles.detailLabel}>Route</Text>
                   <Text style={styles.detailValue}>
-                    {firstSchedule?.routeName || (nearestTruck ? "Collection in Progress" : "No Activity")}
+                    {firstSchedule?.routeName || "—"}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Assigned Unit</Text>
+                  <Text style={styles.detailLabel}>Driver</Text>
                   <Text style={styles.detailValue}>
-                    {firstSchedule?.truckId || nearestTruck?.truckId || "—"}
+                    {firstSchedule?.driverName || "—"}
                   </Text>
                 </View>
               </View>
@@ -759,21 +690,21 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 style={[
                   styles.prepareButton,
-                  (binReady) ? styles.trackLiveButton : ((!firstSchedule && !nearestTruck) && styles.prepareButtonReady),
+                  (binReady || !firstSchedule) && styles.prepareButtonReady,
                 ]}
-                onPress={binReady ? () => navigation.navigate("Map", { focusTruck: true }) : ((firstSchedule || nearestTruck) ? handleOpenModal : undefined)}
-                activeOpacity={(firstSchedule || nearestTruck || binReady) ? 0.8 : 1}
+                onPress={firstSchedule ? handleOpenModal : undefined}
+                activeOpacity={firstSchedule ? 0.8 : 1}
               >
                 <View style={styles.prepareButtonInner}>
                   <MaterialIcons
-                    name={binReady ? "map" : "delete-outline"}
+                    name={binReady ? "check-circle" : "delete-outline"}
                     size={18}
-                    color={binReady ? "#FFFFFF" : "#006A3B"}
+                    color="#006A3B"
                   />
-                  <Text style={[styles.prepareButtonText, binReady && { color: '#FFFFFF' }]}>
+                  <Text style={styles.prepareButtonText}>
                     {binReady
-                      ? t("track_live")
-                      : (firstSchedule || nearestTruck)
+                      ? "Bin Ready ✓"
+                      : firstSchedule
                         ? t("prepare_bin")
                         : t("no_activity")}
                   </Text>
@@ -900,6 +831,18 @@ export default function HomeScreen({ navigation }) {
                 </View>
               </View>
             )}
+
+            {/* Trash Picked Up — visible when bin is ready, active when truck is nearby or no truck data */}
+            {binReady && (
+              <TouchableOpacity
+                style={styles.pickedUpBtn}
+                onPress={handleTrashPickedUp}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
+                <Text style={styles.pickedUpBtnText}>Trash Picked Up</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1017,206 +960,6 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.mapViewBadgeText}>Tap to view full map</Text>
           </View>
         </TouchableOpacity>
-        </>
-        )}
-
-        {/* ── TRACKING MODE — shown when bin is marked ready ─── */}
-        {binReady && (
-        <>
-          {/* Status banner */}
-          <View style={styles.trackingBanner}>
-            <View style={styles.trackingBannerLeft}>
-              <View style={styles.trackingLiveDot} />
-              <View>
-                <Text style={styles.trackingTitle}>Bin Ready · Tracking Live</Text>
-                <Text style={styles.trackingSubtitle}>
-                  {nearestTruck
-                    ? `Truck ${nearestTruck.truckId} is active`
-                    : "Waiting for truck…"}
-                </Text>
-              </View>
-            </View>
-            <View
-              style={[
-                styles.trackingZonePill,
-                inZone1 && styles.trackingZonePillActive,
-              ]}
-            >
-              <Text style={styles.trackingZonePillText}>
-                {inZone1
-                  ? "ZONE 1 ✓"
-                  : pulseTier === 3
-                  ? "ZONE 2"
-                  : pulseTier === 2
-                  ? "ZONE 3"
-                  : "—"}
-              </Text>
-            </View>
-          </View>
-
-          {/* Large distance number */}
-          <View style={styles.distanceDisplay}>
-            <Text
-              style={[
-                styles.distanceNumber,
-                inZone1 && { color: "#059669" },
-              ]}
-            >
-              {distToTruck != null ? `${distToTruck}m` : "—"}
-            </Text>
-            <Text style={styles.distanceLabel}>distance to nearest truck</Text>
-            {distToTruck != null && (
-              <View
-                style={[
-                  styles.distanceZoneBadge,
-                  inZone1 && styles.distanceZoneBadgeActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.distanceZoneBadgeText,
-                    inZone1 && { color: "#065F46" },
-                  ]}
-                >
-                  {inZone1
-                    ? "✓ Zone 1 reached — truck is very close!"
-                    : `${distToTruck - 350}m more until Zone 1 unlocks`}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Zone progress circles */}
-          <View style={[styles.truckStatusCard, { marginBottom: 20 }]}>
-            <View style={styles.zoneContainer}>
-              <View style={styles.progressLine} />
-              {zoneData.map((zone, index) => (
-                <View key={index} style={styles.zoneItem}>
-                  <View
-                    style={[
-                      styles.zoneCircle,
-                      zone.highlighted && styles.zoneCircleHighlighted,
-                    ]}
-                  >
-                    <MaterialIcons
-                      name={zone.icon}
-                      size={zone.highlighted ? 28 : 20}
-                      color={zone.highlighted ? "#FFFFFF" : "#6B7280"}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      styles.zoneName,
-                      zone.highlighted && styles.zoneNameHighlighted,
-                    ]}
-                  >
-                    {zone.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.zoneDistance,
-                      zone.highlighted && styles.zoneDistanceHighlighted,
-                    ]}
-                  >
-                    {zone.distance}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Leaflet tracking map */}
-          <View style={[styles.mapPreview, { height: 220, marginBottom: 24 }]}>
-            {trackingMapHtml ? (
-              <WebView
-                ref={trackingWebViewRef}
-                source={{ html: trackingMapHtml }}
-                style={StyleSheet.absoluteFill}
-                scrollEnabled={false}
-                bounces={false}
-                javaScriptEnabled
-                domStorageEnabled
-                originWhitelist={["*"]}
-                onLoad={() => {
-                  if (nearestTruck?.lat) {
-                    trackingWebViewRef.current?.injectJavaScript(
-                      `window.setTruckPosition(${nearestTruck.lat}, ${nearestTruck.lng}); true;`
-                    );
-                  }
-                }}
-              />
-            ) : (
-              <View style={styles.mapPlaceholder}>
-                <ActivityIndicator color="#006A3B" />
-              </View>
-            )}
-            {/* Overlay: tap to open full map */}
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              activeOpacity={0.0}
-              onPress={() => navigation.navigate("Map")}
-            />
-            <View
-              style={[
-                styles.radarLiveBadge,
-                !nearestTruck && styles.radarLiveBadgeOff,
-              ]}
-            >
-              <View
-                style={[
-                  styles.radarLiveDot,
-                  !nearestTruck && styles.radarLiveDotOff,
-                ]}
-              />
-              <Text style={styles.radarLiveText}>
-                {nearestTruck ? "LIVE" : "OFFLINE"}
-              </Text>
-            </View>
-            <View style={styles.mapViewBadge}>
-              <Text style={styles.mapViewBadgeText}>Tap for full map</Text>
-            </View>
-          </View>
-
-          {/* Trash Picked Up — gated to Zone 1 */}
-          <TouchableOpacity
-            style={[
-              styles.pickedUpBtn,
-              !inZone1 && styles.pickedUpBtnDisabled,
-            ]}
-            onPress={inZone1 ? handleTrashPickedUp : undefined}
-            activeOpacity={inZone1 ? 0.85 : 1}
-          >
-            <MaterialIcons
-              name="check-circle"
-              size={22}
-              color={inZone1 ? "#FFFFFF" : "#9CA3AF"}
-            />
-            <Text
-              style={[
-                styles.pickedUpBtnText,
-                !inZone1 && styles.pickedUpBtnTextDisabled,
-              ]}
-            >
-              Trash Picked Up
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.zoneHint}>
-            {inZone1
-              ? "Tap above to confirm your trash was collected"
-              : distToTruck != null
-              ? `Unlocks in Zone 1 · need < 350m (${distToTruck}m now)`
-              : "Unlocks when truck enters Zone 1 (< 350m from you)"}
-          </Text>
-
-          <TouchableOpacity
-            onPress={handleCancelTracking}
-            style={styles.cancelTrackingBtn}
-          >
-            <Text style={styles.cancelTrackingText}>Cancel Tracking</Text>
-          </TouchableOpacity>
-        </>
-        )}
       </ScrollView>
 
       {/* Bin Prep Modal */}
@@ -1526,15 +1269,6 @@ const styles = StyleSheet.create({
   },
   prepareButtonReady: {
     backgroundColor: "#D9E9E2",
-  },
-  trackLiveButton: {
-    backgroundColor: "#059669",
-    borderColor: "#059669",
-    shadowColor: "#059669",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   prepareButtonInner: {
     flexDirection: "row",
@@ -1999,94 +1733,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  // ── Tracking mode ────────────────────────────────────
-  trackingBanner: {
-    backgroundColor: "#006A3B",
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  trackingBannerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-  },
-  trackingLiveDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#86EFAC",
-  },
-  trackingTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: -0.2,
-  },
-  trackingSubtitle: {
-    fontSize: 12,
-    color: "#A7F3D0",
-    marginTop: 2,
-  },
-  trackingZonePill: {
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  trackingZonePillActive: {
-    backgroundColor: "#059669",
-  },
-  trackingZonePillText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: 1,
-  },
-  distanceDisplay: {
-    backgroundColor: "#F0EDED",
-    borderRadius: 20,
-    paddingVertical: 28,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  distanceNumber: {
-    fontSize: 64,
-    fontWeight: "800",
-    color: "#006A3B",
-    letterSpacing: -3,
-    lineHeight: 72,
-  },
-  distanceLabel: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  distanceZoneBadge: {
-    backgroundColor: "#E5E7EB",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  distanceZoneBadgeActive: {
-    backgroundColor: "#D1FAE5",
-  },
-  distanceZoneBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
   pickedUpBtn: {
     backgroundColor: "#006A3B",
     borderRadius: 16,
@@ -2115,23 +1761,5 @@ const styles = StyleSheet.create({
   },
   pickedUpBtnTextDisabled: {
     color: "#9CA3AF",
-  },
-  zoneHint: {
-    fontSize: 13,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 18,
-    paddingHorizontal: 16,
-  },
-  cancelTrackingBtn: {
-    alignItems: "center",
-    paddingVertical: 14,
-    marginBottom: 40,
-  },
-  cancelTrackingText: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
   },
 });

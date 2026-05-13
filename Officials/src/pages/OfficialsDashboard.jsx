@@ -8,7 +8,6 @@ import StatCard from '../components/dashboard/StatCard';
 import PollutionChart from '../components/dashboard/PollutionChart';
 import RecentAlerts from '../components/dashboard/RecentAlerts';
 import BarangayRanking from '../components/dashboard/BarangayRanking';
-import { barangays, wasteByBarangay } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -43,13 +42,13 @@ export default function OfficialsDashboard() {
   const [latestReadings, setLatestReadings] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Existing stats
   const [stats, setStats] = useState({ totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 });
+  const [rankings, setRankings] = useState([]);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes] = await Promise.all([
+      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes] = await Promise.all([
         fetch(`${API}/api/iot/summary`).then(r => r.json()),
         fetch(`${API}/api/iot/trends?hours=168`).then(r => r.json()),
         fetch(`${API}/api/iot/alerts?limit=10`).then(r => r.json()),
@@ -57,12 +56,14 @@ export default function OfficialsDashboard() {
         fetch(`${API}/api/stats`, {
           headers: { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` }
         }).then(r => r.ok ? r.json() : { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 }),
+        fetch(`${API}/api/leaderboard`).then(r => r.json()).catch(() => []),
       ]);
       setIotSummary(summaryRes);
       setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);
       setIotAlerts(Array.isArray(alertsRes) ? alertsRes : []);
       setLatestReadings(Array.isArray(latestRes) ? latestRes : []);
       setStats(statsRes);
+      setRankings(Array.isArray(rankingsRes) ? rankingsRes : []);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
@@ -275,34 +276,42 @@ export default function OfficialsDashboard() {
           )}
         </div>
 
-        {/* Waste by Barangay */}
+        {/* Points by Barangay */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Waste by Barangay</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Top 5 barangays by collection weight</p>
+              <h2 className="text-sm font-bold text-slate-900">Points by Barangay</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Top 5 barangays by leaderboard score</p>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart
-              data={wasteByBarangay}
-              layout="vertical"
-              margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} axisLine={false} tickLine={false} width={65} />
-              <Tooltip content={<BarTooltip />} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                {wasteByBarangay.map((entry, index) => (
-                  <Cell
-                    key={index}
-                    fill={index === 0 ? '#065f46' : index === 1 ? '#047857' : index === 2 ? '#059669' : index === 3 ? '#10b981' : '#34d399'}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {rankings.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart
+                data={rankings.slice(0, 5).map(r => ({ name: r.barangay, value: r.points || 0 }))}
+                layout="vertical"
+                margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} axisLine={false} tickLine={false} width={80} />
+                <Tooltip content={<BarTooltip />} />
+                <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                  {rankings.slice(0, 5).map((_, index) => (
+                    <Cell
+                      key={index}
+                      fill={index === 0 ? '#065f46' : index === 1 ? '#047857' : index === 2 ? '#059669' : index === 3 ? '#10b981' : '#34d399'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[220px] flex flex-col items-center justify-center text-slate-400">
+              <TrendingUp className="w-10 h-10 mb-3 text-slate-300" />
+              <p className="text-sm font-medium">No leaderboard data yet</p>
+              <p className="text-xs mt-1">Scores accumulate as residents confirm pickups</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -343,14 +352,18 @@ export default function OfficialsDashboard() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Top Performing Barangays</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Ranked by collection rate and efficiency</p>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                Top Performing Barangays
+                {rankings.length > 0 && (
+                  <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Ranked by total points earned</p>
             </div>
-            <button className="text-xs font-medium text-emerald-700 hover:text-emerald-800 flex items-center gap-1">
-              Full rankings <ChevronRight className="w-3.5 h-3.5" />
-            </button>
           </div>
-          <BarangayRanking data={barangays} />
+          <BarangayRanking data={rankings} />
         </div>
       </div>
     </div>
