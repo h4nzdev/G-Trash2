@@ -1,65 +1,68 @@
-import { useEffect, useRef, useState } from 'react'
-import { gsap } from 'gsap'
-import { Menu, X, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { Menu, X, Trash2 } from "lucide-react";
+import logo from "../assets/logo.png";
 
 const links = [
-  { label: 'Features', id: 'features' },
-  { label: 'How It Works', id: 'how-it-works' },
-  { label: 'Roles', id: 'roles' },
-  { label: 'Download', id: 'download' },
-  { label: 'About', id: 'about' },
-]
+  { label: "Features", id: "features" },
+  { label: "How It Works", id: "how-it-works" },
+  { label: "Roles", id: "roles" },
+  { label: "Download", id: "download" },
+  { label: "About", id: "about" },
+];
 
 const Navbar = () => {
-  const navRef = useRef(null)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const navRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     gsap.from(navRef.current, {
       y: -80,
       opacity: 0,
       duration: 1,
-      ease: 'power3.out',
+      ease: "power3.out",
       delay: 0.4,
-    })
+    });
 
     const handleScroll = () => {
       if (window.scrollY > 60) {
         gsap.to(navRef.current, {
-          backgroundColor: 'rgba(6,13,6,0.92)',
+          backgroundColor: "rgba(6,13,6,0.92)",
           duration: 0.3,
-          ease: 'none',
-        })
+          ease: "none",
+        });
       } else {
         gsap.to(navRef.current, {
-          backgroundColor: 'rgba(6,13,6,0)',
+          backgroundColor: "rgba(6,13,6,0)",
           duration: 0.3,
-          ease: 'none',
-        })
+          ease: "none",
+        });
       }
-    }
+    };
 
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const scrollTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-    setMenuOpen(false)
-  }
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    setMenuOpen(false);
+  };
 
   return (
     <nav
       ref={navRef}
       className="fixed top-0 left-0 right-0 z-50 px-6 py-4"
-      style={{ backdropFilter: 'blur(12px)' }}
+      style={{ backdropFilter: "blur(12px)" }}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
-            <Trash2 className="w-5 h-5 text-black" strokeWidth={2.5} />
+            <img src={logo} alt="Gtrash logo" />
           </div>
-          <span className="text-xl font-black text-white tracking-tight">G-TRASH</span>
+          <span className="text-xl font-black text-white tracking-tight">
+            G-TRASH
+          </span>
         </div>
 
         <div className="hidden md:flex items-center gap-8">
@@ -108,7 +111,7 @@ const Navbar = () => {
         </div>
       )}
     </nav>
-  )
-}
+  );
+};
 
-export default Navbar
+export default Navbar;

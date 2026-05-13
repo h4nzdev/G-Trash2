@@ -1,4 +1,5 @@
 import { Trash2, Mail, MapPin, Gift } from "lucide-react";
+import logo from "../assets/logo.png";
 
 const Footer = () => {
   const scrollTo = (id) => {
@@ -13,7 +14,7 @@ const Footer = () => {
           <div className="md:col-span-5">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
-                <Trash2 className="w-5 h-5 text-black" strokeWidth={2.5} />
+                <img src={logo} alt="Gtrash-logo" />
               </div>
               <span className="text-xl font-black tracking-tight">G-TRASH</span>
             </div>

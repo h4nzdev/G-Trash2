@@ -527,6 +527,14 @@ export default function HomeScreen({ navigation }) {
   // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
+  // Push live truck position into the tracking Leaflet map
+  useEffect(() => {
+    if (!binReady || !nearestTruck?.lat || !nearestTruck?.lng) return;
+    trackingWebViewRef.current?.injectJavaScript(
+      `window.setTruckPosition(${nearestTruck.lat}, ${nearestTruck.lng}); true;`
+    );
+  }, [binReady, nearestTruck?.lat, nearestTruck?.lng]);
+
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
     const duration = PULSE_DURATIONS[pulseTier];
@@ -1117,49 +1125,37 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Radar map */}
-          <TouchableOpacity
-            style={[styles.mapPreview, { height: 220, marginBottom: 24 }]}
-            activeOpacity={0.9}
-            onPress={() => navigation.navigate("Map")}
-          >
-            <View style={styles.mapPlaceholder}>
-              {[pulseAnim1, pulseAnim2, pulseAnim3].map((anim, i) => {
-                const ringScale = anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.12, 1.55],
-                });
-                const ringOpacity = anim.interpolate({
-                  inputRange: [0, 0.08, 0.55, 1],
-                  outputRange: [0, 0.9, 0.35, 0],
-                });
-                return (
-                  <Animated.View
-                    key={i}
-                    style={[
-                      styles.radarRing,
-                      {
-                        borderColor: PULSE_RING_COLORS[pulseTier],
-                        opacity: ringOpacity,
-                        transform: [{ scale: ringScale }],
-                      },
-                    ]}
-                  />
-                );
-              })}
-              <View style={styles.radarCenter} />
-              <Animated.View
-                style={[
-                  styles.radarTruckMarker,
-                  {
-                    opacity: nearestTruck ? 1 : 0.28,
-                    transform: [{ translateY: truckFloatAnim }],
-                  },
-                ]}
-              >
-                <MaterialIcons name="local-shipping" size={18} color="#FFFFFF" />
-              </Animated.View>
-            </View>
+          {/* Leaflet tracking map */}
+          <View style={[styles.mapPreview, { height: 220, marginBottom: 24 }]}>
+            {trackingMapHtml ? (
+              <WebView
+                ref={trackingWebViewRef}
+                source={{ html: trackingMapHtml }}
+                style={StyleSheet.absoluteFill}
+                scrollEnabled={false}
+                bounces={false}
+                javaScriptEnabled
+                domStorageEnabled
+                originWhitelist={["*"]}
+                onLoad={() => {
+                  if (nearestTruck?.lat) {
+                    trackingWebViewRef.current?.injectJavaScript(
+                      `window.setTruckPosition(${nearestTruck.lat}, ${nearestTruck.lng}); true;`
+                    );
+                  }
+                }}
+              />
+            ) : (
+              <View style={styles.mapPlaceholder}>
+                <ActivityIndicator color="#006A3B" />
+              </View>
+            )}
+            {/* Overlay: tap to open full map */}
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={0.0}
+              onPress={() => navigation.navigate("Map")}
+            />
             <View
               style={[
                 styles.radarLiveBadge,
@@ -1179,7 +1175,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.mapViewBadge}>
               <Text style={styles.mapViewBadgeText}>Tap for full map</Text>
             </View>
-          </TouchableOpacity>
+          </View>
 
           {/* Trash Picked Up — gated to Zone 1 */}
           <TouchableOpacity
