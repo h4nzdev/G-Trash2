@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, Users, Map as MapIcon, 
+import {
+  LayoutDashboard, Users, Map as MapIcon,
   ClipboardList, Settings, LogOut, ShieldAlert,
-  AlertTriangle, X, Bell
+  AlertTriangle, X, Zap, Bug, ShieldCheck
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
@@ -47,7 +47,10 @@ export default function AdminLayout() {
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Officials', path: '/admin/officials', icon: Users },
     { name: 'Master Map', path: '/admin/map', icon: MapIcon },
+    { name: 'IoT Simulator', path: '/admin/iot-simulator', icon: Zap },
+    { name: 'Bug Reports', path: '/admin/bugs', icon: Bug },
     { name: 'Reports', path: '/admin/reports', icon: ShieldAlert },
+    { name: 'Jurisdiction', path: '/admin/jurisdiction', icon: ShieldCheck },
     { name: 'Settings', path: '/admin/settings', icon: Settings },
   ];
 

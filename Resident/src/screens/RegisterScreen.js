@@ -1,38 +1,40 @@
 import React, { useState, useRef } from 'react';
-import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView, Modal, FlatList,
-  Animated, Alert, ActivityIndicator,
+import { 
+  View, Text, StyleSheet, ScrollView, TextInput, 
+  TouchableOpacity, Modal, FlatList, Alert, 
+  KeyboardAvoidingView, Platform, Animated 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 import colors from '../constants/colors';
 
 const CEBU_BARANGAYS = [
-  'Adlaon','Agsungot','Apas','Babag','Bacayan','Banilad','Basak Pardo',
-  'Basak San Nicolas','Binaliw','Bonbon','Budla-an','Buhisan','Bulacao',
-  'Buot-Taup','Busay','Calamba','Cambinocot','Capitol Site','Carreta',
-  'Cogon Pardo','Cogon Ramos','Day-as','Duljo Fatima','Ermita',
-  'Guadalupe','Guba','Hippodromo','Inayawan','IT Park','Kalubihan',
-  'Kalunasan','Kamagayan','Kamputhaw','Kasambagan','Kinasang-an',
-  'Labangon','Lahug','Lorega San Miguel','Lusaran','Luz','Mabini',
-  'Mabolo','Malubog','Mambaling','Pahina Central','Pahina San Nicolas',
-  'Pardo','Pari-an','Paril','Pasil','Pit-os','Poblacion Pardo',
-  'Pulangbato','Pung-ol Sibugay','Punta Princesa','Quiot','Sambag I',
-  'Sambag II','San Antonio','San Jose','San Nicolas Proper','San Roque',
-  'Santa Cruz','Sapangdaku','Sawang Calero','Sinsin','Sirao',
-  'Suba','Sudlon I','Sudlon II','T. Padilla','Tabunan','Tagbao',
-  'Talamban','Taptap','Tejero','Tinago','Tisa','To-ong','Zapatera',
+  "Adlaon","Agsungot","Apas","Babag","Bacayan","Banilad","Basak Pardo",
+  "Basak San Nicolas","Binaliw","Bonbon","Budla-an","Buhisan","Bulacao",
+  "Buot-Taup","Busay","Calamba","Cambinocot","Capitol Site","Carreta",
+  "Cogon Pardo","Cogon Ramos","Day-as","Duljo Fatima","Ermita",
+  "Guadalupe","Guba","Hippodromo","Inayawan","IT Park","Kalubihan",
+  "Kalunasan","Kamagayan","Kamputhaw","Kasambagan","Kinasang-an",
+  "Labangon","Lahug","Lorega San Miguel","Lusaran","Luz","Mabini",
+  "Mabolo","Malubog","Mambaling","Pahina Central","Pahina San Nicolas",
+  "Pardo","Pari-an","Paril","Pasil","Pit-os","Poblacion Pardo",
+  "Pulangbato","Pung-ol Sibugay","Punta Princesa","Quiot","Sambag I",
+  "Sambag II","San Antonio","San Jose","San Nicolas Proper","San Roque",
+  "Santa Cruz","Sapangdaku","Sawang Calero","Sinsin","Sirao",
+  "Suba","Sudlon I","Sudlon II","T. Padilla","Tabunan","Tagbao",
+  "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong","Zapatera",
 ];
 
 const STEPS = [
-  { key: 'personal', label: 'Personal Info', icon: 'person' },
-  { key: 'address', label: 'Address', icon: 'location-on' },
-  { key: 'account', label: 'Account', icon: 'lock' },
+  { key: 'personal', label: 'personal_info', icon: 'person' },
+  { key: 'address', label: 'address_details', icon: 'location-on' },
+  { key: 'account', label: 'account_setup', icon: 'lock' },
 ];
 
 export default function RegisterScreen({ navigation }) {
+  const { t } = useTranslation();
   const { register, isLoading } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [showBarangayModal, setShowBarangayModal] = useState(false);
@@ -60,12 +62,12 @@ export default function RegisterScreen({ navigation }) {
   const goNext = () => {
     if (currentStep === 0) {
       if (!form.firstName.trim() || !form.lastName.trim()) {
-        Alert.alert('Required', 'Please fill in your first and last name.');
+        Alert.alert(t('error'), 'Please fill in your first and last name.');
         return;
       }
     } else if (currentStep === 1) {
       if (!form.barangay) {
-        Alert.alert('Required', 'Please select your barangay.');
+        Alert.alert(t('error'), 'Please select your barangay.');
         return;
       }
     }
@@ -88,15 +90,15 @@ export default function RegisterScreen({ navigation }) {
 
   const handleRegister = async () => {
     if (!form.email.trim() || !form.password.trim()) {
-      Alert.alert('Required', 'Please fill in email and password.');
+      Alert.alert(t('error'), 'Please fill in email and password.');
       return;
     }
     if (form.password.length < 6) {
-      Alert.alert('Too Short', 'Password must be at least 6 characters.');
+      Alert.alert(t('error'), 'Password must be at least 6 characters.');
       return;
     }
     if (form.password !== form.confirmPassword) {
-      Alert.alert('Mismatch', 'Passwords do not match.');
+      Alert.alert(t('error'), 'Passwords do not match.');
       return;
     }
     try {
@@ -110,9 +112,8 @@ export default function RegisterScreen({ navigation }) {
         street: form.street.trim(),
         houseNo: form.houseNo.trim(),
       });
-      // AuthContext sets user → navigation auto-redirects to MainTabs
     } catch (error) {
-      Alert.alert('Registration Failed', error.message || 'Please try again.');
+      Alert.alert(t('error'), error.message || 'Please try again.');
     }
   };
 
@@ -131,24 +132,24 @@ export default function RegisterScreen({ navigation }) {
       case 0:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Personal Information</Text>
+            <Text style={styles.stepTitle}>{t('personal_info')}</Text>
             <Text style={styles.stepSubtitle}>Tell us a bit about yourself</Text>
 
-            <Text style={styles.label}>First Name *</Text>
+            <Text style={styles.label}>{t('first_name')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="person-outline" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="Juan" placeholderTextColor="#9CA3AF"
                 value={form.firstName} onChangeText={v => updateForm('firstName', v)} />
             </View>
 
-            <Text style={styles.label}>Last Name *</Text>
+            <Text style={styles.label}>{t('last_name')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="person-outline" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="Dela Cruz" placeholderTextColor="#9CA3AF"
                 value={form.lastName} onChangeText={v => updateForm('lastName', v)} />
             </View>
 
-            <Text style={styles.label}>Phone Number</Text>
+            <Text style={styles.label}>{t('phone')}</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="phone" size={20} color="#6B7280" style={styles.inputIcon} />
               <Text style={styles.prefixText}>+63</Text>
@@ -162,19 +163,19 @@ export default function RegisterScreen({ navigation }) {
       case 1:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Address Details</Text>
+            <Text style={styles.stepTitle}>{t('address')}</Text>
             <Text style={styles.stepSubtitle}>Where in Cebu City do you live?</Text>
 
-            <Text style={styles.label}>Barangay *</Text>
+            <Text style={styles.label}>{t('barangay')} *</Text>
             <TouchableOpacity style={styles.dropdownButton} onPress={() => setShowBarangayModal(true)}>
               <MaterialIcons name="location-city" size={20} color="#6B7280" style={styles.inputIcon} />
               <Text style={[styles.dropdownText, !form.barangay && { color: '#9CA3AF' }]}>
-                {form.barangay || 'Select your Barangay'}
+                {form.barangay || t('select_barangay')}
               </Text>
               <MaterialIcons name="keyboard-arrow-down" size={24} color="#6B7280" />
             </TouchableOpacity>
 
-            <Text style={styles.label}>Street / Purok / Sitio</Text>
+            <Text style={styles.label}>{t('street')}</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="signpost" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="e.g. Purok 5, Sanciangko St."
@@ -182,7 +183,7 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={v => updateForm('street', v)} />
             </View>
 
-            <Text style={styles.label}>House / Unit No.</Text>
+            <Text style={styles.label}>{t('house_no')}</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="home" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="e.g. Block 5, Lot 12"
@@ -194,7 +195,7 @@ export default function RegisterScreen({ navigation }) {
               <View style={styles.selectedBadge}>
                 <MaterialIcons name="check-circle" size={16} color={colors.primaryGreen} />
                 <Text style={styles.selectedBadgeText}>
-                  Brgy. {form.barangay}, Cebu City
+                  {t('barangay')} {form.barangay}, Cebu City
                 </Text>
               </View>
             ) : null}
@@ -204,10 +205,10 @@ export default function RegisterScreen({ navigation }) {
       case 2:
         return (
           <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Create Your Account</Text>
+            <Text style={styles.stepTitle}>{t('create_account')}</Text>
             <Text style={styles.stepSubtitle}>Set up your login credentials</Text>
 
-            <Text style={styles.label}>Email Address *</Text>
+            <Text style={styles.label}>{t('email')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="email" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="juan@email.com" placeholderTextColor="#9CA3AF"
@@ -215,7 +216,7 @@ export default function RegisterScreen({ navigation }) {
                 autoCapitalize="none" keyboardType="email-address" />
             </View>
 
-            <Text style={styles.label}>Password *</Text>
+            <Text style={styles.label}>{t('password')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="lock-outline" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="Min. 8 characters" placeholderTextColor="#9CA3AF"
@@ -226,7 +227,7 @@ export default function RegisterScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Confirm Password *</Text>
+            <Text style={styles.label}>{t('confirm_password')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="lock" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="Re-enter password" placeholderTextColor="#9CA3AF"
@@ -236,17 +237,6 @@ export default function RegisterScreen({ navigation }) {
                 <Ionicons name={showConfirmPassword ? 'eye-off' : 'eye'} size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
-
-            {form.password.length > 0 && (
-              <View style={styles.strengthRow}>
-                <View style={[styles.strengthDot, form.password.length >= 4 && styles.strengthActive]} />
-                <View style={[styles.strengthDot, form.password.length >= 6 && styles.strengthActive]} />
-                <View style={[styles.strengthDot, form.password.length >= 8 && styles.strengthActive]} />
-                <Text style={styles.strengthLabel}>
-                  {form.password.length < 4 ? 'Weak' : form.password.length < 8 ? 'Medium' : 'Strong'}
-                </Text>
-              </View>
-            )}
           </View>
         );
     }
@@ -261,7 +251,7 @@ export default function RegisterScreen({ navigation }) {
           <TouchableOpacity onPress={goBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create Account</Text>
+          <Text style={styles.headerTitle}>{t('create_account')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -292,7 +282,7 @@ export default function RegisterScreen({ navigation }) {
                     styles.stepLabel,
                     isActive && styles.stepLabelActive,
                     isDone && styles.stepLabelDone,
-                  ]}>{step.label}</Text>
+                  ]}>{t(step.label)}</Text>
                 </View>
               );
             })}
@@ -310,7 +300,7 @@ export default function RegisterScreen({ navigation }) {
             {currentStep > 0 && (
               <TouchableOpacity style={styles.prevButton} onPress={goBack}>
                 <Ionicons name="arrow-back" size={18} color={colors.primaryGreen} />
-                <Text style={styles.prevButtonText}>Back</Text>
+                <Text style={styles.prevButtonText}>{t('back')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -318,7 +308,7 @@ export default function RegisterScreen({ navigation }) {
               onPress={currentStep === STEPS.length - 1 ? handleRegister : goNext}
             >
               <Text style={styles.nextButtonText}>
-                {currentStep === STEPS.length - 1 ? 'Create Account' : 'Continue'}
+                {currentStep === STEPS.length - 1 ? t('create_account') : t('continue')}
               </Text>
               {currentStep < STEPS.length - 1 && (
                 <Ionicons name="arrow-forward" size={18} color="#FFF" />
@@ -332,7 +322,7 @@ export default function RegisterScreen({ navigation }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Select Barangay</Text>
+                <Text style={styles.modalTitle}>{t('select_barangay')}</Text>
                 <TouchableOpacity onPress={() => { setShowBarangayModal(false); setBarangaySearch(''); }}>
                   <Ionicons name="close" size={24} color="#333" />
                 </TouchableOpacity>
@@ -340,7 +330,7 @@ export default function RegisterScreen({ navigation }) {
 
               <View style={styles.modalSearch}>
                 <Ionicons name="search" size={18} color="#9CA3AF" />
-                <TextInput style={styles.modalSearchInput} placeholder="Search barangay..."
+                <TextInput style={styles.modalSearchInput} placeholder={t('search_barangay')}
                   placeholderTextColor="#9CA3AF" value={barangaySearch}
                   onChangeText={setBarangaySearch} autoFocus />
               </View>

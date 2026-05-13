@@ -14,6 +14,7 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import CustomSplashScreen from './src/screens/CustomSplashScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import colors from './src/constants/colors';
+import './src/i18n';
 
 const Stack = createNativeStackNavigator();
 

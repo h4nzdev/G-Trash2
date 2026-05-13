@@ -27,8 +27,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "14b4bf4d-e5d0-4482-83af-e1d06d0b33ac"
+        "projectId": "4c7208d5-5211-4ef1-a356-da0a6936022b"
       }
-    }
+    },
+    "owner": "h4nz.dev"
   }
 }

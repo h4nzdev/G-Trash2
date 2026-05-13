@@ -9,6 +9,7 @@ import {
   Layers, Navigation, AlertTriangle 
 } from 'lucide-react';
 import API from '../../config';
+import truckIconImg from '../../../assets/truck-icon.png';
 
 // Fix for default marker icons in Leaflet
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -22,20 +23,14 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom Truck Icon
-const createTruckIcon = (heading = 0) => L.divIcon({
+// Custom Truck Icon using the PNG asset
+const createTruckIcon = () => L.divIcon({
   className: 'custom-truck-icon',
-  html: `<div style="transform: rotate(${heading}deg); transition: transform 0.5s ease-in-out;">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path>
-            <path d="M15 18H9"></path>
-            <circle cx="7" cy="18" r="2"></circle>
-            <path d="M15 18h5a1 1 0 0 0 1-1v-3.5L18.5 10H15"></path>
-            <circle cx="17" cy="18" r="2"></circle>
-          </svg>
+  html: `<div style="transition: transform 0.4s ease-out;">
+          <img src="${truckIconImg}" style="width: 42px; height: 42px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));" />
         </div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
+  iconSize: [42, 42],
+  iconAnchor: [21, 21]
 });
 
 const BARANGAY_COLORS = {
@@ -52,7 +47,9 @@ export default function MasterMap() {
   const [reports, setReports] = useState([]);
   const [showRoutes, setShowRoutes] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showReports, setShowReports] = useState(true);
+  const [dbBoundaries, setDbBoundaries] = useState([]);
+  const [isSatellite, setIsSatellite] = useState(false);
   
   const boundaries = {
     "Lahug": [[10.320, 123.880], [10.340, 123.880], [10.340, 123.900], [10.320, 123.900]],
@@ -64,10 +61,11 @@ export default function MasterMap() {
     // Initial data fetch
     const fetchData = async () => {
       try {
-        const [trucksRes, routesRes, reportsRes] = await Promise.all([
+        const [trucksRes, routesRes, reportsRes, boundariesRes] = await Promise.all([
           axios.get(`${API}/api/trucks`),
           axios.get(`${API}/api/routes`),
-          axios.get(`${API}/api/reports`)
+          axios.get(`${API}/api/reports`),
+          axios.get(`${API}/api/barangays/boundaries`)
         ]);
         
         const truckMap = {};
@@ -75,6 +73,7 @@ export default function MasterMap() {
         setTrucks(truckMap);
         setRoutes(routesRes.data);
         setReports(reportsRes.data);
+        setDbBoundaries(boundariesRes.data);
       } catch (err) {
         console.error('Failed to fetch map data:', err);
       }
@@ -94,7 +93,7 @@ export default function MasterMap() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col gap-6 animate-in fade-in duration-700">
+    <div className="h-[calc(100vh-100px)] flex flex-col gap-6 animate-in fade-in duration-700">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
@@ -120,11 +119,21 @@ export default function MasterMap() {
             Boundaries
           </button>
           <button 
-            onClick={() => setShowHeatmap(!showHeatmap)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showHeatmap ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setShowReports(!showReports)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showReports ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            <Layers className="w-4 h-4" />
-            Heatmap
+            <AlertTriangle className="w-4 h-4" />
+            Incident Reports
+          </button>
+          
+          <div className="w-px h-6 bg-slate-200 mx-1" />
+          
+          <button 
+            onClick={() => setIsSatellite(!isSatellite)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${isSatellite ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            <MapIcon className="w-4 h-4" />
+            {isSatellite ? 'Satellite' : 'Standard'}
           </button>
         </div>
       </div>
@@ -136,25 +145,32 @@ export default function MasterMap() {
           className="h-full w-full"
           zoomControl={false}
         >
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          />
+          {isSatellite ? (
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              attribution='&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            />
+          ) : (
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
+          )}
 
           {/* Jurisdictional Boundaries */}
-          {showBoundaries && Object.entries(boundaries).map(([name, poly]) => (
+          {showBoundaries && dbBoundaries.map(db => (
             <Polygon 
-              key={name}
-              positions={poly} 
+              key={db._id}
+              positions={db.boundary} 
               pathOptions={{ 
-                color: BARANGAY_COLORS[name] || '#94a3b8', 
+                color: db.color || '#3B82F6', 
                 fillOpacity: 0.05, 
                 weight: 2,
                 dashArray: '5, 10'
               }}
             >
               <Popup>
-                <div className="p-1 font-bold">Barangay {name}</div>
+                <div className="p-1 font-bold">Barangay {db.barangay}</div>
               </Popup>
             </Polygon>
           ))}
@@ -172,8 +188,8 @@ export default function MasterMap() {
             />
           ))}
 
-          {/* Incident Heatmap (CircleMarkers for now) */}
-          {showHeatmap && reports.map(report => (
+          {/* Incident Reports */}
+          {showReports && reports.map(report => (
             <CircleMarker 
               key={report._id}
               center={[report.lat, report.lng]}
@@ -203,7 +219,7 @@ export default function MasterMap() {
             <Marker 
               key={truck.truckId} 
               position={[truck.lat, truck.lng]}
-              icon={createTruckIcon(truck.heading)}
+              icon={createTruckIcon()}
             >
               <Popup className="custom-popup">
                 <div className="p-3 w-48 bg-white">

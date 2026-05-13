@@ -77,7 +77,10 @@ const MapPickerHTML = `
 </html>
 `;
 
+import { useTranslation } from 'react-i18next';
+
 const InteractiveMapPicker = ({ onLocationSelect }) => {
+  const { t } = useTranslation();
   return (
     <View style={styles.mapContainer}>
       <WebView
@@ -93,13 +96,14 @@ const InteractiveMapPicker = ({ onLocationSelect }) => {
         scrollEnabled={false}
       />
       <View style={styles.mapOverlay}>
-        <Text style={styles.mapOverlayText}>Move map to pin location</Text>
+        <Text style={styles.mapOverlayText}>{t('move_map_pin')}</Text>
       </View>
     </View>
   );
 };
 
 export default function ReportIssueScreen({ navigation }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [image, setImage] = useState(null);
   const [imageBase64, setImageBase64] = useState(null);
@@ -111,11 +115,11 @@ export default function ReportIssueScreen({ navigation }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const categories = [
-    'Illegal Dumping',
-    'Overflowing Bin',
-    'Uncollected Waste',
-    'Hazardous Waste',
-    'Other'
+    t('cat_illegal'),
+    t('cat_overflow'),
+    t('cat_uncollected'),
+    t('cat_hazardous'),
+    t('cat_other')
   ];
 
   const pickImage = async () => {
@@ -231,14 +235,14 @@ export default function ReportIssueScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#1B1C1C" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Report Trash Issue</Text>
+          <Text style={styles.headerTitle}>{t('report_issue')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
           {/* Photo Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Photo of the Issue</Text>
+            <Text style={styles.sectionTitle}>{t('photo_issue')}</Text>
             {image ? (
               <View style={styles.imageContainer}>
                 <Image source={{ uri: image }} style={styles.previewImage} />
@@ -250,11 +254,11 @@ export default function ReportIssueScreen({ navigation }) {
               <View style={styles.photoOptions}>
                 <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
                   <MaterialIcons name="photo-camera" size={32} color={colors.primaryGreen} />
-                  <Text style={styles.photoBtnText}>Take Photo</Text>
+                  <Text style={styles.photoBtnText}>{t('take_photo')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
                   <MaterialIcons name="photo-library" size={32} color={colors.primaryGreen} />
-                  <Text style={styles.photoBtnText}>Gallery</Text>
+                  <Text style={styles.photoBtnText}>{t('gallery')}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -262,7 +266,7 @@ export default function ReportIssueScreen({ navigation }) {
 
           {/* Details Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Category</Text>
+            <Text style={styles.sectionTitle}>{t('category')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryList}>
               {categories.map((cat) => (
                 <TouchableOpacity 
@@ -284,7 +288,7 @@ export default function ReportIssueScreen({ navigation }) {
 
           {/* Barangay Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Barangay</Text>
+            <Text style={styles.sectionTitle}>{t('barangay')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryList}>
               {BARANGAYS.map((b) => (
                 <TouchableOpacity
@@ -340,7 +344,7 @@ export default function ReportIssueScreen({ navigation }) {
             ) : (
               <>
                 <MaterialIcons name="send" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.submitBtnText}>Submit Report</Text>
+                <Text style={styles.submitBtnText}>{t('submit_report')}</Text>
               </>
             )}
           </TouchableOpacity>

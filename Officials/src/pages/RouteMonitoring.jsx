@@ -262,6 +262,7 @@ export default function RouteMonitoring() {
   const [loading, setLoading] = useState(true);
   const [deviationAlerts, setDeviationAlerts] = useState([]);
   const [isSatellite, setIsSatellite] = useState(false);
+  const [showReports, setShowReports] = useState(true);
   const socketRef = useRef(null);
 
   const fetchData = async () => {
@@ -414,7 +415,7 @@ export default function RouteMonitoring() {
       <div className="flex-1 px-6 pb-6 flex flex-col gap-4 min-h-0">
 
         {/* Map */}
-        <div className="flex-1 min-h-[400px] bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden relative">
+        <div className="flex-1 min-h-[600px] bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden relative">
           {loading ? (
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-center">
@@ -465,7 +466,7 @@ export default function RouteMonitoring() {
                 </Marker>
               ))}
 
-              {reports.map(r => (
+              {showReports && reports.map(r => (
                 <Marker 
                   key={r._id} 
                   position={[r.lat, r.lng]} 
@@ -479,18 +480,32 @@ export default function RouteMonitoring() {
               ))}
             </MapContainer>
 
-            {/* Satellite toggle button — floats over map top-right */}
-            <button
-              onClick={() => setIsSatellite(prev => !prev)}
-              className={`absolute top-3 right-3 z-[1000] flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
-                isSatellite
-                  ? 'bg-emerald-700 text-white border-emerald-700'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              {isSatellite ? 'Street View' : 'Satellite'}
-            </button>
+            {/* Map Controls — floats over map top-right */}
+            <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2">
+              <button
+                onClick={() => setIsSatellite(prev => !prev)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
+                  isSatellite
+                    ? 'bg-emerald-700 text-white border-emerald-700'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {isSatellite ? 'Street View' : 'Satellite'}
+              </button>
+              
+              <button
+                onClick={() => setShowReports(prev => !prev)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
+                  showReports
+                    ? 'bg-amber-600 text-white border-amber-600'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {showReports ? 'Hide Reports' : 'Show Reports'}
+              </button>
+            </div>
             </>
           )}
         </div>
@@ -509,7 +524,7 @@ export default function RouteMonitoring() {
         </div>
 
         {/* Bottom Panel */}
-        <div className="flex gap-4 h-[240px]">
+        <div className="flex gap-4 h-[180px]">
           {/* Route cards */}
           <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 overflow-hidden flex flex-col">
             <div className="flex items-center gap-2 mb-3 flex-shrink-0">

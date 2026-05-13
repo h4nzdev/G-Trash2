@@ -4,7 +4,12 @@ import AdminLayout from './layouts/AdminLayout';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/superadmin/Dashboard';
 import Officials from './pages/superadmin/Officials';
+import OfficialDetail from './pages/superadmin/OfficialDetail';
 import MasterMap from './pages/superadmin/MasterMap';
+import IoTSimulator from './pages/superadmin/IoTSimulator';
+import BugReports from './pages/superadmin/BugReports';
+import JurisdictionManager from './pages/superadmin/JurisdictionManager';
+import Reports from './pages/superadmin/Reports';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -30,8 +35,12 @@ export default function App() {
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="officials" element={<Officials />} />
+            <Route path="officials/:id" element={<OfficialDetail />} />
             <Route path="map" element={<MasterMap />} />
-            <Route path="reports" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Reports coming soon...</div>} />
+            <Route path="iot-simulator" element={<IoTSimulator />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="jurisdiction" element={<JurisdictionManager />} />
+            <Route path="bugs" element={<BugReports />} />
             <Route path="settings" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Settings coming soon...</div>} />
           </Route>
 

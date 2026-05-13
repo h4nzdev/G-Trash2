@@ -17,27 +17,29 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from 'expo-image-picker';
-import colors from "../constants/colors";
+import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 
 function formatDate(dateStr) {
-  if (!dateStr) return '';
+  if (!dateStr) return "";
   const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export default function ProfileScreen() {
+  const { t, i18n } = useTranslation();
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [myReports, setMyReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const { user, logout, updateProfile } = useAuth();
 
-  // Edit Profile States
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [showBarangayModal, setShowBarangayModal] = useState(false);
-  const [barangaySearch, setBarangaySearch] = useState('');
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [barangaySearch, setBarangaySearch] = useState("");
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
@@ -49,23 +51,23 @@ export default function ProfileScreen() {
   });
 
   const CEBU_BARANGAYS = [
-    'Adlaon','Agsungot','Apas','Babag','Bacayan','Banilad','Basak Pardo',
-    'Basak San Nicolas','Binaliw','Bonbon','Budla-an','Buhisan','Bulacao',
-    'Buot-Taup','Busay','Calamba','Cambinocot','Capitol Site','Carreta',
-    'Cogon Pardo','Cogon Ramos','Day-as','Duljo Fatima','Ermita',
-    'Guadalupe','Guba','Hippodromo','Inayawan','IT Park','Kalubihan',
-    'Kalunasan','Kamagayan','Kamputhaw','Kasambagan','Kinasang-an',
-    'Labangon','Lahug','Lorega San Miguel','Lusaran','Luz','Mabini',
-    'Mabolo','Malubog','Mambaling','Pahina Central','Pahina San Nicolas',
-    'Pardo','Pari-an','Paril','Pasil','Pit-os','Poblacion Pardo',
-    'Pulangbato','Pung-ol Sibugay','Punta Princesa','Quiot','Sambag I',
-    'Sambag II','San Antonio','San Jose','San Nicolas Proper','San Roque',
-    'Santa Cruz','Sapangdaku','Sawang Calero','Sinsin','Sirao',
-    'Suba','Sudlon I','Sudlon II','T. Padilla','Tabunan','Tagbao',
-    'Talamban','Taptap','Tejero','Tinago','Tisa','To-ong','Zapatera',
+    "Adlaon","Agsungot","Apas","Babag","Bacayan","Banilad","Basak Pardo",
+    "Basak San Nicolas","Binaliw","Bonbon","Budla-an","Buhisan","Bulacao",
+    "Buot-Taup","Busay","Calamba","Cambinocot","Capitol Site","Carreta",
+    "Cogon Pardo","Cogon Ramos","Day-as","Duljo Fatima","Ermita",
+    "Guadalupe","Guba","Hippodromo","Inayawan","IT Park","Kalubihan",
+    "Kalunasan","Kamagayan","Kamputhaw","Kasambagan","Kinasang-an",
+    "Labangon","Lahug","Lorega San Miguel","Lusaran","Luz","Mabini",
+    "Mabolo","Malubog","Mambaling","Pahina Central","Pahina San Nicolas",
+    "Pardo","Pari-an","Paril","Pasil","Pit-os","Poblacion Pardo",
+    "Pulangbato","Pung-ol Sibugay","Punta Princesa","Quiot","Sambag I",
+    "Sambag II","San Antonio","San Jose","San Nicolas Proper","San Roque",
+    "Santa Cruz","Sapangdaku","Sawang Calero","Sinsin","Sirao",
+    "Suba","Sudlon I","Sudlon II","T. Padilla","Tabunan","Tagbao",
+    "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong","Zapatera",
   ];
 
-  const filteredBarangays = CEBU_BARANGAYS.filter(b =>
+  const filteredBarangays = CEBU_BARANGAYS.filter((b) =>
     b.toLowerCase().includes(barangaySearch.toLowerCase())
   );
 
@@ -92,14 +94,12 @@ export default function ProfileScreen() {
       quality: 0.5,
       base64: true,
     });
-
     if (!result.canceled) {
-      setEditForm({ ...editForm, profilePicture: `data:image/jpeg;base64,${result.assets[0].base64}` });
+      setEditForm({
+        ...editForm,
+        profilePicture: `data:image/jpeg;base64,${result.assets[0].base64}`,
+      });
     }
-  };
-
-  const handleEditPress = () => {
-    setIsEditModalVisible(true);
   };
 
   const handleSaveProfile = async () => {
@@ -117,477 +117,473 @@ export default function ProfileScreen() {
     setReportsLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/reports?userId=${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMyReports(data);
-      }
-    } catch (_) {
-      // silently fail — stats and reports section show empty state
-    } finally {
-      setReportsLoading(false);
-    }
+      if (res.ok) setMyReports(await res.json());
+    } catch (_) {}
+    finally { setReportsLoading(false); }
   }, [user?.id]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
   const handleDeleteReport = async (reportId) => {
-    Alert.alert(
-      "Delete Report",
-      "Are you sure you want to delete this report? This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive", 
-          onPress: async () => {
-            try {
-              const res = await fetch(`${API_URL}/api/reports/${reportId}`, { method: 'DELETE' });
-              if (res.ok) {
-                setMyReports(prev => prev.filter(r => r._id !== reportId));
-                Alert.alert("Success", "Report deleted successfully");
-              } else {
-                throw new Error("Failed to delete report");
-              }
-            } catch (error) {
-              Alert.alert("Error", error.message);
-            }
-          }
-        }
-      ]
-    );
+    Alert.alert("Delete Report", "Are you sure? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const res = await fetch(`${API_URL}/api/reports/${reportId}`, { method: "DELETE" });
+            if (res.ok) {
+              setMyReports((prev) => prev.filter((r) => r._id !== reportId));
+              Alert.alert("Deleted", "Report removed successfully.");
+            } else throw new Error();
+          } catch { Alert.alert("Error", "Failed to delete report."); }
+        },
+      },
+    ]);
   };
 
-  const resolvedCount = myReports.filter(r => r.status === 'resolved').length;
+  const handleLogout = () => {
+    Alert.alert(t("logout"), t("logout_confirm"), [
+      { text: t("cancel"), style: "cancel" },
+      { text: t("logout"), onPress: logout, style: "destructive" },
+    ]);
+  };
+
+  const changeLanguage = async (lang) => {
+    await i18n.changeLanguage(lang);
+    await AsyncStorage.setItem("user-language", lang);
+    setShowLanguageModal(false);
+  };
+
+  const resolvedCount = myReports.filter((r) => r.status === "resolved").length;
+  const pendingCount  = myReports.filter((r) => r.status === "pending").length;
   const recentReports = myReports.slice(0, 5);
-
-  const handleMenuPress = (label) => {
-    if (label === "Logout") {
-      Alert.alert(
-        "Logout",
-        "Are you sure you want to logout?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Logout", onPress: logout, style: "destructive" },
-        ]
-      );
-      return;
-    }
-    console.log(`Pressed: ${label}`);
-  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Header Section */}
-        <View style={styles.profileSection}>
-          {/* Avatar with Edit Button */}
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarWrapper}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* ── Green cover ── */}
+        <View style={styles.coverHeader}>
+          <Text style={styles.screenLabel}>{t("profile")}</Text>
+        </View>
+
+        {/* ── White sheet (covers everything below cover) ── */}
+        <View style={styles.whiteSheet}>
+
+          {/* Avatar section */}
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarRing}>
               <View style={styles.avatar}>
                 {user?.profilePicture ? (
                   <Image source={{ uri: user.profilePicture }} style={styles.avatarImage} />
                 ) : (
-                  <MaterialIcons name="person" size={48} color="#BECABE" />
+                  <Ionicons name="person" size={52} color="#A8C4B4" />
                 )}
               </View>
-              <TouchableOpacity style={styles.editButton} activeOpacity={0.7} onPress={handleEditPress}>
-                <MaterialIcons name="edit" size={14} color="#FFFFFF" />
+              <TouchableOpacity
+                style={styles.editBadge}
+                onPress={() => setIsEditModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="pencil" size={12} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.userName}>{user?.name || "User"}</Text>
+
+            {user?.barangay && (
+              <View style={styles.barangayBadge}>
+                <Ionicons name="location-sharp" size={13} color="#006A3B" />
+                <Text style={styles.barangayBadgeText}>{t("barangay")} {user.barangay}</Text>
+              </View>
+            )}
+
+            {user?.email && (
+              <View style={styles.metaRow}>
+                <Ionicons name="mail-outline" size={13} color="#7A8C7F" />
+                <Text style={styles.metaText}>{user.email}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* ── Stats row ── */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCell}>
+              {reportsLoading
+                ? <ActivityIndicator size="small" color="#006A3B" />
+                : <Text style={styles.statValue}>{myReports.length}</Text>}
+              <Text style={styles.statLabel}>{t("total_reports")}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              {reportsLoading
+                ? <ActivityIndicator size="small" color="#006A3B" />
+                : <Text style={[styles.statValue, { color: "#006A3B" }]}>{resolvedCount}</Text>}
+              <Text style={styles.statLabel}>Resolved</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              {reportsLoading
+                ? <ActivityIndicator size="small" color="#006A3B" />
+                : <Text style={styles.statValue}>{pendingCount}</Text>}
+              <Text style={styles.statLabel}>{t("pending")}</Text>
+            </View>
+          </View>
+
+          {/* ── Body content ── */}
+          <View style={styles.body}>
+
+            {/* Impact banner */}
+            <View style={styles.impactCard}>
+              <View style={styles.impactLeft}>
+                <Text style={styles.impactTitle}>{t("community_impact")}</Text>
+                <Text style={styles.impactSub}>
+                  {resolvedCount > 0
+                    ? t("impact_message_active", { count: resolvedCount })
+                    : t("impact_message_empty")}
+                </Text>
+              </View>
+              <MaterialIcons name="forest" size={64} color="#fff" style={{ opacity: 0.2 }} />
+            </View>
+
+            {/* Preferences */}
+            <Text style={styles.sectionLabel}>{t("preferences")}</Text>
+            <View style={styles.card}>
+              <View style={styles.menuRow}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
+                    <Ionicons name="notifications" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>{t("notifications")}</Text>
+                </View>
+                <Switch
+                  value={notifEnabled}
+                  onValueChange={setNotifEnabled}
+                  trackColor={{ false: "#DCD9D9", true: "#006A3B" }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#DCD9D9"
+                />
+              </View>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
+                    <Ionicons name="leaf" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>{t("segregation_guide")}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity 
+                style={styles.menuRow} 
+                activeOpacity={0.5}
+                onPress={() => setShowLanguageModal(true)}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
+                    <Ionicons name="language" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>{t("language")}</Text>
+                </View>
+                <View style={styles.menuRight}>
+                  <Text style={styles.menuValue}>
+                    {i18n.language === "en" ? "English" : "Cebuano"}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Account */}
+            <Text style={styles.sectionLabel}>{t("account")}</Text>
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={() => setIsEditModalVisible(true)}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
+                    <Ionicons name="person" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>{t("edit_profile")}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5} onPress={handleLogout}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#F0EDED" }]}>
+                    <Ionicons name="log-out-outline" size={18} color="#7A8C7F" />
+                  </View>
+                  <Text style={[styles.menuText, { color: "#7A8C7F" }]}>Logout</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* My Reports */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>My Reports</Text>
+              {myReports.length > 0 && (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{myReports.length}</Text>
+                </View>
+              )}
+            </View>
+
+            {reportsLoading ? (
+              <View style={styles.emptyCard}>
+                <ActivityIndicator color="#006A3B" />
+              </View>
+            ) : recentReports.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="document-text-outline" size={36} color="#C4CEC7" />
+                <Text style={styles.emptyText}>No reports submitted yet</Text>
+                <Text style={styles.emptySubText}>Your reports will appear here</Text>
+              </View>
+            ) : (
+              <View style={styles.card}>
+                {recentReports.map((report, idx) => {
+                  const isResolved = report.status === "resolved";
+                  const isProgress = report.status === "in-progress";
+                  return (
+                    <React.Fragment key={report._id || idx}>
+                      {idx > 0 && <View style={styles.separator} />}
+                      <View style={styles.reportRow}>
+                        <View style={[
+                          styles.reportIcon,
+                          isResolved && { backgroundColor: "#DCFCE7" },
+                          isProgress && { backgroundColor: "#ECFDF5" },
+                          !isResolved && !isProgress && { backgroundColor: "#EFF3F0" },
+                        ]}>
+                          <Ionicons
+                            name={isResolved ? "checkmark-circle" : isProgress ? "time" : "alert-circle"}
+                            size={22}
+                            color={isResolved ? "#006A3B" : isProgress ? "#338862" : "#A8C4B4"}
+                          />
+                        </View>
+                        <View style={styles.reportInfo}>
+                          <View style={styles.reportTopRow}>
+                            <Text style={styles.reportCategory} numberOfLines={1}>
+                              {report.category || "Report"}
+                            </Text>
+                            <Text style={styles.reportDate}>{formatDate(report.createdAt)}</Text>
+                          </View>
+                          <Text style={styles.reportDesc} numberOfLines={1}>
+                            {report.description}
+                          </Text>
+                          <View style={[
+                            styles.statusPill,
+                            isResolved && { backgroundColor: "#DCFCE7" },
+                            isProgress && { backgroundColor: "#ECFDF5" },
+                          ]}>
+                            <Text style={[
+                              styles.statusPillText,
+                              isResolved && { color: "#006A3B" },
+                              isProgress && { color: "#338862" },
+                            ]}>
+                              {isResolved ? "Resolved" : isProgress ? "In Progress" : "Under Review"}
+                            </Text>
+                          </View>
+                        </View>
+                        {!isResolved && (
+                          <TouchableOpacity
+                            onPress={() => handleDeleteReport(report._id)}
+                            style={styles.deleteBtn}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#A8C4B4" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            )}
+
+            <View style={{ height: 48 }} />
+          </View>
+        </View>
+      </ScrollView>
+
+        {/* Language Modal */}
+        <Modal
+          visible={showLanguageModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLanguageModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.languageModalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t("language")}</Text>
+                <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                  <Ionicons name="close" size={24} color="#7A8C7F" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.langOption, i18n.language === "en" && styles.activeLangOption]} 
+                onPress={() => changeLanguage("en")}
+              >
+                <Text style={[styles.langText, i18n.language === "en" && styles.activeLangText]}>English</Text>
+                {i18n.language === "en" && <Ionicons name="checkmark-circle" size={20} color="#006A3B" />}
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.langOption, i18n.language === "ceb" && styles.activeLangOption]} 
+                onPress={() => changeLanguage("ceb")}
+              >
+                <Text style={[styles.langText, i18n.language === "ceb" && styles.activeLangText]}>Cebuano</Text>
+                {i18n.language === "ceb" && <Ionicons name="checkmark-circle" size={20} color="#006A3B" />}
               </TouchableOpacity>
             </View>
           </View>
+        </Modal>
 
-          {/* Name and Address */}
-          <Text style={styles.userName}>{user?.name || "User"}</Text>
-          <View style={styles.addressRow}>
-            <MaterialIcons name="location-on" size={16} color="#6F7A70" />
-            <Text style={styles.address}>{user?.address || "Location not set"}</Text>
-          </View>
-          {user?.email && (
-            <View style={[styles.addressRow, { marginTop: 4 }]}>
-              <MaterialIcons name="email" size={16} color="#6F7A70" />
-              <Text style={styles.address}>{user.email}</Text>
-            </View>
-          )}
-          {user?.barangay && (
-            <View style={styles.barangayBadge}>
-              <MaterialIcons name="location-city" size={14} color="#006A3B" />
-              <Text style={styles.barangayBadgeText}>Brgy. {user.barangay}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Stats Bento Grid */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            {reportsLoading ? (
-              <ActivityIndicator size="small" color="#006A3B" style={{ marginBottom: 4 }} />
-            ) : (
-              <Text style={styles.statValue}>{myReports.length}</Text>
-            )}
-            <Text style={styles.statLabel}>Reports Submitted</Text>
-          </View>
-          <View style={styles.statCard}>
-            {reportsLoading ? (
-              <ActivityIndicator size="small" color="#006A3B" style={{ marginBottom: 4 }} />
-            ) : (
-              <Text style={[styles.statValue, { color: "#006E1C" }]}>{resolvedCount}</Text>
-            )}
-            <Text style={styles.statLabel}>Resolved</Text>
-          </View>
-        </View>
-
-        {/* Settings Menu - iOS List Style */}
-        <View style={styles.settingsSection}>
-          {/* Main Settings Card */}
-          <View style={styles.settingsCard}>
-            {/* Notification Settings */}
-            <View style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: "#E4EEE9" },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="notifications"
-                    size={20}
-                    color="#006A3B"
-                  />
-                </View>
-                <Text style={styles.menuLabel}>Notification Settings</Text>
-              </View>
-              <Switch
-                value={notifEnabled}
-                onValueChange={setNotifEnabled}
-                trackColor={{ false: "#DCD9D9", true: "#006A3B" }}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor="#DCD9D9"
-              />
-            </View>
-
-            {/* Divider */}
-            <View style={styles.divider} />
-
-            {/* Segregation Guide */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleMenuPress("Segregation Guide")}
-              activeOpacity={0.5}
-            >
-              <View style={styles.menuItemLeft}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: "#E4EEE9" },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="auto-awesome-motion"
-                    size={20}
-                    color="#006E1C"
-                  />
-                </View>
-                <Text style={styles.menuLabel}>Segregation Guide</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={22} color="#BECABE" />
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.divider} />
-
-            {/* App Language */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleMenuPress("App Language")}
-              activeOpacity={0.5}
-            >
-              <View style={styles.menuItemLeft}>
-                <View
-                  style={[styles.iconContainer, { backgroundColor: "#D9E6DA" }]}
-                >
-                  <MaterialIcons name="language" size={20} color="#3E4A41" />
-                </View>
-                <Text style={styles.menuLabel}>App Language</Text>
-              </View>
-              <View style={styles.menuItemRight}>
-                <Text style={styles.menuValue}>English</Text>
-                <MaterialIcons name="chevron-right" size={22} color="#BECABE" />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Logout Card */}
-          <View style={styles.logoutCard}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleMenuPress("Logout")}
-              activeOpacity={0.5}
-            >
-              <View style={styles.menuItemLeft}>
-                <View
-                  style={[styles.iconContainer, { backgroundColor: "#FFDAD6" }]}
-                >
-                  <MaterialIcons name="logout" size={20} color="#BA1A1A" />
-                </View>
-                <Text
-                  style={[
-                    styles.menuLabel,
-                    { color: "#BA1A1A", fontWeight: "600" },
-                  ]}
-                >
-                  Logout
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Impact Card */}
-        <View style={styles.impactCard}>
-          <View style={styles.impactContent}>
-            <Text style={styles.impactTitle}>Make an Impact</Text>
-            <Text style={styles.impactText}>
-              Every piece of trash you segregate contributes to a cleaner Cebu.
-              You've saved 4 trees this month!
-            </Text>
-          </View>
-          <View style={styles.impactIcon}>
-            <MaterialIcons
-              name="forest"
-              size={100}
-              color="#268058"
-            />
-          </View>
-        </View>
-
-        {/* My Reports Section */}
-        <View style={styles.reportsSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>My Reports</Text>
-          </View>
-
-          {reportsLoading ? (
-            <View style={[styles.reportCard, { padding: 24, alignItems: 'center' }]}>
-              <ActivityIndicator size="small" color="#006A3B" />
-            </View>
-          ) : recentReports.length === 0 ? (
-            <View style={[styles.reportCard, { padding: 24, alignItems: 'center' }]}>
-              <MaterialIcons name="assignment" size={32} color="#BECABE" />
-              <Text style={{ fontSize: 14, color: '#6F7A70', marginTop: 8 }}>No reports submitted yet</Text>
-            </View>
-          ) : (
-            <View style={styles.reportCard}>
-              {recentReports.map((report, idx) => {
-                const isResolved = report.status === 'resolved';
-                return (
-                  <React.Fragment key={report._id || idx}>
-                    {idx > 0 && <View style={styles.divider} />}
-                    <View style={styles.reportItem}>
-                      <View style={[styles.reportIconContainer, isResolved && { backgroundColor: '#D9E6DA' }]}>
-                        <MaterialIcons
-                          name={isResolved ? "check-circle-outline" : "error-outline"}
-                          size={24}
-                          color={isResolved ? "#006A3B" : "#BA1A1A"}
-                        />
-                      </View>
-                      <View style={styles.reportDetails}>
-                        <View style={styles.reportHeaderRow}>
-                          <Text style={styles.reportCategory} numberOfLines={1}>{report.category || 'Report'}</Text>
-                          <Text style={styles.reportDate}>{formatDate(report.createdAt)}</Text>
-                        </View>
-                        <Text style={styles.reportDesc} numberOfLines={1}>{report.description}</Text>
-                        <View style={[
-                          styles.statusBadge,
-                          isResolved && { backgroundColor: '#ECFDF5' },
-                          report.status === 'in-progress' && { backgroundColor: '#EFF6FF' },
-                        ]}>
-                          <Text style={[
-                            styles.statusBadgeText,
-                            isResolved && { color: '#006A3B' },
-                            report.status === 'in-progress' && { color: '#1D4ED8' },
-                          ]}>
-                            {report.status === 'pending' ? 'Under Review'
-                              : report.status === 'in-progress' ? 'In Progress'
-                              : 'Resolved'}
-                          </Text>
-                        </View>
-                      </View>
-                      {!isResolved && (
-                        <TouchableOpacity 
-                          onPress={() => handleDeleteReport(report._id)} 
-                          style={styles.deleteBtn}
-                        >
-                          <MaterialIcons name="delete-outline" size={20} color="#BA1A1A" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </React.Fragment>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* Bottom Spacing for Tab Bar */}
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
-
-      {/* Edit Profile Modal */}
+      {/* ── Edit Profile Modal ── */}
       <Modal
         visible={isEditModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setIsEditModalVisible(false)}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalContainer}
+          style={styles.modalOverlay}
         >
-          <View style={styles.editModalContent}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
-              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color="#1B1C1C" />
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={24} color="#1B1C1C" />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.editAvatarSection}>
-                <View style={styles.modalAvatar}>
+              {/* Avatar picker */}
+              <TouchableOpacity style={styles.avatarPickerRow} onPress={pickImage} activeOpacity={0.7}>
+                <View style={styles.modalAvatarCircle}>
                   {editForm.profilePicture ? (
                     <Image source={{ uri: editForm.profilePicture }} style={styles.avatarImage} />
                   ) : (
-                    <MaterialIcons name="person" size={40} color="#BECABE" />
+                    <Ionicons name="person" size={36} color="#C4CEC7" />
                   )}
                 </View>
-                <TouchableOpacity style={styles.changePicButton} onPress={pickImage}>
-                  <Text style={styles.changePicText}>Change Profile Picture</Text>
-                  <Text style={styles.cooldownHint}>10-day cooldown applies</Text>
-                </TouchableOpacity>
-              </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.changePicLabel}>Change Profile Picture</Text>
+                  <Text style={styles.changePicHint}>10-day cooldown applies</Text>
+                </View>
+                <View style={styles.changePicBtn}>
+                  <Ionicons name="camera" size={16} color="#006A3B" />
+                </View>
+              </TouchableOpacity>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>First Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editForm.firstName}
-                  onChangeText={(text) => setEditForm({ ...editForm, firstName: text })}
-                  placeholder="Enter first name"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Last Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editForm.lastName}
-                  onChangeText={(text) => setEditForm({ ...editForm, lastName: text })}
-                  placeholder="Enter last name"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Phone Number</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editForm.phone}
-                  onChangeText={(text) => setEditForm({ ...editForm, phone: text })}
-                  placeholder="Enter phone number"
-                  keyboardType="phone-pad"
-                />
-              </View>
+              {[
+                { label: "First Name", key: "firstName", placeholder: "e.g. Juan" },
+                { label: "Last Name",  key: "lastName",  placeholder: "e.g. Dela Cruz" },
+                { label: "Phone",      key: "phone",     placeholder: "+63 9XX XXX XXXX", keyboard: "phone-pad" },
+                { label: "Street / Sitio", key: "street", placeholder: "Enter street or sitio" },
+                { label: "House / Unit No.", key: "houseNo", placeholder: "Enter house or unit no." },
+              ].map(({ label, key, placeholder, keyboard }) => (
+                <View key={key} style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>{label}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editForm[key]}
+                    onChangeText={(t) => setEditForm({ ...editForm, [key]: t })}
+                    placeholder={placeholder}
+                    placeholderTextColor="#C4CEC7"
+                    keyboardType={keyboard || "default"}
+                  />
+                </View>
+              ))}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Barangay</Text>
                 <TouchableOpacity
-                  style={styles.selectorInput}
+                  style={styles.selectorRow}
                   onPress={() => setShowBarangayModal(true)}
                 >
-                  <Text style={editForm.barangay ? styles.selectorText : styles.placeholderText}>
+                  <Text style={editForm.barangay ? styles.selectorValue : styles.selectorPlaceholder}>
                     {editForm.barangay || "Select Barangay"}
                   </Text>
-                  <MaterialIcons name="keyboard-arrow-down" size={24} color="#6F7A70" />
+                  <Ionicons name="chevron-down" size={20} color="#7A8C7F" />
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Street / Sitio</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editForm.street}
-                  onChangeText={(text) => setEditForm({ ...editForm, street: text })}
-                  placeholder="Enter street or sitio"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>House / Unit No.</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editForm.houseNo}
-                  onChangeText={(text) => setEditForm({ ...editForm, houseNo: text })}
-                  placeholder="Enter house or unit number"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.saveButton}
-                onPress={handleSaveProfile}
-              >
-                <Text style={styles.saveButtonText}>Save Changes</Text>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
+                <Text style={styles.saveBtnText}>Save Changes</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Barangay Picker Modal (Reuse from RegisterScreen) */}
+      {/* ── Barangay Picker ── */}
       <Modal visible={showBarangayModal} animationType="fade" transparent>
-        <View style={styles.barangayModalOverlay}>
-          <View style={styles.barangayModalContent}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingTop: 0 }]}>
             <View style={styles.barangayModalHeader}>
-              <Text style={styles.barangayModalTitle}>Select Barangay</Text>
-              <TouchableOpacity onPress={() => { setShowBarangayModal(false); setBarangaySearch(''); }}>
-                <MaterialIcons name="close" size={24} color="#333" />
+              <Text style={styles.modalTitle}>Select Barangay</Text>
+              <TouchableOpacity onPress={() => { setShowBarangayModal(false); setBarangaySearch(""); }}>
+                <Ionicons name="close" size={24} color="#1B1C1C" />
               </TouchableOpacity>
             </View>
-
-            <View style={styles.barangayModalSearch}>
-              <MaterialIcons name="search" size={18} color="#9CA3AF" />
-              <TextInput 
-                style={styles.barangayModalSearchInput} 
-                placeholder="Search barangay..."
-                placeholderTextColor="#9CA3AF" 
+            <View style={styles.searchBox}>
+              <Ionicons name="search" size={16} color="#C4CEC7" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search barangay…"
+                placeholderTextColor="#C4CEC7"
                 value={barangaySearch}
-                onChangeText={setBarangaySearch} 
-                autoFocus 
+                onChangeText={setBarangaySearch}
+                autoFocus
               />
             </View>
-
             <FlatList
               data={filteredBarangays}
-              keyExtractor={item => item}
+              keyExtractor={(item) => item}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.barangayModalItem, editForm.barangay === item && styles.barangayModalItemActive]}
+                  style={[
+                    styles.barangayItem,
+                    editForm.barangay === item && styles.barangayItemActive,
+                  ]}
                   onPress={() => {
                     setEditForm({ ...editForm, barangay: item });
                     setShowBarangayModal(false);
-                    setBarangaySearch('');
+                    setBarangaySearch("");
                   }}
                 >
-                  <MaterialIcons name="location-on" size={18}
-                    color={editForm.barangay === item ? colors.primaryGreen : '#9CA3AF'} />
-                  <Text style={[styles.barangayModalItemText, editForm.barangay === item && styles.barangayModalItemTextActive]}>
+                  <Ionicons
+                    name="location-sharp"
+                    size={16}
+                    color={editForm.barangay === item ? "#006A3B" : "#C4CEC7"}
+                  />
+                  <Text style={[
+                    styles.barangayItemText,
+                    editForm.barangay === item && { color: "#006A3B", fontWeight: "700" },
+                  ]}>
                     {item}
                   </Text>
                   {editForm.barangay === item && (
-                    <MaterialIcons name="check-circle" size={20} color={colors.primaryGreen} />
+                    <Ionicons name="checkmark-circle" size={18} color="#006A3B" />
                   )}
                 </TouchableOpacity>
               )}
@@ -600,494 +596,455 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FBF9F8",
+  safeArea: { flex: 1, backgroundColor: "#006A3B" },
+  scroll:   { backgroundColor: "#FBF9F8", marginBottom: 16 },
+
+  // ── Cover ──
+  coverHeader: {
+    backgroundColor: "#006A3B",
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 62,
   },
-  container: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-   paddingBottom: 24
+  screenLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "rgba(255,255,255,0.65)",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
   },
 
-  // Profile Header
-  profileSection: {
+  // ── White sheet below cover ──
+  whiteSheet: {
+    backgroundColor: "#FBF9F8",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -28,
+  },
+
+  // ── Avatar ──
+  avatarSection: {
     alignItems: "center",
-    marginBottom: 40,
+    paddingBottom: 4,
   },
-  avatarContainer: {
-    marginBottom: 16,
-  },
-  avatarWrapper: {
+  avatarRing: {
+    marginTop: -50,
     position: "relative",
-    width: 96,
-    height: 96,
+    width: 100,
+    height: 100,
+    marginBottom: 14,
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#F0EDED",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#EDF4F0",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 4,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    borderColor: "#fff",
     overflow: "hidden",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 10,
   },
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  editAvatarSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 32,
-    backgroundColor: "#F9FAFB",
-    padding: 16,
-    borderRadius: 16,
-  },
-  modalAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  changePicButton: {
-    flex: 1,
-  },
-  changePicText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#006A3B",
-  },
-  cooldownHint: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  editButton: {
+  avatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  editBadge: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
+    bottom: 2,
+    right: 2,
     width: 28,
     height: 28,
     borderRadius: 14,
     backgroundColor: "#006A3B",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
+    borderColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
   },
   userName: {
-    fontSize: 34,
+    fontSize: 24,
     fontWeight: "700",
     color: "#1B1C1C",
-    letterSpacing: -0.4,
-    lineHeight: 41,
-    marginBottom: 4,
+    letterSpacing: -0.3,
     textAlign: "center",
-  },
-  addressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  address: {
-    fontSize: 15,
-    color: "#6F7A70",
-    lineHeight: 20,
+    marginBottom: 8,
   },
   barangayBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 10,
+    gap: 4,
     backgroundColor: "#ECFDF5",
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 20,
+    marginBottom: 8,
   },
-  barangayBadgeText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#006A3B",
-  },
-
-  // Stats Grid
-  statsGrid: {
+  barangayBadgeText: { fontSize: 12, fontWeight: "700", color: "#006A3B" },
+  metaRow: {
     flexDirection: "row",
-    gap: 16,
-    marginBottom: 32,
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
+  metaText: { fontSize: 13, color: "#7A8C7F" },
+
+  // ── Stats ──
+  statsRow: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    marginTop: 20,
+    borderRadius: 18,
+    paddingVertical: 18,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
   },
+  statCell: { flex: 1, alignItems: "center" },
   statValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "900",
-    color: "#006A3B",
+    color: "#1B1C1C",
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: "#6F7A70",
+    fontSize: 10,
+    color: "#7A8C7F",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    lineHeight: 16,
+    textAlign: "center",
+    lineHeight: 15,
   },
+  statDivider: { width: 1, backgroundColor: "#EDF4F0" },
 
-  // Settings Section
-  settingsSection: {
-    gap: 24,
-    marginBottom: 32,
-  },
-  settingsCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F0EDED",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
-  },
-  menuItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  // ── Body ──
+  body: {
     paddingHorizontal: 16,
-    height: 52,
-  },
-  menuItemLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  menuLabel: {
-    fontSize: 17,
-    color: "#1B1C1C",
-    lineHeight: 22,
-  },
-  menuValue: {
-    fontSize: 15,
-    color: "#6F7A70",
-  },
-  menuItemRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#F0EDED",
-    marginLeft: 60,
+    paddingTop: 20,
   },
 
-  // Logout Card
-  logoutCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F0EDED",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
-  },
-
-  // Impact Card
+  // ── Impact banner ──
   impactCard: {
     backgroundColor: "#006A3B",
-    borderRadius: 16,
-    padding: 24,
-    position: "relative",
+    borderRadius: 18,
+    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 24,
     overflow: "hidden",
     shadowColor: "#006A3B",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
     elevation: 8,
-    marginBottom: 16,
   },
-  impactContent: {
-    zIndex: 1,
-  },
+  impactLeft: { flex: 1 },
   impactTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
     marginBottom: 4,
-    lineHeight: 22,
   },
-  impactText: {
-    fontSize: 13,
-    color: "#E6F1EC",
-    lineHeight: 18,
-  },
-  impactIcon: {
-    position: "absolute",
-    bottom: -16,
-    right: -16,
-    opacity: 0.15,
-  },
+  impactSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", lineHeight: 17 },
 
-  // Reports Section
-  reportsSection: {
-    marginTop: 24,
-    marginBottom: 16,
+  // ── Section labels ──
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#7A8C7F",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    marginTop: 4,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    marginTop: 4,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1B1C1C',
+  countBadge: {
+    backgroundColor: "#006A3B",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
-  viewAllText: {
-    fontSize: 14,
-    color: '#006A3B',
-    fontWeight: '600',
-  },
-  reportCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+  countBadgeText: { fontSize: 11, fontWeight: "700", color: "#fff" },
+
+  // ── Cards ──
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#F0EDED',
-    padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
+    borderColor: "#EDF4F0",
+    overflow: "hidden",
+    marginBottom: 16,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  reportItem: {
-    flexDirection: 'row',
-    padding: 12,
+  separator: { height: 1, backgroundColor: "#F2F6F3", marginLeft: 56 },
+
+  // ── Menu rows ──
+  menuRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  menuLeft:  { flexDirection: "row", alignItems: "center", gap: 12 },
+  menuRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuText:  { fontSize: 15, color: "#1B1C1C", fontWeight: "500" },
+  menuValue: { fontSize: 14, color: "#7A8C7F" },
+
+  // ── Reports ──
+  emptyCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
+    padding: 32,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emptyText:    { fontSize: 15, fontWeight: "600", color: "#7A8C7F", marginTop: 10 },
+  emptySubText: { fontSize: 13, color: "#C4CEC7", marginTop: 4 },
+  reportRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 14,
     gap: 12,
   },
-  reportIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#FFDAD6',
-    justifyContent: 'center',
-    alignItems: 'center',
+  reportIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  reportDetails: {
-    flex: 1,
-  },
-  reportHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  reportInfo: { flex: 1 },
+  reportTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 2,
   },
   reportCategory: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1B1C1C',
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1B1C1C",
+    flex: 1,
+    marginRight: 8,
   },
-  reportDate: {
-    fontSize: 12,
-    color: '#6F7A70',
-  },
-  reportDesc: {
-    fontSize: 13,
-    color: '#6F7A70',
-    marginBottom: 6,
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFF3CD',
+  reportDate: { fontSize: 11, color: "#C4CEC7" },
+  reportDesc:  { fontSize: 12, color: "#7A8C7F", marginBottom: 6 },
+  statusPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "#EDF4F0",
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#856404',
-    textTransform: 'uppercase',
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#7A8C7F",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
+  deleteBtn: { paddingTop: 2 },
 
-  bottomSpacer: {
-    height: 40,
-  },
-
-  // Modal Styles
-  modalContainer: {
+  // ── Modal ──
+  modalOverlay: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
   },
-  editModalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+  modalSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     padding: 24,
-    maxHeight: "90%",
+    paddingTop: 12,
+    maxHeight: "92%",
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#EDF4F0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#1B1C1C",
-  },
-  inputGroup: {
     marginBottom: 20,
   },
+  modalTitle: { fontSize: 20, fontWeight: "700", color: "#1B1C1C" },
+
+  // ── Edit avatar row ──
+  avatarPickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#F6FAF8",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 24,
+  },
+  modalAvatarCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#EDF4F0",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  changePicLabel: { fontSize: 15, fontWeight: "600", color: "#006A3B" },
+  changePicHint:  { fontSize: 12, color: "#C4CEC7", marginTop: 2 },
+  changePicBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // ── Form inputs ──
+  inputGroup: { marginBottom: 16 },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#6F7A70",
-    marginBottom: 8,
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#7A8C7F",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   textInput: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#F6FAF8",
     borderRadius: 12,
     paddingHorizontal: 16,
-    height: 52,
-    fontSize: 16,
+    height: 50,
+    fontSize: 15,
     color: "#1B1C1C",
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
   },
-  selectorInput: {
+  selectorRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#F6FAF8",
     borderRadius: 12,
     paddingHorizontal: 16,
-    height: 52,
+    height: 50,
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
   },
-  selectorText: {
-    fontSize: 16,
-    color: "#1B1C1C",
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: "#9CA3AF",
-  },
-  saveButton: {
+  selectorValue:       { fontSize: 15, color: "#1B1C1C" },
+  selectorPlaceholder: { fontSize: 15, color: "#C4CEC7" },
+  saveBtn: {
     backgroundColor: "#006A3B",
     borderRadius: 14,
-    height: 56,
+    height: 54,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 12,
+    marginTop: 8,
     marginBottom: 32,
     shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  saveButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
+  saveBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 
-  // Barangay Picker Modal Styles
-  barangayModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  barangayModalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    maxHeight: '80%',
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-  },
+  // ── Barangay picker ──
   barangayModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 12,
+    paddingTop: 24,
+    paddingBottom: 14,
   },
-  barangayModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1B1C1C',
-  },
-  barangayModalSearch: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F6FAF8",
     marginHorizontal: 24,
-    marginBottom: 12,
+    marginBottom: 10,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 46,
-    gap: 10,
+    height: 44,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
   },
-  barangayModalSearchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1B1C1C',
-  },
-  barangayModalItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
+  searchInput: { flex: 1, fontSize: 15, color: "#1B1C1C" },
+  barangayItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
     paddingHorizontal: 24,
     gap: 12,
   },
-  barangayModalItemActive: {
-    backgroundColor: '#ECFDF5',
-  },
-  barangayModalItemText: {
+  barangayItemActive:  { backgroundColor: "#ECFDF5" },
+  barangayItemText:    { flex: 1, fontSize: 15, color: "#374151" },
+  modalOverlay: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  languageModalContent: {
+    width: "85%",
+    backgroundColor: "#fff",
+    borderRadius: 32,
+    padding: 24,
+  },
+  langOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginBottom: 8,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  activeLangOption: {
+    backgroundColor: "#E4EEE9",
+    borderColor: "#006A3B",
+  },
+  langText: {
     fontSize: 16,
-    color: '#374151',
+    fontWeight: "600",
+    color: "#4B5563",
   },
-  barangayModalItemTextActive: {
-    color: colors.primaryGreen,
-    fontWeight: '700',
-  },
-  deleteBtn: {
-    padding: 8,
-    justifyContent: 'center',
+  activeLangText: {
+    color: "#006A3B",
   },
 });

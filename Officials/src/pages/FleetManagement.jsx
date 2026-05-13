@@ -12,6 +12,7 @@ export default function FleetManagement() {
 
   // Form state
   const [driverName, setDriverName] = useState('');
+  const [driverId, setDriverId] = useState('');
   const [driverImage, setDriverImage] = useState(null);
   const [route, setRoute] = useState('');
 
@@ -63,12 +64,14 @@ export default function FleetManagement() {
     try {
       const { data } = await axios.post(`${API}/api/fleet`, {
         driverName: driverName.trim(),
+        driverId: driverId.trim(),
         driverImage,
         route,
       });
       setGeneratedEntry(data);
       setFleet((prev) => [data, ...prev]);
       setDriverName('');
+      setDriverId('');
       setDriverImage(null);
       setRoute('');
     } catch (err) {
@@ -124,6 +127,17 @@ export default function FleetManagement() {
               onChange={(e) => setDriverName(e.target.value)}
               placeholder="e.g. Juan Dela Cruz"
               required
+              className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-800 placeholder-slate-400"
+            />
+          </div>
+
+          <div className="flex-1 min-w-[150px]">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Driver ID (Account ID)</label>
+            <input
+              type="text"
+              value={driverId}
+              onChange={(e) => setDriverId(e.target.value)}
+              placeholder="e.g. DRV-772"
               className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-800 placeholder-slate-400"
             />
           </div>
@@ -195,9 +209,10 @@ export default function FleetManagement() {
           <table className="w-full">
             <thead>
               <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                <th className="px-6 py-3">Truck ID</th>
-                <th className="px-6 py-3">Driver</th>
-                <th className="px-6 py-3">Route</th>
+                <th className="px-6 py-3 text-left">Truck ID</th>
+                <th className="px-6 py-3 text-left">Driver</th>
+                <th className="px-6 py-3 text-left">Driver ID</th>
+                <th className="px-6 py-3 text-left">Route</th>
                 <th className="px-6 py-3">Registered</th>
                 <th className="px-6 py-3" />
               </tr>
@@ -224,6 +239,11 @@ export default function FleetManagement() {
                       </div>
                       <span className="text-sm font-medium text-slate-800">{t.driverName}</span>
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
+                      {t.driverId || 'N/A'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-500">{t.route || <span className="text-slate-300">—</span>}</td>
                   <td className="px-6 py-4 text-xs text-slate-400">

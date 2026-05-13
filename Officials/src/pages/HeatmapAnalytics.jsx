@@ -168,6 +168,16 @@ export default function HeatmapAnalytics() {
   const criticalCt = zones.filter((z) => z.status === 'critical').length;
   const moderateCt = zones.filter((z) => z.status === 'moderate').length;
   const cleanCt = zones.filter((z) => z.status === 'clean').length;
+  const totalReports = zones.reduce((sum, z) => sum + (z.reportCount || 0), 0);
+  const iotSourced = zones.filter(z => z.source === 'iot').length;
+  const reportSourced = zones.filter(z => z.source === 'reports').length;
+  const bothSourced = zones.filter(z => z.source === 'both').length;
+
+  const sourceBadge = (source) => {
+    if (source === 'iot') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 uppercase"><Zap className="w-2.5 h-2.5" />IoT</span>;
+    if (source === 'reports') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700 uppercase"><AlertTriangle className="w-2.5 h-2.5" />Reports</span>;
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700 uppercase"><Zap className="w-2.5 h-2.5" />IoT + Reports</span>;
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -204,7 +214,7 @@ export default function HeatmapAnalytics() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${criticalCt > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
           <div className={`w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold ${criticalCt > 0 ? 'animate-pulse' : ''}`}>{criticalCt}</div>
           <div>
@@ -224,6 +234,13 @@ export default function HeatmapAnalytics() {
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Clean Zones</p>
             <p className="text-xs text-slate-600">Successfully maintained</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
+          <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 font-bold">{totalReports}</div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Reports</p>
+            <p className="text-xs text-slate-600">{bothSourced} zones with IoT + Reports</p>
           </div>
         </div>
       </div>
@@ -316,43 +333,60 @@ export default function HeatmapAnalytics() {
               eventHandlers={{ click: () => setSelectedZone(zone) }}
             >
               <Popup>
-                <div className="p-1 min-w-[180px]">
+                <div className="p-1 min-w-[200px]">
                   <p className="font-bold text-slate-900 text-sm">{zone.name}</p>
-                  <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-2 mt-1">
                     <span className="w-2 h-2 rounded-full" style={{ background: zoneColor[zone.status] }} />
                     <span className="text-xs capitalize font-semibold" style={{ color: zoneColor[zone.status] }}>{zone.status}</span>
+                    {sourceBadge(zone.source || 'iot')}
                   </div>
 
-                  {/* IoT Sensor Data in Popup */}
-                  {(zone.ammonia || zone.methane) && (
-                    <div style={{ marginTop: '8px', padding: '6px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        🔬 Sensor Readings
-                      </p>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <div>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
-                        </div>
-                        {zone.bins > 0 && (
+                  {/* Composite Score Breakdown */}
+                  <div style={{ marginTop: '8px', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      📊 Composite Score
+                    </p>
+                    
+                    {/* IoT Data */}
+                    {(zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm') ? (
+                      <div style={{ marginBottom: '6px' }}>
+                        <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '3px' }}>🔬 IoT SENSOR</p>
+                        <div style={{ display: 'flex', gap: '12px' }}>
                           <div>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Bins: </span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.bins}</span>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Report Data */}
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
+                      <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#f97316', marginBottom: '3px' }}>📋 RESIDENT REPORTS</p>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>Count: </span>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.reportCount || 0}</span>
+                        </div>
+                        {zone.lastReportAt && (
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Last: </span>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: '#334155' }}>{timeAgo(zone.lastReportAt)}</span>
                           </div>
                         )}
                       </div>
                     </div>
-                  )}
+                  </div>
 
                   {zone.barangay && (
                     <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>📍 {zone.barangay}</p>
                   )}
                   <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                    Updated {timeAgo(zone.createdAt)}
+                    Updated {timeAgo(zone.updatedAt || zone.createdAt)}
                   </p>
                   <button 
                     onClick={() => handleDeleteArea(zone._id)}
@@ -393,18 +427,26 @@ export default function HeatmapAnalytics() {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 px-2">
-        <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest text-[10px]">Legend</span>
-        {[
-          { color: 'bg-red-500', label: 'Critical — IoT detected hazardous levels' },
-          { color: 'bg-amber-500', label: 'Moderate — Elevated readings' },
-          { color: 'bg-emerald-500', label: 'Clean Zone — Safe levels' },
-        ].map((l) => (
-          <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-            <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
-            {l.label}
-          </span>
-        ))}
+      <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legend — Composite Scoring</p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          {[
+            { color: 'bg-red-500', label: 'Critical — IoT hazardous + 5+ reports' },
+            { color: 'bg-amber-500', label: 'Moderate — Elevated readings or 2+ reports' },
+            { color: 'bg-emerald-500', label: 'Clean — Safe levels, no reports' },
+          ].map((l) => (
+            <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+              <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Sources</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700"><Zap className="w-2.5 h-2.5" /> IoT Sensor Only</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700"><AlertTriangle className="w-2.5 h-2.5" /> Resident Reports Only</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700"><Zap className="w-2.5 h-2.5" /> IoT + Reports Combined</span>
+        </div>
       </div>
 
       {/* CSS for flash animation */}

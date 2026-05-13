@@ -26,6 +26,7 @@ import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
 import TarsiAssistant from "../components/TarsiAssistant";
+import { useTranslation } from "react-i18next";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -78,11 +79,11 @@ const CHECKLIST_ITEMS = [
   { id: 5, label: "Place bin at curb by 7:30 AM" },
 ];
 
-function getGreeting() {
+function getGreeting(t) {
   const h = new Date().getHours();
-  if (h < 12) return "Good Morning";
-  if (h < 17) return "Good Afternoon";
-  return "Good Evening";
+  if (h < 12) return t("good_morning");
+  if (h < 17) return t("good_afternoon");
+  return t("good_evening");
 }
 
 function getTodayYMD() {
@@ -94,6 +95,7 @@ function getTodayYMD() {
 }
 
 export default function HomeScreen({ navigation }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const firstName = user?.name?.split(" ")[0] || "there";
 
@@ -322,47 +324,73 @@ export default function HomeScreen({ navigation }) {
     if (!binReady) setModalVisible(true);
   };
 
+  const handleTrashPickedUp = () => {
+    // Reset the full session so the next collection cycle can start fresh
+    setBinReady(false);
+    setChecklist(CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })));
+    if (nearestTruck) {
+      truckAlertFiredRef.current.delete(`near-${nearestTruck.truckId}`);
+      truckAlertFiredRef.current.delete(`approach-${nearestTruck.truckId}`);
+    }
+    clearTimeout(toastTimerRef.current);
+    setToastMsg("✓ Trash collected — thank you for participating!");
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
+    Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Trash Collected!",
+        body: "Your trash has been successfully picked up. See you next collection!",
+        sound: true,
+      },
+      trigger: null,
+    }).catch(() => {});
+  };
+
+  const handleCancelTracking = () => {
+    setBinReady(false);
+    setChecklist(CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })));
+  };
+
   // Zone visual driven by real distance when available
   const zoneData = useMemo(() => {
-    let z1Label = nearestTruck ? "Active" : "No trucks";
-    let z2Label = onlineTrucks.length > 0 ? "Approaching" : "—";
-    let z3Label = onlineTrucks.length === 0 ? "No trucks" : "Area";
+    let z1Label = nearestTruck ? t("live") : t("no_trucks_active");
+    let z2Label = onlineTrucks.length > 0 ? t("approaching") : "—";
+    let z3Label = onlineTrucks.length === 0 ? t("no_trucks_active") : t("area");
     if (distToTruck != null) {
       if (distToTruck < 350) {
-        z1Label = "Very Close!";
-        z2Label = "Passed";
-        z3Label = "Passed";
+        z1Label = t("very_close");
+        z2Label = t("passed");
+        z3Label = t("passed");
       } else if (distToTruck < 700) {
         z1Label = `${distToTruck}m away`;
-        z2Label = "Nearby";
-        z3Label = "Area";
+        z2Label = t("nearby");
+        z3Label = t("area");
       } else if (distToTruck < 1050) {
-        z1Label = "Approaching";
+        z1Label = t("approaching");
         z2Label = `${distToTruck}m`;
-        z3Label = "Area";
+        z3Label = t("area");
       }
     }
     return [
       {
-        name: "Zone 3",
+        name: `${t("zone")} 3`,
         distance: z3Label,
         icon: "location-on",
         highlighted: false,
       },
       {
-        name: "Zone 2",
+        name: `${t("zone")} 2`,
         distance: z2Label,
         icon: "location-on",
         highlighted: false,
       },
       {
-        name: "Zone 1",
+        name: `${t("zone")} 1`,
         distance: z1Label,
         icon: nearestTruck ? "check-circle" : "location-off",
         highlighted: !!nearestTruck,
       },
     ];
-  }, [nearestTruck, onlineTrucks.length, distToTruck]);
+  }, [nearestTruck, onlineTrucks.length, distToTruck, t]);
 
   const tarsiData = useMemo(() => {
     const hour = new Date().getHours();
@@ -370,7 +398,7 @@ export default function HomeScreen({ navigation }) {
     // SUCCESS: User has prepared the bin
     if (binReady) {
       return {
-        insight: "🌟 Great job! Your bin is ready. You and 12 other neighbors on your street are all set for collection. I'll keep a sharp eye on the truck for you!",
+        insight: t("tarsi_bin_ready", { count: 12 }),
         variant: "celebrate"
       };
     }
@@ -378,7 +406,7 @@ export default function HomeScreen({ navigation }) {
     // URGENT: Truck is extremely close
     if (distToTruck !== null && distToTruck < 350) {
       return {
-        insight: "🚨 URGENT: The collection truck is literally right there! Get your bins out to the curb immediately if you haven't already!",
+        insight: t("tarsi_urgent"),
         variant: "worrying"
       };
     }
@@ -387,7 +415,7 @@ export default function HomeScreen({ navigation }) {
     if (distToTruck !== null && distToTruck < 1000) {
       const mins = Math.ceil(distToTruck / 200);
       return {
-        insight: `🚚 Heads up! A truck is about ${distToTruck}m away (approx. ${mins} mins). It's the perfect time to double-check your waste sorting!`,
+        insight: t("tarsi_approaching", { dist: distToTruck, mins }),
         variant: "urgent"
       };
     }
@@ -395,7 +423,7 @@ export default function HomeScreen({ navigation }) {
     // ACTIVE: Trucks are in the city
     if (onlineTrucks.length > 0) {
       return {
-        insight: `✨ Good news! There are ${onlineTrucks.length} trucks active in the city right now. Stay tuned, I'll let you know the moment one enters your zone.`,
+        insight: t("tarsi_active", { count: onlineTrucks.length }),
         variant: "default"
       };
     }
@@ -403,7 +431,7 @@ export default function HomeScreen({ navigation }) {
     // SCHEDULED: Nothing live, but something planned
     if (firstSchedule) {
       return {
-        insight: `📅 Don't forget! You have a collection scheduled for today on the "${firstSchedule.routeName}" route. Make sure your bins are ready by 7:30 AM!`,
+        insight: t("tarsi_scheduled", { route: firstSchedule.routeName }),
         variant: "default"
       };
     }
@@ -411,23 +439,23 @@ export default function HomeScreen({ navigation }) {
     // IDLE: No activity
     if (hour < 10) {
       return {
-        insight: "☕ Good morning! No collection trucks are out yet. Did you know that rinsing your plastic containers helps the recycling process? Try it today!",
+        insight: t("tarsi_morning"),
         variant: "default"
       };
     }
     
     if (hour > 18) {
       return {
-        insight: "🌙 Collection for today has likely ended. Make sure to check your schedule for tomorrow and keep our streets clean!",
+        insight: t("tarsi_evening"),
         variant: "default"
       };
     }
 
     return {
-      insight: "🌱 Everything looks quiet on the trash front. Remember: reducing waste starts with better sorting. Have a great day!",
+      insight: t("tarsi_idle"),
       variant: "default"
     };
-  }, [distToTruck, onlineTrucks.length, firstSchedule]);
+  }, [distToTruck, onlineTrucks.length, firstSchedule, binReady, t]);
 
   const pulseTier = useMemo(() => {
     if (distToTruck !== null) {
@@ -438,6 +466,9 @@ export default function HomeScreen({ navigation }) {
     if (onlineTrucks.length > 0) return 1;
     return 0;
   }, [distToTruck, onlineTrucks.length]);
+
+  // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
+  const inZone1 = distToTruck !== null && distToTruck < 350;
 
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
@@ -547,15 +578,18 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── NORMAL VIEW ─────────────────────────────────────── */}
+        {!binReady && (
+        <>
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
-            {getGreeting()}, {firstName}!
+            {getGreeting(t)}, {firstName}!
           </Text>
           <Text style={styles.subtitle}>
             {onlineTrucks.length > 0
-              ? `${onlineTrucks.length} truck${onlineTrucks.length > 1 ? "s" : ""} active in your area.`
-              : "No trucks currently active in your area."}
+              ? t("trucks_active", { count: onlineTrucks.length })
+              : t("no_trucks_active")}
           </Text>
         </View>
 
@@ -571,7 +605,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.airQualityCard}>
             <View style={styles.cardHeader}>
               <View>
-                <Text style={styles.cardTitle}>Current Air Quality</Text>
+                <Text style={styles.cardTitle}>{t("air_quality")}</Text>
                 <View style={styles.statusRow}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>Moderate</Text>
@@ -618,7 +652,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <View>
                   <Text style={styles.collectionLabel}>
-                    Upcoming Collection
+                    {t("upcoming_collection")}
                   </Text>
                   {isLoading ? (
                     <ActivityIndicator
@@ -673,10 +707,10 @@ export default function HomeScreen({ navigation }) {
                   />
                   <Text style={[styles.prepareButtonText, binReady && { color: '#FFFFFF' }]}>
                     {binReady
-                      ? "Track Live Arrival"
+                      ? t("track_live")
                       : (firstSchedule || nearestTruck)
-                        ? "Prepare My Bin"
-                        : "No Activity"}
+                        ? t("prepare_bin")
+                        : t("no_activity")}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -691,13 +725,13 @@ export default function HomeScreen({ navigation }) {
         {/* Truck Status Section */}
         <View style={styles.truckStatusSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Garbage Truck Status</Text>
+            <Text style={styles.sectionTitle}>{t("truck_status")}</Text>
             <View style={styles.liveBadge}>
               <View
                 style={[styles.liveDot, !nearestTruck && styles.liveDotOff]}
               />
               <Text style={styles.liveText}>
-                {nearestTruck ? "Live" : "Offline"}
+                {nearestTruck ? t("live") : t("offline")}
               </Text>
             </View>
           </View>
@@ -918,6 +952,218 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.mapViewBadgeText}>Tap to view full map</Text>
           </View>
         </TouchableOpacity>
+        </>
+        )}
+
+        {/* ── TRACKING MODE — shown when bin is marked ready ─── */}
+        {binReady && (
+        <>
+          {/* Status banner */}
+          <View style={styles.trackingBanner}>
+            <View style={styles.trackingBannerLeft}>
+              <View style={styles.trackingLiveDot} />
+              <View>
+                <Text style={styles.trackingTitle}>Bin Ready · Tracking Live</Text>
+                <Text style={styles.trackingSubtitle}>
+                  {nearestTruck
+                    ? `Truck ${nearestTruck.truckId} is active`
+                    : "Waiting for truck…"}
+                </Text>
+              </View>
+            </View>
+            <View
+              style={[
+                styles.trackingZonePill,
+                inZone1 && styles.trackingZonePillActive,
+              ]}
+            >
+              <Text style={styles.trackingZonePillText}>
+                {inZone1
+                  ? "ZONE 1 ✓"
+                  : pulseTier === 3
+                  ? "ZONE 2"
+                  : pulseTier === 2
+                  ? "ZONE 3"
+                  : "—"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Large distance number */}
+          <View style={styles.distanceDisplay}>
+            <Text
+              style={[
+                styles.distanceNumber,
+                inZone1 && { color: "#059669" },
+              ]}
+            >
+              {distToTruck != null ? `${distToTruck}m` : "—"}
+            </Text>
+            <Text style={styles.distanceLabel}>distance to nearest truck</Text>
+            {distToTruck != null && (
+              <View
+                style={[
+                  styles.distanceZoneBadge,
+                  inZone1 && styles.distanceZoneBadgeActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.distanceZoneBadgeText,
+                    inZone1 && { color: "#065F46" },
+                  ]}
+                >
+                  {inZone1
+                    ? "✓ Zone 1 reached — truck is very close!"
+                    : `${distToTruck - 350}m more until Zone 1 unlocks`}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Zone progress circles */}
+          <View style={[styles.truckStatusCard, { marginBottom: 20 }]}>
+            <View style={styles.zoneContainer}>
+              <View style={styles.progressLine} />
+              {zoneData.map((zone, index) => (
+                <View key={index} style={styles.zoneItem}>
+                  <View
+                    style={[
+                      styles.zoneCircle,
+                      zone.highlighted && styles.zoneCircleHighlighted,
+                    ]}
+                  >
+                    <MaterialIcons
+                      name={zone.icon}
+                      size={zone.highlighted ? 28 : 20}
+                      color={zone.highlighted ? "#FFFFFF" : "#6B7280"}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.zoneName,
+                      zone.highlighted && styles.zoneNameHighlighted,
+                    ]}
+                  >
+                    {zone.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.zoneDistance,
+                      zone.highlighted && styles.zoneDistanceHighlighted,
+                    ]}
+                  >
+                    {zone.distance}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Radar map */}
+          <TouchableOpacity
+            style={[styles.mapPreview, { height: 220, marginBottom: 24 }]}
+            activeOpacity={0.9}
+            onPress={() => navigation.navigate("Map")}
+          >
+            <View style={styles.mapPlaceholder}>
+              {[pulseAnim1, pulseAnim2, pulseAnim3].map((anim, i) => {
+                const ringScale = anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.12, 1.55],
+                });
+                const ringOpacity = anim.interpolate({
+                  inputRange: [0, 0.08, 0.55, 1],
+                  outputRange: [0, 0.9, 0.35, 0],
+                });
+                return (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      styles.radarRing,
+                      {
+                        borderColor: PULSE_RING_COLORS[pulseTier],
+                        opacity: ringOpacity,
+                        transform: [{ scale: ringScale }],
+                      },
+                    ]}
+                  />
+                );
+              })}
+              <View style={styles.radarCenter} />
+              <Animated.View
+                style={[
+                  styles.radarTruckMarker,
+                  {
+                    opacity: nearestTruck ? 1 : 0.28,
+                    transform: [{ translateY: truckFloatAnim }],
+                  },
+                ]}
+              >
+                <MaterialIcons name="local-shipping" size={18} color="#FFFFFF" />
+              </Animated.View>
+            </View>
+            <View
+              style={[
+                styles.radarLiveBadge,
+                !nearestTruck && styles.radarLiveBadgeOff,
+              ]}
+            >
+              <View
+                style={[
+                  styles.radarLiveDot,
+                  !nearestTruck && styles.radarLiveDotOff,
+                ]}
+              />
+              <Text style={styles.radarLiveText}>
+                {nearestTruck ? "LIVE" : "OFFLINE"}
+              </Text>
+            </View>
+            <View style={styles.mapViewBadge}>
+              <Text style={styles.mapViewBadgeText}>Tap for full map</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Trash Picked Up — gated to Zone 1 */}
+          <TouchableOpacity
+            style={[
+              styles.pickedUpBtn,
+              !inZone1 && styles.pickedUpBtnDisabled,
+            ]}
+            onPress={inZone1 ? handleTrashPickedUp : undefined}
+            activeOpacity={inZone1 ? 0.85 : 1}
+          >
+            <MaterialIcons
+              name="check-circle"
+              size={22}
+              color={inZone1 ? "#FFFFFF" : "#9CA3AF"}
+            />
+            <Text
+              style={[
+                styles.pickedUpBtnText,
+                !inZone1 && styles.pickedUpBtnTextDisabled,
+              ]}
+            >
+              Trash Picked Up
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.zoneHint}>
+            {inZone1
+              ? "Tap above to confirm your trash was collected"
+              : distToTruck != null
+              ? `Unlocks in Zone 1 · need < 350m (${distToTruck}m now)`
+              : "Unlocks when truck enters Zone 1 (< 350m from you)"}
+          </Text>
+
+          <TouchableOpacity
+            onPress={handleCancelTracking}
+            style={styles.cancelTrackingBtn}
+          >
+            <Text style={styles.cancelTrackingText}>Cancel Tracking</Text>
+          </TouchableOpacity>
+        </>
+        )}
       </ScrollView>
 
       {/* Bin Prep Modal */}
@@ -1695,5 +1941,144 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     lineHeight: 20,
+  },
+  greetingSection: {
+    marginBottom: 20,
+  },
+
+  // ── Tracking mode ────────────────────────────────────
+  trackingBanner: {
+    backgroundColor: "#006A3B",
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  trackingBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  trackingLiveDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#86EFAC",
+  },
+  trackingTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.2,
+  },
+  trackingSubtitle: {
+    fontSize: 12,
+    color: "#A7F3D0",
+    marginTop: 2,
+  },
+  trackingZonePill: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  trackingZonePillActive: {
+    backgroundColor: "#059669",
+  },
+  trackingZonePillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 1,
+  },
+  distanceDisplay: {
+    backgroundColor: "#F0EDED",
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  distanceNumber: {
+    fontSize: 64,
+    fontWeight: "800",
+    color: "#006A3B",
+    letterSpacing: -3,
+    lineHeight: 72,
+  },
+  distanceLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  distanceZoneBadge: {
+    backgroundColor: "#E5E7EB",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  distanceZoneBadgeActive: {
+    backgroundColor: "#D1FAE5",
+  },
+  distanceZoneBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  pickedUpBtn: {
+    backgroundColor: "#006A3B",
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 10,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  pickedUpBtnDisabled: {
+    backgroundColor: "#E5E7EB",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  pickedUpBtnText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.2,
+  },
+  pickedUpBtnTextDisabled: {
+    color: "#9CA3AF",
+  },
+  zoneHint: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+  },
+  cancelTrackingBtn: {
+    alignItems: "center",
+    paddingVertical: 14,
+    marginBottom: 40,
+  },
+  cancelTrackingText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    fontWeight: "500",
   },
 });

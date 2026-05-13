@@ -1,37 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Polygon, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Polygon, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import {
   Route, Trash2, Save, MapPin, Truck, Navigation,
-  CheckCircle, AlertCircle, X, RotateCcw, Undo2
+  CheckCircle, AlertCircle, X, RotateCcw, Undo2,
+  Layers, Search
 } from 'lucide-react';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
 const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=';
 const CEBU_CENTER = [10.3157, 123.8854];
-
-const BARANGAY_BOUNDARIES = {
-  "Lahug": [
-    [10.320, 123.880],
-    [10.340, 123.880],
-    [10.340, 123.900],
-    [10.320, 123.900]
-  ],
-  "Apas": [
-    [10.340, 123.900],
-    [10.360, 123.900],
-    [10.360, 123.920],
-    [10.340, 123.920]
-  ],
-  "Guadalupe": [
-    [10.310, 123.870],
-    [10.330, 123.870],
-    [10.330, 123.890],
-    [10.310, 123.890]
-  ]
-};
 
 function isInsidePolygon(point, polygon) {
   const x = point[0], y = point[1];
@@ -63,6 +43,17 @@ function MapClickHandler({ onClick }) {
   return null;
 }
 
+// Map Controller for Flying to searched locations
+function MapController({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) {
+      map.flyTo(center, 18, { duration: 1.5 });
+    }
+  }, [center, map]);
+  return null;
+}
+
 async function fetchORSRoute(waypoints) {
   if (waypoints.length < 2) return null;
   try {
@@ -78,6 +69,78 @@ async function fetchORSRoute(waypoints) {
   }
 }
 
+// Rough but realistic polygon fallbacks (used when Overpass has no data)
+const FALLBACK_BOUNDARIES = {
+  Lahug: [
+    [10.3388, 123.8820], [10.3380, 123.8908], [10.3365, 123.8962],
+    [10.3318, 123.8978], [10.3262, 123.8955], [10.3215, 123.8908],
+    [10.3192, 123.8835], [10.3228, 123.8792], [10.3312, 123.8788],
+  ],
+  Apas: [
+    [10.3582, 123.8972], [10.3565, 123.9152], [10.3492, 123.9178],
+    [10.3418, 123.9132], [10.3388, 123.9015], [10.3398, 123.8942],
+    [10.3445, 123.8908], [10.3515, 123.8922],
+  ],
+  Guadalupe: [
+    [10.3148, 123.8732], [10.3145, 123.8858], [10.3098, 123.8878],
+    [10.3048, 123.8852], [10.3012, 123.8798], [10.3018, 123.8725],
+    [10.3072, 123.8698], [10.3118, 123.8710],
+  ],
+  Mabolo: [
+    [10.3282, 123.8905], [10.3275, 123.9028], [10.3228, 123.9055],
+    [10.3175, 123.9042], [10.3142, 123.8985], [10.3148, 123.8902],
+    [10.3198, 123.8878], [10.3248, 123.8885],
+  ],
+  Talamban: [
+    [10.3802, 123.8935], [10.3788, 123.9208], [10.3692, 123.9248],
+    [10.3598, 123.9195], [10.3548, 123.9098], [10.3562, 123.8972],
+    [10.3638, 123.8915], [10.3725, 123.8908],
+  ],
+  Banilad: [
+    [10.3505, 123.8758], [10.3498, 123.8932], [10.3435, 123.8958],
+    [10.3378, 123.8928], [10.3352, 123.8848], [10.3368, 123.8762],
+    [10.3428, 123.8728], [10.3478, 123.8738],
+  ],
+  Mandaue: [
+    [10.3528, 123.9158], [10.3512, 123.9378], [10.3408, 123.9415],
+    [10.3298, 123.9388], [10.3248, 123.9295], [10.3262, 123.9155],
+    [10.3368, 123.9108], [10.3458, 123.9118],
+  ],
+};
+
+// Bounding box that covers all of Metro Cebu — keeps the query local
+const CEBU_BBOX = '10.20,123.75,10.50,124.10'; // south,west,north,east
+
+async function fetchBoundaryFromOverpass(barangay) {
+  const query = `[out:json][timeout:15][bbox:${CEBU_BBOX}];
+relation["name"="${barangay}"]["boundary"="administrative"];
+out geom;`;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: new URLSearchParams({ data: query }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const relation = data.elements?.find(e => e.type === 'relation');
+    if (!relation?.members) return null;
+
+    const coords = [];
+    for (const member of relation.members) {
+      if (member.type === 'way' && member.role === 'outer' && member.geometry?.length) {
+        coords.push(...member.geometry.map(p => [p.lat, p.lon]));
+      }
+    }
+    if (coords.length < 3) return null;
+    console.log(`[Boundary] Overpass loaded ${coords.length} pts for ${barangay}`);
+    return coords;
+  } catch (err) {
+    console.error('[Boundary] Overpass failed:', err);
+    return null;
+  }
+}
+
 export default function RouteBuilder() {
   const { official } = useAuth();
   const [waypoints, setWaypoints] = useState([]);
@@ -89,10 +152,53 @@ export default function RouteBuilder() {
   const [savedRoutes, setSavedRoutes] = useState([]);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null); // { msg, type: 'success'|'error' }
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [mapCenter, setMapCenter] = useState(null);
+  const [boundary, setBoundary] = useState(null);
+  const [boundaryLoading, setBoundaryLoading] = useState(false);
+  const [isSatellite, setIsSatellite] = useState(false);
+  const [searchMarker, setSearchMarker] = useState(null);
 
-  // Stable ref so handleMapClick never goes stale
+  // Stable refs so callbacks never go stale
   const waypointsRef = useRef(waypoints);
   useEffect(() => { waypointsRef.current = waypoints; }, [waypoints]);
+  const boundaryRef = useRef(boundary);
+  useEffect(() => { boundaryRef.current = boundary; }, [boundary]);
+
+  // Fetch real barangay boundary: backend → Overpass API → hardcoded fallback
+  useEffect(() => {
+    if (!official?.barangay) return;
+    const brgy = official.barangay;
+    setBoundaryLoading(true);
+    (async () => {
+      // 1. Backend (admin may have saved a real boundary)
+      try {
+        const { data } = await axios.get(`${API}/api/barangays/${brgy}/boundary`);
+        if (data.boundary?.length > 4) {
+          setBoundary(data.boundary);
+          setBoundaryLoading(false);
+          return;
+        }
+      } catch { /* fall through */ }
+
+      // 2. Overpass API — real OSM relation geometry
+      const overpassCoords = await fetchBoundaryFromOverpass(brgy);
+      if (overpassCoords) {
+        setBoundary(overpassCoords);
+        setBoundaryLoading(false);
+        return;
+      }
+
+      // 3. Hardcoded approximate polygons as last resort
+      const fallback = FALLBACK_BOUNDARIES[brgy] || null;
+      if (fallback) console.log(`[Boundary] Using fallback polygon for ${brgy}`);
+      else console.warn(`[Boundary] No boundary available for "${brgy}"`);
+      setBoundary(fallback);
+      setBoundaryLoading(false);
+    })();
+  }, [official?.barangay]);
 
   useEffect(() => {
     axios.get(`${API}/api/fleet`).then(r => setFleet(r.data)).catch(() => {});
@@ -133,19 +239,33 @@ export default function RouteBuilder() {
     setWaypoints(prev => prev.length > 0 ? prev.slice(0, -1) : prev);
   }, []);
 
-  const handleMapClick = useCallback((latlng) => {
-    // Jurisdiction Check
+  const handleMapClick = useCallback(async (latlng) => {
+    setSearchMarker(null); // Clear search marker on map click
     const brgy = official?.barangay;
-    if (brgy && BARANGAY_BOUNDARIES[brgy]) {
-      const isOk = isInsidePolygon([latlng.lat, latlng.lng], BARANGAY_BOUNDARIES[brgy]);
-      if (!isOk) {
+    const currentBoundary = boundaryRef.current;
+    if (brgy && currentBoundary?.length > 0) {
+      if (!isInsidePolygon([latlng.lat, latlng.lng], currentBoundary)) {
         setToast({ msg: `Outside ${brgy} jurisdiction!`, type: 'error' });
         return;
       }
     }
-
+    
     const n = waypointsRef.current.length + 1;
-    setWaypoints(prev => [...prev, { lat: latlng.lat, lng: latlng.lng, name: `Stop ${n}` }]);
+    let address = 'Fetching address...';
+    
+    // Add temporary waypoint with loading state
+    const tempWp = { lat: latlng.lat, lng: latlng.lng, name: `Stop ${n}`, address };
+    setWaypoints(prev => [...prev, tempWp]);
+
+    try {
+      const { data } = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`);
+      address = data.display_name || 'Unknown Address';
+      // Update the specific waypoint with the real address
+      setWaypoints(prev => prev.map((wp, i) => i === prev.length - 1 ? { ...wp, address } : wp));
+    } catch (err) {
+      console.error('Reverse geocoding failed:', err);
+      setWaypoints(prev => prev.map((wp, i) => i === prev.length - 1 ? { ...wp, address: 'Address unavailable' } : wp));
+    }
   }, [official]);
 
   const removeWaypoint = (idx) => {
@@ -203,6 +323,31 @@ export default function RouteBuilder() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const handleSearch = async (query) => {
+    setSearchQuery(query);
+    if (query.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const { data } = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=5&countrycodes=ph`);
+      setSearchResults(data);
+    } catch (err) {
+      console.error('Search failed:', err);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const selectSearchResult = (res) => {
+    const latlng = { lat: parseFloat(res.lat), lng: parseFloat(res.lon) };
+    setMapCenter([latlng.lat, latlng.lng]);
+    setSearchMarker([latlng.lat, latlng.lng]);
+    setSearchResults([]);
+    setSearchQuery(res.display_name);
+  };
+
   const n = waypoints.length;
 
   return (
@@ -210,8 +355,19 @@ export default function RouteBuilder() {
 
       {/* ── Map area ─────────────────────────────── */}
       <div className="flex-1 relative">
-        {/* Route calculating badge */}
-        {routeLoading && (
+        {/* Status badges */}
+        {boundaryLoading && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-white border border-slate-200 shadow-md rounded-full px-4 py-2 flex items-center gap-2 text-sm text-slate-600 font-medium">
+            <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+            Loading {official?.barangay} boundary…
+          </div>
+        )}
+        {!boundaryLoading && !boundary && official?.barangay && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-amber-50 border border-amber-200 shadow-md rounded-full px-4 py-2 flex items-center gap-2 text-sm text-amber-700 font-medium">
+            No boundary data found for {official.barangay} — jurisdiction check disabled
+          </div>
+        )}
+        {!boundaryLoading && routeLoading && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-white border border-emerald-200 shadow-md rounded-full px-4 py-2 flex items-center gap-2 text-sm text-emerald-700 font-medium">
             <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
             Calculating driving route…
@@ -224,28 +380,37 @@ export default function RouteBuilder() {
           className="w-full h-full"
           zoomControl={true}
         >
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution=""
-          />
+          <MapController center={mapCenter} />
+          {isSatellite ? (
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              attribution='&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            />
+          ) : (
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
+          )}
           
-          {/* Jurisdiction boundary line */}
-          {official?.barangay && BARANGAY_BOUNDARIES[official.barangay] && (
+          {/* Real barangay jurisdiction boundary from OSM */}
+          {boundary && boundary.length > 0 && (
             <Polygon
-              positions={BARANGAY_BOUNDARIES[official.barangay]}
-              pathOptions={{ 
-                color: '#DC2626', 
-                fillColor: '#DC2626', 
-                fillOpacity: 0.05, 
-                weight: 2, 
-                dashArray: '8, 8' 
+              key={boundary.length}
+              positions={boundary}
+              pathOptions={{
+                color: '#DC2626',
+                fillColor: '#DC2626',
+                fillOpacity: 0.05,
+                weight: 2.5,
+                dashArray: '8, 6',
               }}
             />
           )}
 
           <MapClickHandler onClick={handleMapClick} />
 
-          {/* Waypoint markers */}
+           {/* Waypoint markers */}
           {waypoints.map((wp, i) => (
             <Marker
               key={i}
@@ -253,6 +418,31 @@ export default function RouteBuilder() {
               icon={makeWaypointIcon(i + 1, i === 0, i === n - 1)}
             />
           ))}
+
+          {/* Search Result Marker */}
+          {searchMarker && (
+            <Marker 
+              position={searchMarker} 
+              icon={L.divIcon({
+                html: `
+                  <div style="position: relative; width: 24px; height: 24px;">
+                    <div style="position: absolute; width: 100%; height: 100%; background: #10B981; border-radius: 50%; opacity: 0.4; transform: scale(1.5); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+                    <div style="position: relative; width: 24px; height: 24px; background: #10B981; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; items-center; justify-content: center;">
+                      <div style="width: 6px; height: 6px; background: white; border-radius: 50%;"></div>
+                    </div>
+                  </div>
+                  <style>
+                    @keyframes ping {
+                      75%, 100% { transform: scale(2.5); opacity: 0; }
+                    }
+                  </style>
+                `,
+                className: '',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+              })} 
+            />
+          )}
 
           {/* ORS driving route polyline */}
           {routeCoords.length > 0 && (
@@ -272,6 +462,56 @@ export default function RouteBuilder() {
             Click anywhere on the map to place stops
           </div>
         )}
+
+        {/* Map Style Toggle */}
+        <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
+          <button
+            onClick={() => setIsSatellite(!isSatellite)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
+              isSatellite 
+                ? 'bg-emerald-600 text-white border border-emerald-500' 
+                : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            {isSatellite ? 'Satellite' : 'Standard'}
+          </button>
+        </div>
+
+        {/* Address Search Bar */}
+        <div className="absolute top-4 left-[60px] z-[500] w-80">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+              {searchLoading ? (
+                <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Search className="w-4 h-4 text-slate-400" />
+              )}
+            </div>
+            <input
+              type="text"
+              className="w-full bg-white/90 backdrop-blur-md border border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-sm font-medium shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
+              placeholder="Search address or landmark..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+            
+            {searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                {searchResults.map((res, i) => (
+                  <button
+                    key={i}
+                    onClick={() => selectSearchResult(res)}
+                    className="w-full px-5 py-3.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors flex items-start gap-3"
+                  >
+                    <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                    <span className="truncate">{res.display_name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Control panel ────────────────────────── */}
@@ -363,12 +603,17 @@ export default function RouteBuilder() {
                     >
                       {i + 1}
                     </div>
-                    {/* Editable name */}
-                    <input
-                      className="flex-1 text-sm text-slate-700 bg-transparent border-none outline-none min-w-0"
-                      value={wp.name}
-                      onChange={e => renameWaypoint(i, e.target.value)}
-                    />
+                    {/* Editable name & address */}
+                    <div className="flex-1 min-w-0">
+                      <input
+                        className="w-full text-sm font-bold text-slate-700 bg-transparent border-none outline-none truncate"
+                        value={wp.name}
+                        onChange={e => renameWaypoint(i, e.target.value)}
+                      />
+                      <p className="text-[10px] text-slate-400 truncate italic">
+                        {wp.address || 'Locating...'}
+                      </p>
+                    </div>
                     <button
                       onClick={() => removeWaypoint(i)}
                       className="text-slate-300 hover:text-red-500 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100"

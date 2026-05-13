@@ -74,54 +74,62 @@ function getTodayYMD() {
 }
 
 
-// ── Heatmap zones (unchanged) ────────────────────────────
-const HEATMAP_ZONES = [
-  {
-    id: "critical",
-    name: "Carbon Market",
-    lat: 10.295,
-    lng: 123.895,
+// ── Heatmap helpers ──────────────────────────────────────
+const STATUS_META = {
+  critical: {
     color: "#E53935",
-    status: "critical",
     level: "High Pollution",
-    ammonia: "45 ppm",
-    methane: "2.8%",
-    lastUpdated: "10 mins ago",
-    recommendation: "Immediate collection needed. Schedule additional pickup.",
-    bins: 12,
     riskLevel: "High",
+    recommendation: "Immediate collection needed. Schedule additional pickup.",
   },
-  {
-    id: "moderate",
-    name: "Colon Street",
-    lat: 10.308,
-    lng: 123.895,
+  moderate: {
     color: "#FDD835",
-    status: "moderate",
     level: "Moderate Pollution",
-    ammonia: "22 ppm",
-    methane: "1.2%",
-    lastUpdated: "25 mins ago",
-    recommendation: "Monitor closely. Standard collection schedule adequate.",
-    bins: 8,
     riskLevel: "Medium",
+    recommendation: "Monitor closely. Standard collection schedule adequate.",
   },
-  {
-    id: "clean",
-    name: "IT Park",
-    lat: 10.328,
-    lng: 123.9,
+  clean: {
     color: "#4CAF50",
-    status: "clean",
     level: "Safe Levels",
-    ammonia: "5 ppm",
-    methane: "0.2%",
-    lastUpdated: "1 hour ago",
-    recommendation: "Area well maintained. Continue regular monitoring.",
-    bins: 3,
     riskLevel: "Low",
+    recommendation: "Area well maintained. Continue regular monitoring.",
   },
-];
+};
+
+function formatRelativeTime(date) {
+  if (!date) return "Unknown";
+  const diffMs = Date.now() - new Date(date).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? "s" : ""} ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs} hr${diffHrs !== 1 ? "s" : ""} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
+}
+
+// Maps a raw GarbageArea document to the shape expected by the zone card UI
+function formatGarbageArea(area) {
+  const meta = STATUS_META[area.status] || STATUS_META.moderate;
+  return {
+    id: area._id || area.id,
+    name: area.name,
+    lat: area.lat,
+    lng: area.lng,
+    status: area.status,
+    color: meta.color,
+    level: meta.level,
+    riskLevel: meta.riskLevel,
+    recommendation: meta.recommendation,
+    ammonia: area.ammonia || "0 ppm",
+    methane: area.methane || "0 ppm",
+    bins: area.bins ?? 0,
+    intensity: area.intensity ?? 0.5,
+    barangay: area.barangay || "",
+    reportCount: area.reportCount ?? 0,
+    lastUpdated: formatRelativeTime(area.lastReportAt || area.updatedAt || area.createdAt),
+  };
+}
 
 // ── Leaflet HTML ───────────────────────────────────────────
 function buildLeafletHTML(truckB64) {
@@ -135,20 +143,14 @@ function buildLeafletHTML(truckB64) {
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; width:100%; overflow:hidden; }
     #map-perspective {
-      perspective: 2000px;
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #f0eded;
+      background: #e8ede8;
     }
     #map {
       width: 100%;
-      height: 100%; 
-      transform: translateY(-15%) rotateX(35deg) scale(1.8);
-      transform-origin: center center;
-    }
-    .leaflet-marker-icon, .leaflet-marker-shadow {
-      transform-style: preserve-3d;
+      height: 100%;
     }
     @keyframes pulse-red {
       0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
@@ -244,13 +246,47 @@ function buildLeafletHTML(truckB64) {
         });
       };
 
-      // Heat zones
-      var criticalZone = L.circleMarker([10.295, 123.895], { radius:35, color:'#E53935', fillColor:'#E53935', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
-      criticalZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:critical'); });
-      var moderateZone = L.circleMarker([10.308, 123.895], { radius:35, color:'#FDD835', fillColor:'#FDD835', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
-      moderateZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:moderate'); });
-      var cleanZone = L.circleMarker([10.328, 123.900], { radius:35, color:'#4CAF50', fillColor:'#4CAF50', fillOpacity:0.35, weight:3, opacity:0.9, className:'zone-circle' }).addTo(map);
-      cleanZone.on('click', function() { window.ReactNativeWebView.postMessage('heatmap:clean'); });
+      // ── Dynamic heatmap zones (injected from React Native) ──
+      var heatmapLayers = [];
+
+      window.clearHeatmapZones = function() {
+        heatmapLayers.forEach(function(l) { map.removeLayer(l); });
+        heatmapLayers = [];
+      };
+
+      // Each zone: { id, lat, lng, status, intensity }
+      // Uses L.circle (meter-based radius) so size is geographically correct
+      // and does NOT change with CSS transforms — only scales with real zoom.
+      window.updateHeatmapZones = function(zonesJson) {
+        window.clearHeatmapZones();
+        var zones;
+        try { zones = JSON.parse(zonesJson); } catch(e) { return; }
+        zones.forEach(function(zone) {
+          if (zone.lat == null || zone.lng == null) return;
+          var color = zone.status === 'critical' ? '#E53935'
+                    : zone.status === 'moderate'  ? '#FDD835'
+                    : '#4CAF50';
+          var fillOpacity = zone.status === 'critical' ? 0.38
+                          : zone.status === 'moderate'  ? 0.28
+                          : 0.2;
+          // radius in METERS — intensity (0–1) scales coverage from 80 m to 450 m
+          var radius = Math.max(80, Math.min(450, (zone.intensity || 0.5) * 450));
+          var circle = L.circle([zone.lat, zone.lng], {
+            radius: radius,
+            color: color,
+            fillColor: color,
+            fillOpacity: fillOpacity,
+            weight: 2,
+            opacity: 0.9,
+            interactive: true,
+          });
+          circle.on('click', function() {
+            window.ReactNativeWebView.postMessage('heatmap:' + zone.id);
+          });
+          circle.addTo(map);
+          heatmapLayers.push(circle);
+        });
+      };
 
       // Stop marker icons
       var completedIcon = L.divIcon({ html:'<div style="background:#006E1C;width:14px;height:14px;border-radius:7px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);"></div>', iconSize:[14,14], iconAnchor:[7,7], className:'' });
@@ -561,6 +597,7 @@ export default function CollectorMapScreen() {
   const [mapStyle, setMapStyle] = useState('topographic');
   const [showSuccess, setShowSuccess] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
+  const [heatmapZones, setHeatmapZones] = useState([]); // live from /api/garbage-areas
   const [reports, setReports] = useState([]);
   const [selectedReport, setSelectedReport] = useState(null);
   const [showTrashBins, setShowTrashBins] = useState(true);
@@ -587,9 +624,39 @@ export default function CollectorMapScreen() {
 
   useEffect(() => {
     fetchReports();
-    const interval = setInterval(fetchReports, 30000); // refresh every 30s
+    const interval = setInterval(fetchReports, 30000);
     return () => clearInterval(interval);
   }, [fetchReports]);
+
+  // Fetch live garbage-area heatmap data
+  const fetchGarbageAreas = useCallback(() => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${TRACKING_SERVER}/api/garbage-areas`);
+    xhr.timeout = 8000;
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          const areas = Array.isArray(data) ? data : (data.areas || []);
+          setHeatmapZones(areas.map(formatGarbageArea));
+        } catch (e) {}
+      }
+    };
+    xhr.send();
+  }, []);
+
+  useEffect(() => {
+    fetchGarbageAreas();
+    const interval = setInterval(fetchGarbageAreas, 30000);
+    return () => clearInterval(interval);
+  }, [fetchGarbageAreas]);
+
+  // Inject heatmap zones into WebView whenever zones update
+  useEffect(() => {
+    if (!webViewReady.current || heatmapZones.length === 0) return;
+    const json = JSON.stringify(heatmapZones).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    webViewRef.current?.injectJavaScript(`window.updateHeatmapZones('${json}'); true;`);
+  }, [heatmapZones]);
 
   // Inject report markers into WebView
   useEffect(() => {
@@ -649,6 +716,18 @@ export default function CollectorMapScreen() {
     });
     socket.on("route:assigned", ({ truckId }) => {
       if (truckId === TRUCK_ID) fetchTodaySchedules();
+    });
+    socket.on("garbage-area:updated", (updated) => {
+      setHeatmapZones(prev => {
+        const formatted = formatGarbageArea(updated);
+        const idx = prev.findIndex(z => z.id === formatted.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = formatted;
+          return next;
+        }
+        return [...prev, formatted];
+      });
     });
 
     let locationSub = null;
@@ -793,7 +872,6 @@ export default function CollectorMapScreen() {
     const message = event.nativeEvent.data;
     if (message === 'map_ready') {
       webViewReady.current = true;
-      // trigger initial markers
       if (reports.length > 0) {
         const payload = reports.map(r => ({
           id: r._id, lat: r.lat, lng: r.lng,
@@ -802,12 +880,16 @@ export default function CollectorMapScreen() {
         const json = JSON.stringify(payload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(`window.addReportMarkers('${json}'); true;`);
       }
+      if (heatmapZones.length > 0) {
+        const zonesJson = JSON.stringify(heatmapZones).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(`window.updateHeatmapZones('${zonesJson}'); true;`);
+      }
       return;
     }
 
     if (message.startsWith("heatmap:")) {
       const zoneId = message.replace("heatmap:", "");
-      const zone = HEATMAP_ZONES.find((z) => z.id === zoneId);
+      const zone = heatmapZones.find((z) => z.id === zoneId);
       if (zone) {
         setSelectedZone(zone);
         Animated.spring(zoneCardAnim, {
@@ -1197,27 +1279,30 @@ export default function CollectorMapScreen() {
         {!isFocusMode && (
           <View style={styles.legendCard}>
             <Text style={styles.legendTitle}>Air Quality</Text>
-            {HEATMAP_ZONES.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.legendRow}
-                onPress={() => {
-                  setSelectedZone(item);
-                  Animated.spring(zoneCardAnim, {
-                    toValue: 1,
-                    useNativeDriver: true,
-                    damping: 20,
-                    stiffness: 150,
-                  }).start();
-                }}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[styles.legendDot, { backgroundColor: item.color }]}
-                />
-                <Text style={styles.legendText}>{item.name}</Text>
-              </TouchableOpacity>
-            ))}
+            {Object.entries(STATUS_META).map(([status, meta]) => {
+              const sample = heatmapZones.find(z => z.status === status);
+              return (
+                <TouchableOpacity
+                  key={status}
+                  style={styles.legendRow}
+                  onPress={() => {
+                    if (sample) {
+                      setSelectedZone(sample);
+                      Animated.spring(zoneCardAnim, {
+                        toValue: 1,
+                        useNativeDriver: true,
+                        damping: 20,
+                        stiffness: 150,
+                      }).start();
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.legendDot, { backgroundColor: meta.color }]} />
+                  <Text style={styles.legendText}>{meta.level}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 

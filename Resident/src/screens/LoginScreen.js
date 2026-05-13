@@ -14,9 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 import colors from '../constants/colors';
 
 export default function LoginScreen({ navigation }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -24,7 +26,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('error'), 'Please fill in all fields');
       return;
     }
 
@@ -53,14 +55,14 @@ export default function LoginScreen({ navigation }) {
 
           {/* Form Section */}
           <View style={styles.form}>
-            <Text style={styles.welcomeText}>Welcome Back!</Text>
+            <Text style={styles.welcomeText}>{t('welcome')}</Text>
             <Text style={styles.instructionText}>Login to your resident account</Text>
 
             <View style={styles.inputContainer}>
               <MaterialIcons name="email" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email Address"
+                placeholder={t('email')}
                 placeholderTextColor="#9CA3AF"
                 value={email}
                 onChangeText={setEmail}
@@ -73,7 +75,7 @@ export default function LoginScreen({ navigation }) {
               <MaterialIcons name="lock" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Password"
+                placeholder={t('password')}
                 placeholderTextColor="#9CA3AF"
                 value={password}
                 onChangeText={setPassword}
@@ -92,7 +94,7 @@ export default function LoginScreen({ navigation }) {
             </View>
 
             <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              <Text style={styles.forgotPasswordText}>{t('forgot_password')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -103,14 +105,14 @@ export default function LoginScreen({ navigation }) {
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.loginButtonText}>Login</Text>
+                <Text style={styles.loginButtonText}>{t('sign_in')}</Text>
               )}
             </TouchableOpacity>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
+              <Text style={styles.footerText}>{t('dont_have_account')} </Text>
               <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.signupText}>Sign Up</Text>
+                <Text style={styles.signupText}>{t('sign_up')}</Text>
               </TouchableOpacity>
             </View>
           </View>

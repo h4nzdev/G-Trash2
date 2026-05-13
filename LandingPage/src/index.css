@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 80px;
+  }
+
+  body {
+    overflow-x: hidden;
+    background-color: #060d06;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}

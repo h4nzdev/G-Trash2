@@ -12,6 +12,7 @@ import HeatmapAnalytics from './pages/HeatmapAnalytics';
 import CollectionHistory from './pages/CollectionHistory';
 import Settings from './pages/Settings';
 import ScheduleRoute from './pages/ScheduleRoute';
+import RouteManager from './pages/RouteManager';
 
 function ProtectedLayout() {
   const { official, loading } = useAuth();
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="history" element={<CollectionHistory />} />
             <Route path="settings" element={<Settings />} />
             <Route path="schedule" element={<ScheduleRoute />} />
+            <Route path="route-manager" element={<RouteManager />} />
           </Route>
         </Routes>
       </AuthProvider>
