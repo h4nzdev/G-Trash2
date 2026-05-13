@@ -22,6 +22,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
+import { WebView } from "react-native-webview";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
@@ -48,6 +49,56 @@ function getDistanceM(lat1, lng1, lat2, lng2) {
 }
 
 const { width } = Dimensions.get("window");
+
+function buildTrackingHTML(resLat, resLng) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body, #map { width:100%; height:100%; overflow:hidden; background:#e8f5e9; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', {
+      zoomControl:false, attributionControl:false,
+      dragging:false, scrollWheelZoom:false, doubleClickZoom:false, touchZoom:false,
+    });
+    map.setView([${resLat}, ${resLng}], 16);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom:19 }).addTo(map);
+
+    // Zone rings centred on resident
+    L.circle([${resLat},${resLng}], { radius:1050, color:'#F59E0B', fillColor:'#F59E0B', fillOpacity:0.04, weight:1.5, opacity:0.5, dashArray:'6 4' }).addTo(map);
+    L.circle([${resLat},${resLng}], { radius:700,  color:'#10B981', fillColor:'#10B981', fillOpacity:0.06, weight:1.5, opacity:0.6, dashArray:'6 4' }).addTo(map);
+    L.circle([${resLat},${resLng}], { radius:350,  color:'#006A3B', fillColor:'#006A3B', fillOpacity:0.1,  weight:2,   opacity:0.9 }).addTo(map);
+
+    // Resident blue dot
+    L.marker([${resLat},${resLng}], { icon: L.divIcon({
+      html:'<div style="width:14px;height:14px;background:#2563EB;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+      iconSize:[14,14], iconAnchor:[7,7], className:''
+    }) }).addTo(map);
+
+    var truckMarker = null;
+    window.setTruckPosition = function(lat, lng) {
+      var html = '<div style="background:#006A3B;border:2px solid #fff;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M20 8H17L15 4H5C3.9 4 3 4.9 3 6V17H5C5 18.7 6.3 20 8 20s3-1.3 3-3h6c0 1.7 1.3 3 3 3s3-1.3 3-3h2V12L20 8zM8 18c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm12 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1z"/></svg>' +
+      '</div>';
+      if (truckMarker) map.removeLayer(truckMarker);
+      truckMarker = L.marker([lat, lng], { icon: L.divIcon({ html:html, iconSize:[28,28], iconAnchor:[14,14], className:'' }) }).addTo(map);
+      var bounds = L.latLngBounds([[${resLat},${resLng}],[lat,lng]]).pad(0.35);
+      map.fitBounds(bounds, { maxZoom:16, animate:false });
+    };
+
+    setTimeout(function() { map.invalidateSize(); }, 150);
+  </script>
+</body>
+</html>`;
+}
 
 // Radar pulse speed (ms) and ring color per proximity tier
 // Tier 0=idle, 1=trucks online, 2=<1050m, 3=<700m, 4=<350m
@@ -122,6 +173,8 @@ export default function HomeScreen({ navigation }) {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [binReady, setBinReady] = useState(false);
+  const [trackingMapHtml, setTrackingMapHtml] = useState('');
+  const trackingWebViewRef = useRef(null);
   const [checklist, setChecklist] = useState(
     CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
   );
@@ -316,6 +369,10 @@ export default function HomeScreen({ navigation }) {
   const checkedCount = checklist.filter((item) => item.checked).length;
 
   const handleConfirm = () => {
+    const loc = userLocationRef.current;
+    const lat = loc?.lat ?? 10.3157;
+    const lng = loc?.lng ?? 123.8854;
+    setTrackingMapHtml(buildTrackingHTML(lat, lng));
     setBinReady(true);
     setModalVisible(false);
   };
