@@ -91,7 +91,7 @@ const InteractiveMapPicker = ({ onLocationSelect }) => {
           try {
             const coord = JSON.parse(event.nativeEvent.data);
             onLocationSelect(coord);
-          } catch (e) {}
+          } catch (e) { }
         }}
         scrollEnabled={false}
       />
@@ -227,7 +227,7 @@ export default function ReportIssueScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
@@ -269,10 +269,10 @@ export default function ReportIssueScreen({ navigation }) {
             <Text style={styles.sectionTitle}>{t('category')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryList}>
               {categories.map((cat) => (
-                <TouchableOpacity 
-                  key={cat} 
+                <TouchableOpacity
+                  key={cat}
                   style={[
-                    styles.categoryChip, 
+                    styles.categoryChip,
                     category === cat && styles.categoryChipActive
                   ]}
                   onPress={() => setCategory(cat)}
@@ -334,8 +334,8 @@ export default function ReportIssueScreen({ navigation }) {
           </View>
 
           {/* Submit Button */}
-          <TouchableOpacity 
-            style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]} 
+          <TouchableOpacity
+            style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}
             onPress={handleSubmit}
             disabled={isSubmitting}
           >
@@ -348,7 +348,7 @@ export default function ReportIssueScreen({ navigation }) {
               </>
             )}
           </TouchableOpacity>
-          
+
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>

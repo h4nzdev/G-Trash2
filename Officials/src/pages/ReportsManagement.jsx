@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, MapPin, Clock, User, CheckCircle, AlertTriangle, FileText, Camera, RefreshCw } from 'lucide-react';
+import { X, MapPin, Clock, User, CheckCircle, AlertTriangle, FileText, Camera, RefreshCw, ShieldAlert, ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReportCard from '../components/reports/ReportCard';
 import ReportFilter from '../components/reports/ReportFilter';
 import Badge from '../components/shared/Badge';
 import API from '../config';
+
+function slaHoursLeft(deadline) {
+  if (!deadline) return null;
+  return Math.ceil((new Date(deadline) - Date.now()) / 3600000);
+}
 
 function timeAgo(dateStr) {
   const diff = (Date.now() - new Date(dateStr)) / 1000;
@@ -82,6 +87,7 @@ export default function ReportsManagement() {
     pending: reportList.filter((r) => r.status === 'pending').length,
     inProgress: reportList.filter((r) => r.status === 'in-progress').length,
     resolved: reportList.filter((r) => r.status === 'resolved').length,
+    escalated: reportList.filter((r) => r.escalated).length,
   };
 
   return (
@@ -102,12 +108,13 @@ export default function ReportsManagement() {
       )}
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         {[
           { label: 'Total Reports', value: counts.all, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
           { label: 'Pending', value: counts.pending, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
           { label: 'In Progress', value: counts.inProgress, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
           { label: 'Resolved', value: counts.resolved, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+          { label: 'Escalated', value: counts.escalated, color: 'text-red-700', bg: counts.escalated > 0 ? 'bg-red-50 border-red-300 ring-1 ring-red-100' : 'bg-slate-50 border-slate-200' },
         ].map((s) => (
           <div key={s.label} className={`rounded-xl border p-4 ${s.bg}`}>
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -209,25 +216,74 @@ export default function ReportsManagement() {
                 <p className="text-sm text-slate-700 leading-relaxed">{selectedReport.description}</p>
               </div>
 
-              {/* Action Timeline */}
+              {/* SLA / Escalation indicator */}
+              {selectedReport.escalated ? (
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
+                  <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
+                  <p className="text-xs font-bold text-red-700">ESCALATED — No action within 72h. Barangay lost 10 points.</p>
+                </div>
+              ) : selectedReport.status === 'pending' && selectedReport.deadline ? (
+                (() => {
+                  const h = slaHoursLeft(selectedReport.deadline);
+                  return h !== null && h > 0 ? (
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${h < 12 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <Clock className={`w-4 h-4 flex-shrink-0 ${h < 12 ? 'text-red-600' : 'text-amber-600'}`} />
+                      <p className={`text-xs font-bold ${h < 12 ? 'text-red-700' : 'text-amber-700'}`}>
+                        {h}h left to respond — failure deducts 10 points from {selectedReport.barangay}
+                      </p>
+                    </div>
+                  ) : null;
+                })()
+              ) : null}
+
+              {/* Resident Verification Status */}
+              {selectedReport.resolutionConfirmed && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${
+                  selectedReport.resolutionConfirmed === 'confirmed' ? 'bg-emerald-50 border-emerald-200' :
+                  selectedReport.resolutionConfirmed === 'disputed'  ? 'bg-red-50 border-red-200' :
+                  'bg-blue-50 border-blue-200'
+                }`}>
+                  {selectedReport.resolutionConfirmed === 'confirmed'
+                    ? <><ThumbsUp className="w-4 h-4 text-emerald-600" /><p className="text-xs font-bold text-emerald-700">Resident confirmed fixed — Barangay awarded +20 points</p></>
+                    : selectedReport.resolutionConfirmed === 'disputed'
+                    ? <><ThumbsDown className="w-4 h-4 text-red-600" /><p className="text-xs font-bold text-red-700">Resident says issue persists — Report reopened, -15 points</p></>
+                    : <><Clock className="w-4 h-4 text-blue-600" /><p className="text-xs font-bold text-blue-700">Awaiting resident confirmation of resolution</p></>
+                  }
+                </div>
+              )}
+
+              {/* Activity Timeline from statusHistory */}
               <div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activity Timeline</p>
                 <div className="space-y-3">
-                  {[
-                    { icon: AlertTriangle, label: 'Report Submitted', time: selectedReport.time, color: 'text-amber-600 bg-amber-100' },
-                    ...(selectedReport.status !== 'pending' ? [{ icon: CheckCircle, label: 'Assigned to Response Team', time: '5 mins ago', color: 'text-blue-600 bg-blue-100' }] : []),
-                    ...(selectedReport.status === 'resolved' ? [{ icon: CheckCircle, label: 'Issue Resolved', time: '1 hour ago', color: 'text-emerald-600 bg-emerald-100' }] : []),
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${item.color}`}>
-                        <item.icon className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{item.label}</p>
-                        <p className="text-xs text-slate-400">{item.time}</p>
-                      </div>
-                    </div>
-                  ))}
+                  {(selectedReport.statusHistory?.length > 0 ? selectedReport.statusHistory : [{ status: 'pending', changedBy: selectedReport.reportedBy, changedAt: selectedReport.createdAt }])
+                    .map((entry, i) => {
+                      const statusMeta = {
+                        pending:     { icon: AlertTriangle, color: 'text-amber-600 bg-amber-100',  label: 'Report Submitted' },
+                        'in-progress': { icon: Clock,       color: 'text-blue-600 bg-blue-100',    label: 'Taken In Progress' },
+                        resolved:    { icon: CheckCircle,   color: 'text-emerald-600 bg-emerald-100', label: 'Marked Resolved' },
+                        escalated:   { icon: ShieldAlert,   color: 'text-red-600 bg-red-100',      label: 'Auto-Escalated' },
+                        confirmed:   { icon: CheckCircle,   color: 'text-emerald-600 bg-emerald-100', label: 'Confirmed by Resident' },
+                        disputed:    { icon: AlertTriangle, color: 'text-red-600 bg-red-100',      label: 'Disputed by Resident' },
+                        reopened:    { icon: AlertTriangle, color: 'text-orange-600 bg-orange-100', label: 'Reopened' },
+                      };
+                      const meta = statusMeta[entry.status] || statusMeta.pending;
+                      const Icon = meta.icon;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.color}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{meta.label}</p>
+                            <p className="text-xs text-slate-400">
+                              {entry.changedBy && <span className="font-semibold">{entry.changedBy} · </span>}
+                              {entry.changedAt ? new Date(entry.changedAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
 

@@ -157,7 +157,7 @@ export default function Dashboard() {
                       <span className="text-xs font-black text-slate-300 w-4">#{i+1}</span>
                       <span className="text-sm font-bold text-slate-700">{b._id}</span>
                     </div>
-                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{b.count} Resolved</span>
+                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{b.count} pts</span>
                   </div>
                 ))}
               </div>

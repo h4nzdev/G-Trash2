@@ -13,6 +13,7 @@ import CollectionHistory from './pages/CollectionHistory';
 import Settings from './pages/Settings';
 import ScheduleRoute from './pages/ScheduleRoute';
 import RouteManager from './pages/RouteManager';
+import BugReports from './pages/BugReports';
 
 function ProtectedLayout() {
   const { official, loading } = useAuth();
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="schedule" element={<ScheduleRoute />} />
             <Route path="route-manager" element={<RouteManager />} />
+            <Route path="bug-reports" element={<BugReports />} />
           </Route>
         </Routes>
       </AuthProvider>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -9,6 +9,39 @@ import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
 const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981' };
+
+const CEBU_CITY_OUTLINE = [
+  [10.4215, 123.8572], [10.4198, 123.8712], [10.4148, 123.8825],
+  [10.4062, 123.8945], [10.3945, 123.9068], [10.3835, 123.9152],
+  [10.3712, 123.9212], [10.3582, 123.9248], [10.3448, 123.9232],
+  [10.3318, 123.9195], [10.3188, 123.9148], [10.3062, 123.9085],
+  [10.2945, 123.9025], [10.2828, 123.8962], [10.2712, 123.8885],
+  [10.2598, 123.8798], [10.2492, 123.8698], [10.2395, 123.8595],
+  [10.2302, 123.8478], [10.2225, 123.8352], [10.2168, 123.8218],
+  [10.2142, 123.8072], [10.2148, 123.7928], [10.2188, 123.7802],
+  [10.2268, 123.7702], [10.2385, 123.7638], [10.2525, 123.7602],
+  [10.2678, 123.7598], [10.2835, 123.7632], [10.2988, 123.7702],
+  [10.3128, 123.7782], [10.3262, 123.7868], [10.3395, 123.7968],
+  [10.3528, 123.8058], [10.3658, 123.8152], [10.3788, 123.8252],
+  [10.3908, 123.8358], [10.4015, 123.8452], [10.4108, 123.8512],
+  [10.4215, 123.8572],
+];
+
+async function fetchCebuCityBoundary() {
+  try {
+    const query = `[out:json][timeout:15];relation["name"="Cebu City"]["admin_level"~"^[67]$"];out geom;`;
+    const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rel = data.elements?.[0];
+    if (!rel?.members) return null;
+    const outer = rel.members.filter(m => m.type === 'way' && m.role === 'outer');
+    const coords = outer.flatMap(m => (m.geometry || []).map(pt => [pt.lat, pt.lon]));
+    return coords.length > 3 ? coords : null;
+  } catch {
+    return null;
+  }
+}
 
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
 function isPointInPolygon(point, vs) {
@@ -52,8 +85,14 @@ export default function HeatmapAnalytics() {
   const [saving, setSaving] = useState(false);
   const [boundary, setBoundary] = useState(null);
   const [outOfBoundsError, setOutOfBoundsError] = useState(false);
-  const [iotFlash, setIotFlash] = useState(null); // flash notification for real-time updates
+  const [iotFlash, setIotFlash] = useState(null);
+  const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
+  const [showCityBoundary, setShowCityBoundary] = useState(true);
   const socketRef = useRef(null);
+
+  useEffect(() => {
+    fetchCebuCityBoundary().then(coords => { if (coords) setCebuCityBoundary(coords); });
+  }, []);
 
   const fetchZonesAndBoundary = async () => {
     setLoading(true);
@@ -189,13 +228,21 @@ export default function HeatmapAnalytics() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button 
+          <button
+            onClick={() => setShowCityBoundary(!showCityBoundary)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${showCityBoundary ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="5 3"/></svg>
+            City Outline
+          </button>
+
+          <button
             onClick={fetchZonesAndBoundary}
             className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          
+
           <button
             onClick={() => {
               setIsAdding(!isAdding);
@@ -302,6 +349,14 @@ export default function HeatmapAnalytics() {
             opacity={0.8}
           />
           
+          {/* Cebu City Boundary */}
+          {showCityBoundary && (
+            <Polyline
+              positions={cebuCityBoundary}
+              pathOptions={{ color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7' }}
+            />
+          )}
+
           {/* Jurisdictional Boundary */}
           {boundary && (
             <Polygon
@@ -440,6 +495,16 @@ export default function HeatmapAnalytics() {
               {l.label}
             </span>
           ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+            <span className="w-6 border-t-2 border-blue-600 border-dashed inline-block" />
+            Cebu City boundary
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+            <span className="w-6 border-t-2 border-emerald-600 border-dashed inline-block" />
+            Barangay jurisdiction
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Sources</span>

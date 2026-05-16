@@ -28,8 +28,10 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { io } from "socket.io-client";
 import { useRoute } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import HeatmapLegend from "../components/HeatmapLegend";
 import API_URL from "../config";
+import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
 
 const TRACKING_SERVER = API_URL;
@@ -144,6 +146,49 @@ function buildLeafletHTML(truckB64) {
       setTileLayer('topographic');
       window.setMapStyle = setTileLayer;
 
+      var CEBU_OUTLINE = [[10.4215,123.8572],[10.4198,123.8712],[10.4148,123.8825],[10.4062,123.8945],[10.3945,123.9068],[10.3835,123.9152],[10.3712,123.9212],[10.3582,123.9248],[10.3448,123.9232],[10.3318,123.9195],[10.3188,123.9148],[10.3062,123.9085],[10.2945,123.9025],[10.2828,123.8962],[10.2712,123.8885],[10.2598,123.8798],[10.2492,123.8698],[10.2395,123.8595],[10.2302,123.8478],[10.2225,123.8352],[10.2168,123.8218],[10.2142,123.8072],[10.2148,123.7928],[10.2188,123.7802],[10.2268,123.7702],[10.2385,123.7638],[10.2525,123.7602],[10.2678,123.7598],[10.2835,123.7632],[10.2988,123.7702],[10.3128,123.7782],[10.3262,123.7868],[10.3395,123.7968],[10.3528,123.8058],[10.3658,123.8152],[10.3788,123.8252],[10.3908,123.8358],[10.4015,123.8452],[10.4108,123.8512],[10.4215,123.8572]];
+      // IoT air quality heatmap circles — barangay-filtered
+      var heatmapCircles = {};
+      window.updateHeatmapArea = function(area) {
+        var id = area._id;
+        var color = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#FDD835' : '#4CAF50';
+        var fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.15;
+        if (heatmapCircles[id]) { map.removeLayer(heatmapCircles[id]); }
+        var r = 180 + Math.round((area.intensity || 0.5) * 120);
+        var circle = L.circle([area.lat, area.lng], {
+          radius: r, color: color, fillColor: color,
+          fillOpacity: fillOp, weight: 2, opacity: 0.8, interactive: true,
+        });
+        circle.bindPopup(
+          '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
+          '<b style="font-size:12px;">' + (area.name || 'Sensor') + '</b><br/>' +
+          '<span style="font-size:10px;color:' + color + ';font-weight:700;text-transform:uppercase;">' + area.status + '</span>' +
+          '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
+          'NH₃: ' + (area.ammonia || 'N/A') + '<br/>' +
+          'CH₄: ' + (area.methane || 'N/A') +
+          '</div></div>'
+        );
+        circle.addTo(map);
+        heatmapCircles[id] = circle;
+      };
+      window.clearHeatmapAreas = function() {
+        Object.keys(heatmapCircles).forEach(function(id) {
+          if (heatmapCircles[id]) map.removeLayer(heatmapCircles[id]);
+        });
+        heatmapCircles = {};
+      };
+
+      var cityOutlineLayer = null;
+      window.toggleCityOutline = function(show) {
+        if (show && !cityOutlineLayer) {
+          cityOutlineLayer = L.polyline(CEBU_OUTLINE, { color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7', interactive: false }).addTo(map);
+        } else if (!show && cityOutlineLayer) {
+          map.removeLayer(cityOutlineLayer);
+          cityOutlineLayer = null;
+        }
+      };
+      window.toggleCityOutline(true);
+
       function drawUserRadius(lat, lng) {
         radiusCircles.forEach(function(c) { map.removeLayer(c); });
         radiusCircles = [];
@@ -244,6 +289,36 @@ function buildLeafletHTML(truckB64) {
         });
       };
 
+      // Resident route stop markers — numbered pins
+      var residentStopMarkers = [];
+      window.clearResidentStops = function() {
+        residentStopMarkers.forEach(function(m) { map.removeLayer(m); });
+        residentStopMarkers = [];
+      };
+      window.addResidentStops = function(stops) {
+        window.clearResidentStops();
+        stops.forEach(function(s, i) {
+          var num = i + 1;
+          var icon = L.divIcon({
+            html: '<div style="background:#006A3B;color:#fff;width:26px;height:26px;border-radius:50%;' +
+                  'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;' +
+                  'border:2.5px solid white;box-shadow:0 3px 8px rgba(0,106,59,0.45);">' + num + '</div>',
+            iconSize: [26, 26], iconAnchor: [13, 13], className: '',
+          });
+          var m = L.marker([s.lat, s.lng], { icon: icon });
+          if (s.name) {
+            m.bindPopup(
+              '<div style="font-family:sans-serif;min-width:120px;">' +
+              '<b style="font-size:11px;">Stop ' + num + '</b><br>' +
+              '<span style="font-size:10px;color:#555;">' + s.name + '</span>' +
+              '</div>'
+            );
+          }
+          m.addTo(map);
+          residentStopMarkers.push(m);
+        });
+      };
+
       window.updateUserLocation = function(lat, lng) {
         if (userMarker) { map.removeLayer(userMarker); }
         if (userPulseCircle) { map.removeLayer(userPulseCircle); }
@@ -272,6 +347,8 @@ export default function MapScreen() {
   const routeParams = useRoute();
   const { focusTruck } = routeParams.params || {};
   const { bottom: bottomInset } = useSafeAreaInsets();
+  const { user } = useAuth();
+  const userBarangay = user?.barangay || '';
 
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
@@ -287,6 +364,8 @@ export default function MapScreen() {
   const [dataLoading, setDataLoading] = useState(true);
   const [mapStyle, setMapStyle] = useState("topographic");
   const [isFollowing, setIsFollowing] = useState(!!focusTruck);
+  const [showCityOutline, setShowCityOutline] = useState(true);
+  const [iotAreas, setIotAreas] = useState([]);
 
   const isExpandedRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
@@ -298,6 +377,7 @@ export default function MapScreen() {
   const selectedRouteIdRef = useRef(null);
   const isFollowingRef = useRef(!!focusTruck);
   const initialTrucks = useRef([]);
+  const iotAreasRef = useRef([]);
 
   useEffect(() => {
     isFollowingRef.current = isFollowing;
@@ -334,6 +414,15 @@ export default function MapScreen() {
     }));
   }, [activeRoute]);
 
+  const aqStatus = useMemo(() => {
+    if (!iotAreas.length) return null;
+    if (iotAreas.some((a) => a.status === 'critical')) return 'critical';
+    if (iotAreas.some((a) => a.status === 'moderate')) return 'moderate';
+    return 'clean';
+  }, [iotAreas]);
+
+  useEffect(() => { iotAreasRef.current = iotAreas; }, [iotAreas]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -347,6 +436,16 @@ export default function MapScreen() {
           Array.isArray(routesRes.value)
         ) {
           setRoutes(routesRes.value);
+          // Auto-select saved route preference
+          try {
+            const saved = await AsyncStorage.getItem("@route_preference");
+            if (saved) {
+              const pref = JSON.parse(saved);
+              if (pref?.id && routesRes.value.some((r) => r._id === pref.id)) {
+                setSelectedRouteId(pref.id);
+              }
+            }
+          } catch (_) {}
         }
         if (
           schedRes.status === "fulfilled" &&
@@ -377,6 +476,31 @@ export default function MapScreen() {
       }
     })();
   }, []);
+
+  // Fetch barangay-specific IoT garbage areas
+  useEffect(() => {
+    if (!userBarangay) return;
+    fetch(`${API_URL}/api/garbage-areas?barangay=${encodeURIComponent(userBarangay)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setIotAreas(data);
+          iotAreasRef.current = data;
+        }
+      })
+      .catch(() => {});
+  }, [userBarangay]);
+
+  // Inject heatmap circles whenever iotAreas changes and WebView is ready
+  useEffect(() => {
+    if (!webViewReady.current || !iotAreas.length) return;
+    webViewRef.current?.injectJavaScript('window.clearHeatmapAreas(); true;');
+    iotAreas.forEach((area) => {
+      webViewRef.current?.injectJavaScript(
+        `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
+      );
+    });
+  }, [iotAreas]);
 
   useEffect(() => {
     if (routes.length === 0) return;
@@ -413,6 +537,22 @@ export default function MapScreen() {
       `window.highlightRoute('${selectedRouteId}'); true;`,
     );
   }, [selectedRouteId]);
+
+  // Inject numbered stop markers whenever the selected route changes
+  useEffect(() => {
+    if (!webViewReady.current) return;
+    const route = routes.find((r) => r._id === selectedRouteId);
+    if (!route?.waypoints?.length) {
+      webViewRef.current?.injectJavaScript('window.clearResidentStops(); true;');
+      return;
+    }
+    const stops = route.waypoints
+      .filter((wp) => wp.lat && wp.lng)
+      .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '' }));
+    webViewRef.current?.injectJavaScript(
+      `window.addResidentStops(${JSON.stringify(stops)}); true;`,
+    );
+  }, [selectedRouteId, routes]);
 
   useEffect(() => {
     const socket = io(TRACKING_SERVER, {
@@ -452,6 +592,23 @@ export default function MapScreen() {
       }
     });
 
+    // Real-time IoT air quality — only update if area belongs to user's barangay
+    socket.on("garbage-area:updated", (area) => {
+      const brgy = userBarangay;
+      if (brgy && area.barangay !== brgy) return;
+      setIotAreas((prev) => {
+        const idx = prev.findIndex((a) => a._id === area._id);
+        return idx >= 0
+          ? prev.map((a) => (a._id === area._id ? area : a))
+          : [...prev, area];
+      });
+      if (webViewReady.current) {
+        webViewRef.current?.injectJavaScript(
+          `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
+        );
+      }
+    });
+
     return () => socket.disconnect();
   }, []);
 
@@ -484,7 +641,23 @@ export default function MapScreen() {
         `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', true); true;`,
       );
     }
-  }, []);
+    // Inject barangay IoT heatmap areas
+    iotAreasRef.current.forEach((area) => {
+      webViewRef.current?.injectJavaScript(
+        `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
+      );
+    });
+    // Inject stop markers for currently selected route
+    const initRoute = routes.find((r) => r._id === selectedRouteIdRef.current);
+    if (initRoute?.waypoints?.length) {
+      const stops = initRoute.waypoints
+        .filter((wp) => wp.lat && wp.lng)
+        .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '' }));
+      webViewRef.current?.injectJavaScript(
+        `window.addResidentStops(${JSON.stringify(stops)}); true;`,
+      );
+    }
+  }, [routes]);
 
   const handleWebViewMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
@@ -637,10 +810,48 @@ export default function MapScreen() {
           >
             <MaterialIcons name="my-location" size={22} color="#1B1C1C" />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.floatingButton, showCityOutline && styles.floatingButtonActive]}
+            onPress={() => {
+              const next = !showCityOutline;
+              setShowCityOutline(next);
+              webViewRef.current?.injectJavaScript(
+                `window.toggleCityOutline(${next}); true;`,
+              );
+            }}
+          >
+            <MaterialIcons name="crop-free" size={22} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
+          </TouchableOpacity>
         </View>
         <View style={styles.legendOverlay}>
           <HeatmapLegend />
         </View>
+
+        {/* Barangay Air Quality Status Banner */}
+        {aqStatus && (
+          <View style={styles.aqBannerWrapper} pointerEvents="none">
+            <View style={[
+              styles.aqBanner,
+              aqStatus === 'critical' && { backgroundColor: '#FFF1F0', borderColor: '#FECACA' },
+              aqStatus === 'moderate' && { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+              aqStatus === 'clean'    && { backgroundColor: '#F0FFF4', borderColor: '#BBF7D0' },
+            ]}>
+              <View style={[
+                styles.aqDot,
+                { backgroundColor: aqStatus === 'critical' ? '#E53935' : aqStatus === 'moderate' ? '#F59E0B' : '#4CAF50' },
+              ]} />
+              <Text style={[
+                styles.aqBannerText,
+                { color: aqStatus === 'critical' ? '#DC2626' : aqStatus === 'moderate' ? '#D97706' : '#059669' },
+              ]}>
+                {userBarangay} · {aqStatus === 'critical' ? 'Poor Air Quality' : aqStatus === 'moderate' ? 'Moderate Air Quality' : 'Good Air Quality'}
+              </Text>
+              {aqStatus === 'critical' && (
+                <MaterialIcons name="warning" size={12} color="#DC2626" />
+              )}
+            </View>
+          </View>
+        )}
       </View>
 
       <Animated.View
@@ -716,6 +927,32 @@ export default function MapScreen() {
             scrollEnabled={isExpanded}
             contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
           >
+            {/* Barangay IoT Air Quality Section */}
+            {iotAreas.length > 0 && (
+              <View style={styles.aqSection}>
+                <Text style={styles.aqSectionTitle}>
+                  Air Quality · {userBarangay}
+                </Text>
+                {iotAreas.map((area) => {
+                  const aColor = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#F59E0B' : '#4CAF50';
+                  return (
+                    <View key={area._id} style={styles.aqSensorRow}>
+                      <View style={[styles.aqSensorDot, { backgroundColor: aColor }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.aqSensorName}>{area.name}</Text>
+                        <Text style={styles.aqSensorVals}>
+                          NH₃: {area.ammonia || 'N/A'} · CH₄: {area.methane || 'N/A'}
+                        </Text>
+                      </View>
+                      <Text style={[styles.aqSensorStatus, { color: aColor }]}>
+                        {area.status.charAt(0).toUpperCase() + area.status.slice(1)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             <View style={styles.timeline}>
               {currentStops.map((stop, index) => (
                 <View key={index} style={styles.timelineStep}>
@@ -837,4 +1074,36 @@ const styles = StyleSheet.create({
   timelineContent: { flex: 1 },
   timelineStopName: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
   timelineTime: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  // Air quality banner (floating top-center of map)
+  aqBannerWrapper: {
+    position: "absolute", top: 12, left: 0, right: 0,
+    alignItems: "center", zIndex: 10,
+  },
+  aqBanner: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1,
+    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  },
+  aqDot: { width: 8, height: 8, borderRadius: 4 },
+  aqBannerText: { fontSize: 11, fontWeight: "700" },
+  // Air quality section inside the expanded bottom sheet
+  aqSection: {
+    marginHorizontal: 24, marginBottom: 20,
+    backgroundColor: "#F9FAFB", borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: "#F0F0F0",
+  },
+  aqSectionTitle: {
+    fontSize: 11, fontWeight: "800", color: "#6B7280",
+    textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10,
+  },
+  aqSensorRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 7,
+    borderBottomWidth: 1, borderBottomColor: "#F0F0F0",
+  },
+  aqSensorDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  aqSensorName: { fontSize: 13, fontWeight: "600", color: "#1F2937" },
+  aqSensorVals: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
+  aqSensorStatus: { fontSize: 11, fontWeight: "700", flexShrink: 0 },
 });

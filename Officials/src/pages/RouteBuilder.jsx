@@ -69,6 +69,49 @@ async function fetchORSRoute(waypoints) {
   }
 }
 
+// Cebu City outline — used when Overpass is unavailable
+const CEBU_CITY_OUTLINE = [
+  [10.4215, 123.8572], [10.4198, 123.8712], [10.4148, 123.8825],
+  [10.4062, 123.8945], [10.3945, 123.9068], [10.3835, 123.9152],
+  [10.3712, 123.9212], [10.3582, 123.9248], [10.3448, 123.9232],
+  [10.3318, 123.9195], [10.3188, 123.9148], [10.3062, 123.9085],
+  [10.2945, 123.9025], [10.2828, 123.8962], [10.2712, 123.8885],
+  [10.2598, 123.8798], [10.2492, 123.8698], [10.2395, 123.8595],
+  [10.2302, 123.8478], [10.2225, 123.8352], [10.2168, 123.8218],
+  [10.2142, 123.8072], [10.2148, 123.7928], [10.2188, 123.7802],
+  [10.2268, 123.7702], [10.2385, 123.7638], [10.2525, 123.7602],
+  [10.2678, 123.7598], [10.2835, 123.7632], [10.2988, 123.7702],
+  [10.3128, 123.7782], [10.3262, 123.7868], [10.3395, 123.7968],
+  [10.3528, 123.8058], [10.3658, 123.8152], [10.3788, 123.8252],
+  [10.3908, 123.8358], [10.4015, 123.8452], [10.4108, 123.8512],
+  [10.4215, 123.8572],
+];
+
+async function fetchCebuCityBoundary() {
+  const query = `[out:json][timeout:20][bbox:10.15,123.70,10.50,124.05];
+relation["name"="Cebu City"]["admin_level"~"^[67]$"];
+out geom;`;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: new URLSearchParams({ data: query }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const relation = data.elements?.find(e => e.type === 'relation');
+    if (!relation?.members) return null;
+    const coords = [];
+    for (const member of relation.members) {
+      if (member.type === 'way' && member.role === 'outer' && member.geometry?.length) {
+        coords.push(...member.geometry.map(p => [p.lat, p.lon]));
+      }
+    }
+    return coords.length >= 3 ? coords : null;
+  } catch {
+    return null;
+  }
+}
+
 // Rough but realistic polygon fallbacks (used when Overpass has no data)
 const FALLBACK_BOUNDARIES = {
   Lahug: [
@@ -160,6 +203,8 @@ export default function RouteBuilder() {
   const [boundaryLoading, setBoundaryLoading] = useState(false);
   const [isSatellite, setIsSatellite] = useState(false);
   const [searchMarker, setSearchMarker] = useState(null);
+  const [cebuCityBoundary, setCebuCityBoundary] = useState(null);
+  const [showCityBoundary, setShowCityBoundary] = useState(true);
 
   // Stable refs so callbacks never go stale
   const waypointsRef = useRef(waypoints);
@@ -199,6 +244,13 @@ export default function RouteBuilder() {
       setBoundaryLoading(false);
     })();
   }, [official?.barangay]);
+
+  // Fetch Cebu City outline once on mount
+  useEffect(() => {
+    fetchCebuCityBoundary().then(coords => {
+      setCebuCityBoundary(coords ?? CEBU_CITY_OUTLINE);
+    });
+  }, []);
 
   useEffect(() => {
     axios.get(`${API}/api/fleet`).then(r => setFleet(r.data)).catch(() => {});
@@ -393,7 +445,20 @@ export default function RouteBuilder() {
             />
           )}
           
-          {/* Real barangay jurisdiction boundary from OSM */}
+          {/* Cebu City outline */}
+          {showCityBoundary && cebuCityBoundary && (
+            <Polyline
+              positions={cebuCityBoundary}
+              pathOptions={{
+                color: '#2563EB',
+                weight: 2,
+                opacity: 0.55,
+                dashArray: '10, 7',
+              }}
+            />
+          )}
+
+          {/* Barangay jurisdiction boundary */}
           {boundary && boundary.length > 0 && (
             <Polygon
               key={boundary.length}
@@ -455,26 +520,60 @@ export default function RouteBuilder() {
           )}
         </MapContainer>
 
-        {/* Click hint overlay when no waypoints */}
-        {waypoints.length === 0 && (
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400] bg-slate-900/80 backdrop-blur-sm text-white text-sm rounded-xl px-5 py-3 flex items-center gap-2 pointer-events-none">
-            <MapPin className="w-4 h-4 flex-shrink-0" />
-            Click anywhere on the map to place stops
+        {/* Map legend */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-3 pointer-events-none">
+          {waypoints.length === 0 && (
+            <div className="bg-slate-900/80 backdrop-blur-sm text-white text-sm rounded-xl px-5 py-3 flex items-center gap-2">
+              <MapPin className="w-4 h-4 flex-shrink-0" />
+              Click anywhere on the map to place stops
+            </div>
+          )}
+          <div className="bg-white/90 backdrop-blur-sm border border-slate-200 shadow-md rounded-xl px-4 py-2.5 flex items-center gap-4 text-xs font-semibold text-slate-600">
+            {showCityBoundary && (
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-6 border-t-2 border-dashed border-blue-500" />
+                Cebu City
+              </span>
+            )}
+            {boundary && (
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-6 border-t-2 border-dashed border-red-500" />
+                {official?.barangay || 'Jurisdiction'}
+              </span>
+            )}
+            {routeCoords.length > 0 && (
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-6 border-t-2 border-emerald-600" style={{ borderWidth: 3 }} />
+                Route
+              </span>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Map Style Toggle */}
+        {/* Map Style Toggle + City Boundary Toggle */}
         <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
           <button
             onClick={() => setIsSatellite(!isSatellite)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
-              isSatellite 
-                ? 'bg-emerald-600 text-white border border-emerald-500' 
+              isSatellite
+                ? 'bg-emerald-600 text-white border border-emerald-500'
                 : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
             }`}
           >
             <Layers className="w-4 h-4" />
             {isSatellite ? 'Satellite' : 'Standard'}
+          </button>
+
+          <button
+            onClick={() => setShowCityBoundary(v => !v)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
+              showCityBoundary
+                ? 'bg-blue-600 text-white border border-blue-500'
+                : 'bg-white/90 text-slate-500 border border-slate-200 hover:bg-white'
+            }`}
+          >
+            <Route className="w-4 h-4" />
+            City Outline
           </button>
         </div>
 

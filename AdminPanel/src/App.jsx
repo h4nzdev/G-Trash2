@@ -10,6 +10,7 @@ import IoTSimulator from './pages/superadmin/IoTSimulator';
 import BugReports from './pages/superadmin/BugReports';
 import JurisdictionManager from './pages/superadmin/JurisdictionManager';
 import Reports from './pages/superadmin/Reports';
+import Announcements from './pages/superadmin/Announcements';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="jurisdiction" element={<JurisdictionManager />} />
             <Route path="bugs" element={<BugReports />} />
+            <Route path="announcements" element={<Announcements />} />
             <Route path="settings" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Settings coming soon...</div>} />
           </Route>
 

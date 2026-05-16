@@ -32,6 +32,7 @@ mongoose
   .then(() => {
     console.log("OK: MongoDB connected ->", MONGO_URI);
     loadBoundaries();
+    startSLAChecker();
   })
   .catch((err) => console.error("ERR: MongoDB error:", err.message));
 
@@ -78,18 +79,30 @@ const reportSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
+  deadline:           { type: Date, default: null },
+  statusHistory: [{
+    status:    String,
+    changedBy: String,
+    changedAt: { type: Date, default: Date.now },
+  }],
+  escalated:           { type: Boolean, default: false },
+  resolutionConfirmed: { type: String, enum: ['pending', 'confirmed', 'disputed'], default: null },
+  resolvedAt:          { type: Date, default: null },
+  resolvedBy:          { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Report = mongoose.model("Report", reportSchema);
 
 const fleetSchema = new mongoose.Schema({
-  truckId: { type: String, required: true, unique: true },
-  driverName: { type: String, required: true },
-  driverId: { type: String, default: "" },
-  driverImage: { type: String, default: null },
-  route: { type: String, default: "" },
-  barangay: { type: String, default: "" },
-  createdAt: { type: Date, default: Date.now },
+  truckId:         { type: String, required: true, unique: true },
+  driverName:      { type: String, required: true },
+  driverId:        { type: String, default: "" },
+  driverImage:     { type: String, default: null },
+  route:           { type: String, default: "" },
+  barangay:        { type: String, default: "" },
+  type:            { type: String, enum: ['dedicated', 'shared'], default: 'dedicated' },
+  serviceBarangays:{ type: [String], default: [] },
+  createdAt:       { type: Date, default: Date.now },
 });
 const Fleet = mongoose.model("Fleet", fleetSchema);
 
@@ -239,6 +252,7 @@ const residentSchema = new mongoose.Schema({
   houseNo: { type: String, default: "" },
   profilePicture: { type: String, default: null },
   lastProfilePictureUpdate: { type: Date, default: null },
+  notificationsClearedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Resident = mongoose.model("Resident", residentSchema);
@@ -255,16 +269,75 @@ const BarangayBoundary = mongoose.model(
 );
 
 const barangayScoreSchema = new mongoose.Schema({
-  barangay: { type: String, required: true, unique: true },
-  points: { type: Number, default: 0 },
-  pickupCount: { type: Number, default: 0 },    // confirmed trash pickups
-  reportVoteCount: { type: Number, default: 0 }, // community report votes
-  areaQualityPts: { type: Number, default: 0 },  // bonus from clean heatmap
-  updatedAt: { type: Date, default: Date.now },
+  barangay:        { type: String, required: true, unique: true },
+  points:          { type: Number, default: 0 },  // grand total (sum of all categories)
+  // Category breakdown scores
+  reportScore:     { type: Number, default: 0 },  // votes, confirmed resolutions, disputes, escalations
+  iotScore:        { type: Number, default: 0 },  // IoT air quality readings (good/bad)
+  collectionScore: { type: Number, default: 0 },  // pickup completions + resident verifications
+  responseScore:   { type: Number, default: 0 },  // official response time bonus
+  // Legacy count fields (kept for display/compat)
+  pickupCount:     { type: Number, default: 0 },  // number of confirmed pickup runs
+  reportVoteCount: { type: Number, default: 0 },  // total community votes cast
+  areaQualityPts:  { type: Number, default: 0 },  // cumulative clean-area bonus pts
+  updatedAt:       { type: Date, default: Date.now },
 });
 const BarangayScore = mongoose.model("BarangayScore", barangayScoreSchema);
 
+const announcementSchema = new mongoose.Schema({
+  title:     { type: String, required: true },
+  message:   { type: String, required: true },
+  type:      { type: String, enum: ["info", "warning", "critical", "success"], default: "info" },
+  createdBy: { type: String, default: "Admin" },
+}, { timestamps: true });
+const Announcement = mongoose.model("Announcement", announcementSchema);
+
+const pickupRunSchema = new mongoose.Schema({
+  truckId:    { type: String, required: true },
+  driverName: { type: String, default: '' },
+  routeId:    { type: String, default: '' },
+  routeName:  { type: String, default: '' },
+  barangay:   { type: String, default: '' },
+  stopsCompleted: [{ name: String, weight: Number }],
+  totalStops:  { type: Number, default: 0 },
+  totalWeight: { type: Number, default: 0 },
+  verifications: [{
+    userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Resident' },
+    confirmed: Boolean,
+    createdAt: { type: Date, default: Date.now },
+  }],
+  completedAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+const PickupRun = mongoose.model('PickupRun', pickupRunSchema);
+
 // --- Helpers -------------------------------------------------
+
+async function startSLAChecker() {
+  const check = async () => {
+    try {
+      const overdue = await Report.find({
+        status: 'pending',
+        escalated: { $ne: true },
+        deadline: { $lt: new Date() },
+        reportedBy: { $not: /^IoT Sensor/ },
+      });
+      for (const r of overdue) {
+        await Report.findByIdAndUpdate(r._id, {
+          $set: { escalated: true },
+          $push: { statusHistory: { status: 'escalated', changedBy: 'System', changedAt: new Date() } },
+        });
+        if (r.barangay) await addBarangayScore(r.barangay, -10, 'reportScore');
+        io.emit('report:updated', { ...r.toObject(), escalated: true });
+        io.emit('report:escalated', { reportId: r._id, barangay: r.barangay, title: r.title });
+      }
+      if (overdue.length > 0) console.log(`[SLA] Auto-escalated ${overdue.length} reports, -10 pts each barangay`);
+    } catch (err) {
+      console.error('[SLA] Error:', err.message);
+    }
+  };
+  await check();
+  setInterval(check, 60 * 60 * 1000);
+}
 
 async function generateUniqueTruckId() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -288,14 +361,17 @@ function getTodayYMD() {
   return `${y}-${m}-${day}`;
 }
 
-// Award points to a barangay — upserts the score document
-async function addBarangayScore(barangay, points, field) {
-  if (!barangay || !points) return;
-  const inc = { points, updatedAt: Date.now() };
-  if (field) inc[field] = points;
+// Award points to a barangay — upserts the score document.
+// scoreCategory: one of reportScore | iotScore | collectionScore | responseScore
+// countField: optional legacy count-only field (pickupCount, reportVoteCount, areaQualityPts) — only incremented when points > 0
+async function addBarangayScore(barangay, points, scoreCategory, countField) {
+  if (!barangay || points == null) return;
+  const incOps = { points };
+  if (scoreCategory) incOps[scoreCategory] = points;
+  if (countField && points > 0) incOps[countField] = 1;
   return BarangayScore.findOneAndUpdate(
     { barangay },
-    { $inc: inc },
+    { $inc: incOps, $set: { updatedAt: new Date() } },
     { upsert: true, new: true },
   );
 }
@@ -454,6 +530,7 @@ app.post("/api/residents/login", async (req, res) => {
         email: resident.email,
         barangay: resident.barangay,
         address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
+        notificationsClearedAt: resident.notificationsClearedAt || null,
       },
     });
   } catch (err) {
@@ -524,6 +601,16 @@ app.patch("/api/residents/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/residents/:id/notifications", async (req, res) => {
+  try {
+    const clearedAt = new Date();
+    await Resident.findByIdAndUpdate(req.params.id, { notificationsClearedAt: clearedAt });
+    res.json({ clearedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Community Feed & Voting ---------------------------------
 app.get("/api/reports", async (req, res) => {
   try {
@@ -552,8 +639,11 @@ app.post("/api/reports", async (req, res) => {
   try {
     const report = await Report.create({
       ...req.body,
-      title: req.body.title || req.body.category, // fallback
+      title: req.body.title || req.body.category,
+      deadline: new Date(Date.now() + 72 * 60 * 60 * 1000),
+      statusHistory: [{ status: 'pending', changedBy: req.body.reportedBy || 'Resident', changedAt: new Date() }],
     });
+    io.emit('report:new', report);
 
     // --- Composite Heatmap: Link report to nearest garbage area ---
     const reportLat = report.lat;
@@ -667,7 +757,7 @@ app.post("/api/reports/:id/vote", async (req, res) => {
     await report.save();
     // +1 pt to barangay for every vote cast (community engagement)
     if (report.barangay) {
-      addBarangayScore(report.barangay, 1, "reportVoteCount").catch(() => {});
+      addBarangayScore(report.barangay, 1, 'reportScore', 'reportVoteCount').catch(() => {});
     }
     res.json({
       upvotes: report.upvotes.length,
@@ -983,12 +1073,78 @@ app.get("/api/reports", optionalAuth, async (req, res) => {
 // PATCH/DELETE require Officials auth
 app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
   try {
-    const report = await Report.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    });
+    const { status, ...rest } = req.body;
+    const setOps = { ...rest };
+    const pushOps = {};
+
+    if (status) {
+      setOps.status = status;
+      pushOps.statusHistory = {
+        status,
+        changedBy: req.official.name || req.official.email,
+        changedAt: new Date(),
+      };
+      if (status === 'resolved') {
+        setOps.resolvedAt = new Date();
+        setOps.resolvedBy = req.official.name || req.official.email;
+        setOps.resolutionConfirmed = 'pending';
+      }
+      // Response time bonus: award responseScore when an official picks up a report
+      if (status === 'in-progress') {
+        const existing = await Report.findById(req.params.id).select('createdAt barangay').lean();
+        if (existing?.barangay && existing.createdAt) {
+          const hoursElapsed = (Date.now() - new Date(existing.createdAt).getTime()) / 3_600_000;
+          const responsePts = hoursElapsed < 6 ? 15 : hoursElapsed < 24 ? 10 : hoursElapsed < 48 ? 5 : 0;
+          if (responsePts > 0) {
+            addBarangayScore(existing.barangay, responsePts, 'responseScore').catch(() => {});
+          }
+        }
+      }
+    }
+
+    const updateOp = { $set: setOps };
+    if (Object.keys(pushOps).length) updateOp.$push = pushOps;
+
+    const report = await Report.findByIdAndUpdate(req.params.id, updateOp, { new: true });
     if (!report) return res.status(404).json({ error: "Report not found" });
     io.emit("report:updated", report);
     res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/reports/:id/verify", async (req, res) => {
+  const { confirmed, userId } = req.body;
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ error: "Not found" });
+    if (report.resolutionConfirmed !== 'pending')
+      return res.status(400).json({ error: "Not awaiting verification" });
+
+    const outcome = confirmed ? 'confirmed' : 'disputed';
+    const setOps = { resolutionConfirmed: outcome };
+    const pushEntry = { status: outcome, changedBy: 'Resident', changedAt: new Date() };
+
+    if (!confirmed) {
+      // Resident says it's still an issue — reopen and penalise barangay
+      setOps.status = 'pending';
+      setOps.resolvedAt = null;
+      setOps.escalated = true;
+      pushEntry.status = 'reopened';
+      if (report.barangay) await addBarangayScore(report.barangay, -15, 'reportScore');
+    } else {
+      // Confirmed fixed — award points to barangay
+      if (report.barangay) await addBarangayScore(report.barangay, 20, 'reportScore');
+    }
+
+    const updated = await Report.findByIdAndUpdate(
+      req.params.id,
+      { $set: setOps, $push: { statusHistory: pushEntry } },
+      { new: true }
+    );
+    io.emit("report:updated", updated);
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1025,7 +1181,7 @@ app.get("/api/fleet/:truckId", async (req, res) => {
 
 // Mutations require Officials auth
 app.post("/api/fleet", authMiddleware, async (req, res) => {
-  const { driverName, driverId, driverImage, route } = req.body;
+  const { driverName, driverId, driverImage, route, type, serviceBarangays } = req.body;
   if (!driverName)
     return res.status(400).json({ error: "driverName is required" });
   try {
@@ -1038,6 +1194,8 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
       driverImage: driverImage || null,
       route: route || "",
       barangay: brgy === "All" ? "" : brgy || "",
+      type: type || 'dedicated',
+      serviceBarangays: Array.isArray(serviceBarangays) ? serviceBarangays : [],
     });
     io.emit("fleet:new", entry);
     res.status(201).json(entry);
@@ -1249,13 +1407,12 @@ app.get("/api/admin/stats", authMiddleware, async (req, res) => {
       Resident.countDocuments(),
     ]);
 
-    // Leaderboard: Top 5 Barangays by resolved reports
-    const leaderboard = await Report.aggregate([
-      { $match: { status: "resolved" } },
-      { $group: { _id: "$barangay", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 5 },
-    ]);
+    // Leaderboard: Top 5 Barangays by total score (same source as /api/leaderboard)
+    const leaderboardRaw = await BarangayScore.find()
+      .sort({ points: -1 })
+      .limit(5)
+      .lean();
+    const leaderboard = leaderboardRaw.map(b => ({ _id: b.barangay, count: b.points }));
 
     // Waste Composition: Reports by category
     const composition = await Report.aggregate([
@@ -1314,16 +1471,16 @@ app.post("/api/leaderboard/add-score", async (req, res) => {
   }
 
   const CONFIG = {
-    pickup:       { points: 1, field: "pickupCount" },
-    vote:         { points: 1, field: "reportVoteCount" },
-    area_clean:   { points: 3, field: "areaQualityPts" },
-    area_moderate:{ points: 1, field: "areaQualityPts" },
+    pickup:        { points: 5,  scoreCategory: 'collectionScore', countField: 'pickupCount' },
+    vote:          { points: 1,  scoreCategory: 'reportScore',     countField: 'reportVoteCount' },
+    area_clean:    { points: 3,  scoreCategory: 'iotScore',        countField: 'areaQualityPts' },
+    area_moderate: { points: 1,  scoreCategory: 'iotScore',        countField: 'areaQualityPts' },
   };
   const cfg = CONFIG[reason];
   if (!cfg) return res.status(400).json({ error: "unknown reason" });
 
   try {
-    const score = await addBarangayScore(barangay, cfg.points, cfg.field);
+    const score = await addBarangayScore(barangay, cfg.points, cfg.scoreCategory, cfg.countField);
     res.json({ ok: true, points: cfg.points, total: score.points });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1333,23 +1490,23 @@ app.post("/api/leaderboard/add-score", async (req, res) => {
 // POST seed leaderboard with demo data (dev only — idempotent)
 app.post("/api/leaderboard/seed", async (req, res) => {
   const seedData = [
-    { barangay: "IT Park",       points: 142, pickupCount: 58, reportVoteCount: 52, areaQualityPts: 32 },
-    { barangay: "Lahug",         points: 119, pickupCount: 47, reportVoteCount: 45, areaQualityPts: 27 },
-    { barangay: "Banilad",       points: 98,  pickupCount: 39, reportVoteCount: 38, areaQualityPts: 21 },
-    { barangay: "Talamban",      points: 85,  pickupCount: 34, reportVoteCount: 33, areaQualityPts: 18 },
-    { barangay: "Mabolo",        points: 74,  pickupCount: 29, reportVoteCount: 27, areaQualityPts: 18 },
-    { barangay: "Ayala",         points: 63,  pickupCount: 25, reportVoteCount: 24, areaQualityPts: 14 },
-    { barangay: "Carbon Market", points: 51,  pickupCount: 20, reportVoteCount: 19, areaQualityPts: 12 },
-    { barangay: "Ermita",        points: 44,  pickupCount: 17, reportVoteCount: 16, areaQualityPts: 11 },
-    { barangay: "Sto. Niño",     points: 37,  pickupCount: 14, reportVoteCount: 14, areaQualityPts: 9  },
-    { barangay: "Mandaue",       points: 28,  pickupCount: 11, reportVoteCount: 10, areaQualityPts: 7  },
+    { barangay: "IT Park",       points: 142, reportScore: 52, iotScore: 32, collectionScore: 58, responseScore: 0, pickupCount: 10, reportVoteCount: 52, areaQualityPts: 32 },
+    { barangay: "Lahug",         points: 119, reportScore: 45, iotScore: 27, collectionScore: 47, responseScore: 0, pickupCount: 8,  reportVoteCount: 45, areaQualityPts: 27 },
+    { barangay: "Banilad",       points: 98,  reportScore: 38, iotScore: 21, collectionScore: 39, responseScore: 0, pickupCount: 7,  reportVoteCount: 38, areaQualityPts: 21 },
+    { barangay: "Talamban",      points: 85,  reportScore: 33, iotScore: 18, collectionScore: 34, responseScore: 0, pickupCount: 6,  reportVoteCount: 33, areaQualityPts: 18 },
+    { barangay: "Mabolo",        points: 74,  reportScore: 27, iotScore: 18, collectionScore: 29, responseScore: 0, pickupCount: 5,  reportVoteCount: 27, areaQualityPts: 18 },
+    { barangay: "Ayala",         points: 63,  reportScore: 24, iotScore: 14, collectionScore: 25, responseScore: 0, pickupCount: 4,  reportVoteCount: 24, areaQualityPts: 14 },
+    { barangay: "Carbon Market", points: 51,  reportScore: 19, iotScore: 12, collectionScore: 20, responseScore: 0, pickupCount: 4,  reportVoteCount: 19, areaQualityPts: 12 },
+    { barangay: "Ermita",        points: 44,  reportScore: 16, iotScore: 11, collectionScore: 17, responseScore: 0, pickupCount: 3,  reportVoteCount: 16, areaQualityPts: 11 },
+    { barangay: "Sto. Niño",     points: 37,  reportScore: 14, iotScore: 9,  collectionScore: 14, responseScore: 0, pickupCount: 2,  reportVoteCount: 14, areaQualityPts: 9  },
+    { barangay: "Mandaue",       points: 28,  reportScore: 10, iotScore: 7,  collectionScore: 11, responseScore: 0, pickupCount: 2,  reportVoteCount: 10, areaQualityPts: 7  },
   ];
   try {
     const results = await Promise.all(
-      seedData.map(({ barangay, points, pickupCount, reportVoteCount, areaQualityPts }) =>
+      seedData.map(({ barangay, points, reportScore, iotScore, collectionScore, responseScore, pickupCount, reportVoteCount, areaQualityPts }) =>
         BarangayScore.findOneAndUpdate(
           { barangay },
-          { $set: { points, pickupCount, reportVoteCount, areaQualityPts, updatedAt: new Date() } },
+          { $set: { points, reportScore, iotScore, collectionScore, responseScore, pickupCount, reportVoteCount, areaQualityPts, updatedAt: new Date() } },
           { upsert: true, new: true },
         )
       )
@@ -1391,6 +1548,125 @@ app.patch("/api/bugs/:id", authMiddleware, async (req, res) => {
       new: true,
     });
     res.json(bug);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Announcements ------------------------------------------
+app.get("/api/announcements", async (req, res) => {
+  try {
+    const docs = await Announcement.find().sort({ createdAt: -1 }).limit(50);
+    res.json(docs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/announcements", authMiddleware, async (req, res) => {
+  if (req.official.role !== "superadmin") {
+    return res.status(403).json({ error: "Superadmin access required" });
+  }
+  try {
+    const doc = await Announcement.create({
+      ...req.body,
+      createdBy: req.official.name || "Admin",
+    });
+    io.emit("announcement:new", doc);
+    res.status(201).json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/announcements/:id", authMiddleware, async (req, res) => {
+  if (req.official.role !== "superadmin") {
+    return res.status(403).json({ error: "Superadmin access required" });
+  }
+  try {
+    await Announcement.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Pickup Runs (Route Completion) --------------------------
+app.post('/api/pickup/complete', async (req, res) => {
+  try {
+    const { truckId, driverName, routeId, routeName, barangay: clientBarangay, stops, totalWeight } = req.body;
+    if (!truckId) return res.status(400).json({ error: 'truckId required' });
+
+    // Resolve the authoritative barangay from the Route document.
+    // This is the key fix for shared trucks: the route knows which barangay
+    // is being served regardless of which truck is running it.
+    let resolvedBarangay = clientBarangay || '';
+    if (routeId && mongoose.Types.ObjectId.isValid(routeId)) {
+      const routeDoc = await Route.findById(routeId).select('barangay').lean();
+      if (routeDoc?.barangay) resolvedBarangay = routeDoc.barangay;
+    }
+
+    const run = await PickupRun.create({
+      truckId, driverName: driverName || '', routeId: routeId || '',
+      routeName: routeName || '', barangay: resolvedBarangay,
+      stopsCompleted: stops || [],
+      totalStops: (stops || []).length,
+      totalWeight: totalWeight || 0,
+    });
+    if (resolvedBarangay) await addBarangayScore(resolvedBarangay, 5, 'collectionScore', 'pickupCount');
+    io.emit('pickup:completed', run);
+    res.status(201).json(run);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/pickup', async (req, res) => {
+  try {
+    const { barangay } = req.query;
+    const filter = {};
+    if (barangay) filter.barangay = barangay;
+    const runs = await PickupRun.find(filter).sort({ completedAt: -1 }).limit(30);
+    res.json(runs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/pickup/:id/verify', async (req, res) => {
+  const { userId, confirmed } = req.body;
+  if (userId === undefined || confirmed === undefined) {
+    return res.status(400).json({ error: 'userId and confirmed required' });
+  }
+  try {
+    const run = await PickupRun.findById(req.params.id);
+    if (!run) return res.status(404).json({ error: 'Pickup run not found' });
+
+    const alreadyVerified = run.verifications.some(v => v.userId?.toString() === userId.toString());
+    if (alreadyVerified) return res.status(400).json({ error: 'Already verified' });
+
+    run.verifications.push({ userId, confirmed });
+    await run.save();
+
+    if (confirmed) {
+      if (run.barangay) await addBarangayScore(run.barangay, 10, 'collectionScore');
+    } else {
+      const missed = await Report.create({
+        title: 'Missed Pickup',
+        category: 'Uncollected Waste',
+        description: `Resident reported that Truck ${run.truckId} did not collect waste in their area during the ${run.routeName || 'scheduled'} run.`,
+        barangay: run.barangay || '',
+        userId,
+        reportedBy: 'Resident',
+        priority: 'Medium',
+        deadline: new Date(Date.now() + 72 * 60 * 60 * 1000),
+        statusHistory: [{ status: 'pending', changedBy: 'Resident', changedAt: new Date() }],
+      });
+      io.emit('report:new', missed);
+      if (run.barangay) await addBarangayScore(run.barangay, -5, 'collectionScore');
+    }
+    io.emit('pickup:verified', { pickupId: run._id, userId, confirmed });
+    res.json({ ok: true, confirmed });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1669,6 +1945,10 @@ app.get("/api/barangays/:name/boundary", async (req, res) => {
 app.get("/api/garbage-areas", optionalAuth, async (req, res) => {
   try {
     const filter = barangayFilter(req.official);
+    // Unauthenticated residents can pass ?barangay= to filter to their own barangay
+    if (!req.official && req.query.barangay) {
+      filter.barangay = req.query.barangay;
+    }
     const areas = await GarbageArea.find(filter).sort({ createdAt: -1 });
     res.json(areas);
   } catch (err) {
@@ -2077,11 +2357,17 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         { upsert: true, new: true },
       );
       io.emit("garbage-area:updated", updatedArea);
-      // Area quality bonus — clean areas earn points for their barangay
+      // IoT quality scoring: positive for clean/moderate, negative for unhealthy/hazardous
       if (updatedArea.barangay) {
-        const qualityPts = areaStatus === "clean" ? 3 : areaStatus === "moderate" ? 1 : 0;
-        if (qualityPts > 0) {
-          addBarangayScore(updatedArea.barangay, qualityPts, "areaQualityPts").catch(() => {});
+        const qualityPts = airQuality === "Good" ? 3
+          : airQuality === "Moderate" ? 1
+          : airQuality === "Unhealthy" ? -2
+          : airQuality === "Hazardous" ? -5
+          : 0;
+        if (qualityPts !== 0) {
+          // Only increment legacy areaQualityPts counter for positive readings
+          const countField = qualityPts > 0 ? 'areaQualityPts' : undefined;
+          addBarangayScore(updatedArea.barangay, qualityPts, 'iotScore', countField).catch(() => {});
         }
       }
     }
@@ -2267,12 +2553,15 @@ app.get("/api/iot/summary", optionalAuth, async (req, res) => {
 });
 
 // --- Socket.io -----------------------------------------------
+const socketTruckMap = new Map(); // socketId → truckId (for auto-offline on disconnect)
+
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // GarbageTruck app sends live GPS position
   socket.on("truck:location", async (data, ack) => {
     const { truckId, lat, lng, heading = 0, speed = 0 } = data;
+    socketTruckMap.set(socket.id, truckId);
     if (!truckId || lat == null || lng == null) {
       if (typeof ack === "function")
         ack({ ok: false, error: "Missing fields" });
@@ -2302,6 +2591,7 @@ io.on("connection", (socket) => {
   // Truck marks itself offline — broadcast to ALL clients including sender
   socket.on("truck:offline", async ({ truckId }) => {
     if (!truckId) return;
+    socketTruckMap.delete(socket.id);
     try {
       await Truck.findOneAndUpdate({ truckId }, { status: "offline" });
     } catch (err) {
@@ -2320,7 +2610,16 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("truck:contact-dispatch", data);
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
+    const truckId = socketTruckMap.get(socket.id);
+    if (truckId) {
+      socketTruckMap.delete(socket.id);
+      try {
+        await Truck.findOneAndUpdate({ truckId }, { status: 'offline' });
+      } catch (_) {}
+      io.emit('truck:status', { truckId, status: 'offline' });
+      console.log(`[Socket] Truck ${truckId} auto-offline on disconnect`);
+    }
     console.log(`Client disconnected: ${socket.id}`);
   });
 });

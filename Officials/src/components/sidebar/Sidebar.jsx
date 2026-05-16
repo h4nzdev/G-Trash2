@@ -16,7 +16,8 @@ import {
   CalendarDays,
   ChevronDown,
   Activity,
-  Shield
+  Shield,
+  Bug
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -50,7 +51,8 @@ const navGroups = [
   {
     label: "System",
     items: [
-      { path: "/settings", icon: Settings, label: "Settings" },
+      { path: "/settings",    icon: Settings, label: "Settings" },
+      { path: "/bug-reports", icon: Bug,      label: "Bug Reports" },
     ]
   }
 ];

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Truck, Plus, Trash2, RefreshCw, Copy, Check, X } from 'lucide-react';
+import { Truck, Plus, Trash2, RefreshCw, Copy, Check, X, Share2 } from 'lucide-react';
 import API from '../config';
 
 export default function FleetManagement() {
@@ -15,6 +15,8 @@ export default function FleetManagement() {
   const [driverId, setDriverId] = useState('');
   const [driverImage, setDriverImage] = useState(null);
   const [route, setRoute] = useState('');
+  const [truckType, setTruckType] = useState('dedicated');
+  const [serviceBarangays, setServiceBarangays] = useState([]);
 
   // Success modal
   const [generatedEntry, setGeneratedEntry] = useState(null);
@@ -57,9 +59,22 @@ export default function FleetManagement() {
     }
   };
 
+  // Unique barangays from existing routes (for shared truck assignment)
+  const routeBarangays = [...new Set(routes.map(r => r.barangay).filter(Boolean))].sort();
+
+  const toggleServiceBarangay = (brgy) => {
+    setServiceBarangays(prev =>
+      prev.includes(brgy) ? prev.filter(b => b !== brgy) : [...prev, brgy]
+    );
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     if (!driverName.trim()) return;
+    if (truckType === 'shared' && serviceBarangays.length === 0) {
+      alert('Please select at least one barangay this shared truck will serve.');
+      return;
+    }
     setSubmitting(true);
     try {
       const { data } = await axios.post(`${API}/api/fleet`, {
@@ -67,6 +82,8 @@ export default function FleetManagement() {
         driverId: driverId.trim(),
         driverImage,
         route,
+        type: truckType,
+        serviceBarangays: truckType === 'shared' ? serviceBarangays : [],
       });
       setGeneratedEntry(data);
       setFleet((prev) => [data, ...prev]);
@@ -74,6 +91,8 @@ export default function FleetManagement() {
       setDriverId('');
       setDriverImage(null);
       setRoute('');
+      setTruckType('dedicated');
+      setServiceBarangays([]);
     } catch (err) {
       alert(err?.response?.data?.error || 'Registration failed');
     } finally {
@@ -158,6 +177,62 @@ export default function FleetManagement() {
             </select>
           </div>
 
+          {/* Truck Type */}
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Truck Type</label>
+            <div className="flex rounded-xl overflow-hidden border border-slate-200">
+              <button
+                type="button"
+                onClick={() => { setTruckType('dedicated'); setServiceBarangays([]); }}
+                className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${truckType === 'dedicated' ? 'bg-emerald-700 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+              >
+                Dedicated
+              </button>
+              <button
+                type="button"
+                onClick={() => setTruckType('shared')}
+                className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${truckType === 'shared' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+              >
+                Shared
+              </button>
+            </div>
+          </div>
+
+          {/* Service Barangays — shown only for shared trucks */}
+          {truckType === 'shared' && (
+            <div className="w-full">
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                Service Barangays <span className="text-red-500">*</span>
+                <span className="ml-1 font-normal text-slate-400">(which barangays does this truck rotate through?)</span>
+              </label>
+              {routeBarangays.length > 0 ? (
+                <div className="flex flex-wrap gap-2 p-3 border border-slate-200 rounded-xl bg-slate-50">
+                  {routeBarangays.map(brgy => (
+                    <button
+                      key={brgy}
+                      type="button"
+                      onClick={() => toggleServiceBarangay(brgy)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                        serviceBarangays.includes(brgy)
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                      }`}
+                    >
+                      {serviceBarangays.includes(brgy) ? '✓ ' : ''}{brgy}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  No routes with barangay assignments found. Create routes in Route Builder first.
+                </p>
+              )}
+              {serviceBarangays.length > 0 && (
+                <p className="text-xs text-blue-600 mt-1">{serviceBarangays.length} barangay{serviceBarangays.length > 1 ? 's' : ''} selected</p>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs font-semibold text-slate-500 mb-1.5">Driver ID Picture</label>
             <input
@@ -211,8 +286,8 @@ export default function FleetManagement() {
               <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
                 <th className="px-6 py-3 text-left">Truck ID</th>
                 <th className="px-6 py-3 text-left">Driver</th>
-                <th className="px-6 py-3 text-left">Driver ID</th>
-                <th className="px-6 py-3 text-left">Route</th>
+                <th className="px-6 py-3 text-left">Type</th>
+                <th className="px-6 py-3 text-left">Coverage</th>
                 <th className="px-6 py-3">Registered</th>
                 <th className="px-6 py-3" />
               </tr>
@@ -241,11 +316,27 @@ export default function FleetManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
-                      {t.driverId || 'N/A'}
-                    </span>
+                    {t.type === 'shared' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold rounded-full">
+                        <Share2 className="w-3 h-3" /> Shared
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
+                        <Truck className="w-3 h-3" /> Dedicated
+                      </span>
+                    )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{t.route || <span className="text-slate-300">—</span>}</td>
+                  <td className="px-6 py-4">
+                    {t.type === 'shared' && t.serviceBarangays?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {t.serviceBarangays.map(b => (
+                          <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100">{b}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-slate-500">{t.barangay || t.route || <span className="text-slate-300">—</span>}</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-xs text-slate-400">
                     {new Date(t.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>

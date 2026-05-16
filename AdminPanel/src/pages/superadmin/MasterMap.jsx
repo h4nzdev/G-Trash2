@@ -4,9 +4,9 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { 
-  Truck, Map as MapIcon, Shield, 
-  Layers, Navigation, AlertTriangle 
+import {
+  Truck, Map as MapIcon, Shield,
+  Layers, Navigation, AlertTriangle, Wifi
 } from 'lucide-react';
 import API from '../../config';
 import truckIconImg from '../../../assets/truck-icon.png';
@@ -41,13 +41,50 @@ const BARANGAY_COLORS = {
   "Talamban": "#EF4444"
 };
 
+const CEBU_CITY_OUTLINE = [
+  [10.4215, 123.8572], [10.4198, 123.8712], [10.4148, 123.8825],
+  [10.4062, 123.8945], [10.3945, 123.9068], [10.3835, 123.9152],
+  [10.3712, 123.9212], [10.3582, 123.9248], [10.3448, 123.9232],
+  [10.3318, 123.9195], [10.3188, 123.9148], [10.3062, 123.9085],
+  [10.2945, 123.9025], [10.2828, 123.8962], [10.2712, 123.8885],
+  [10.2598, 123.8798], [10.2492, 123.8698], [10.2395, 123.8595],
+  [10.2302, 123.8478], [10.2225, 123.8352], [10.2168, 123.8218],
+  [10.2142, 123.8072], [10.2148, 123.7928], [10.2188, 123.7802],
+  [10.2268, 123.7702], [10.2385, 123.7638], [10.2525, 123.7602],
+  [10.2678, 123.7598], [10.2835, 123.7632], [10.2988, 123.7702],
+  [10.3128, 123.7782], [10.3262, 123.7868], [10.3395, 123.7968],
+  [10.3528, 123.8058], [10.3658, 123.8152], [10.3788, 123.8252],
+  [10.3908, 123.8358], [10.4015, 123.8452], [10.4108, 123.8512],
+  [10.4215, 123.8572],
+];
+
+async function fetchCebuCityBoundary() {
+  try {
+    const query = `[out:json][timeout:15];relation["name"="Cebu City"]["admin_level"~"^[67]$"];out geom;`;
+    const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rel = data.elements?.[0];
+    if (!rel?.members) return null;
+    const outer = rel.members.filter(m => m.type === 'way' && m.role === 'outer');
+    const coords = outer.flatMap(m => (m.geometry || []).map(pt => [pt.lat, pt.lon]));
+    return coords.length > 3 ? coords : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function MasterMap() {
   const [trucks, setTrucks] = useState({});
   const [routes, setRoutes] = useState([]);
   const [reports, setReports] = useState([]);
+  const [garbageAreas, setGarbageAreas] = useState([]);
   const [showRoutes, setShowRoutes] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [showReports, setShowReports] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showCityBoundary, setShowCityBoundary] = useState(true);
+  const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   const [dbBoundaries, setDbBoundaries] = useState([]);
   const [isSatellite, setIsSatellite] = useState(false);
   
@@ -58,35 +95,44 @@ export default function MasterMap() {
   };
 
   useEffect(() => {
-    // Initial data fetch
+    fetchCebuCityBoundary().then(coords => { if (coords) setCebuCityBoundary(coords); });
+  }, []);
+
+  useEffect(() => {
     const fetchData = async () => {
       try {
-        const [trucksRes, routesRes, reportsRes, boundariesRes] = await Promise.all([
+        const [trucksRes, routesRes, reportsRes, boundariesRes, areasRes] = await Promise.all([
           axios.get(`${API}/api/trucks`),
           axios.get(`${API}/api/routes`),
           axios.get(`${API}/api/reports`),
-          axios.get(`${API}/api/barangays/boundaries`)
+          axios.get(`${API}/api/barangays/boundaries`),
+          axios.get(`${API}/api/garbage-areas`),
         ]);
-        
         const truckMap = {};
         trucksRes.data.forEach(t => { truckMap[t.truckId] = t; });
         setTrucks(truckMap);
         setRoutes(routesRes.data);
-        setReports(reportsRes.data);
+        setReports(reportsRes.data.filter(r => r.lat && r.lng));
         setDbBoundaries(boundariesRes.data);
+        setGarbageAreas(areasRes.data);
       } catch (err) {
         console.error('Failed to fetch map data:', err);
       }
     };
     fetchData();
 
-    // Socket setup for real-time tracking
     const socket = io(API);
     socket.on('truck:location:update', (update) => {
       setTrucks(prev => ({
         ...prev,
-        [update.truckId]: { ...prev[update.truckId], ...update }
+        [update.truckId]: { ...prev[update.truckId], ...update },
       }));
+    });
+    socket.on('garbage-area:updated', (area) => {
+      setGarbageAreas(prev => {
+        const idx = prev.findIndex(a => a._id === area._id);
+        return idx >= 0 ? prev.map((a, i) => (i === idx ? area : a)) : [...prev, area];
+      });
     });
 
     return () => socket.disconnect();
@@ -118,17 +164,32 @@ export default function MasterMap() {
             <Shield className="w-4 h-4" />
             Boundaries
           </button>
-          <button 
+          <button
             onClick={() => setShowReports(!showReports)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showReports ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <AlertTriangle className="w-4 h-4" />
             Incident Reports
           </button>
-          
+          <button
+            onClick={() => setShowHeatmap(!showHeatmap)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showHeatmap ? 'bg-teal-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Wifi className="w-4 h-4" />
+            IoT Heatmap
+          </button>
+
           <div className="w-px h-6 bg-slate-200 mx-1" />
           
-          <button 
+          <button
+            onClick={() => setShowCityBoundary(!showCityBoundary)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showCityBoundary ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Layers className="w-4 h-4" />
+            City Outline
+          </button>
+
+          <button
             onClick={() => setIsSatellite(!isSatellite)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${isSatellite ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
@@ -175,18 +236,26 @@ export default function MasterMap() {
             </Polygon>
           ))}
 
-          {/* Active Routes */}
-          {showRoutes && routes.map(route => (
-            <Polyline 
-              key={route._id}
-              positions={route.routeCoords || []}
-              pathOptions={{ 
-                color: BARANGAY_COLORS[route.barangay] || '#6366f1', 
-                weight: 4,
-                opacity: 0.6
-              }}
-            />
-          ))}
+          {/* Active Routes — prefer routeCoords, fall back to waypoints */}
+          {showRoutes && routes.map(route => {
+            const coords = route.routeCoords?.length > 1
+              ? route.routeCoords
+              : route.waypoints?.length >= 2
+                ? route.waypoints.map(wp => [wp.lat, wp.lng])
+                : null;
+            if (!coords) return null;
+            return (
+              <Polyline
+                key={route._id}
+                positions={coords}
+                pathOptions={{
+                  color: BARANGAY_COLORS[route.barangay] || '#6366f1',
+                  weight: 4,
+                  opacity: 0.6,
+                }}
+              />
+            );
+          })}
 
           {/* Incident Reports */}
           {showReports && reports.map(report => (
@@ -214,10 +283,45 @@ export default function MasterMap() {
             </CircleMarker>
           ))}
 
-          {/* Live Trucks */}
-          {Object.values(trucks).map(truck => (
-            <Marker 
-              key={truck.truckId} 
+          {/* Cebu City Boundary */}
+          {showCityBoundary && cebuCityBoundary.length > 2 && (
+            <Polyline
+              positions={cebuCityBoundary}
+              pathOptions={{ color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7' }}
+            />
+          )}
+
+          {/* IoT Air Quality Heatmap */}
+          {showHeatmap && garbageAreas.map(area => {
+            const color = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#FDD835' : '#4CAF50';
+            const fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.15;
+            const radius = 180 + Math.round((area.intensity || 0.5) * 120);
+            return (
+              <CircleMarker
+                key={area._id}
+                center={[area.lat, area.lng]}
+                radius={12}
+                pathOptions={{ color, fillColor: color, fillOpacity: fillOp, weight: 2, opacity: 0.8 }}
+              >
+                <Popup>
+                  <div className="p-2 min-w-[140px]">
+                    <p className="text-sm font-bold text-slate-900">{area.name}</p>
+                    <p className="text-[10px] font-bold uppercase mt-0.5" style={{ color }}>{area.status}</p>
+                    {area.barangay && <p className="text-[10px] text-slate-400 mt-1">Brgy. {area.barangay}</p>}
+                    <div className="mt-2 text-[11px] text-slate-600 space-y-0.5">
+                      <p>NH₃: {area.ammonia || 'N/A'}</p>
+                      <p>CH₄: {area.methane || 'N/A'}</p>
+                    </div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+
+          {/* Live Trucks — only render when lat/lng are valid */}
+          {Object.values(trucks).filter(t => t.lat && t.lng).map(truck => (
+            <Marker
+              key={truck.truckId}
               position={[truck.lat, truck.lng]}
               icon={createTruckIcon()}
             >
@@ -260,12 +364,31 @@ export default function MasterMap() {
               <span className="text-xs font-semibold text-slate-600">Active Trucks</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-blue-500 opacity-60" />
+              <div className="w-3 h-3 rounded-full bg-indigo-500 opacity-60" />
               <span className="text-xs font-semibold text-slate-600">Planned Routes</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-red-500 opacity-40" />
-              <span className="text-xs font-semibold text-slate-600">Incident Heatmap</span>
+              <span className="text-xs font-semibold text-slate-600">Incident Reports</span>
+            </div>
+            <div className="border-t border-slate-100 pt-2 mt-1 space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">IoT Air Quality</p>
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-xs font-semibold text-slate-600">Critical</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-yellow-400" />
+                <span className="text-xs font-semibold text-slate-600">Moderate</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-green-500" />
+                <span className="text-xs font-semibold text-slate-600">Clean</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-0 border-t-2 border-blue-600 border-dashed" />
+              <span className="text-xs font-semibold text-slate-600">City Boundary</span>
             </div>
           </div>
         </div>

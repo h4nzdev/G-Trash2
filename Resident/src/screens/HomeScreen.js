@@ -110,6 +110,7 @@ export default function HomeScreen({ navigation }) {
   const userLocationRef = useRef(null);
   const truckAlertFiredRef = useRef(new Set());
   const toastTimerRef = useRef(null);
+  const aqAlertLastFiredRef = useRef(0);
 
   // Radar pulse animation values
   const pulseAnim1 = useRef(new Animated.Value(0)).current;
@@ -125,6 +126,54 @@ export default function HomeScreen({ navigation }) {
   const [checklist, setChecklist] = useState(
     CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
   );
+  const [iotAreas, setIotAreas] = useState([]);
+  const [latestIotReading, setLatestIotReading] = useState(null);
+  const [todayPickupDone, setTodayPickupDone] = useState(false);
+
+  const userBarangayRef = useRef(user?.barangay);
+  useEffect(() => { userBarangayRef.current = user?.barangay; }, [user]);
+
+  // Fetch barangay IoT areas on mount
+  useEffect(() => {
+    const brgy = user?.barangay;
+    if (!brgy) return;
+    fetch(`${API_URL}/api/garbage-areas?barangay=${encodeURIComponent(brgy)}`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setIotAreas(data); })
+      .catch(() => {});
+  }, []);
+
+  // Check if today's pickup already happened (so banner shows even after app restart)
+  useEffect(() => {
+    const brgy = user?.barangay;
+    if (!brgy) return;
+    fetch(`${API_URL}/api/pickup?barangay=${encodeURIComponent(brgy)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const today = getTodayYMD();
+        const done = data.some((run) => {
+          const ts = run.createdAt || run.completedAt;
+          return ts && ts.slice(0, 10) === today;
+        });
+        if (done) setTodayPickupDone(true);
+      })
+      .catch(() => {});
+  }, []);
+
+  const aqData = useMemo(() => {
+    const order = { critical: 0, moderate: 1, clean: 2 };
+    const aqMap = { Hazardous: 'critical', Unhealthy: 'critical', Moderate: 'moderate', Good: 'clean' };
+    const readingArea = latestIotReading ? {
+      status: aqMap[latestIotReading.airQuality] || 'clean',
+      ammonia: `${latestIotReading.ammonia} ppm`,
+      methane: `${latestIotReading.methane}%`,
+    } : null;
+    if (!iotAreas.length) return readingArea;
+    const worstArea = [...iotAreas].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3))[0];
+    if (!readingArea) return worstArea;
+    return (order[readingArea.status] ?? 3) < (order[worstArea.status] ?? 3) ? readingArea : worstArea;
+  }, [iotAreas, latestIotReading]);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -281,6 +330,43 @@ export default function HomeScreen({ navigation }) {
       }
     });
 
+    socket.on("garbage-area:updated", (area) => {
+      const brgy = userBarangayRef.current;
+      if (brgy && area.barangay !== brgy) return;
+      setIotAreas((prev) => {
+        const idx = prev.findIndex((a) => a._id === area._id);
+        return idx >= 0
+          ? prev.map((a) => (a._id === area._id ? area : a))
+          : [...prev, area];
+      });
+    });
+
+    socket.on("iot:reading", (reading) => {
+      const brgy = userBarangayRef.current;
+      if (brgy && reading.barangay !== brgy) return;
+      setLatestIotReading(reading);
+      if (reading.airQuality === "Unhealthy" || reading.airQuality === "Hazardous") {
+        const now = Date.now();
+        if (now - aqAlertLastFiredRef.current > 5 * 60 * 1000) {
+          aqAlertLastFiredRef.current = now;
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Poor Air Quality Alert",
+              body: `${reading.airQuality} air detected in ${reading.location || reading.barangay || "your area"}. NH₃: ${reading.ammonia} ppm, CH₄: ${reading.methane}%.`,
+              sound: true,
+            },
+            trigger: null,
+          }).catch(() => {});
+        }
+      }
+    });
+
+    socket.on("pickup:completed", (run) => {
+      if (userBarangayRef.current && run.barangay === userBarangayRef.current) {
+        setTodayPickupDone(true);
+      }
+    });
+
     return () => {
       socket.disconnect();
       clearTimeout(toastTimerRef.current);
@@ -355,9 +441,9 @@ export default function HomeScreen({ navigation }) {
 
   // Zone visual driven by real distance when available
   const zoneData = useMemo(() => {
-    let z1Label = nearestTruck ? t("live") : t("no_trucks_active");
+    let z1Label = nearestTruck ? t("live") : "—";
     let z2Label = onlineTrucks.length > 0 ? t("approaching") : "—";
-    let z3Label = onlineTrucks.length === 0 ? t("no_trucks_active") : t("area");
+    let z3Label = onlineTrucks.length === 0 ? "—" : t("area");
     if (distToTruck != null) {
       if (distToTruck < 350) {
         z1Label = t("very_close");
@@ -413,7 +499,23 @@ export default function HomeScreen({ navigation }) {
         variant: "worrying"
       };
     }
-    
+
+    // AQ CRITICAL: Poor air quality in barangay
+    if (aqData?.status === 'critical') {
+      return {
+        insight: `⚠ Poor air quality detected in ${user?.barangay || 'your area'}! Consider staying indoors and avoid prolonged outdoor exposure.`,
+        variant: "worrying"
+      };
+    }
+
+    // AQ MODERATE: Moderate air quality
+    if (aqData?.status === 'moderate') {
+      return {
+        insight: `Air quality is moderate in ${user?.barangay || 'your area'}. Sensitive groups should limit outdoor activities.`,
+        variant: "worrying"
+      };
+    }
+
     // ALERT: Truck is nearby
     if (distToTruck !== null && distToTruck < 1000) {
       const mins = Math.ceil(distToTruck / 200);
@@ -458,7 +560,7 @@ export default function HomeScreen({ navigation }) {
       insight: t("tarsi_idle"),
       variant: "default"
     };
-  }, [distToTruck, onlineTrucks.length, firstSchedule, binReady, t]);
+  }, [distToTruck, onlineTrucks.length, firstSchedule, binReady, t, aqData, user?.barangay, latestIotReading]);
 
   const pulseTier = useMemo(() => {
     if (distToTruck !== null) {
@@ -594,50 +696,73 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* Tarsi mascot assistant — anchored to a green divider, contextual insight */}
-        <TarsiAssistant 
-          insight={tarsiData.insight} 
-          variant={tarsiData.variant} 
+        <TarsiAssistant
+          insight={tarsiData.insight}
+          variant={tarsiData.variant}
         />
+
+        {/* Pickup completion congratulation banner */}
+        {todayPickupDone && (
+          <View style={styles.pickupDoneBanner}>
+            <MaterialIcons name="check-circle" size={22} color="#006A3B" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pickupDoneTitle}>Collection Complete!</Text>
+              <Text style={styles.pickupDoneSubtitle}>
+                Today's pickup for {user?.barangay || 'your barangay'} is done. Good job disposing your trash!
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Bento Grid Cards */}
         <View style={styles.cardGrid}>
-          {/* Air Quality Card (decorative — no sensor backend yet) */}
-          <View style={styles.airQualityCard}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.cardTitle}>{t("air_quality")}</Text>
-                <View style={styles.statusRow}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.statusText}>Moderate</Text>
+          {/* Air Quality Card */}
+          {(() => {
+            const dotColor = aqData?.status === 'critical' ? '#E53935'
+              : aqData?.status === 'moderate' ? '#F59E0B'
+              : aqData ? '#4CAF50'
+              : '#F5A623';
+            const statusLabel = aqData?.status === 'critical' ? 'Poor'
+              : aqData?.status === 'moderate' ? 'Moderate'
+              : aqData ? 'Good'
+              : 'No data';
+            const statusColor = aqData?.status === 'critical' ? '#DC2626'
+              : aqData?.status === 'moderate' ? '#92400E'
+              : aqData ? '#065F46'
+              : '#92400E';
+            return (
+              <View style={styles.airQualityCard}>
+                <View style={styles.cardHeader}>
+                  <View>
+                    <Text style={styles.cardTitle}>{t("air_quality")}</Text>
+                    <View style={styles.statusRow}>
+                      <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+                      <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+                    </View>
+                  </View>
+                  <MaterialIcons name="air" size={28} color="#6B7280" />
+                </View>
+
+                {/* Mini Chart */}
+                <View style={styles.chartContainer}>
+                  {[40, 55, 45, 70, 60, 85, 75].map((h, i) => (
+                    <View key={i} style={[styles.chartBar, { height: h, backgroundColor: BAR_COLORS[i] }]} />
+                  ))}
+                </View>
+
+                <View style={styles.metricsRow}>
+                  <View style={styles.metricItem}>
+                    <Text style={styles.metricLabel}>Ammonia</Text>
+                    <Text style={styles.metricValue}>{aqData?.ammonia ?? '—'}</Text>
+                  </View>
+                  <View style={[styles.metricItem, styles.metricDivider]}>
+                    <Text style={styles.metricLabel}>Methane</Text>
+                    <Text style={styles.metricValue}>{aqData?.methane ?? '—'}</Text>
+                  </View>
                 </View>
               </View>
-              <MaterialIcons name="air" size={28} color="#6B7280" />
-            </View>
-
-            {/* Mini Chart */}
-            <View style={styles.chartContainer}>
-              {[40, 55, 45, 70, 60, 85, 75].map((h, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.chartBar,
-                    { height: h, backgroundColor: BAR_COLORS[i] },
-                  ]}
-                />
-              ))}
-            </View>
-
-            <View style={styles.metricsRow}>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>Ammonia</Text>
-                <Text style={styles.metricValue}>12 ppm</Text>
-              </View>
-              <View style={[styles.metricItem, styles.metricDivider]}>
-                <Text style={styles.metricLabel}>Methane</Text>
-                <Text style={styles.metricValue}>0.8%</Text>
-              </View>
-            </View>
-          </View>
+            );
+          })()}
 
           {/* Upcoming Collection Card */}
           <View style={styles.collectionCard}>
@@ -746,8 +871,8 @@ export default function HomeScreen({ navigation }) {
                   >
                     <MaterialIcons
                       name={zone.icon}
-                      size={zone.highlighted ? 28 : 20}
-                      color={zone.highlighted ? "#FFFFFF" : "#6B7280"}
+                      size={22}
+                      color={zone.highlighted ? "#FFFFFF" : "#9CA3AF"}
                     />
                   </View>
                   <Text
@@ -759,6 +884,7 @@ export default function HomeScreen({ navigation }) {
                     {zone.name}
                   </Text>
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.zoneDistance,
                       zone.highlighted && styles.zoneDistanceHighlighted,
@@ -1129,6 +1255,28 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 32,
   },
+  pickupDoneBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#F0FFF4",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    padding: 14,
+    marginBottom: 16,
+  },
+  pickupDoneTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  pickupDoneSubtitle: {
+    fontSize: 12,
+    color: "#047857",
+    marginTop: 2,
+    lineHeight: 16,
+  },
   airQualityCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
@@ -1451,7 +1599,7 @@ const styles = StyleSheet.create({
     right: 40,
     height: 2,
     backgroundColor: "#BECABE",
-    top: 20,
+    top: 22,
   },
   zoneItem: {
     alignItems: "center",
@@ -1459,22 +1607,23 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   zoneCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    borderWidth: 4,
-    borderColor: "#F0EDED",
+    borderWidth: 3,
+    borderColor: "#E5E7EB",
     justifyContent: "center",
     alignItems: "center",
   },
   zoneCircleHighlighted: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     backgroundColor: "#006E1C",
-    borderWidth: 4,
     borderColor: "#86D896",
+    shadowColor: "#006E1C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 6,
   },
   zoneName: {
     fontSize: 12,

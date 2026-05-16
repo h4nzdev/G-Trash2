@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer } from 'lucide-react';
+import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone } from 'lucide-react';
 import Sidebar from '../components/sidebar/Sidebar';
 import TopBar from '../components/shared/TopBar';
 import API from '../config';
@@ -50,6 +50,15 @@ export default function DashboardLayout() {
           setAlerts(prev => prev.filter(a => a.id !== id));
         }, 15000);
       }
+    });
+
+    // System announcements from Admin Panel
+    socket.on('announcement:new', (data) => {
+      const id = Date.now() + Math.random();
+      setAlerts(prev => [{ ...data, id, type: 'announcement', annType: data.type }, ...prev].slice(0, 5));
+      setTimeout(() => {
+        setAlerts(prev => prev.filter(a => a.id !== id));
+      }, 20000);
     });
 
     return () => socket.disconnect();
@@ -156,6 +165,40 @@ export default function DashboardLayout() {
             >
               View Reports
             </button>
+          </div>
+          <button onClick={() => dismissAlert(alert.id)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }
+
+    if (alert.type === 'announcement') {
+      const annColors = {
+        info:     { border: 'border-blue-500',    iconBg: 'bg-blue-100',    iconColor: 'text-blue-600'    },
+        success:  { border: 'border-emerald-500', iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
+        warning:  { border: 'border-amber-500',   iconBg: 'bg-amber-100',   iconColor: 'text-amber-600'   },
+        critical: { border: 'border-red-500',     iconBg: 'bg-red-100',     iconColor: 'text-red-600'     },
+      };
+      const c2 = annColors[alert.annType] ?? annColors.info;
+      return (
+        <div
+          key={alert.id}
+          className={`bg-white border-l-4 ${c2.border} rounded-xl shadow-2xl p-4 flex gap-3 pointer-events-auto`}
+          style={{ animation: 'slideInRight 0.3s ease-out' }}
+        >
+          <div className={`w-10 h-10 ${c2.iconBg} rounded-full flex items-center justify-center flex-shrink-0`}>
+            <Megaphone className={`w-5 h-5 ${c2.iconColor}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                System Announcement
+              </span>
+            </div>
+            <p className="text-xs text-slate-900 font-bold leading-snug">{alert.title}</p>
+            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed line-clamp-2">{alert.message}</p>
+            <p className="text-[10px] text-slate-400 mt-1">From: {alert.createdBy || 'Admin'}</p>
           </div>
           <button onClick={() => dismissAlert(alert.id)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
             <X className="w-4 h-4" />

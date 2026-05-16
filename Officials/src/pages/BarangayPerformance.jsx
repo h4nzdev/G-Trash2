@@ -1,9 +1,60 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf } from 'lucide-react';
+import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi } from 'lucide-react';
 import ProgressBar from '../components/shared/ProgressBar';
 import API from '../config';
 
 const ROWS_PER_PAGE = 6;
+
+const CATEGORIES = [
+  {
+    key: 'reportScore',
+    label: 'Report Activity',
+    subLabel: 'votes & resolutions',
+    winnerLabel: 'Most Active Reports',
+    icon: ThumbsUp,
+    color: 'blue',
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-600',
+    valueColor: 'text-blue-600',
+    barColor: 'blue',
+  },
+  {
+    key: 'iotScore',
+    label: 'IoT / Air Quality',
+    subLabel: 'sensor readings',
+    winnerLabel: 'Best Air Quality',
+    icon: Wifi,
+    color: 'teal',
+    iconBg: 'bg-teal-100',
+    iconColor: 'text-teal-600',
+    valueColor: 'text-teal-600',
+    barColor: 'teal',
+  },
+  {
+    key: 'collectionScore',
+    label: 'Collections',
+    subLabel: 'pickups & verifications',
+    winnerLabel: 'Most Trash Collected',
+    icon: Trash2,
+    color: 'emerald',
+    iconBg: 'bg-emerald-100',
+    iconColor: 'text-emerald-600',
+    valueColor: 'text-emerald-600',
+    barColor: 'emerald',
+  },
+  {
+    key: 'responseScore',
+    label: 'Response Time',
+    subLabel: 'official action speed',
+    winnerLabel: 'Fastest Response',
+    icon: Clock,
+    color: 'orange',
+    iconBg: 'bg-orange-100',
+    iconColor: 'text-orange-500',
+    valueColor: 'text-orange-500',
+    barColor: 'orange',
+  },
+];
 
 export default function BarangayPerformance() {
   const [rankings, setRankings] = useState([]);
@@ -46,13 +97,7 @@ export default function BarangayPerformance() {
 
   const paged = sorted.slice(page * ROWS_PER_PAGE, page * ROWS_PER_PAGE + ROWS_PER_PAGE);
   const totalPages = Math.ceil(sorted.length / ROWS_PER_PAGE);
-
-  // Derive category winners from real data
-  const topByPickups = [...rankings].sort((a, b) => (b.pickupCount ?? 0) - (a.pickupCount ?? 0))[0];
-  const topByArea = [...rankings].sort((a, b) => (b.areaQualityPts ?? 0) - (a.areaQualityPts ?? 0))[0];
-  const topByVotes = [...rankings].sort((a, b) => (b.reportVoteCount ?? 0) - (a.reportVoteCount ?? 0))[0];
-
-  const maxPts = rankings[0]?.points || 1;
+  const maxPts = Math.max(...rankings.map(r => r.points || 0), 1);
 
   const SortIcon = ({ k }) => (
     <span className="inline-flex flex-col ml-1">
@@ -64,40 +109,65 @@ export default function BarangayPerformance() {
   const rankBorder = { 0: 'border-l-4 border-yellow-400', 1: 'border-l-4 border-slate-400', 2: 'border-l-4 border-amber-500' };
   const rankBadge = { 0: '🥇', 1: '🥈', 2: '🥉' };
 
+  const scoreColorMap = (score) => {
+    if (score >= 30) return 'text-emerald-700 font-bold';
+    if (score >= 10) return 'text-slate-700';
+    if (score < 0) return 'text-red-500';
+    return 'text-slate-500';
+  };
+
   return (
     <div className="p-6 space-y-6">
-      {/* Category Winners */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
-            <Trophy className="w-6 h-6 text-yellow-600" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Most Trash Pickups</p>
-            <p className="text-base font-bold text-slate-900">{topByPickups?.barangay || '—'}</p>
-            <p className="text-xs text-emerald-600 font-semibold">{topByPickups?.pickupCount ?? 0} confirmed pickups</p>
-          </div>
-        </div>
+      {/* Category Winners — 4 cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {CATEGORIES.map((cat) => {
+          const winner = [...rankings].sort((a, b) => (b[cat.key] ?? 0) - (a[cat.key] ?? 0))[0];
+          const Icon = cat.icon;
+          return (
+            <div key={cat.key} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
+              <div className={`w-12 h-12 ${cat.iconBg} rounded-xl flex items-center justify-center flex-shrink-0`}>
+                <Icon className={`w-6 h-6 ${cat.iconColor}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500 font-medium">{cat.winnerLabel}</p>
+                <p className="text-sm font-bold text-slate-900 truncate">{winner?.barangay || '—'}</p>
+                <p className={`text-xs font-semibold ${cat.valueColor}`}>{winner?.[cat.key] ?? 0} pts</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-            <Medal className="w-6 h-6 text-emerald-600" />
+      {/* Score Breakdown Cards */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-sm font-bold text-slate-800 mb-4">Scoring Breakdown</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs text-slate-500">
+          <div className="space-y-1">
+            <p className="font-semibold text-blue-600 uppercase tracking-wide">Reports</p>
+            <p>Upvote: +1 pt</p>
+            <p>Resolution confirmed: +20 pts</p>
+            <p>Disputed by resident: -15 pts</p>
+            <p>SLA escalated: -10 pts</p>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Cleanest Area</p>
-            <p className="text-base font-bold text-slate-900">{topByArea?.barangay || '—'}</p>
-            <p className="text-xs text-emerald-600 font-semibold">{topByArea?.areaQualityPts ?? 0} area quality pts</p>
+          <div className="space-y-1">
+            <p className="font-semibold text-teal-600 uppercase tracking-wide">IoT / Air Quality</p>
+            <p>Good reading: +3 pts</p>
+            <p>Moderate reading: +1 pt</p>
+            <p>Unhealthy reading: -2 pts</p>
+            <p>Hazardous reading: -5 pts</p>
           </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-            <Award className="w-6 h-6 text-blue-600" />
+          <div className="space-y-1">
+            <p className="font-semibold text-emerald-600 uppercase tracking-wide">Collections</p>
+            <p>Pickup completed: +5 pts</p>
+            <p>Resident confirms: +10 pts</p>
+            <p>Resident disputes: -5 pts</p>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Most Community Votes</p>
-            <p className="text-base font-bold text-slate-900">{topByVotes?.barangay || '—'}</p>
-            <p className="text-xs text-blue-600 font-semibold">{topByVotes?.reportVoteCount ?? 0} report votes</p>
+          <div className="space-y-1">
+            <p className="font-semibold text-orange-500 uppercase tracking-wide">Response Time</p>
+            <p>Under 6 hours: +15 pts</p>
+            <p>6–24 hours: +10 pts</p>
+            <p>24–48 hours: +5 pts</p>
+            <p>Over 48 hours: 0 pts</p>
           </div>
         </div>
       </div>
@@ -107,7 +177,7 @@ export default function BarangayPerformance() {
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-slate-900">Barangay Leaderboard</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Real-time scores — pickups, votes & area quality</p>
+            <p className="text-xs text-slate-500 mt-0.5">Real-time scores across reports, IoT, collections & response time</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400">{rankings.length} barangay{rankings.length !== 1 ? 's' : ''}</span>
@@ -130,7 +200,7 @@ export default function BarangayPerformance() {
           <div className="py-16 text-center text-slate-400">
             <Trophy className="w-10 h-10 mx-auto mb-3 text-slate-300" />
             <p className="text-sm font-medium">No rankings yet</p>
-            <p className="text-xs mt-1">Scores accumulate as residents confirm pickups and cast votes</p>
+            <p className="text-xs mt-1">Scores accumulate as reports are resolved, trucks complete pickups, and IoT sensors report readings</p>
           </div>
         ) : (
           <>
@@ -139,19 +209,21 @@ export default function BarangayPerformance() {
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
                     {[
-                      { key: null, label: 'Rank' },
-                      { key: 'barangay', label: 'Barangay' },
-                      { key: 'pickupCount', label: 'Pickups' },
-                      { key: 'reportVoteCount', label: 'Votes' },
-                      { key: 'areaQualityPts', label: 'Area Quality' },
-                      { key: 'points', label: 'Total Points' },
-                    ].map(({ key, label }) => (
+                      { key: null,             label: 'Rank' },
+                      { key: 'barangay',       label: 'Barangay' },
+                      { key: 'reportScore',    label: 'Reports', Icon: ThumbsUp,  iconColor: 'text-blue-500' },
+                      { key: 'iotScore',       label: 'IoT',     Icon: Wifi,      iconColor: 'text-teal-500' },
+                      { key: 'collectionScore',label: 'Collect', Icon: Trash2,    iconColor: 'text-emerald-600' },
+                      { key: 'responseScore',  label: 'Response',Icon: Clock,     iconColor: 'text-orange-500' },
+                      { key: 'points',         label: 'Total Pts' },
+                    ].map(({ key, label, Icon, iconColor }) => (
                       <th
                         key={label}
                         onClick={key ? () => handleSort(key) : undefined}
-                        className={`px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider select-none ${key ? 'cursor-pointer hover:text-slate-700' : ''}`}
+                        className={`px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider select-none ${key ? 'cursor-pointer hover:text-slate-700' : ''}`}
                       >
-                        <span className="flex items-center gap-0.5">
+                        <span className="flex items-center gap-1">
+                          {Icon && <Icon className={`w-3 h-3 ${iconColor}`} />}
                           {label}
                           {key && <SortIcon k={key} />}
                         </span>
@@ -160,8 +232,7 @@ export default function BarangayPerformance() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {paged.map((b, pageIndex) => {
-                    const globalIndex = page * ROWS_PER_PAGE + pageIndex;
+                  {paged.map((b) => {
                     const originalRank = sorted.findIndex(r => r._id === b._id);
                     const barWidth = Math.round(((b.points || 0) / maxPts) * 100);
                     return (
@@ -169,36 +240,31 @@ export default function BarangayPerformance() {
                         key={b._id || b.barangay}
                         className={`hover:bg-slate-50 transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'}`}
                       >
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-4">
                           <span className="text-sm font-bold text-slate-600">
                             {rankBadge[originalRank] || `#${originalRank + 1}`}
                           </span>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-4">
                           <p className="text-sm font-semibold text-slate-900">{b.barangay || '—'}</p>
+                          <p className="text-xs text-slate-400">{b.pickupCount ?? 0} pickups · {b.reportVoteCount ?? 0} votes</p>
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-1.5 text-sm text-slate-700">
-                            <Trash2 className="w-3.5 h-3.5 text-emerald-600" />
-                            {b.pickupCount ?? 0}
-                          </div>
+                        <td className="px-4 py-4">
+                          <span className={`text-sm ${scoreColorMap(b.reportScore)}`}>{b.reportScore ?? 0}</span>
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-1.5 text-sm text-slate-700">
-                            <ThumbsUp className="w-3.5 h-3.5 text-blue-500" />
-                            {b.reportVoteCount ?? 0}
-                          </div>
+                        <td className="px-4 py-4">
+                          <span className={`text-sm ${scoreColorMap(b.iotScore)}`}>{b.iotScore ?? 0}</span>
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-1.5 text-sm text-slate-700">
-                            <Leaf className="w-3.5 h-3.5 text-emerald-500" />
-                            {b.areaQualityPts ?? 0}
-                          </div>
+                        <td className="px-4 py-4">
+                          <span className={`text-sm ${scoreColorMap(b.collectionScore)}`}>{b.collectionScore ?? 0}</span>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-4">
+                          <span className={`text-sm ${scoreColorMap(b.responseScore)}`}>{b.responseScore ?? 0}</span>
+                        </td>
+                        <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-bold text-emerald-700 w-10">{b.points ?? 0}</span>
-                            <div className="w-20">
+                            <div className="w-16">
                               <ProgressBar value={barWidth} max={100} color="emerald" />
                             </div>
                           </div>

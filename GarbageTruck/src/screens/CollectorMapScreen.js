@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
   TextInput,
+  AppState,
 } from "react-native";
 import {
   SafeAreaView,
@@ -23,6 +24,7 @@ import { WebView } from "react-native-webview";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { io } from "socket.io-client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import TRUCK_B64 from "../constants/truckBase64";
@@ -213,7 +215,19 @@ function buildLeafletHTML(truckB64) {
       }
       setTileLayer('topographic');
       window.setMapStyle = setTileLayer;
- 
+
+      var CEBU_OUTLINE = [[10.4215,123.8572],[10.4198,123.8712],[10.4148,123.8825],[10.4062,123.8945],[10.3945,123.9068],[10.3835,123.9152],[10.3712,123.9212],[10.3582,123.9248],[10.3448,123.9232],[10.3318,123.9195],[10.3188,123.9148],[10.3062,123.9085],[10.2945,123.9025],[10.2828,123.8962],[10.2712,123.8885],[10.2598,123.8798],[10.2492,123.8698],[10.2395,123.8595],[10.2302,123.8478],[10.2225,123.8352],[10.2168,123.8218],[10.2142,123.8072],[10.2148,123.7928],[10.2188,123.7802],[10.2268,123.7702],[10.2385,123.7638],[10.2525,123.7602],[10.2678,123.7598],[10.2835,123.7632],[10.2988,123.7702],[10.3128,123.7782],[10.3262,123.7868],[10.3395,123.7968],[10.3528,123.8058],[10.3658,123.8152],[10.3788,123.8252],[10.3908,123.8358],[10.4015,123.8452],[10.4108,123.8512],[10.4215,123.8572]];
+      var cityOutlineLayer = null;
+      window.toggleCityOutline = function(show) {
+        if (show && !cityOutlineLayer) {
+          cityOutlineLayer = L.polyline(CEBU_OUTLINE, { color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7', interactive: false }).addTo(map);
+        } else if (!show && cityOutlineLayer) {
+          map.removeLayer(cityOutlineLayer);
+          cityOutlineLayer = null;
+        }
+      };
+      window.toggleCityOutline(true);
+
       // Report marker icons
       function makeBinHtml(score) {
         var isHigh = score >= 5;
@@ -354,12 +368,30 @@ function buildLeafletHTML(truckB64) {
         return (brng + 360) % 360;
       }
 
+      var followMode = false;
+
       // Moves the arrow to the driver's real GPS position
       window.updateDriverPosition = function(lat, lng, bearing) {
         if (currentMarker) { map.removeLayer(currentMarker); }
         currentMarker = createArrowMarker(lat, lng, bearing || 0);
         currentMarker.addTo(map);
-        map.panTo([lat, lng]);
+        if (followMode) {
+          map.panTo([lat, lng], { animate: true, duration: 0.5 });
+        }
+      };
+
+      // Called when navigation starts — zooms in and enables auto-follow
+      window.startFollow = function(lat, lng, heading) {
+        followMode = true;
+        if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+        currentMarker = createArrowMarker(lat, lng, heading || 0);
+        currentMarker.addTo(map);
+        map.flyTo([lat, lng], 17, { duration: 1.2, easeLinearity: 0.25 });
+      };
+
+      // Called when navigation ends — disables auto-follow
+      window.stopFollow = function() {
+        followMode = false;
       };
 
       // Gray idle navigation arrow
@@ -477,8 +509,10 @@ export default function CollectorMapScreen() {
   const [stops, setStops] = useState([]);
   const [routeAssigned, setRouteAssigned] = useState(false);
   const [assignedRouteName, setAssignedRouteName] = useState('');
+  const [assignedRouteBarangay, setAssignedRouteBarangay] = useState('');
   const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
   const [activeScheduleId, setActiveScheduleId] = useState(null);
+  const [isPreferredRoute, setIsPreferredRoute] = useState(false);
 
   // Fetch all of today's scheduled routes for this truck
   const fetchTodaySchedules = useCallback(() => {
@@ -529,9 +563,41 @@ export default function CollectorMapScreen() {
     console.log(`[App] Route Effect Triggered. activeScheduleId: ${activeScheduleId}, hasTodaySchedules: ${!!todaySchedules}`);
     if (!activeScheduleId || !todaySchedules) {
       if (todaySchedules && todaySchedules.length === 0) {
-        console.log(`[App] No schedules available, clearing route.`);
-        setRouteAssigned(false);
-        setStops([]);
+        // No schedule — try preferred route from AsyncStorage
+        AsyncStorage.getItem('@truck_route_preference').then((val) => {
+          if (!val) { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; return; }
+          const pref = JSON.parse(val);
+          if (!pref?.id) { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; return; }
+          console.log(`[App] No schedule — loading preferred route: ${pref.name}`);
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', `${TRACKING_SERVER}/api/routes/${pref.id}`);
+          xhr.timeout = 6000;
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              try {
+                const route = JSON.parse(xhr.responseText);
+                if (route.waypoints?.length >= 1) {
+                  setStops(waypointsToStops(route.waypoints));
+                  setRouteAssigned(true);
+                  setIsPreferredRoute(true);
+                  setAssignedRouteName(route.name || '');
+                  setAssignedRouteBarangay(route.barangay || '');
+                  routeCoordsRef.current = route.routeCoords?.length > 1
+                    ? route.routeCoords
+                    : route.waypoints.map(wp => [wp.lat, wp.lng]);
+                } else {
+                  setRouteAssigned(false); setStops([]); routeCoordsRef.current = [];
+                }
+              } catch { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; }
+            } else {
+              setRouteAssigned(false); setStops([]); routeCoordsRef.current = [];
+            }
+          };
+          xhr.onerror = () => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
+          xhr.ontimeout = () => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
+          xhr.send();
+        }).catch(() => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; });
+
         routeCoordsRef.current = [];
       }
       return;
@@ -561,7 +627,9 @@ export default function CollectorMapScreen() {
           if (route.waypoints?.length >= 1) {
             setStops(waypointsToStops(route.waypoints));
             setRouteAssigned(true);
+            setIsPreferredRoute(false);
             setAssignedRouteName(route.name || '');
+            setAssignedRouteBarangay(route.barangay || '');
             routeCoordsRef.current = route.routeCoords?.length > 1
               ? route.routeCoords
               : route.waypoints.map(wp => [wp.lat, wp.lng]);
@@ -603,6 +671,7 @@ export default function CollectorMapScreen() {
   const [showTrashBins, setShowTrashBins] = useState(true);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showCityOutline, setShowCityOutline] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
 
@@ -809,7 +878,14 @@ export default function CollectorMapScreen() {
       );
     })();
 
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if ((nextState === 'background' || nextState === 'inactive') && navigationActiveRef.current) {
+        socket.emit('truck:offline', { truckId: TRUCK_ID });
+      }
+    });
+
     return () => {
+      appStateSub.remove();
       socket.emit("truck:offline", { truckId: TRUCK_ID });
       socket.disconnect();
       locationSub?.remove();
@@ -1037,9 +1113,9 @@ export default function CollectorMapScreen() {
     console.log(`🚛 [startNavigation] lat=${lat} lng=${lng} heading=${heading}`);
     console.log(`🚛 [startNavigation] server=${TRACKING_SERVER}`);
 
-    // Show truck on driver's own map
+    // Zoom to driver position and enable auto-follow
     webViewRef.current?.injectJavaScript(
-      `window.updateDriverPosition(${lat}, ${lng}, ${heading}); window.centerMap(${lat}, ${lng}); true;`,
+      `window.startFollow(${lat}, ${lng}, ${heading}); true;`,
     );
 
     // Upload location to MongoDB via XHR (more reliable than fetch on Android)
@@ -1059,6 +1135,48 @@ export default function CollectorMapScreen() {
     xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat, lng, heading, speed: 0 }));
   };
 
+  const completeRoute = () => {
+    Alert.alert(
+      'Complete Route',
+      'Mark this entire route as completed? Residents in the area will be notified and asked to confirm pickup.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          onPress: () => {
+            const completedStops = stops
+              .filter(s => s.status === 'completed')
+              .map(s => ({ name: s.name, weight: parseInt(s.weight || '0', 10) }));
+            const totalKg = completedStops.reduce((sum, s) => sum + (s.weight || 0), 0);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${TRACKING_SERVER}/api/pickup/complete`);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.timeout = 10000;
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                triggerSuccessAnimation('route-done');
+                stopNavigation();
+              } else {
+                Alert.alert('Error', 'Could not submit route completion. Please try again.');
+              }
+            };
+            xhr.onerror = () => Alert.alert('Error', 'Network error. Please try again.');
+            xhr.send(JSON.stringify({
+              truckId: TRUCK_ID,
+              driverName: user?.driverName || '',
+              routeId: activeScheduleId || '',
+              routeName: assignedRouteName || '',
+              barangay: assignedRouteBarangay || '',
+              stops: completedStops,
+              totalWeight: totalKg,
+            }));
+          },
+        },
+      ]
+    );
+  };
+
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
   }, []);
@@ -1072,13 +1190,13 @@ export default function CollectorMapScreen() {
     setCurrentSpeed(0);
     // Broadcast offline so Resident map shows idle truck
     socketRef.current?.emit('truck:offline', { truckId: TRUCK_ID });
-    // Show idle gray marker at last known position
+    // Disable auto-follow and show idle gray marker at last known position
     if (pos) {
       webViewRef.current?.injectJavaScript(
-        `window.stopNavigation(${pos.lat}, ${pos.lng}); true;`
+        `window.stopFollow(); window.stopNavigation(${pos.lat}, ${pos.lng}); true;`
       );
     } else {
-      webViewRef.current?.injectJavaScript('window.stopNavigation(); true;');
+      webViewRef.current?.injectJavaScript('window.stopFollow(); window.stopNavigation(); true;');
     }
   };
 
@@ -1151,9 +1269,16 @@ export default function CollectorMapScreen() {
               <View style={styles.progressCard}>
                 <View style={styles.progressHeader}>
                   <MaterialIcons name="route" size={16} color="#006A3B" />
-                  <Text style={styles.progressTitle} numberOfLines={1}>
-                    {assignedRouteName || 'Route Progress'}
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.progressTitle} numberOfLines={1}>
+                      {assignedRouteName || 'Route Progress'}
+                    </Text>
+                    {assignedRouteBarangay ? (
+                      <Text style={styles.progressBarangay} numberOfLines={1}>
+                        Serving: {assignedRouteBarangay}
+                      </Text>
+                    ) : null}
+                  </View>
                   <Text style={styles.progressPercent}>
                     {Math.round(progressPercent)}%
                   </Text>
@@ -1189,15 +1314,28 @@ export default function CollectorMapScreen() {
 
             {showTools && (
               <View style={styles.toolsMenu}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.toolItem}
                   onPress={() => { setShowTrashBins(!showTrashBins); setShowTools(false); }}
                 >
                   <MaterialIcons name={showTrashBins ? "visibility-off" : "visibility"} size={18} color="#6F7A70" />
                   <Text style={styles.toolText}>{showTrashBins ? "Hide Bins" : "Show Bins"}</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
+                  style={styles.toolItem}
+                  onPress={() => {
+                    const next = !showCityOutline;
+                    setShowCityOutline(next);
+                    webViewRef.current?.injectJavaScript(`window.toggleCityOutline(${next}); true;`);
+                    setShowTools(false);
+                  }}
+                >
+                  <MaterialIcons name="crop-free" size={18} color={showCityOutline ? "#2563EB" : "#6F7A70"} />
+                  <Text style={styles.toolText}>{showCityOutline ? "Hide City Outline" : "City Outline"}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={styles.toolItem}
                   onPress={() => { setIsFocusMode(true); setShowTools(false); }}
                 >
@@ -1519,13 +1657,23 @@ export default function CollectorMapScreen() {
             <View style={styles.handleBar} />
           </View>
           <View style={styles.sheetHeader}>
-            <View>
-              <Text style={styles.sheetTitle}>
-                {routeAssigned ? 'Pickup Locations' : 'No Route Assigned'}
-              </Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.sheetTitle}>
+                  {routeAssigned ? 'Pickup Locations' : 'No Route Assigned'}
+                </Text>
+                {isPreferredRoute && (
+                  <View style={styles.prefBadge}>
+                    <MaterialIcons name="star" size={10} color="#92400E" />
+                    <Text style={styles.prefBadgeText}>Preferred</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.sheetSub}>
                 {routeAssigned
-                  ? 'Swipe up for details'
+                  ? isPreferredRoute
+                    ? `Preferred: ${assignedRouteName}`
+                    : 'Swipe up for details'
                   : 'Waiting for route assignment'}
               </Text>
             </View>
@@ -1797,15 +1945,23 @@ export default function CollectorMapScreen() {
                         />
                         <Text style={styles.cleanedText}>Done</Text>
                       </View>
-                    ) : stop.status === "in-progress" ? (
-                      <TouchableOpacity
-                        style={styles.markBtn}
-                        onPress={() => handleMarkCleaned(stop.id)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.markBtnText}>Mark Cleaned</Text>
-                      </TouchableOpacity>
-                    ) : (
+                    ) : stop.status === "in-progress" ? (() => {
+                      const dist = currentLocation
+                        ? getDistanceMeters(currentLocation.lat, currentLocation.lng, stop.lat, stop.lng)
+                        : 999;
+                      const isAtStop = dist <= 50;
+                      return (
+                        <TouchableOpacity
+                          style={[styles.markBtn, !isAtStop && styles.cleanBtnDisabled]}
+                          onPress={() => isAtStop && handleMarkCleaned(stop.id)}
+                          activeOpacity={isAtStop ? 0.8 : 1}
+                        >
+                          <Text style={styles.markBtnText}>
+                            {isAtStop ? "Mark Cleaned" : "Too Far"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })() : (
                       <TouchableOpacity
                         style={styles.navBtn}
                         activeOpacity={0.8}
@@ -1840,6 +1996,16 @@ export default function CollectorMapScreen() {
                   <Text style={styles.footerStatLabel}>Collected</Text>
                 </View>
               </View>
+              {completedCount === stops.length && stops.length > 0 && (
+                <TouchableOpacity
+                  style={styles.completeRouteBtn}
+                  onPress={completeRoute}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="check-circle" size={18} color="#fff" />
+                  <Text style={styles.completeRouteBtnText}>Complete Route & Notify Residents</Text>
+                </TouchableOpacity>
+              )}
             </View>
               </>
             )}
@@ -2488,7 +2654,8 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 8,
   },
-  progressTitle: { fontSize: 13, fontWeight: "600", color: "#006A3B", flex: 1 },
+  progressTitle: { fontSize: 13, fontWeight: "600", color: "#006A3B" },
+  progressBarangay: { fontSize: 11, color: "#6F7A70", marginTop: 1 },
   progressPercent: { fontSize: 13, fontWeight: "700", color: "#006A3B" },
   progressBar: {
     height: 4,
@@ -2715,6 +2882,16 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   sheetSub: { fontSize: 13, color: "#6F7A70", marginTop: 2, lineHeight: 18 },
+  prefBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  prefBadgeText: { fontSize: 10, fontWeight: "700", color: "#92400E" },
   expandBtn: {
     width: 36,
     height: 36,
@@ -3006,6 +3183,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   footerDivider: { width: 1, height: 24, backgroundColor: "#E8F0EA" },
+  completeRouteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#006A3B', borderRadius: 14, paddingVertical: 13,
+    paddingHorizontal: 20, marginTop: 16, width: '100%', gap: 8,
+  },
+  completeRouteBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   zoneOverlay: {
     position: "absolute",

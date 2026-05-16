@@ -10,9 +10,11 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileMenuItem from '../components/ProfileMenuItem';
 import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
@@ -29,6 +31,11 @@ export default function CollectorProfileScreen() {
   const [truckStatus, setTruckStatus] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
 
+  // Route preference
+  const [showRouteModal, setShowRouteModal] = useState(false);
+  const [preferredRoute, setPreferredRoute] = useState(null); // { id, name, barangay }
+  const [allRoutes, setAllRoutes] = useState([]);
+
   // Edit modal
   const [editModal, setEditModal] = useState(false);
   const [editName, setEditName] = useState('');
@@ -38,10 +45,11 @@ export default function CollectorProfileScreen() {
     if (!truckId) return;
     setLoadingData(true);
     try {
-      const [fleetRes, routeRes, truckRes] = await Promise.allSettled([
+      const [fleetRes, routeRes, truckRes, allRoutesRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/fleet/${truckId}`).then((r) => r.json()),
         fetch(`${API_URL}/api/routes/truck/${truckId}`).then((r) => r.json()),
         fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
+        fetch(`${API_URL}/api/routes`).then((r) => r.json()),
       ]);
 
       if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
@@ -56,6 +64,9 @@ export default function CollectorProfileScreen() {
         const mine = truckRes.value.find((t) => t.truckId === truckId);
         setTruckStatus(mine ?? null);
       }
+      if (allRoutesRes.status === 'fulfilled' && Array.isArray(allRoutesRes.value)) {
+        setAllRoutes(allRoutesRes.value);
+      }
     } catch (_) {
       // Silently fall back to local auth data
     } finally {
@@ -64,6 +75,20 @@ export default function CollectorProfileScreen() {
   }, [truckId]);
 
   useEffect(() => { fetchProfileData(); }, [fetchProfileData]);
+
+  // Load saved route preference from AsyncStorage
+  useEffect(() => {
+    AsyncStorage.getItem('@truck_route_preference')
+      .then((val) => { if (val) setPreferredRoute(JSON.parse(val)); })
+      .catch(() => {});
+  }, []);
+
+  const handleSelectRoute = async (route) => {
+    const pref = route ? { id: route._id, name: route.name, barangay: route.barangay || '' } : null;
+    setPreferredRoute(pref);
+    await AsyncStorage.setItem('@truck_route_preference', JSON.stringify(pref));
+    setShowRouteModal(false);
+  };
 
   // Derived display values — DB data takes priority over cached auth
   const driverName = fleetData?.driverName || user?.driverName || 'Driver';
@@ -213,7 +238,8 @@ export default function CollectorProfileScreen() {
             <ProfileMenuItem
               icon="map"
               label="Route Preferences"
-              onPress={() => {}}
+              value={preferredRoute ? preferredRoute.name : 'None'}
+              onPress={() => setShowRouteModal(true)}
             />
             <ProfileMenuItem
               icon="local-shipping"
@@ -263,6 +289,69 @@ export default function CollectorProfileScreen() {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Route Preference Modal */}
+      <Modal
+        visible={showRouteModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRouteModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowRouteModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalTitleRow}>
+              <View style={styles.modalIconWrap}>
+                <MaterialIcons name="map" size={20} color="#006A3B" />
+              </View>
+              <View>
+                <Text style={styles.modalTitle}>Route Preference</Text>
+                <Text style={styles.modalSub}>Used when no schedule is assigned</Text>
+              </View>
+            </View>
+
+            <FlatList
+              data={[{ _id: null, name: 'None – no preference', barangay: '' }, ...allRoutes]}
+              keyExtractor={(item) => item._id || 'none'}
+              style={styles.routeList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const isActive = item._id ? preferredRoute?.id === item._id : !preferredRoute;
+                return (
+                  <TouchableOpacity
+                    style={[styles.routeItem, isActive && styles.routeItemActive]}
+                    onPress={() => handleSelectRoute(item._id ? item : null)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.routeItemIcon, isActive && styles.routeItemIconActive]}>
+                      <MaterialIcons
+                        name={item._id ? 'alt-route' : 'not-interested'}
+                        size={18}
+                        color={isActive ? '#006A3B' : '#9CA3AF'}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.routeItemName, isActive && styles.routeItemNameActive]}>
+                        {item.name}
+                      </Text>
+                      {item.barangay ? (
+                        <Text style={styles.routeItemSub}>{item.barangay}</Text>
+                      ) : null}
+                    </View>
+                    {isActive && (
+                      <MaterialIcons name="check-circle" size={20} color="#006A3B" />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Edit Profile Modal */}
       <Modal
@@ -444,4 +533,28 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 17, fontWeight: '600', color: '#FFFFFF' },
   cancelBtn: { paddingVertical: 12, alignItems: 'center' },
   cancelBtnText: { fontSize: 15, color: '#9CA3AF' },
+
+  routeList: { maxHeight: 360, marginBottom: 8 },
+  routeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
+  },
+  routeItemActive: { backgroundColor: '#F0FDF4', borderRadius: 12, paddingHorizontal: 8 },
+  routeItemIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeItemIconActive: { backgroundColor: '#DCFCE7' },
+  routeItemName: { fontSize: 15, color: '#1B1C1C', fontWeight: '500' },
+  routeItemNameActive: { color: '#006A3B', fontWeight: '700' },
+  routeItemSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
 });
