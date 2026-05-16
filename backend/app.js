@@ -79,30 +79,36 @@ const reportSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
-  deadline:           { type: Date, default: null },
-  statusHistory: [{
-    status:    String,
-    changedBy: String,
-    changedAt: { type: Date, default: Date.now },
-  }],
-  escalated:           { type: Boolean, default: false },
-  resolutionConfirmed: { type: String, enum: ['pending', 'confirmed', 'disputed'], default: null },
-  resolvedAt:          { type: Date, default: null },
-  resolvedBy:          { type: String, default: null },
+  deadline: { type: Date, default: null },
+  statusHistory: [
+    {
+      status: String,
+      changedBy: String,
+      changedAt: { type: Date, default: Date.now },
+    },
+  ],
+  escalated: { type: Boolean, default: false },
+  resolutionConfirmed: {
+    type: String,
+    enum: ["pending", "confirmed", "disputed"],
+    default: null,
+  },
+  resolvedAt: { type: Date, default: null },
+  resolvedBy: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Report = mongoose.model("Report", reportSchema);
 
 const fleetSchema = new mongoose.Schema({
-  truckId:         { type: String, required: true, unique: true },
-  driverName:      { type: String, required: true },
-  driverId:        { type: String, default: "" },
-  driverImage:     { type: String, default: null },
-  route:           { type: String, default: "" },
-  barangay:        { type: String, default: "" },
-  type:            { type: String, enum: ['dedicated', 'shared'], default: 'dedicated' },
-  serviceBarangays:{ type: [String], default: [] },
-  createdAt:       { type: Date, default: Date.now },
+  truckId: { type: String, required: true, unique: true },
+  driverName: { type: String, required: true },
+  driverId: { type: String, default: "" },
+  driverImage: { type: String, default: null },
+  route: { type: String, default: "" },
+  barangay: { type: String, default: "" },
+  type: { type: String, enum: ["dedicated", "shared"], default: "dedicated" },
+  serviceBarangays: { type: [String], default: [] },
+  createdAt: { type: Date, default: Date.now },
 });
 const Fleet = mongoose.model("Fleet", fleetSchema);
 
@@ -269,46 +275,58 @@ const BarangayBoundary = mongoose.model(
 );
 
 const barangayScoreSchema = new mongoose.Schema({
-  barangay:        { type: String, required: true, unique: true },
-  points:          { type: Number, default: 0 },  // grand total (sum of all categories)
+  barangay: { type: String, required: true, unique: true },
+  points: { type: Number, default: 0 }, // grand total (sum of all categories)
   // Category breakdown scores
-  reportScore:     { type: Number, default: 0 },  // votes, confirmed resolutions, disputes, escalations
-  iotScore:        { type: Number, default: 0 },  // IoT air quality readings (good/bad)
-  collectionScore: { type: Number, default: 0 },  // pickup completions + resident verifications
-  responseScore:   { type: Number, default: 0 },  // official response time bonus
+  reportScore: { type: Number, default: 0 }, // votes, confirmed resolutions, disputes, escalations
+  iotScore: { type: Number, default: 0 }, // IoT air quality readings (good/bad)
+  collectionScore: { type: Number, default: 0 }, // pickup completions + resident verifications
+  responseScore: { type: Number, default: 0 }, // official response time bonus
   // Legacy count fields (kept for display/compat)
-  pickupCount:     { type: Number, default: 0 },  // number of confirmed pickup runs
-  reportVoteCount: { type: Number, default: 0 },  // total community votes cast
-  areaQualityPts:  { type: Number, default: 0 },  // cumulative clean-area bonus pts
-  updatedAt:       { type: Date, default: Date.now },
+  pickupCount: { type: Number, default: 0 }, // number of confirmed pickup runs
+  reportVoteCount: { type: Number, default: 0 }, // total community votes cast
+  areaQualityPts: { type: Number, default: 0 }, // cumulative clean-area bonus pts
+  updatedAt: { type: Date, default: Date.now },
 });
 const BarangayScore = mongoose.model("BarangayScore", barangayScoreSchema);
 
-const announcementSchema = new mongoose.Schema({
-  title:     { type: String, required: true },
-  message:   { type: String, required: true },
-  type:      { type: String, enum: ["info", "warning", "critical", "success"], default: "info" },
-  createdBy: { type: String, default: "Admin" },
-}, { timestamps: true });
+const announcementSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    type: {
+      type: String,
+      enum: ["info", "warning", "critical", "success"],
+      default: "info",
+    },
+    createdBy: { type: String, default: "Admin" },
+  },
+  { timestamps: true },
+);
 const Announcement = mongoose.model("Announcement", announcementSchema);
 
-const pickupRunSchema = new mongoose.Schema({
-  truckId:    { type: String, required: true },
-  driverName: { type: String, default: '' },
-  routeId:    { type: String, default: '' },
-  routeName:  { type: String, default: '' },
-  barangay:   { type: String, default: '' },
-  stopsCompleted: [{ name: String, weight: Number }],
-  totalStops:  { type: Number, default: 0 },
-  totalWeight: { type: Number, default: 0 },
-  verifications: [{
-    userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Resident' },
-    confirmed: Boolean,
-    createdAt: { type: Date, default: Date.now },
-  }],
-  completedAt: { type: Date, default: Date.now },
-}, { timestamps: true });
-const PickupRun = mongoose.model('PickupRun', pickupRunSchema);
+const pickupRunSchema = new mongoose.Schema(
+  {
+    truckId: { type: String, required: true },
+    driverName: { type: String, default: "" },
+    routeId: { type: String, default: "" },
+    routeName: { type: String, default: "" },
+    barangay: { type: String, default: "" },
+    stopsCompleted: [{ name: String, weight: Number }],
+    totalStops: { type: Number, default: 0 },
+    totalWeight: { type: Number, default: 0 },
+    verifications: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident" },
+        confirmed: Boolean,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    completedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true },
+);
+const PickupRun = mongoose.model("PickupRun", pickupRunSchema);
 
 // --- Helpers -------------------------------------------------
 
@@ -316,7 +334,7 @@ async function startSLAChecker() {
   const check = async () => {
     try {
       const overdue = await Report.find({
-        status: 'pending',
+        status: "pending",
         escalated: { $ne: true },
         deadline: { $lt: new Date() },
         reportedBy: { $not: /^IoT Sensor/ },
@@ -324,15 +342,28 @@ async function startSLAChecker() {
       for (const r of overdue) {
         await Report.findByIdAndUpdate(r._id, {
           $set: { escalated: true },
-          $push: { statusHistory: { status: 'escalated', changedBy: 'System', changedAt: new Date() } },
+          $push: {
+            statusHistory: {
+              status: "escalated",
+              changedBy: "System",
+              changedAt: new Date(),
+            },
+          },
         });
-        if (r.barangay) await addBarangayScore(r.barangay, -10, 'reportScore');
-        io.emit('report:updated', { ...r.toObject(), escalated: true });
-        io.emit('report:escalated', { reportId: r._id, barangay: r.barangay, title: r.title });
+        if (r.barangay) await addBarangayScore(r.barangay, -10, "reportScore");
+        io.emit("report:updated", { ...r.toObject(), escalated: true });
+        io.emit("report:escalated", {
+          reportId: r._id,
+          barangay: r.barangay,
+          title: r.title,
+        });
       }
-      if (overdue.length > 0) console.log(`[SLA] Auto-escalated ${overdue.length} reports, -10 pts each barangay`);
+      if (overdue.length > 0)
+        console.log(
+          `[SLA] Auto-escalated ${overdue.length} reports, -10 pts each barangay`,
+        );
     } catch (err) {
-      console.error('[SLA] Error:', err.message);
+      console.error("[SLA] Error:", err.message);
     }
   };
   await check();
@@ -381,7 +412,7 @@ const BARANGAY_BOUNDARIES = {};
 async function loadBoundaries() {
   try {
     const docs = await BarangayBoundary.find();
-    docs.forEach(doc => {
+    docs.forEach((doc) => {
       BARANGAY_BOUNDARIES[doc.barangay] = doc.boundary;
     });
     console.log(`[Backend] Loaded ${docs.length} boundaries into memory`);
@@ -453,12 +484,9 @@ app.post("/api/residents/register", async (req, res) => {
     houseNo,
   } = req.body;
   if (!firstName || !lastName || !email || !password || !barangay) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "firstName, lastName, email, password, and barangay are required",
-      });
+    return res.status(400).json({
+      error: "firstName, lastName, email, password, and barangay are required",
+    });
   }
   try {
     const existing = await Resident.findOne({ email: email.toLowerCase() });
@@ -604,7 +632,9 @@ app.patch("/api/residents/:id", async (req, res) => {
 app.delete("/api/residents/:id/notifications", async (req, res) => {
   try {
     const clearedAt = new Date();
-    await Resident.findByIdAndUpdate(req.params.id, { notificationsClearedAt: clearedAt });
+    await Resident.findByIdAndUpdate(req.params.id, {
+      notificationsClearedAt: clearedAt,
+    });
     res.json({ clearedAt });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -641,9 +671,15 @@ app.post("/api/reports", async (req, res) => {
       ...req.body,
       title: req.body.title || req.body.category,
       deadline: new Date(Date.now() + 72 * 60 * 60 * 1000),
-      statusHistory: [{ status: 'pending', changedBy: req.body.reportedBy || 'Resident', changedAt: new Date() }],
+      statusHistory: [
+        {
+          status: "pending",
+          changedBy: req.body.reportedBy || "Resident",
+          changedAt: new Date(),
+        },
+      ],
     });
-    io.emit('report:new', report);
+    io.emit("report:new", report);
 
     // --- Composite Heatmap: Link report to nearest garbage area ---
     const reportLat = report.lat;
@@ -757,7 +793,12 @@ app.post("/api/reports/:id/vote", async (req, res) => {
     await report.save();
     // +1 pt to barangay for every vote cast (community engagement)
     if (report.barangay) {
-      addBarangayScore(report.barangay, 1, 'reportScore', 'reportVoteCount').catch(() => {});
+      addBarangayScore(
+        report.barangay,
+        1,
+        "reportScore",
+        "reportVoteCount",
+      ).catch(() => {});
     }
     res.json({
       upvotes: report.upvotes.length,
@@ -1084,19 +1125,33 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
         changedBy: req.official.name || req.official.email,
         changedAt: new Date(),
       };
-      if (status === 'resolved') {
+      if (status === "resolved") {
         setOps.resolvedAt = new Date();
         setOps.resolvedBy = req.official.name || req.official.email;
-        setOps.resolutionConfirmed = 'pending';
+        setOps.resolutionConfirmed = "pending";
       }
       // Response time bonus: award responseScore when an official picks up a report
-      if (status === 'in-progress') {
-        const existing = await Report.findById(req.params.id).select('createdAt barangay').lean();
+      if (status === "in-progress") {
+        const existing = await Report.findById(req.params.id)
+          .select("createdAt barangay")
+          .lean();
         if (existing?.barangay && existing.createdAt) {
-          const hoursElapsed = (Date.now() - new Date(existing.createdAt).getTime()) / 3_600_000;
-          const responsePts = hoursElapsed < 6 ? 15 : hoursElapsed < 24 ? 10 : hoursElapsed < 48 ? 5 : 0;
+          const hoursElapsed =
+            (Date.now() - new Date(existing.createdAt).getTime()) / 3_600_000;
+          const responsePts =
+            hoursElapsed < 6
+              ? 15
+              : hoursElapsed < 24
+                ? 10
+                : hoursElapsed < 48
+                  ? 5
+                  : 0;
           if (responsePts > 0) {
-            addBarangayScore(existing.barangay, responsePts, 'responseScore').catch(() => {});
+            addBarangayScore(
+              existing.barangay,
+              responsePts,
+              "responseScore",
+            ).catch(() => {});
           }
         }
       }
@@ -1105,7 +1160,9 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
     const updateOp = { $set: setOps };
     if (Object.keys(pushOps).length) updateOp.$push = pushOps;
 
-    const report = await Report.findByIdAndUpdate(req.params.id, updateOp, { new: true });
+    const report = await Report.findByIdAndUpdate(req.params.id, updateOp, {
+      new: true,
+    });
     if (!report) return res.status(404).json({ error: "Report not found" });
     io.emit("report:updated", report);
     res.json(report);
@@ -1119,29 +1176,35 @@ app.post("/api/reports/:id/verify", async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ error: "Not found" });
-    if (report.resolutionConfirmed !== 'pending')
+    if (report.resolutionConfirmed !== "pending")
       return res.status(400).json({ error: "Not awaiting verification" });
 
-    const outcome = confirmed ? 'confirmed' : 'disputed';
+    const outcome = confirmed ? "confirmed" : "disputed";
     const setOps = { resolutionConfirmed: outcome };
-    const pushEntry = { status: outcome, changedBy: 'Resident', changedAt: new Date() };
+    const pushEntry = {
+      status: outcome,
+      changedBy: "Resident",
+      changedAt: new Date(),
+    };
 
     if (!confirmed) {
       // Resident says it's still an issue — reopen and penalise barangay
-      setOps.status = 'pending';
+      setOps.status = "pending";
       setOps.resolvedAt = null;
       setOps.escalated = true;
-      pushEntry.status = 'reopened';
-      if (report.barangay) await addBarangayScore(report.barangay, -15, 'reportScore');
+      pushEntry.status = "reopened";
+      if (report.barangay)
+        await addBarangayScore(report.barangay, -15, "reportScore");
     } else {
       // Confirmed fixed — award points to barangay
-      if (report.barangay) await addBarangayScore(report.barangay, 20, 'reportScore');
+      if (report.barangay)
+        await addBarangayScore(report.barangay, 20, "reportScore");
     }
 
     const updated = await Report.findByIdAndUpdate(
       req.params.id,
       { $set: setOps, $push: { statusHistory: pushEntry } },
-      { new: true }
+      { new: true },
     );
     io.emit("report:updated", updated);
     res.json(updated);
@@ -1181,7 +1244,8 @@ app.get("/api/fleet/:truckId", async (req, res) => {
 
 // Mutations require Officials auth
 app.post("/api/fleet", authMiddleware, async (req, res) => {
-  const { driverName, driverId, driverImage, route, type, serviceBarangays } = req.body;
+  const { driverName, driverId, driverImage, route, type, serviceBarangays } =
+    req.body;
   if (!driverName)
     return res.status(400).json({ error: "driverName is required" });
   try {
@@ -1194,7 +1258,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
       driverImage: driverImage || null,
       route: route || "",
       barangay: brgy === "All" ? "" : brgy || "",
-      type: type || 'dedicated',
+      type: type || "dedicated",
       serviceBarangays: Array.isArray(serviceBarangays) ? serviceBarangays : [],
     });
     io.emit("fleet:new", entry);
@@ -1412,7 +1476,10 @@ app.get("/api/admin/stats", authMiddleware, async (req, res) => {
       .sort({ points: -1 })
       .limit(5)
       .lean();
-    const leaderboard = leaderboardRaw.map(b => ({ _id: b.barangay, count: b.points }));
+    const leaderboard = leaderboardRaw.map((b) => ({
+      _id: b.barangay,
+      count: b.points,
+    }));
 
     // Waste Composition: Reports by category
     const composition = await Report.aggregate([
@@ -1436,7 +1503,8 @@ app.get("/api/admin/stats", authMiddleware, async (req, res) => {
 
     // Resolution Rate
     const resolvedCount = await Report.countDocuments({ status: "resolved" });
-    const resolutionRate = reports > 0 ? Math.round((resolvedCount / reports) * 100) : 0;
+    const resolutionRate =
+      reports > 0 ? Math.round((resolvedCount / reports) * 100) : 0;
 
     res.json({
       summary: { trucks, reports, officials, residents, resolutionRate },
@@ -1454,9 +1522,7 @@ app.get("/api/admin/stats", authMiddleware, async (req, res) => {
 // GET ranked barangays by total points
 app.get("/api/leaderboard", async (req, res) => {
   try {
-    const scores = await BarangayScore.find()
-      .sort({ points: -1 })
-      .lean();
+    const scores = await BarangayScore.find().sort({ points: -1 }).lean();
     res.json(scores);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1471,16 +1537,37 @@ app.post("/api/leaderboard/add-score", async (req, res) => {
   }
 
   const CONFIG = {
-    pickup:        { points: 5,  scoreCategory: 'collectionScore', countField: 'pickupCount' },
-    vote:          { points: 1,  scoreCategory: 'reportScore',     countField: 'reportVoteCount' },
-    area_clean:    { points: 3,  scoreCategory: 'iotScore',        countField: 'areaQualityPts' },
-    area_moderate: { points: 1,  scoreCategory: 'iotScore',        countField: 'areaQualityPts' },
+    pickup: {
+      points: 5,
+      scoreCategory: "collectionScore",
+      countField: "pickupCount",
+    },
+    vote: {
+      points: 1,
+      scoreCategory: "reportScore",
+      countField: "reportVoteCount",
+    },
+    area_clean: {
+      points: 3,
+      scoreCategory: "iotScore",
+      countField: "areaQualityPts",
+    },
+    area_moderate: {
+      points: 1,
+      scoreCategory: "iotScore",
+      countField: "areaQualityPts",
+    },
   };
   const cfg = CONFIG[reason];
   if (!cfg) return res.status(400).json({ error: "unknown reason" });
 
   try {
-    const score = await addBarangayScore(barangay, cfg.points, cfg.scoreCategory, cfg.countField);
+    const score = await addBarangayScore(
+      barangay,
+      cfg.points,
+      cfg.scoreCategory,
+      cfg.countField,
+    );
     res.json({ ok: true, points: cfg.points, total: score.points });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1490,26 +1577,149 @@ app.post("/api/leaderboard/add-score", async (req, res) => {
 // POST seed leaderboard with demo data (dev only — idempotent)
 app.post("/api/leaderboard/seed", async (req, res) => {
   const seedData = [
-    { barangay: "IT Park",       points: 142, reportScore: 52, iotScore: 32, collectionScore: 58, responseScore: 0, pickupCount: 10, reportVoteCount: 52, areaQualityPts: 32 },
-    { barangay: "Lahug",         points: 119, reportScore: 45, iotScore: 27, collectionScore: 47, responseScore: 0, pickupCount: 8,  reportVoteCount: 45, areaQualityPts: 27 },
-    { barangay: "Banilad",       points: 98,  reportScore: 38, iotScore: 21, collectionScore: 39, responseScore: 0, pickupCount: 7,  reportVoteCount: 38, areaQualityPts: 21 },
-    { barangay: "Talamban",      points: 85,  reportScore: 33, iotScore: 18, collectionScore: 34, responseScore: 0, pickupCount: 6,  reportVoteCount: 33, areaQualityPts: 18 },
-    { barangay: "Mabolo",        points: 74,  reportScore: 27, iotScore: 18, collectionScore: 29, responseScore: 0, pickupCount: 5,  reportVoteCount: 27, areaQualityPts: 18 },
-    { barangay: "Ayala",         points: 63,  reportScore: 24, iotScore: 14, collectionScore: 25, responseScore: 0, pickupCount: 4,  reportVoteCount: 24, areaQualityPts: 14 },
-    { barangay: "Carbon Market", points: 51,  reportScore: 19, iotScore: 12, collectionScore: 20, responseScore: 0, pickupCount: 4,  reportVoteCount: 19, areaQualityPts: 12 },
-    { barangay: "Ermita",        points: 44,  reportScore: 16, iotScore: 11, collectionScore: 17, responseScore: 0, pickupCount: 3,  reportVoteCount: 16, areaQualityPts: 11 },
-    { barangay: "Sto. Niño",     points: 37,  reportScore: 14, iotScore: 9,  collectionScore: 14, responseScore: 0, pickupCount: 2,  reportVoteCount: 14, areaQualityPts: 9  },
-    { barangay: "Mandaue",       points: 28,  reportScore: 10, iotScore: 7,  collectionScore: 11, responseScore: 0, pickupCount: 2,  reportVoteCount: 10, areaQualityPts: 7  },
+    {
+      barangay: "IT Park",
+      points: 142,
+      reportScore: 52,
+      iotScore: 32,
+      collectionScore: 58,
+      responseScore: 0,
+      pickupCount: 10,
+      reportVoteCount: 52,
+      areaQualityPts: 32,
+    },
+    {
+      barangay: "Lahug",
+      points: 119,
+      reportScore: 45,
+      iotScore: 27,
+      collectionScore: 47,
+      responseScore: 0,
+      pickupCount: 8,
+      reportVoteCount: 45,
+      areaQualityPts: 27,
+    },
+    {
+      barangay: "Banilad",
+      points: 98,
+      reportScore: 38,
+      iotScore: 21,
+      collectionScore: 39,
+      responseScore: 0,
+      pickupCount: 7,
+      reportVoteCount: 38,
+      areaQualityPts: 21,
+    },
+    {
+      barangay: "Talamban",
+      points: 85,
+      reportScore: 33,
+      iotScore: 18,
+      collectionScore: 34,
+      responseScore: 0,
+      pickupCount: 6,
+      reportVoteCount: 33,
+      areaQualityPts: 18,
+    },
+    {
+      barangay: "Mabolo",
+      points: 74,
+      reportScore: 27,
+      iotScore: 18,
+      collectionScore: 29,
+      responseScore: 0,
+      pickupCount: 5,
+      reportVoteCount: 27,
+      areaQualityPts: 18,
+    },
+    {
+      barangay: "Ayala",
+      points: 63,
+      reportScore: 24,
+      iotScore: 14,
+      collectionScore: 25,
+      responseScore: 0,
+      pickupCount: 4,
+      reportVoteCount: 24,
+      areaQualityPts: 14,
+    },
+    {
+      barangay: "Carbon Market",
+      points: 51,
+      reportScore: 19,
+      iotScore: 12,
+      collectionScore: 20,
+      responseScore: 0,
+      pickupCount: 4,
+      reportVoteCount: 19,
+      areaQualityPts: 12,
+    },
+    {
+      barangay: "Ermita",
+      points: 44,
+      reportScore: 16,
+      iotScore: 11,
+      collectionScore: 17,
+      responseScore: 0,
+      pickupCount: 3,
+      reportVoteCount: 16,
+      areaQualityPts: 11,
+    },
+    {
+      barangay: "Sto. Niño",
+      points: 37,
+      reportScore: 14,
+      iotScore: 9,
+      collectionScore: 14,
+      responseScore: 0,
+      pickupCount: 2,
+      reportVoteCount: 14,
+      areaQualityPts: 9,
+    },
+    {
+      barangay: "Mandaue",
+      points: 28,
+      reportScore: 10,
+      iotScore: 7,
+      collectionScore: 11,
+      responseScore: 0,
+      pickupCount: 2,
+      reportVoteCount: 10,
+      areaQualityPts: 7,
+    },
   ];
   try {
     const results = await Promise.all(
-      seedData.map(({ barangay, points, reportScore, iotScore, collectionScore, responseScore, pickupCount, reportVoteCount, areaQualityPts }) =>
-        BarangayScore.findOneAndUpdate(
-          { barangay },
-          { $set: { points, reportScore, iotScore, collectionScore, responseScore, pickupCount, reportVoteCount, areaQualityPts, updatedAt: new Date() } },
-          { upsert: true, new: true },
-        )
-      )
+      seedData.map(
+        ({
+          barangay,
+          points,
+          reportScore,
+          iotScore,
+          collectionScore,
+          responseScore,
+          pickupCount,
+          reportVoteCount,
+          areaQualityPts,
+        }) =>
+          BarangayScore.findOneAndUpdate(
+            { barangay },
+            {
+              $set: {
+                points,
+                reportScore,
+                iotScore,
+                collectionScore,
+                responseScore,
+                pickupCount,
+                reportVoteCount,
+                areaQualityPts,
+                updatedAt: new Date(),
+              },
+            },
+            { upsert: true, new: true },
+          ),
+      ),
     );
     res.json({ ok: true, seeded: results.length });
   } catch (err) {
@@ -1592,80 +1802,106 @@ app.delete("/api/announcements/:id", authMiddleware, async (req, res) => {
 });
 
 // --- Pickup Runs (Route Completion) --------------------------
-app.post('/api/pickup/complete', async (req, res) => {
+app.post("/api/pickup/complete", async (req, res) => {
   try {
-    const { truckId, driverName, routeId, routeName, barangay: clientBarangay, stops, totalWeight } = req.body;
-    if (!truckId) return res.status(400).json({ error: 'truckId required' });
+    const {
+      truckId,
+      driverName,
+      routeId,
+      routeName,
+      barangay: clientBarangay,
+      stops,
+      totalWeight,
+    } = req.body;
+    if (!truckId) return res.status(400).json({ error: "truckId required" });
 
     // Resolve the authoritative barangay from the Route document.
     // This is the key fix for shared trucks: the route knows which barangay
     // is being served regardless of which truck is running it.
-    let resolvedBarangay = clientBarangay || '';
+    let resolvedBarangay = clientBarangay || "";
     if (routeId && mongoose.Types.ObjectId.isValid(routeId)) {
-      const routeDoc = await Route.findById(routeId).select('barangay').lean();
+      const routeDoc = await Route.findById(routeId).select("barangay").lean();
       if (routeDoc?.barangay) resolvedBarangay = routeDoc.barangay;
     }
 
     const run = await PickupRun.create({
-      truckId, driverName: driverName || '', routeId: routeId || '',
-      routeName: routeName || '', barangay: resolvedBarangay,
+      truckId,
+      driverName: driverName || "",
+      routeId: routeId || "",
+      routeName: routeName || "",
+      barangay: resolvedBarangay,
       stopsCompleted: stops || [],
       totalStops: (stops || []).length,
       totalWeight: totalWeight || 0,
     });
-    if (resolvedBarangay) await addBarangayScore(resolvedBarangay, 5, 'collectionScore', 'pickupCount');
-    io.emit('pickup:completed', run);
+    if (resolvedBarangay)
+      await addBarangayScore(
+        resolvedBarangay,
+        5,
+        "collectionScore",
+        "pickupCount",
+      );
+    io.emit("pickup:completed", run);
     res.status(201).json(run);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/pickup', async (req, res) => {
+app.get("/api/pickup", async (req, res) => {
   try {
     const { barangay } = req.query;
     const filter = {};
     if (barangay) filter.barangay = barangay;
-    const runs = await PickupRun.find(filter).sort({ completedAt: -1 }).limit(30);
+    const runs = await PickupRun.find(filter)
+      .sort({ completedAt: -1 })
+      .limit(30);
     res.json(runs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/pickup/:id/verify', async (req, res) => {
+app.post("/api/pickup/:id/verify", async (req, res) => {
   const { userId, confirmed } = req.body;
   if (userId === undefined || confirmed === undefined) {
-    return res.status(400).json({ error: 'userId and confirmed required' });
+    return res.status(400).json({ error: "userId and confirmed required" });
   }
   try {
     const run = await PickupRun.findById(req.params.id);
-    if (!run) return res.status(404).json({ error: 'Pickup run not found' });
+    if (!run) return res.status(404).json({ error: "Pickup run not found" });
 
-    const alreadyVerified = run.verifications.some(v => v.userId?.toString() === userId.toString());
-    if (alreadyVerified) return res.status(400).json({ error: 'Already verified' });
+    const alreadyVerified = run.verifications.some(
+      (v) => v.userId?.toString() === userId.toString(),
+    );
+    if (alreadyVerified)
+      return res.status(400).json({ error: "Already verified" });
 
     run.verifications.push({ userId, confirmed });
     await run.save();
 
     if (confirmed) {
-      if (run.barangay) await addBarangayScore(run.barangay, 10, 'collectionScore');
+      if (run.barangay)
+        await addBarangayScore(run.barangay, 10, "collectionScore");
     } else {
       const missed = await Report.create({
-        title: 'Missed Pickup',
-        category: 'Uncollected Waste',
-        description: `Resident reported that Truck ${run.truckId} did not collect waste in their area during the ${run.routeName || 'scheduled'} run.`,
-        barangay: run.barangay || '',
+        title: "Missed Pickup",
+        category: "Uncollected Waste",
+        description: `Resident reported that Truck ${run.truckId} did not collect waste in their area during the ${run.routeName || "scheduled"} run.`,
+        barangay: run.barangay || "",
         userId,
-        reportedBy: 'Resident',
-        priority: 'Medium',
+        reportedBy: "Resident",
+        priority: "Medium",
         deadline: new Date(Date.now() + 72 * 60 * 60 * 1000),
-        statusHistory: [{ status: 'pending', changedBy: 'Resident', changedAt: new Date() }],
+        statusHistory: [
+          { status: "pending", changedBy: "Resident", changedAt: new Date() },
+        ],
       });
-      io.emit('report:new', missed);
-      if (run.barangay) await addBarangayScore(run.barangay, -5, 'collectionScore');
+      io.emit("report:new", missed);
+      if (run.barangay)
+        await addBarangayScore(run.barangay, -5, "collectionScore");
     }
-    io.emit('pickup:verified', { pickupId: run._id, userId, confirmed });
+    io.emit("pickup:verified", { pickupId: run._id, userId, confirmed });
     res.json({ ok: true, confirmed });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2058,12 +2294,9 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
     if (routeId) {
       const dup = await Schedule.findOne({ date, truckId, routeId });
       if (dup)
-        return res
-          .status(409)
-          .json({
-            error:
-              "This route is already scheduled for that truck on this date",
-          });
+        return res.status(409).json({
+          error: "This route is already scheduled for that truck on this date",
+        });
     }
     const schedule = await Schedule.create({
       date,
@@ -2359,15 +2592,25 @@ app.post("/api/iot/sensor-data", async (req, res) => {
       io.emit("garbage-area:updated", updatedArea);
       // IoT quality scoring: positive for clean/moderate, negative for unhealthy/hazardous
       if (updatedArea.barangay) {
-        const qualityPts = airQuality === "Good" ? 3
-          : airQuality === "Moderate" ? 1
-          : airQuality === "Unhealthy" ? -2
-          : airQuality === "Hazardous" ? -5
-          : 0;
+        const qualityPts =
+          airQuality === "Good"
+            ? 3
+            : airQuality === "Moderate"
+              ? 1
+              : airQuality === "Unhealthy"
+                ? -2
+                : airQuality === "Hazardous"
+                  ? -5
+                  : 0;
         if (qualityPts !== 0) {
           // Only increment legacy areaQualityPts counter for positive readings
-          const countField = qualityPts > 0 ? 'areaQualityPts' : undefined;
-          addBarangayScore(updatedArea.barangay, qualityPts, 'iotScore', countField).catch(() => {});
+          const countField = qualityPts > 0 ? "areaQualityPts" : undefined;
+          addBarangayScore(
+            updatedArea.barangay,
+            qualityPts,
+            "iotScore",
+            countField,
+          ).catch(() => {});
         }
       }
     }
@@ -2615,9 +2858,9 @@ io.on("connection", (socket) => {
     if (truckId) {
       socketTruckMap.delete(socket.id);
       try {
-        await Truck.findOneAndUpdate({ truckId }, { status: 'offline' });
+        await Truck.findOneAndUpdate({ truckId }, { status: "offline" });
       } catch (_) {}
-      io.emit('truck:status', { truckId, status: 'offline' });
+      io.emit("truck:status", { truckId, status: "offline" });
       console.log(`[Socket] Truck ${truckId} auto-offline on disconnect`);
     }
     console.log(`Client disconnected: ${socket.id}`);
