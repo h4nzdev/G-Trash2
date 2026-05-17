@@ -1109,6 +1109,8 @@ export default function CollectorMapScreen() {
     const dwellLabel = dwellSeconds != null
       ? dwellSeconds < 60 ? `${dwellSeconds}s` : `${Math.floor(dwellSeconds / 60)}m ${dwellSeconds % 60}s`
       : null;
+
+    const stop = stops.find((s) => s.id === stopId);
     setWeightModalStop(null);
     setStops((prev) => {
       const idx = prev.findIndex((s) => s.id === stopId);
@@ -1119,6 +1121,23 @@ export default function CollectorMapScreen() {
       });
     });
     triggerSuccessAnimation(stopId);
+
+    // Persist to collection history
+    fetch(`${TRACKING_SERVER}/api/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        truckId: TRUCK_ID,
+        date: getTodayYMD(),
+        stopName: stop?.name || "",
+        stopAddress: stop?.address || stop?.name || "",
+        wasteType: stop?.type || "General",
+        weight: kg,
+        bins: stop?.bins || 1,
+        routeId: activeScheduleId || "",
+        routeName: assignedRouteName || "",
+      }),
+    }).catch(() => {});
   };
 
   const handleReportIssue = () => {

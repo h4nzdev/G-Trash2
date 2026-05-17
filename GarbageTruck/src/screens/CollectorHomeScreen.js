@@ -13,6 +13,10 @@ import {
   Dimensions,
   Image,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -87,6 +91,10 @@ export default function CollectorHomeScreen() {
   const [truckCapacity, setTruckCapacity] = useState(0);
   const [weather, setWeather] = useState({ temp: 31, condition: 'Sunny' });
   const [navActive, setNavActive] = useState(false);
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const chatScrollRef = useRef(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -281,6 +289,50 @@ export default function CollectorHomeScreen() {
       { text: "Equipment Issue" },
       { text: "Cancel", style: "cancel" },
     ]);
+  };
+
+  const openAiModal = () => {
+    const greeting = `Hi ${driverName.split(" ")[0]}! I'm EcoAssist AI. You're on route "${routeName || 'Unassigned'}" with ${completedCount} of ${stops.length} stops done. How can I help you today?`;
+    setAiMessages([{ role: "assistant", content: greeting }]);
+    setAiInput("");
+    setShowAiAssistant(true);
+  };
+
+  const sendAiMessage = async () => {
+    const text = aiInput.trim();
+    if (!text || aiLoading) return;
+    const userMsg = { role: "user", content: text };
+    const updated = [...aiMessages, userMsg];
+    setAiMessages(updated);
+    setAiInput("");
+    setAiLoading(true);
+    setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    try {
+      const res = await fetch(`${API_URL}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: updated,
+          context: {
+            driverName,
+            truckId: TRUCK_ID,
+            routeName,
+            currentStop: currentStop?.name || null,
+            completed: completedCount,
+            total: stops.length,
+            totalWeight,
+          },
+        }),
+      });
+      const data = await res.json();
+      const reply = data.reply || "Sorry, I couldn't get a response. Try again.";
+      setAiMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch {
+      setAiMessages((prev) => [...prev, { role: "assistant", content: "Connection error. Check your internet and try again." }]);
+    } finally {
+      setAiLoading(false);
+      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    }
   };
 
   var scrollToAction = function () {
@@ -660,100 +712,102 @@ export default function CollectorHomeScreen() {
         </Animated.View>
       ) : null}
 
-      {/* AI Assistant Modal */}
+      {/* EcoAssist AI Chat Modal */}
       <Modal
         visible={showAiAssistant}
         transparent
         animationType="slide"
         statusBarTranslucent
+        onRequestClose={() => setShowAiAssistant(false)}
       >
-        <View style={styles.aiModalOverlay}>
-          <TouchableOpacity 
-            style={styles.aiModalCloseArea} 
-            onPress={() => setShowAiAssistant(false)} 
-          />
-          <View style={styles.aiModalContent}>
-            <View style={styles.aiHeader}>
-              <View style={styles.aiIconCircle}>
-                <MaterialIcons name="psychology" size={32} color="#006A3B" />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.aiModalOverlay}>
+            <TouchableOpacity style={styles.aiModalCloseArea} onPress={() => setShowAiAssistant(false)} />
+            <View style={styles.aiModalContent}>
+              {/* Header */}
+              <View style={styles.aiHeader}>
+                <View style={styles.aiIconCircle}>
+                  <MaterialIcons name="psychology" size={28} color="#006A3B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aiTitle}>EcoAssist AI</Text>
+                  <Text style={styles.aiSubtitle}>Powered by Groq · llama-3.1-8b</Text>
+                </View>
+                <TouchableOpacity style={styles.aiCloseBtn} onPress={() => setShowAiAssistant(false)}>
+                  <MaterialIcons name="close" size={24} color="#6F7A70" />
+                </TouchableOpacity>
               </View>
-              <View>
-                <Text style={styles.aiTitle}>EcoAssist AI</Text>
-                <Text style={styles.aiSubtitle}>Your Intelligent Route Companion</Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.aiCloseBtn} 
-                onPress={() => setShowAiAssistant(false)}
+
+              {/* Chat messages */}
+              <ScrollView
+                ref={chatScrollRef}
+                style={styles.aiChatScroll}
+                contentContainerStyle={styles.aiChatContent}
+                showsVerticalScrollIndicator={false}
+                onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
               >
-                <MaterialIcons name="close" size={24} color="#6F7A70" />
-              </TouchableOpacity>
-            </View>
+                {aiMessages.map((msg, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.aiBubble,
+                      msg.role === "user" ? styles.aiBubbleUser : styles.aiBubbleAI,
+                    ]}
+                  >
+                    <Text style={[styles.aiBubbleText, msg.role === "user" && styles.aiBubbleTextUser]}>
+                      {msg.content}
+                    </Text>
+                  </View>
+                ))}
+                {aiLoading && (
+                  <View style={[styles.aiBubble, styles.aiBubbleAI, { paddingVertical: 14 }]}>
+                    <ActivityIndicator size="small" color="#006A3B" />
+                  </View>
+                )}
+              </ScrollView>
 
-            <View style={styles.aiMessageContainer}>
-              <Text style={styles.aiGreeting}>
-                Hello {driverName.split(" ")[0]}, I've analyzed your current route and city data.
-              </Text>
-              
-              <View style={styles.aiSuggestionCard}>
-                <View style={styles.aiSuggestionHeader}>
-                  <MaterialIcons name="auto-awesome" size={16} color="#F59E0B" />
-                  <Text style={styles.aiSuggestionTitle}>Smart Insight</Text>
-                </View>
-                <Text style={styles.aiSuggestionText}>
-                  Traffic is increasing near {currentStop?.name || 'your next stop'}. I recommend staying on the current path as it's still 4 minutes faster than alternatives.
-                </Text>
+              {/* Suggestion chips */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.aiChipsRow} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+                {["What's my next stop?", "Any tips for this area?", "How much have I collected?"].map((chip) => (
+                  <TouchableOpacity key={chip} style={styles.aiChip} onPress={() => setAiInput(chip)}>
+                    <Text style={styles.aiChipText}>{chip}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Input row */}
+              <View style={styles.aiInputRow}>
+                <TextInput
+                  style={styles.aiTextInput}
+                  value={aiInput}
+                  onChangeText={setAiInput}
+                  placeholder="Ask anything about your route..."
+                  placeholderTextColor="#BECABE"
+                  multiline={false}
+                  returnKeyType="send"
+                  onSubmitEditing={sendAiMessage}
+                  editable={!aiLoading}
+                />
+                <TouchableOpacity
+                  style={[styles.aiSendBtn, (!aiInput.trim() || aiLoading) && { opacity: 0.4 }]}
+                  onPress={sendAiMessage}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="send" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
               </View>
-
-              <Text style={styles.aiSectionTitle}>Quick Actions</Text>
-              
-              <TouchableOpacity style={styles.aiActionItem} onPress={() => { setShowAiAssistant(false); scrollToAction(); }}>
-                <View style={[styles.aiActionIcon, { backgroundColor: '#E4EEE9' }]}>
-                  <MaterialIcons name="my-location" size={20} color="#006A3B" />
-                </View>
-                <View style={styles.aiActionText}>
-                  <Text style={styles.aiActionTitle}>Focus on Current Stop</Text>
-                  <Text style={styles.aiActionSub}>Instantly scroll to your active task</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.aiActionItem}>
-                <View style={[styles.aiActionIcon, { backgroundColor: '#FEF3F2' }]}>
-                  <MaterialIcons name="report-problem" size={20} color="#BA1A1A" />
-                </View>
-                <View style={styles.aiActionText}>
-                  <Text style={styles.aiActionTitle}>Report Blocked Route</Text>
-                  <Text style={styles.aiActionSub}>Let AI recalculate for the whole fleet</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.aiActionItem}>
-                <View style={[styles.aiActionIcon, { backgroundColor: '#F0F9FF' }]}>
-                  <MaterialIcons name="wb-sunny" size={20} color="#0284C7" />
-                </View>
-                <View style={styles.aiActionText}>
-                  <Text style={styles.aiActionTitle}>Weather Optimization</Text>
-                  <Text style={styles.aiActionSub}>Sunny weather confirmed for next 4 hours</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color="#BECABE" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.aiFooter}>
-              <Text style={styles.aiFooterText}>Powered by EcoAssist AI</Text>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* AI Assistant FAB */}
       {!isLoading && !hasError && currentStop ? (
-        <TouchableOpacity 
-          style={styles.fab} 
-          onPress={() => setShowAiAssistant(true)} 
-          activeOpacity={0.85}
-        >
+        <TouchableOpacity style={styles.fab} onPress={openAiModal} activeOpacity={0.85}>
           <MaterialIcons name="psychology" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
@@ -1166,125 +1220,114 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingTop: 12,
-    paddingBottom: 40,
+    paddingBottom: 24,
     maxHeight: '85%',
+    minHeight: '60%',
   },
   aiHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#F0EDED',
+    gap: 12,
   },
   aiIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#E4EEE9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
   aiTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#1B1C1C',
   },
   aiSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6F7A70',
     fontWeight: '500',
   },
   aiCloseBtn: {
-    marginLeft: 'auto',
     padding: 4,
   },
-  aiMessageContainer: {
-    padding: 24,
-  },
-  aiGreeting: {
-    fontSize: 15,
-    color: '#1B1C1C',
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  aiSuggestionCard: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FEF3C7',
-    marginBottom: 28,
-  },
-  aiSuggestionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  aiSuggestionTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#92400E',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  aiSuggestionText: {
-    fontSize: 14,
-    color: '#92400E',
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  aiSectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#6F7A70',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 16,
-  },
-  aiActionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  aiActionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  aiActionText: {
+  aiChatScroll: {
     flex: 1,
   },
-  aiActionTitle: {
+  aiChatContent: {
+    padding: 16,
+    gap: 10,
+    flexGrow: 1,
+  },
+  aiBubble: {
+    maxWidth: '82%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+  },
+  aiBubbleAI: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F5F1',
+    borderBottomLeftRadius: 4,
+  },
+  aiBubbleUser: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#006A3B',
+    borderBottomRightRadius: 4,
+  },
+  aiBubbleText: {
     fontSize: 14,
-    fontWeight: '700',
     color: '#1B1C1C',
-    marginBottom: 2,
+    lineHeight: 20,
   },
-  aiActionSub: {
+  aiBubbleTextUser: {
+    color: '#FFFFFF',
+  },
+  aiChipsRow: {
+    maxHeight: 44,
+    marginVertical: 8,
+  },
+  aiChip: {
+    backgroundColor: '#F1F5F1',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D4EAD9',
+  },
+  aiChipText: {
     fontSize: 12,
-    color: '#6F7A70',
+    color: '#006A3B',
+    fontWeight: '600',
   },
-  aiFooter: {
+  aiInputRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    paddingHorizontal: 16,
+    gap: 10,
+    paddingTop: 4,
   },
-  aiFooterText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#BECABE',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  aiTextInput: {
+    flex: 1,
+    backgroundColor: '#F8FAF8',
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#1B1C1C',
+    borderWidth: 1,
+    borderColor: '#E8EDE8',
+  },
+  aiSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#006A3B',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   bottomSpacer: { height: 40 },
