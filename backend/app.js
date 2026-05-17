@@ -2939,6 +2939,51 @@ io.on("connection", (socket) => {
   });
 });
 
+// --- EcoAssist AI (Groq) -------------------------------------
+app.post("/api/ai/chat", async (req, res) => {
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_API_KEY || GROQ_API_KEY === "your_groq_key_here") {
+    return res.status(500).json({ error: "GROQ_API_KEY not configured in .env" });
+  }
+  const { messages = [], context = {} } = req.body;
+  if (!Array.isArray(messages)) return res.status(400).json({ error: "messages must be an array" });
+
+  const systemPrompt = `You are EcoAssist AI, a helpful assistant for garbage truck collectors in Cebu, Philippines working on the G-TRASH smart waste monitoring system. You help drivers with route tips, waste collection guidance, area-specific advice, and answering questions about their day.
+
+Current session context:
+- Driver: ${context.driverName || "Collector"}
+- Truck ID: ${context.truckId || "Unknown"}
+- Route: ${context.routeName || "Unassigned"}
+- Current stop: ${context.currentStop || "None"}
+- Progress: ${context.completed ?? 0} of ${context.total ?? 0} stops completed
+- Total weight collected today: ${context.totalWeight ?? 0}kg
+
+Keep responses short and practical — drivers read on a phone while working. Use plain language.`;
+
+  try {
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        max_tokens: 256,
+        temperature: 0.7,
+      }),
+    });
+    const data = await groqRes.json();
+    if (!groqRes.ok) {
+      return res.status(groqRes.status).json({ error: data.error?.message || "Groq API error" });
+    }
+    res.json({ reply: data.choices[0].message.content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Start ---------------------------------------------------
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`OK: G-TRASH unified server running on port ${PORT}`);
