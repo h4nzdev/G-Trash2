@@ -6,6 +6,7 @@ export default function PickupActionCard({
   location,
   binCount,
   status,
+  navigationActive,
   onMarkCleaned,
   onReportIssue,
 }) {
@@ -48,14 +49,18 @@ export default function PickupActionCard({
       <View style={styles.actions}>
         {/* Primary: Mark Cleaned */}
         <TouchableOpacity
-          style={styles.cleanBtn}
-          onPress={onMarkCleaned}
-          activeOpacity={0.85}
+          style={[styles.cleanBtn, !navigationActive && styles.cleanBtnDisabled]}
+          onPress={navigationActive ? onMarkCleaned : undefined}
+          activeOpacity={navigationActive ? 0.85 : 1}
         >
           <View style={styles.cleanBtnInner}>
-            <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
+            <MaterialIcons
+              name={navigationActive ? "check-circle" : "play-arrow"}
+              size={20}
+              color="#FFFFFF"
+            />
             <Text style={styles.cleanBtnText} numberOfLines={1}>
-              Mark as Cleaned
+              {navigationActive ? "Mark as Cleaned" : "Start Navigation First"}
             </Text>
           </View>
         </TouchableOpacity>
@@ -152,6 +157,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
+  },
+  cleanBtnDisabled: {
+    backgroundColor: "#9E9E9E",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   cleanBtnInner: {
     flexDirection: "row",

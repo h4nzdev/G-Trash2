@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -84,6 +86,15 @@ export default function CollectorHomeScreen() {
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [truckCapacity, setTruckCapacity] = useState(0);
   const [weather, setWeather] = useState({ temp: 31, condition: 'Sunny' });
+  const [navActive, setNavActive] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem('@truck_nav_active').then((val) => {
+        setNavActive(val === 'true');
+      }).catch(() => {});
+    }, [])
+  );
 
   useEffect(() => {
     // Simulate capacity based on weight collected (max 1000kg for this truck)
@@ -560,6 +571,7 @@ export default function CollectorHomeScreen() {
               location={currentStop.name}
               binCount={currentStop.bins || 3}
               status={pickupStatus}
+              navigationActive={navActive}
               onMarkCleaned={handleMarkCleaned}
               onReportIssue={handleReportIssue}
             />

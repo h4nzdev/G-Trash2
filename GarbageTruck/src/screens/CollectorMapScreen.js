@@ -1132,6 +1132,7 @@ export default function CollectorMapScreen() {
   };
 
   const startNavigation = () => {
+    AsyncStorage.setItem('@truck_nav_active', 'true').catch(() => {});
     if (todaySchedules !== null && todaySchedules.length === 0) {
       Alert.alert(
         'Not Scheduled Today',
@@ -1223,6 +1224,7 @@ export default function CollectorMapScreen() {
   }, []);
 
   const stopNavigation = () => {
+    AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
     const pos = lastGpsRef.current;
     navigationActiveRef.current = false;
     setNavigationActive(false);
@@ -1879,23 +1881,24 @@ export default function CollectorMapScreen() {
                  {(() => {
                    const dist = currentLocation ? getDistanceMeters(currentLocation.lat, currentLocation.lng, truckStop.lat, truckStop.lng) : 999;
                    const isAtStop = dist <= 50;
+                   const canMark = navigationActive && isAtStop;
                    return (
                      <View>
                        <TouchableOpacity
-                         style={[styles.cleanBtn, !isAtStop && styles.cleanBtnDisabled]}
-                         onPress={() => isAtStop && handleMarkCleaned(truckStop.id)}
-                         activeOpacity={isAtStop ? 0.8 : 1}
+                         style={[styles.cleanBtn, !canMark && styles.cleanBtnDisabled]}
+                         onPress={() => canMark && handleMarkCleaned(truckStop.id)}
+                         activeOpacity={canMark ? 0.8 : 1}
                        >
                          <MaterialIcons
-                           name={isAtStop ? "check-circle" : "location-off"}
+                           name={!navigationActive ? "play-arrow" : isAtStop ? "check-circle" : "location-off"}
                            size={18}
                            color="#FFFFFF"
                          />
                          <Text style={styles.cleanBtnText}>
-                           {isAtStop ? 'Mark Cleaned' : 'Too Far from Stop'}
+                           {!navigationActive ? 'Start Navigation First' : isAtStop ? 'Mark Cleaned' : 'Too Far from Stop'}
                          </Text>
                        </TouchableOpacity>
-                       {!isAtStop && (
+                       {navigationActive && !isAtStop && (
                          <Text style={styles.distanceHint}>
                            Get within 50m to collect ({Math.round(dist)}m away)
                          </Text>
@@ -2007,14 +2010,15 @@ export default function CollectorMapScreen() {
                         ? getDistanceMeters(currentLocation.lat, currentLocation.lng, stop.lat, stop.lng)
                         : 999;
                       const isAtStop = dist <= 50;
+                      const canMark = navigationActive && isAtStop;
                       return (
                         <TouchableOpacity
-                          style={[styles.markBtn, !isAtStop && styles.cleanBtnDisabled]}
-                          onPress={() => isAtStop && handleMarkCleaned(stop.id)}
-                          activeOpacity={isAtStop ? 0.8 : 1}
+                          style={[styles.markBtn, !canMark && styles.cleanBtnDisabled]}
+                          onPress={() => canMark && handleMarkCleaned(stop.id)}
+                          activeOpacity={canMark ? 0.8 : 1}
                         >
                           <Text style={styles.markBtnText}>
-                            {isAtStop ? "Mark Cleaned" : "Too Far"}
+                            {!navigationActive ? "Not Started" : isAtStop ? "Mark Cleaned" : "Too Far"}
                           </Text>
                         </TouchableOpacity>
                       );
