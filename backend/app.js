@@ -328,6 +328,19 @@ const pickupRunSchema = new mongoose.Schema(
 );
 const PickupRun = mongoose.model("PickupRun", pickupRunSchema);
 
+const binStatusSchema = new mongoose.Schema(
+  {
+    residentId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident", required: true },
+    barangay: { type: String, required: true },
+    status: { type: String, enum: ["prepared", "pickedup"], default: "prepared" },
+    date: { type: String, required: true }, // YYYY-MM-DD
+    truckId: { type: String, default: "" },
+  },
+  { timestamps: true },
+);
+binStatusSchema.index({ residentId: 1, date: 1 }, { unique: true });
+const BinStatus = mongoose.model("BinStatus", binStatusSchema);
+
 // --- Helpers -------------------------------------------------
 
 async function startSLAChecker() {
@@ -1903,6 +1916,65 @@ app.post("/api/pickup/:id/verify", async (req, res) => {
     }
     io.emit("pickup:verified", { pickupId: run._id, userId, confirmed });
     res.json({ ok: true, confirmed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Bin Status (resident prepare / picked-up) ---------------
+async function getBinCounts(barangay, date) {
+  const base = { barangay, date };
+  const [preparedCount, pickedUpCount] = await Promise.all([
+    BinStatus.countDocuments({ ...base, status: { $in: ["prepared", "pickedup"] } }),
+    BinStatus.countDocuments({ ...base, status: "pickedup" }),
+  ]);
+  return { preparedCount, pickedUpCount };
+}
+
+app.post("/api/bin/prepare", async (req, res) => {
+  try {
+    const { residentId, barangay } = req.body;
+    if (!residentId || !barangay) return res.status(400).json({ error: "residentId and barangay required" });
+    const date = new Date().toISOString().slice(0, 10);
+    await BinStatus.findOneAndUpdate(
+      { residentId, date },
+      { barangay, status: "prepared" },
+      { upsert: true, new: true },
+    );
+    const counts = await getBinCounts(barangay, date);
+    io.emit("bin:status:update", { barangay, date, ...counts });
+    res.json({ ok: true, ...counts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/bin/pickedup", async (req, res) => {
+  try {
+    const { residentId, barangay, truckId } = req.body;
+    if (!residentId || !barangay) return res.status(400).json({ error: "residentId and barangay required" });
+    const date = new Date().toISOString().slice(0, 10);
+    await BinStatus.findOneAndUpdate(
+      { residentId, date },
+      { barangay, status: "pickedup", truckId: truckId || "" },
+      { upsert: true, new: true },
+    );
+    await addBarangayScore(barangay, 1, "collectionScore", "pickupCount");
+    const counts = await getBinCounts(barangay, date);
+    io.emit("bin:status:update", { barangay, date, ...counts });
+    res.json({ ok: true, ...counts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/bin/status", async (req, res) => {
+  try {
+    const { barangay, date } = req.query;
+    const today = date || new Date().toISOString().slice(0, 10);
+    if (!barangay) return res.status(400).json({ error: "barangay required" });
+    const counts = await getBinCounts(barangay, today);
+    res.json({ barangay, date: today, ...counts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

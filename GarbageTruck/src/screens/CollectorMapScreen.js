@@ -661,6 +661,23 @@ export default function CollectorMapScreen() {
 
   // Initial fetch on mount (updates also come via socket events)
   useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
+
+  // Fetch today's bin preparation counts whenever barangay is known
+  useEffect(() => {
+    if (!assignedRouteBarangay) return;
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${TRACKING_SERVER}/api/bin/status?barangay=${encodeURIComponent(assignedRouteBarangay)}`);
+    xhr.timeout = 6000;
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          setBinStatus({ preparedCount: data.preparedCount || 0, pickedUpCount: data.pickedUpCount || 0 });
+        } catch (_) {}
+      }
+    };
+    xhr.send();
+  }, [assignedRouteBarangay]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [mapStyle, setMapStyle] = useState('topographic');
   const [showSuccess, setShowSuccess] = useState(null);
@@ -752,11 +769,14 @@ export default function CollectorMapScreen() {
   const [deviationAlert, setDeviationAlert] = useState(false);
   const [deviationInfo, setDeviationInfo] = useState(null);
 
+  const [binStatus, setBinStatus] = useState({ preparedCount: 0, pickedUpCount: 0 });
+
   const isExpandedRef = useRef(false);
   const navigationActiveRef = useRef(false);
   const lastGpsRef = useRef(null);
   const shiftStartRef = useRef(null);
   const offRouteCountRef = useRef(0);
+  const stopArrivalRef = useRef({});
   const routeCoordsRef = useRef([]);
   const successAnim = useRef(new Animated.Value(0)).current;
   const zoneCardAnim = useRef(new Animated.Value(0)).current;
@@ -797,6 +817,12 @@ export default function CollectorMapScreen() {
         }
         return [...prev, formatted];
       });
+    });
+
+    socket.on("bin:status:update", ({ barangay, preparedCount, pickedUpCount }) => {
+      if (barangay === assignedRouteBarangay || !assignedRouteBarangay) {
+        setBinStatus({ preparedCount, pickedUpCount });
+      }
     });
 
     // Receive the offline echo back from server (io.emit broadcasts to all, including self)
@@ -853,6 +879,16 @@ export default function CollectorMapScreen() {
             webViewRef.current?.injectJavaScript(
               `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
             );
+
+            // Record arrival time at in-progress stop (once, when within 50 m)
+            setStops((prev) => {
+              const inProgress = prev.find((s) => s.status === 'in-progress');
+              if (inProgress && !stopArrivalRef.current[inProgress.id]) {
+                const d = haversineM(latitude, longitude, inProgress.lat, inProgress.lng);
+                if (d <= 50) stopArrivalRef.current[inProgress.id] = Date.now();
+              }
+              return prev;
+            });
 
             // Off-route deviation check — requires 3 consecutive updates > 150 m
             const dist = minDistToPolyline(latitude, longitude, routeCoordsRef.current);
@@ -1068,11 +1104,16 @@ export default function CollectorMapScreen() {
   const confirmCleanWithWeight = (weight) => {
     const stopId = weightModalStop;
     const kg = parseInt(weight, 10) || Math.floor(Math.random() * 40 + 20);
+    const arrivalTs = stopArrivalRef.current[stopId];
+    const dwellSeconds = arrivalTs ? Math.round((Date.now() - arrivalTs) / 1000) : null;
+    const dwellLabel = dwellSeconds != null
+      ? dwellSeconds < 60 ? `${dwellSeconds}s` : `${Math.floor(dwellSeconds / 60)}m ${dwellSeconds % 60}s`
+      : null;
     setWeightModalStop(null);
     setStops((prev) => {
       const idx = prev.findIndex((s) => s.id === stopId);
       return prev.map((s, i) => {
-        if (i === idx) return { ...s, status: "completed", weight: `${kg}kg` };
+        if (i === idx) return { ...s, status: "completed", weight: `${kg}kg`, dwellLabel };
         if (i === idx + 1 && s.status === "upcoming") return { ...s, status: "in-progress" };
         return s;
       });
@@ -1807,6 +1848,21 @@ export default function CollectorMapScreen() {
                     <Text style={styles.actionMetaText}>{truckStop.type}</Text>
                   </View>
                 </View>
+                {(binStatus.preparedCount > 0 || binStatus.pickedUpCount > 0) && (
+                  <View style={styles.binStatusRow}>
+                    <MaterialIcons name="people" size={13} color="#006A3B" />
+                    <Text style={styles.binStatusText}>
+                      {binStatus.preparedCount} preparing
+                    </Text>
+                    {binStatus.pickedUpCount > 0 && (
+                      <>
+                        <Text style={styles.binStatusDot}>·</Text>
+                        <MaterialIcons name="check-circle" size={13} color="#065F46" />
+                        <Text style={styles.binStatusText}>{binStatus.pickedUpCount} picked up</Text>
+                      </>
+                    )}
+                  </View>
+                )}
                  <View style={styles.actionButtons}>
                    <TouchableOpacity
                      style={styles.reportBtn}
@@ -1937,13 +1993,14 @@ export default function CollectorMapScreen() {
                       </View>
                     </View>
                     {stop.status === "completed" ? (
-                      <View style={styles.cleanedBadge}>
-                        <MaterialIcons
-                          name="check-circle"
-                          size={12}
-                          color="#006A3B"
-                        />
-                        <Text style={styles.cleanedText}>Done</Text>
+                      <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                        <View style={styles.cleanedBadge}>
+                          <MaterialIcons name="check-circle" size={12} color="#006A3B" />
+                          <Text style={styles.cleanedText}>Done</Text>
+                        </View>
+                        {stop.dwellLabel && (
+                          <Text style={styles.dwellText}>⏱ {stop.dwellLabel}</Text>
+                        )}
                       </View>
                     ) : stop.status === "in-progress" ? (() => {
                       const dist = currentLocation
@@ -3149,6 +3206,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   cleanedText: { fontSize: 11, fontWeight: "600", color: "#006A3B" },
+  dwellText: { fontSize: 10, color: "#6F7A70", fontWeight: "500" },
+  binStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+    backgroundColor: "#F0FFF4",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  binStatusText: { fontSize: 12, color: "#065F46", fontWeight: "500" },
+  binStatusDot: { fontSize: 12, color: "#6F7A70", marginHorizontal: 2 },
   markBtn: {
     backgroundColor: "#006A3B",
     paddingHorizontal: 12,

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Truck, Plus, Trash2, RefreshCw, Copy, Check, X, Share2 } from 'lucide-react';
+import { Truck, Plus, Trash2, RefreshCw, Copy, Check, X, Share2, BarChart2 } from 'lucide-react';
 import API from '../config';
 
 export default function FleetManagement() {
+  const navigate = useNavigate();
   const [fleet, setFleet] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -294,7 +296,11 @@ export default function FleetManagement() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {fleet.map((t) => (
-                <tr key={t._id} className="hover:bg-slate-50 transition-colors">
+                <tr
+                  key={t._id}
+                  className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  onClick={() => navigate(`/fleet/${t.truckId}`)}
+                >
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 font-mono font-bold text-sm rounded-lg border border-emerald-100">
                       <Truck className="w-3.5 h-3.5" />
@@ -341,12 +347,22 @@ export default function FleetManagement() {
                     {new Date(t.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => handleDelete(t.truckId)}
-                      className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => navigate(`/fleet/${t.truckId}`)}
+                        className="p-1.5 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="View analytics"
+                      >
+                        <BarChart2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(t.truckId)}
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

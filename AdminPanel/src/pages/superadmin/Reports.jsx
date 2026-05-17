@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  ShieldAlert, Camera, MapPin, 
-  User, CheckCircle, XCircle, 
+import {
+  ShieldAlert, Camera, MapPin,
+  User, CheckCircle, XCircle,
   Search, Filter, ExternalLink,
   Brain, Fingerprint, History,
-  AlertTriangle, MoreVertical
+  AlertTriangle, MoreVertical,
+  Trash2, ChevronRight
 } from 'lucide-react';
 import API from '../../config';
 
@@ -31,6 +32,17 @@ export default function Reports() {
   useEffect(() => {
     fetchReports();
   }, []);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Permanently delete this post? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API}/api/reports/${id}`);
+      setReports((prev) => prev.filter((r) => r._id !== id));
+      if (selectedReport?._id === id) setSelectedReport(null);
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to delete post.');
+    }
+  };
 
   const updateStatus = async (id, status) => {
     try {
@@ -124,9 +136,18 @@ export default function Reports() {
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${getPriorityColor(report.priority)}`}>
                         {report.priority}
                       </span>
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {new Date(report.createdAt).toLocaleDateString()}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {new Date(report.createdAt).toLocaleDateString()}
+                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(report._id); }}
+                          className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Delete post"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <h4 className="text-base font-bold text-slate-900 truncate group-hover:text-emerald-600 transition-colors">{report.title}</h4>
                     <div className="flex items-center gap-4 mt-2">
@@ -211,14 +232,14 @@ export default function Reports() {
                     <span>Decide Action</span>
                   </div>
                   <div className="flex gap-3">
-                    <button 
+                    <button
                       onClick={() => updateStatus(selectedReport._id, 'resolved')}
                       className="flex-1 flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl font-bold text-sm transition-all active:scale-95"
                     >
                       <CheckCircle className="w-4 h-4" />
                       Approve
                     </button>
-                    <button 
+                    <button
                       onClick={() => updateStatus(selectedReport._id, 'dismissed')}
                       className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-xl font-bold text-sm border border-red-600/30 transition-all active:scale-95"
                     >
@@ -226,6 +247,13 @@ export default function Reports() {
                       Dismiss
                     </button>
                   </div>
+                  <button
+                    onClick={() => handleDelete(selectedReport._id)}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-red-700/20 text-red-400 hover:bg-red-700/30 border border-red-700/30 rounded-xl font-bold text-sm transition-all active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Post Permanently
+                  </button>
                 </div>
 
                 {/* Analysis Result (Mock) */}

@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   Dimensions,
   Modal,
+  Alert,
   Image,
   ActivityIndicator,
   Animated,
@@ -22,6 +23,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
@@ -123,6 +125,7 @@ export default function HomeScreen({ navigation }) {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [binReady, setBinReady] = useState(false);
+  const [todayPickedUp, setTodayPickedUp] = useState(false);
   const [checklist, setChecklist] = useState(
     CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
   );
@@ -141,6 +144,18 @@ export default function HomeScreen({ navigation }) {
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setIotAreas(data); })
       .catch(() => {});
+  }, []);
+
+  // Restore bin-ready and picked-up state from AsyncStorage (keyed by date — auto-resets next day)
+  useEffect(() => {
+    const today = getTodayYMD();
+    Promise.all([
+      AsyncStorage.getItem(`@bin_prepared_${today}`),
+      AsyncStorage.getItem(`@bin_pickedup_${today}`),
+    ]).then(([prepared, pickedUp]) => {
+      if (prepared === 'true') setBinReady(true);
+      if (pickedUp === 'true') setTodayPickedUp(true);
+    }).catch(() => {});
   }, []);
 
   // Check if today's pickup already happened (so banner shows even after app restart)
@@ -332,7 +347,7 @@ export default function HomeScreen({ navigation }) {
 
     socket.on("garbage-area:updated", (area) => {
       const brgy = userBarangayRef.current;
-      if (brgy && area.barangay !== brgy) return;
+      if (brgy && area.barangay && area.barangay !== brgy) return;
       setIotAreas((prev) => {
         const idx = prev.findIndex((a) => a._id === area._id);
         return idx >= 0
@@ -343,7 +358,7 @@ export default function HomeScreen({ navigation }) {
 
     socket.on("iot:reading", (reading) => {
       const brgy = userBarangayRef.current;
-      if (brgy && reading.barangay !== brgy) return;
+      if (brgy && reading.barangay && reading.barangay !== brgy) return;
       setLatestIotReading(reading);
       if (reading.airQuality === "Unhealthy" || reading.airQuality === "Hazardous") {
         const now = Date.now();
@@ -402,26 +417,43 @@ export default function HomeScreen({ navigation }) {
   const checkedCount = checklist.filter((item) => item.checked).length;
 
   const handleConfirm = () => {
+    const today = getTodayYMD();
     setBinReady(true);
     setModalVisible(false);
+    AsyncStorage.setItem(`@bin_prepared_${today}`, 'true').catch(() => {});
+    if (user?.id && user?.barangay) {
+      fetch(`${API_URL}/api/bin/prepare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+      }).catch(() => {});
+    }
   };
 
   const handleOpenModal = () => {
-    if (!binReady) setModalVisible(true);
+    if (binReady) return;
+    if (onlineTrucks.length === 0) {
+      Alert.alert(
+        "Truck Not Active",
+        "You can only prepare your bin when a garbage truck is actively collecting in your area. Please wait until a truck starts its route.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+    setModalVisible(true);
   };
 
   const handleTrashPickedUp = () => {
-    // +1 pt to this resident's barangay leaderboard
-    if (user?.barangay) {
-      fetch(`${API_URL}/api/leaderboard/add-score`, {
+    const today = getTodayYMD();
+    setTodayPickedUp(true);
+    AsyncStorage.setItem(`@bin_pickedup_${today}`, 'true').catch(() => {});
+    if (user?.id && user?.barangay) {
+      fetch(`${API_URL}/api/bin/pickedup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barangay: user.barangay, reason: "pickup" }),
+        body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
       }).catch(() => {});
     }
-    // Reset the full session so the next collection cycle can start fresh
-    setBinReady(false);
-    setChecklist(CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })));
     if (nearestTruck) {
       truckAlertFiredRef.current.delete(`near-${nearestTruck.truckId}`);
       truckAlertFiredRef.current.delete(`approach-${nearestTruck.truckId}`);
@@ -812,29 +844,42 @@ export default function HomeScreen({ navigation }) {
                 </View>
               </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.prepareButton,
-                  (binReady || !firstSchedule) && styles.prepareButtonReady,
-                ]}
-                onPress={firstSchedule ? handleOpenModal : undefined}
-                activeOpacity={firstSchedule ? 0.8 : 1}
-              >
-                <View style={styles.prepareButtonInner}>
-                  <MaterialIcons
-                    name={binReady ? "check-circle" : "delete-outline"}
-                    size={18}
-                    color="#006A3B"
-                  />
-                  <Text style={styles.prepareButtonText}>
-                    {binReady
-                      ? "Bin Ready ✓"
-                      : firstSchedule
-                        ? t("prepare_bin")
-                        : t("no_activity")}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              {(() => {
+                const truckActive = onlineTrucks.length > 0;
+                const canPrepare = firstSchedule && truckActive && !binReady;
+                const btnStyle = binReady
+                  ? styles.prepareButtonReady
+                  : (!firstSchedule || !truckActive)
+                    ? styles.prepareButtonLocked
+                    : null;
+                return (
+                  <TouchableOpacity
+                    style={[styles.prepareButton, btnStyle]}
+                    onPress={firstSchedule ? handleOpenModal : undefined}
+                    activeOpacity={canPrepare ? 0.8 : 1}
+                  >
+                    <View style={styles.prepareButtonInner}>
+                      <MaterialIcons
+                        name={binReady ? "check-circle" : firstSchedule && !truckActive ? "lock" : "delete-outline"}
+                        size={18}
+                        color={binReady ? "#006A3B" : (!firstSchedule || !truckActive) ? "#9CA3AF" : "#006A3B"}
+                      />
+                      <Text style={[
+                        styles.prepareButtonText,
+                        (!firstSchedule || !truckActive) && !binReady && styles.prepareButtonTextLocked,
+                      ]}>
+                        {binReady
+                          ? "Bin Ready ✓"
+                          : !firstSchedule
+                            ? t("no_activity")
+                            : !truckActive
+                              ? "Waiting for truck..."
+                              : t("prepare_bin")}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
 
             <View style={styles.decorativeIcon}>
@@ -958,8 +1003,8 @@ export default function HomeScreen({ navigation }) {
               </View>
             )}
 
-            {/* Trash Picked Up — visible when bin is ready, active when truck is nearby or no truck data */}
-            {binReady && (
+            {/* Trash Picked Up — visible when bin is ready and not yet confirmed today */}
+            {binReady && !todayPickedUp && (
               <TouchableOpacity
                 style={styles.pickedUpBtn}
                 onPress={handleTrashPickedUp}
@@ -1417,6 +1462,12 @@ const styles = StyleSheet.create({
   },
   prepareButtonReady: {
     backgroundColor: "#D9E9E2",
+  },
+  prepareButtonLocked: {
+    backgroundColor: "#F3F4F6",
+  },
+  prepareButtonTextLocked: {
+    color: "#9CA3AF",
   },
   prepareButtonInner: {
     flexDirection: "row",
