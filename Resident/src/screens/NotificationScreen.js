@@ -42,7 +42,7 @@ function reportToNotification(report) {
   };
 }
 
-const NotificationItem = ({ item, onVerifyPickup }) => {
+const NotificationItem = ({ item, onVerifyPickup, onViewReward }) => {
   const getIcon = (type) => {
     switch (type) {
       case 'resolved':     return 'assignment-turned-in';
@@ -51,6 +51,7 @@ const NotificationItem = ({ item, onVerifyPickup }) => {
       case 'truck':        return 'local-shipping';
       case 'pickup':       return 'local-shipping';
       case 'announcement': return 'campaign';
+      case 'reward':       return 'card-giftcard';
       default:             return 'notifications';
     }
   };
@@ -66,6 +67,7 @@ const NotificationItem = ({ item, onVerifyPickup }) => {
       case 'calendar': return '#FF9800';
       case 'truck':    return '#006A3B';
       case 'pickup':   return '#006A3B';
+      case 'reward':   return '#D97706';
       default:         return colors.primaryGreen;
     }
   };
@@ -107,6 +109,12 @@ const NotificationItem = ({ item, onVerifyPickup }) => {
             {item.verifiedConfirmed ? '✓ You confirmed pickup' : '✗ Missed pickup reported'}
           </Text>
         )}
+        {item.type === 'reward' && (
+          <TouchableOpacity style={styles.viewRewardBtn} onPress={onViewReward} activeOpacity={0.85}>
+            <MaterialIcons name="card-giftcard" size={14} color="#fff" />
+            <Text style={styles.viewRewardText}>View My Rewards</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {!item.read && <View style={styles.unreadDot} />}
     </View>
@@ -118,6 +126,7 @@ export default function NotificationScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [truckNotifs, setTruckNotifs] = useState([]);
   const [pickupNotifs, setPickupNotifs] = useState([]);
+  const [rewardNotifs, setRewardNotifs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [clearedAt, setClearedAt] = useState(
     user?.notificationsClearedAt ? new Date(user.notificationsClearedAt) : null
@@ -125,7 +134,7 @@ export default function NotificationScreen({ navigation }) {
   const seenTrucksRef = useRef(new Set());
 
   const handleClearAll = useCallback(() => {
-    const total = notifications.length + truckNotifs.length + pickupNotifs.length;
+    const total = notifications.length + truckNotifs.length + pickupNotifs.length + rewardNotifs.length;
     if (total === 0) return;
     Alert.alert(
       'Clear Notifications',
@@ -140,6 +149,7 @@ export default function NotificationScreen({ navigation }) {
             setNotifications([]);
             setTruckNotifs([]);
             setPickupNotifs([]);
+            setRewardNotifs([]);
             seenTrucksRef.current.clear();
             setClearedAt(now);
             if (user?.id) {
@@ -150,7 +160,7 @@ export default function NotificationScreen({ navigation }) {
         },
       ],
     );
-  }, [notifications.length, truckNotifs.length, pickupNotifs.length, user?.id]);
+  }, [notifications.length, truckNotifs.length, pickupNotifs.length, rewardNotifs.length, user?.id]);
 
   const clearedAtRef = useRef(clearedAt);
   useEffect(() => { clearedAtRef.current = clearedAt; }, [clearedAt]);
@@ -248,9 +258,27 @@ export default function NotificationScreen({ navigation }) {
     }
   }, [user]);
 
-  // Live truck + pickup notifications via socket
+  // Live truck, pickup, and reward notifications via socket
   useEffect(() => {
     const socket = io(API_URL, { transports: ['polling', 'websocket'] });
+
+    // Join resident-specific room so targeted reward events reach this socket
+    if (user?.id) socket.emit('resident:join', { residentId: user.id });
+
+    socket.on('reward:new', (reward) => {
+      setRewardNotifs(prev => {
+        if (prev.some(n => n.rewardId === reward._id)) return prev;
+        return [{
+          id: `reward-${reward._id}-${Date.now()}`,
+          rewardId: reward._id,
+          title: '🎉 You received a reward!',
+          message: `"${reward.title}" from Brgy. ${reward.barangay}. Claim it before it expires!`,
+          time: 'Just now',
+          type: 'reward',
+          read: false,
+        }, ...prev];
+      });
+    });
 
     socket.on('truck:location:update', ({ truckId }) => {
       if (seenTrucksRef.current.has(truckId)) return;
@@ -328,9 +356,15 @@ export default function NotificationScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
-          data={[...pickupNotifs, ...truckNotifs, ...notifications]}
+          data={[...rewardNotifs, ...pickupNotifs, ...truckNotifs, ...notifications]}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <NotificationItem item={item} onVerifyPickup={handleVerifyPickup} />}
+          renderItem={({ item }) => (
+            <NotificationItem
+              item={item}
+              onVerifyPickup={handleVerifyPickup}
+              onViewReward={() => navigation.navigate('MyRewards')}
+            />
+          )}
           contentContainerStyle={styles.listContainer}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -384,4 +418,10 @@ const styles = StyleSheet.create({
   },
   verifyNoText: { fontSize: 13, fontWeight: '700', color: '#BA1A1A' },
   verifiedNote: { fontSize: 12, color: '#6B7280', marginTop: 6, fontStyle: 'italic' },
+  viewRewardBtn: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#D97706', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 14,
+    marginTop: 10, gap: 5,
+  },
+  viewRewardText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 });

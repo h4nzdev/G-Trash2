@@ -61,6 +61,18 @@ function RewardModal({ reward, onClose, onSaved, official }) {
   const searchTimer = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [activeResidents, setActiveResidents] = useState([]);
+
+  // Load top active residents for this barangay so officials know who to reward
+  useEffect(() => {
+    if (!form.barangay) return;
+    axios.get(`${API}/api/rewards/leaderboard-eligible?barangay=${encodeURIComponent(form.barangay)}`)
+      .then(({ data }) => {
+        const list = data[form.barangay] || [];
+        setActiveResidents(list.slice(0, 5));
+      })
+      .catch(() => {});
+  }, [form.barangay]);
 
   const searchResidents = (q) => {
     setSearchQ(q);
@@ -222,6 +234,36 @@ function RewardModal({ reward, onClose, onSaved, official }) {
               <p className="text-xs text-slate-400 mt-1.5 px-1">No residents found for "{searchQ}" in Brgy. {form.barangay || 'this barangay'}.</p>
             )}
           </div>
+
+          {/* Top active residents — shown when no manual search is active */}
+          {!form.recipientId && searchQ.length < 2 && activeResidents.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Top Active Residents in Brgy. {form.barangay}
+              </p>
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                {activeResidents.map((r, i) => (
+                  <button
+                    key={r._id}
+                    type="button"
+                    onClick={() => selectResident(r)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-emerald-50 transition-colors border-b border-slate-100 last:border-0"
+                  >
+                    <span className="w-6 h-6 rounded-full bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{r.name}</p>
+                      <p className="text-[11px] text-slate-400">{r.reportCount} report{r.reportCount !== 1 ? 's' : ''} submitted</p>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex-shrink-0">
+                      Select
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
