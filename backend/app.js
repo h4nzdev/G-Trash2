@@ -2940,7 +2940,7 @@ io.on("connection", (socket) => {
 });
 
 // --- EcoAssist AI (Groq) -------------------------------------
-app.post("/api/ai/chat", async (req, res) => {
+app.post("/api/ai/chat", (req, res) => {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_API_KEY || GROQ_API_KEY === "your_groq_key_here") {
     return res.status(500).json({ error: "GROQ_API_KEY not configured in .env" });
@@ -2960,28 +2960,43 @@ Current session context:
 
 Keep responses short and practical — drivers read on a phone while working. Use plain language.`;
 
-  try {
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-        max_tokens: 256,
-        temperature: 0.7,
-      }),
+  const body = JSON.stringify({
+    model: "llama-3.1-8b-instant",
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+    max_tokens: 256,
+    temperature: 0.7,
+  });
+
+  const options = {
+    hostname: "api.groq.com",
+    path: "/openai/v1/chat/completions",
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+    },
+  };
+
+  const request = https.request(options, (groqRes) => {
+    let raw = "";
+    groqRes.on("data", (chunk) => { raw += chunk; });
+    groqRes.on("end", () => {
+      try {
+        const data = JSON.parse(raw);
+        if (groqRes.statusCode >= 400) {
+          return res.status(groqRes.statusCode).json({ error: data.error?.message || "Groq API error" });
+        }
+        res.json({ reply: data.choices[0].message.content });
+      } catch {
+        res.status(500).json({ error: "Failed to parse Groq response" });
+      }
     });
-    const data = await groqRes.json();
-    if (!groqRes.ok) {
-      return res.status(groqRes.status).json({ error: data.error?.message || "Groq API error" });
-    }
-    res.json({ reply: data.choices[0].message.content });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  });
+
+  request.on("error", (err) => res.status(500).json({ error: err.message }));
+  request.write(body);
+  request.end();
 });
 
 // --- Start ---------------------------------------------------
