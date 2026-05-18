@@ -438,46 +438,56 @@ export default function RouteMonitoring() {
               {mappableRoutes.map(route => {
                 const isSelected = selectedRoute?._id === route._id;
                 const hasDriver = !!route.truckId;
+                const validCoords = (route.routeCoords || []).filter(
+                  ([lat, lng]) => lat != null && lng != null && !isNaN(lat) && !isNaN(lng)
+                );
+                if (validCoords.length === 0) return null;
                 return (
                   <span key={route._id}>
                     <Polyline
-                      positions={route.routeCoords}
+                      positions={validCoords}
                       color={isSelected ? '#059669' : hasDriver ? '#3b82f6' : '#94a3b8'}
                       weight={isSelected ? 5 : 3}
                       opacity={isSelected ? 0.9 : 0.55}
                       eventHandlers={{ click: () => setSelectedRoute(isSelected ? null : route) }}
                     />
-                    {isSelected && route.waypoints.map((wp, i) => (
-                      <Marker
-                        key={i}
-                        position={[wp.lat, wp.lng]}
-                        icon={makeStopIcon(i + 1, i === 0, i === route.waypoints.length - 1)}
-                      >
-                        <Tooltip permanent={false} direction="top" offset={[0, -14]}>{wp.name}</Tooltip>
-                      </Marker>
-                    ))}
+                    {isSelected && route.waypoints
+                      .filter(wp => wp.lat != null && wp.lng != null && !isNaN(wp.lat) && !isNaN(wp.lng))
+                      .map((wp, i) => (
+                        <Marker
+                          key={i}
+                          position={[wp.lat, wp.lng]}
+                          icon={makeStopIcon(i + 1, i === 0, i === route.waypoints.length - 1)}
+                        >
+                          <Tooltip permanent={false} direction="top" offset={[0, -14]}>{wp.name}</Tooltip>
+                        </Marker>
+                      ))}
                   </span>
                 );
               })}
 
-              {Object.values(trucks).filter(t => t.lat && t.lng).map(truck => (
-                <Marker key={truck.truckId} position={[truck.lat, truck.lng]} icon={makeTruckIcon(truck.status)}>
-                  <Tooltip direction="top" offset={[0, -18]}><span className="font-bold">{truck.truckId}</span></Tooltip>
-                </Marker>
-              ))}
+              {Object.values(trucks)
+                .filter(t => t.lat != null && t.lng != null && !isNaN(t.lat) && !isNaN(t.lng))
+                .map(truck => (
+                  <Marker key={truck.truckId} position={[truck.lat, truck.lng]} icon={makeTruckIcon(truck.status)}>
+                    <Tooltip direction="top" offset={[0, -18]}><span className="font-bold">{truck.truckId}</span></Tooltip>
+                  </Marker>
+                ))}
 
-              {showReports && reports.map(r => (
-                <Marker 
-                  key={r._id} 
-                  position={[r.lat, r.lng]} 
-                  icon={makeBinIcon((r.upvotes?.length || 0) - (r.downvotes?.length || 0))}
-                  eventHandlers={{ click: () => setSelectedReport(r) }}
-                >
-                  <Tooltip direction="top" offset={[0, -16]}>
-                    <span className="font-bold">Overflowing Bin</span>
-                  </Tooltip>
-                </Marker>
-              ))}
+              {showReports && reports
+                .filter(r => r.lat != null && r.lng != null && !isNaN(r.lat) && !isNaN(r.lng))
+                .map(r => (
+                  <Marker
+                    key={r._id}
+                    position={[r.lat, r.lng]}
+                    icon={makeBinIcon((r.upvotes?.length || 0) - (r.downvotes?.length || 0))}
+                    eventHandlers={{ click: () => setSelectedReport(r) }}
+                  >
+                    <Tooltip direction="top" offset={[0, -16]}>
+                      <span className="font-bold">Overflowing Bin</span>
+                    </Tooltip>
+                  </Marker>
+                ))}
             </MapContainer>
 
             {/* Map Controls — floats over map top-right */}
