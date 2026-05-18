@@ -105,9 +105,24 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  const uploadToCloudinary = async (base64Data) => {
+    const res = await fetch(`${API_URL}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: base64Data }),
+    });
+    if (!res.ok) throw new Error('Image upload failed');
+    const json = await res.json();
+    return json.url;
+  };
+
   const handleSaveProfile = async () => {
     try {
-      await updateProfile(editForm);
+      let profileData = { ...editForm };
+      if (profileData.profilePicture?.startsWith('data:')) {
+        profileData.profilePicture = await uploadToCloudinary(profileData.profilePicture);
+      }
+      await updateProfile(profileData);
       setIsEditModalVisible(false);
       Alert.alert("Success", "Profile updated successfully!");
     } catch (error) {

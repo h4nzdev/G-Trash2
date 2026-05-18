@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -76,7 +76,8 @@ function SkeletonBlock({ width = "100%", height = 16, radius = 8, style }) {
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CollectorHomeScreen() {
-  const { user } = useAuth();
+  const { user, unreadCount, clearUnread } = useAuth();
+  const navigation = useNavigation();
   const TRUCK_ID = user?.truckId ?? "GT-000";
   const driverName = user?.driverName ?? "Collector";
 
@@ -449,9 +450,22 @@ export default function CollectorHomeScreen() {
           <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={fetchRouteData}>
             <MaterialIcons name="refresh" size={22} color="#1B1C1C" />
           </TouchableOpacity>
-          <View style={styles.avatar}>
-            <MaterialIcons name="person" size={22} color="#BECABE" />
-          </View>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            activeOpacity={0.7}
+            onPress={() => { clearUnread(); navigation.navigate('Alerts'); }}
+          >
+            <MaterialIcons
+              name={unreadCount > 0 ? "notifications" : "notifications-none"}
+              size={24}
+              color={unreadCount > 0 ? "#006A3B" : "#1B1C1C"}
+            />
+            {unreadCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -924,6 +938,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#F1F5F9",
+    position: "relative",
+  },
+  notifBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
   avatar: {
     width: 44,

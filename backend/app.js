@@ -7,6 +7,13 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const https = require("https");
+const cloudinary = require("cloudinary").v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -45,6 +52,7 @@ const truckSchema = new mongoose.Schema({
   heading: { type: Number, default: 0 },
   speed: { type: Number, default: 0 },
   status: { type: String, default: "online" },
+  pushToken: { type: String, default: "" },
   updatedAt: { type: Date, default: Date.now },
 });
 const Truck = mongoose.model("Truck", truckSchema);
@@ -483,6 +491,21 @@ function barangayFilter(official, field = "barangay") {
   if (official.barangay === "All" || official.role === "superadmin") return {};
   return { [field]: official.barangay };
 }
+
+// --- Cloudinary Upload ----------------------------------------
+app.post("/api/upload", async (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!data) return res.status(400).json({ error: "No image data provided" });
+    const result = await cloudinary.uploader.upload(data, {
+      folder: "gtrash",
+      resource_type: "image",
+    });
+    res.json({ url: result.secure_url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // --- Resident Auth -------------------------------------------
 app.post("/api/residents/register", async (req, res) => {
@@ -1057,6 +1080,50 @@ app.get("/api/trucks/:truckId", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Save Expo push token for a truck (called on app launch)
+app.put("/api/trucks/:truckId/push-token", async (req, res) => {
+  const { pushToken } = req.body;
+  if (!pushToken) return res.status(400).json({ error: "pushToken required" });
+  try {
+    await Truck.findOneAndUpdate(
+      { truckId: req.params.truckId.toUpperCase() },
+      { pushToken },
+      { upsert: true },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper — send Expo push notification to a truck
+async function notifyTruck(truckId, title, body, data = {}) {
+  try {
+    const truck = await Truck.findOne({ truckId: truckId.toUpperCase() });
+    if (!truck?.pushToken || !truck.pushToken.startsWith("ExponentPushToken")) return;
+    const payload = JSON.stringify({
+      to: truck.pushToken,
+      sound: "default",
+      title,
+      body,
+      data,
+    });
+    const opts = {
+      hostname: "exp.host",
+      path: "/--/api/v2/push/send",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+    const req2 = https.request(opts);
+    req2.on("error", () => {});
+    req2.write(payload);
+    req2.end();
+  } catch {}
+}
 
 // Called by GarbageTruck app to push GPS position
 app.post("/api/trucks/location", async (req, res) => {
@@ -2380,6 +2447,16 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       notes,
     });
     io.emit("schedule:changed", { truckId, date });
+
+    // Push notification to the assigned truck
+    const timeLabel = startTime ? ` at ${startTime}` : "";
+    notifyTruck(
+      truckId,
+      "New Schedule Assigned",
+      `You have been scheduled for "${routeName || "a route"}" on ${date}${timeLabel}.`,
+      { type: "schedule", scheduleId: schedule._id.toString(), date, routeName },
+    );
+
     res.status(201).json(schedule);
   } catch (err) {
     res.status(500).json({ error: err.message });

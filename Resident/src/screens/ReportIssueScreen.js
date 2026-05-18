@@ -169,7 +169,18 @@ export default function ReportIssueScreen({ navigation }) {
     Alert.alert('Location Pinned', 'Your location has been set.');
   };
 
-  const handleSubmit = () => {
+  const uploadImage = async (base64Data) => {
+    const res = await fetch(`${BACKEND_URL}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: base64Data }),
+    });
+    if (!res.ok) throw new Error('Image upload failed');
+    const json = await res.json();
+    return json.url;
+  };
+
+  const handleSubmit = async () => {
     if (!description.trim()) {
       Alert.alert('Missing Description', 'Please describe the issue.');
       return;
@@ -180,49 +191,59 @@ export default function ReportIssueScreen({ navigation }) {
     }
 
     setIsSubmitting(true);
-
-    const payload = JSON.stringify({
-      category,
-      description: description.trim(),
-      location: locationText.trim(),
-      barangay,
-      lat: location?.latitude,
-      lng: location?.longitude,
-      userId: user?.id,
-      reportedBy: user?.name || 'Resident',
-      reportImage: imageBase64,
-    });
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${BACKEND_URL}/api/reports`);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.timeout = 30000;
-
-    xhr.onload = () => {
-      setIsSubmitting(false);
-      if (xhr.status === 201) {
-        Alert.alert(
-          'Report Submitted ✅',
-          'Your report has been sent to the officials and will be reviewed shortly.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
-        setDescription('');
-        setLocationText('');
-        setImage(null);
-        setLocation(null);
-      } else {
-        Alert.alert('Error', `Server responded with ${xhr.status}`);
+    try {
+      let reportImage = null;
+      if (imageBase64) {
+        reportImage = await uploadImage(imageBase64);
       }
-    };
-    xhr.onerror = () => {
+
+      const payload = JSON.stringify({
+        category,
+        description: description.trim(),
+        location: locationText.trim(),
+        barangay,
+        lat: location?.latitude,
+        lng: location?.longitude,
+        userId: user?.id,
+        reportedBy: user?.name || 'Resident',
+        reportImage,
+      });
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${BACKEND_URL}/api/reports`);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.timeout = 30000;
+
+      xhr.onload = () => {
+        setIsSubmitting(false);
+        if (xhr.status === 201) {
+          Alert.alert(
+            'Report Submitted ✅',
+            'Your report has been sent to the officials and will be reviewed shortly.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+          setDescription('');
+          setLocationText('');
+          setImage(null);
+          setImageBase64(null);
+          setLocation(null);
+        } else {
+          Alert.alert('Error', `Server responded with ${xhr.status}`);
+        }
+      };
+      xhr.onerror = () => {
+        setIsSubmitting(false);
+        Alert.alert('Network Error', `Could not reach the server at ${BACKEND_URL}`);
+      };
+      xhr.ontimeout = () => {
+        setIsSubmitting(false);
+        Alert.alert('Timeout', 'The server took too long to respond.');
+      };
+      xhr.send(payload);
+    } catch (err) {
       setIsSubmitting(false);
-      Alert.alert('Network Error', `Could not reach the server at ${BACKEND_URL}`);
-    };
-    xhr.ontimeout = () => {
-      setIsSubmitting(false);
-      Alert.alert('Timeout', 'The server took too long to respond.');
-    };
-    xhr.send(payload);
+      Alert.alert('Upload Error', err.message || 'Failed to upload image');
+    }
   };
 
   return (

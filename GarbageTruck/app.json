@@ -25,6 +25,16 @@
     "web": {
       "favicon": "./assets/logo.png"
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#006A3B",
+          "sounds": []
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "4c7208d5-5211-4ef1-a356-da0a6936022b"

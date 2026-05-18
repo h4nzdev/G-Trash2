@@ -1,83 +1,11 @@
-Boundary] No polygon found in Nominatim for "Lahug"
-overrideMethod @ installHook.js:1
-fetchBoundaryFromNominatim @ RouteBuilder.jsx:78
-await in fetchBoundaryFromNominatim
-(anonymous) @ RouteBuilder.jsx:131
-await in (anonymous)
-(anonymous) @ RouteBuilder.jsx:133
-react_stack_bottom_frame @ react-dom_client.js?v=1a003ce6:12904
-runWithFiberInDEV @ react-dom_client.js?v=1a003ce6:851
-commitHookEffectListMount @ react-dom_client.js?v=1a003ce6:6617
-commitHookPassiveMountEffects @ react-dom_client.js?v=1a003ce6:6652
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7618
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7617
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7672
-recursivelyTraversePassiveMountEffects @ react-dom_client.js?v=1a003ce6:7606
-commitPassiveMountOnFiber @ react-dom_client.js?v=1a003ce6:7627
-flushPassiveEffects @ react-dom_client.js?v=1a003ce6:8808
-flushPendingEffects @ react-dom_client.js?v=1a003ce6:8769
-performSyncWorkOnRoot @ react-dom_client.js?v=1a003ce6:9064
-flushSyncWorkAcrossRoots_impl @ react-dom_client.js?v=1a003ce6:8984
-flushSpawnedWork @ react-dom_client.js?v=1a003ce6:8752
-commitRoot @ react-dom_client.js?v=1a003ce6:8585
-commitRootWhenReady @ react-dom_client.js?v=1a003ce6:8079
-performWorkOnRoot @ react-dom_client.js?v=1a003ce6:8051
-performWorkOnRootViaSchedulerTask @ react-dom_client.js?v=1a003ce6:9059
-performWorkUntilDeadline @ react-dom_client.js?v=1a003ce6:36
-<RouteBuilder>
-exports.jsxDEV @ react_jsx-dev-runtime.js?v=1a003ce6:193
-(anonymous) @ App.jsx:40
-react_stack_bottom_frame @ react-dom_client.js?v=1a003ce6:12868
-renderWithHooksAgain @ react-dom_client.js?v=1a003ce6:4268
-renderWithHooks @ react-dom_client.js?v=1a003ce6:4219
-updateFunctionComponent @ react-dom_client.js?v=1a003ce6:5569
-beginWork @ react-dom_client.js?v=1a003ce6:6140
-runWithFiberInDEV @ react-dom_client.js?v=1a003ce6:851
-performUnitOfWork @ react-dom_client.js?v=1a003ce6:8429
-workLoopSync @ react-dom_client.js?v=1a003ce6:8325
-renderRootSync @ react-dom_client.js?v=1a003ce6:8309
-performWorkOnRoot @ react-dom_client.js?v=1a003ce6:7957
-performWorkOnRootViaSchedulerTask @ react-dom_client.js?v=1a003ce6:9059
-performWorkUntilDeadline @ react-dom_client.js?v=1a003ce6:36
-<App>
-exports.jsxDEV @ react_jsx-dev-runtime.js?v=1a003ce6:193
-(anonymous) @ main.jsx:9Understand this warning
-installHook.js:1 [Boundary] No polygon found in Nominatim for "Lahug"
+index-Ddo1FSaP.js:60 Uncaught Error: Invalid LatLng object: (undefined, undefined)
+    at new ne (index-Ddo1FSaP.js:60:130813)
+    at R (index-Ddo1FSaP.js:60:131539)
+    at t.initialize (index-Ddo1FSaP.js:60:194856)
+    at new t (index-Ddo1FSaP.js:60:121246)
+    at index-Ddo1FSaP.js:60:269820
+    at index-Ddo1FSaP.js:60:267827
+    at index-Ddo1FSaP.js:60:268207
+    at t (index-Ddo1FSaP.js:60:117541)
+    at yo (index-Ddo1FSaP.js:8:47560)
+    at tc (index-Ddo1FSaP.js:8:66838)

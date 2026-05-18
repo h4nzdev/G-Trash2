@@ -9,6 +9,7 @@
   "description": "G-TRASH unified backend — tracking + officials in one server",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dotenv": "^16.0.0",
     "express": "^5.2.1",

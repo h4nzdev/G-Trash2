@@ -5,6 +5,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import CollectorHomeScreen from "../screens/CollectorHomeScreen";
 import CollectorMapScreen from "../screens/CollectorMapScreen";
 import CollectorHistoryScreen from "../screens/CollectorHistoryScreen";
+import CollectorNotificationScreen from "../screens/CollectorNotificationScreen";
 import CollectorProfileScreen from "../screens/CollectorProfileScreen";
 
 const Tab = createBottomTabNavigator();
@@ -30,17 +31,18 @@ export default function CollectorTabNavigator() {
         tabBarActiveTintColor: "#006A3B",
         tabBarInactiveTintColor: "#BECABE",
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: "600",
           textTransform: "uppercase",
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
           marginTop: 2,
         },
         tabBarIcon: ({ focused, color }) => {
           const icons = {
-            Home: focused ? "home" : "home",
-            Map: focused ? "map" : "map",
-            History: focused ? "history" : "history",
+            Home: "home",
+            Map: "map",
+            History: "history",
+            Alerts: focused ? "notifications" : "notifications-none",
             Profile: focused ? "person" : "person-outline",
           };
           return (
@@ -56,6 +58,7 @@ export default function CollectorTabNavigator() {
       <Tab.Screen name="Home" component={CollectorHomeScreen} />
       <Tab.Screen name="Map" component={CollectorMapScreen} />
       <Tab.Screen name="History" component={CollectorHistoryScreen} />
+      <Tab.Screen name="Alerts" component={CollectorNotificationScreen} />
       <Tab.Screen name="Profile" component={CollectorProfileScreen} />
     </Tab.Navigator>
   );

@@ -1,20 +1,78 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import API_URL from '../config';
+import { saveNotification } from '../utils/notifications';
 
 const BACKEND_URL = API_URL;
 const AuthContext = createContext();
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function registerAndSavePushToken(truckId) {
+  if (!Device.isDevice) return;
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'G-TRASH Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#006A3B',
+    });
+  }
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') return;
+  const tokenData = await Notifications.getExpoPushTokenAsync({
+    projectId: '4c7208d5-5211-4ef1-a356-da0a6936022b',
+  });
+  const pushToken = tokenData.data;
+  fetch(`${BACKEND_URL}/api/trucks/${truckId}/push-token`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pushToken }),
+  }).catch(() => {});
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notifListenerRef = useRef(null);
 
-  useEffect(() => { loadStorageData(); }, []);
+  useEffect(() => {
+    loadStorageData();
+    // Listen for notifications received while app is open
+    notifListenerRef.current = Notifications.addNotificationReceivedListener((notification) => {
+      const { title, body, data } = notification.request.content;
+      saveNotification({ title, body, data }).then(() => {
+        setUnreadCount((c) => c + 1);
+      });
+    });
+    return () => {
+      if (notifListenerRef.current) Notifications.removeNotificationSubscription(notifListenerRef.current);
+    };
+  }, []);
 
   async function loadStorageData() {
     try {
       const stored = await AsyncStorage.getItem('@AuthData');
-      if (stored) setUser(JSON.parse(stored));
+      if (stored) {
+        const userData = JSON.parse(stored);
+        setUser(userData);
+        registerAndSavePushToken(userData.truckId);
+      }
     } catch (e) {
       console.error('Failed to load auth data', e);
     } finally {
@@ -40,6 +98,7 @@ export const AuthProvider = ({ children }) => {
           };
           setUser(userData);
           await AsyncStorage.setItem('@AuthData', JSON.stringify(userData));
+          registerAndSavePushToken(userData.truckId);
           resolve(userData);
         } else {
           reject(new Error('Invalid Truck ID. Please check with your supervisor.'));
@@ -61,8 +120,10 @@ export const AuthProvider = ({ children }) => {
     await AsyncStorage.setItem('@AuthData', JSON.stringify(updated));
   };
 
+  const clearUnread = () => setUnreadCount(0);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading, unreadCount, clearUnread }}>
       {children}
     </AuthContext.Provider>
   );
