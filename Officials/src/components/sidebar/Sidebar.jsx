@@ -17,7 +17,6 @@ import {
   ChevronDown,
   Activity,
   Shield,
-  Bug,
   Gift,
 } from "lucide-react";
 import { useState } from "react";
@@ -53,8 +52,7 @@ const navGroups = [
   {
     label: "System",
     items: [
-      { path: "/settings",    icon: Settings, label: "Settings" },
-      { path: "/bug-reports", icon: Bug,      label: "Bug Reports" },
+      { path: "/settings", icon: Settings, label: "Settings" },
     ]
   }
 ];

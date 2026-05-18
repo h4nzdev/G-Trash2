@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
-  Gift, Plus, X, Check, AlertCircle, ChevronDown, Search,
-  Trophy, Star, FileText, Tag, Clock, RefreshCw, Eye, Send,
+  Gift, Plus, X, Check, AlertCircle, Search,
+  RefreshCw, Eye, Send, User,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -55,16 +55,36 @@ function RewardModal({ reward, onClose, onSaved, official }) {
     recipientId: reward?.recipientId || '',
     recipientName: reward?.recipientName || '',
   });
-  const [eligible, setEligible] = useState([]);
+  const [searchQ, setSearchQ] = useState(reward?.recipientName || '');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimer = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!form.barangay) return;
-    axios.get(`${API}/api/rewards/leaderboard-eligible?barangay=${form.barangay}`)
-      .then(r => setEligible(r.data[form.barangay] || []))
-      .catch(() => {});
-  }, [form.barangay]);
+  const searchResidents = (q) => {
+    setSearchQ(q);
+    // Clear selection if user types a new query
+    if (form.recipientId) setForm(f => ({ ...f, recipientId: '', recipientName: '' }));
+    clearTimeout(searchTimer.current);
+    if (q.trim().length < 2) { setSearchResults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const { data } = await axios.get(
+          `${API}/api/residents/search?q=${encodeURIComponent(q)}&barangay=${encodeURIComponent(form.barangay || '')}`
+        );
+        setSearchResults(data);
+      } catch { setSearchResults([]); }
+      finally { setSearchLoading(false); }
+    }, 350);
+  };
+
+  const selectResident = (r) => {
+    setForm(f => ({ ...f, recipientId: r._id, recipientName: r.name }));
+    setSearchQ(r.name);
+    setSearchResults([]);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -155,43 +175,51 @@ function RewardModal({ reward, onClose, onSaved, official }) {
             </div>
           </div>
 
-          {/* Recipient */}
+          {/* Recipient search */}
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Recipient * {eligible.length > 0 && <span className="text-emerald-600 normal-case font-normal">— top performers auto-suggested</span>}
+              Recipient *
             </label>
-            {eligible.length > 0 ? (
-              <select
-                value={form.recipientId}
-                onChange={e => {
-                  const found = eligible.find(r => r._id === e.target.value);
-                  set('recipientId', e.target.value);
-                  set('recipientName', found ? found.name : '');
-                }}
-                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-              >
-                <option value="">— Select recipient —</option>
-                {eligible.map(r => (
-                  <option key={r._id} value={r._id}>
-                    {r.name} · {r.reportCount} reports
-                  </option>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              <input
+                value={searchQ}
+                onChange={e => searchResidents(e.target.value)}
+                placeholder="Search resident by name…"
+                className={`w-full pl-9 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 ${
+                  form.recipientId ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'
+                }`}
+              />
+              {searchLoading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              )}
+              {form.recipientId && !searchLoading && (
+                <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-600" />
+              )}
+            </div>
+            {/* Dropdown results */}
+            {searchResults.length > 0 && (
+              <div className="mt-1 border border-slate-200 rounded-xl overflow-hidden shadow-lg bg-white z-10 relative">
+                {searchResults.map(r => (
+                  <button
+                    key={r._id}
+                    type="button"
+                    onClick={() => selectResident(r)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-emerald-50 transition-colors border-b border-slate-50 last:border-0"
+                  >
+                    <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User className="w-3.5 h-3.5 text-emerald-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{r.name}</p>
+                      <p className="text-[11px] text-slate-400 truncate">Brgy. {r.barangay}{r.address !== '—' ? ` · ${r.address}` : ''}</p>
+                    </div>
+                  </button>
                 ))}
-              </select>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  value={form.recipientId}
-                  onChange={e => set('recipientId', e.target.value)}
-                  placeholder="Resident ID"
-                  className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                />
-                <input
-                  value={form.recipientName}
-                  onChange={e => set('recipientName', e.target.value)}
-                  placeholder="Recipient name"
-                  className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                />
               </div>
+            )}
+            {searchQ.length >= 2 && !searchLoading && searchResults.length === 0 && !form.recipientId && (
+              <p className="text-xs text-slate-400 mt-1.5 px-1">No residents found for "{searchQ}" in Brgy. {form.barangay || 'this barangay'}.</p>
             )}
           </div>
 

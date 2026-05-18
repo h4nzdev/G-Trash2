@@ -13,7 +13,6 @@ import CollectionHistory from './pages/CollectionHistory';
 import Settings from './pages/Settings';
 import ScheduleRoute from './pages/ScheduleRoute';
 import RouteManager from './pages/RouteManager';
-import BugReports from './pages/BugReports';
 import DriverAnalytics from './pages/DriverAnalytics';
 import RewardsManagement from './pages/RewardsManagement';
 
@@ -49,7 +48,6 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="schedule" element={<ScheduleRoute />} />
             <Route path="route-manager" element={<RouteManager />} />
-            <Route path="bug-reports" element={<BugReports />} />
             <Route path="fleet/:truckId" element={<DriverAnalytics />} />
             <Route path="rewards" element={<RewardsManagement />} />
           </Route>

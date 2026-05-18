@@ -611,6 +611,35 @@ app.post("/api/upload", async (req, res) => {
   }
 });
 
+// Officials search residents by name within their barangay (no sensitive fields returned)
+app.get("/api/residents/search", async (req, res) => {
+  try {
+    const { barangay, q } = req.query;
+    if (!q || q.trim().length < 2) return res.json([]);
+
+    // Split into individual words so "Hanz Angelo" finds firstName="Hanz" lastName="Angelo"
+    const words = q.trim().split(/\s+/).filter(w => w.length > 1);
+    const wordRegexes = words.map(
+      w => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    );
+
+    const filter = {};
+    if (barangay && barangay !== "All") filter.barangay = { $regex: new RegExp(`^${barangay.trim()}$`, "i") };
+    // Match residents where ANY word hits firstName OR lastName
+    filter.$or = wordRegexes.flatMap(r => [{ firstName: r }, { lastName: r }]);
+
+    const residents = await Resident.find(filter, "firstName lastName barangay street houseNo").limit(20);
+    res.json(residents.map(r => ({
+      _id: r._id,
+      name: `${r.firstName} ${r.lastName}`,
+      barangay: r.barangay,
+      address: [r.houseNo, r.street].filter(Boolean).join(" ") || "—",
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Resident Auth -------------------------------------------
 app.post("/api/residents/register", async (req, res) => {
   const { firstName, lastName, email, password, phone, barangay, street, houseNo } = req.body;
