@@ -17,7 +17,8 @@ import {
   ChevronDown,
   Activity,
   Shield,
-  Bug
+  Bug,
+  Gift,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -46,6 +47,7 @@ const navGroups = [
       { path: "/reports", icon: FileWarning, label: "Reports" },
       { path: "/heatmap", icon: MapPin, label: "Heatmap Analytics" },
       { path: "/history", icon: History, label: "Collection History" },
+      { path: "/rewards", icon: Gift, label: "Rewards" },
     ]
   },
   {

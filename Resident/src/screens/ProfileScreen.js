@@ -379,6 +379,22 @@ export default function ProfileScreen({ navigation }) {
               <TouchableOpacity
                 style={styles.menuRow}
                 activeOpacity={0.5}
+                onPress={() => navigation.navigate('MyRewards')}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#FFF7ED" }]}>
+                    <Ionicons name="gift-outline" size={18} color="#F59E0B" />
+                  </View>
+                  <Text style={styles.menuText}>My Rewards</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
                 onPress={() => navigation.navigate('BugReport')}
               >
                 <View style={styles.menuLeft}>

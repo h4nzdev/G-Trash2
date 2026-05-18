@@ -41,6 +41,7 @@ mongoose
     console.log("OK: MongoDB connected ->", MONGO_URI);
     loadBoundaries();
     startSLAChecker();
+    startRewardExpirer();
   })
   .catch((err) => console.error("ERR: MongoDB error:", err.message));
 
@@ -272,11 +273,46 @@ const residentSchema = new mongoose.Schema({
   profilePicture: { type: String, default: null },
   lastProfilePictureUpdate: { type: Date, default: null },
   notificationsClearedAt: { type: Date, default: null },
+  rewardsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: "Reward" }],
+  totalRewardsClaimed: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 });
 // sparse: true → null householdIds (incomplete address) are not indexed, so old records won't conflict
 residentSchema.index({ householdId: 1 }, { unique: true, sparse: true });
 const Resident = mongoose.model("Resident", residentSchema);
+
+const rewardSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, default: "" },
+  category: {
+    type: String,
+    enum: ["best_segregation", "most_trash_collected", "most_reports", "most_active"],
+    required: true,
+  },
+  barangay: { type: String, required: true },
+  rewardType: {
+    type: String,
+    enum: ["physical_prize", "certificate", "cash", "discount", "recognition"],
+    required: true,
+  },
+  rewardValue: { type: String, default: "" },
+  status: {
+    type: String,
+    enum: ["draft", "published", "claimed", "expired"],
+    default: "draft",
+  },
+  recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident", required: true },
+  recipientName: { type: String, default: "" },
+  issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Official" },
+  issuedByName: { type: String, default: "" },
+  issuedDate: { type: Date, default: null },
+  claimDeadline: { type: Date, default: null },
+  claimedDate: { type: Date, default: null },
+  claimCode: { type: String, default: null, unique: true, sparse: true },
+  notes: { type: String, default: "" },
+  revokedAt: { type: Date, default: null },
+}, { timestamps: true });
+const Reward = mongoose.model("Reward", rewardSchema);
 
 const barangayBoundarySchema = new mongoose.Schema({
   barangay: { type: String, required: true, unique: true },
@@ -357,6 +393,29 @@ binStatusSchema.index({ residentId: 1, date: 1 }, { unique: true });
 const BinStatus = mongoose.model("BinStatus", binStatusSchema);
 
 // --- Helpers -------------------------------------------------
+
+function generateClaimCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+  const part = (len) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return `GTR-${part(4)}-${part(4)}`;
+}
+
+async function startRewardExpirer() {
+  const expire = async () => {
+    try {
+      const expired = await Reward.find({ status: "published", claimDeadline: { $lt: new Date() } });
+      for (const r of expired) {
+        await Reward.findByIdAndUpdate(r._id, { status: "expired" });
+        io.to(`resident:${r.recipientId}`).emit("reward:expired", { rewardId: r._id, title: r.title });
+      }
+      if (expired.length > 0) console.log(`[Rewards] Auto-expired ${expired.length} rewards`);
+    } catch (err) {
+      console.error("[Rewards] Expirer error:", err.message);
+    }
+  };
+  await expire();
+  setInterval(expire, 60 * 60 * 1000);
+}
 
 async function startSLAChecker() {
   const check = async () => {
@@ -3192,6 +3251,11 @@ const socketTruckMap = new Map(); // socketId → truckId (for auto-offline on d
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
+  // Resident app joins its own room to receive targeted reward notifications
+  socket.on("resident:join", ({ residentId }) => {
+    if (residentId) socket.join(`resident:${residentId}`);
+  });
+
   // GarbageTruck app sends live GPS position
   socket.on("truck:location", async (data, ack) => {
     const { truckId, lat, lng, heading = 0, speed = 0 } = data;
@@ -3316,6 +3380,239 @@ Keep responses short and practical — drivers read on a phone while working. Us
   request.on("error", (err) => res.status(500).json({ error: err.message }));
   request.write(body);
   request.end();
+});
+
+// --- Rewards -------------------------------------------------
+
+// GET /api/rewards/leaderboard-eligible — top residents per category per barangay
+app.get("/api/rewards/leaderboard-eligible", async (req, res) => {
+  try {
+    const { barangay } = req.query;
+    const query = barangay && barangay !== "All" ? { barangay } : {};
+    // Count reports per resident
+    const reportAgg = await Report.aggregate([
+      { $match: { ...query, status: { $in: ["resolved", "pending"] } } },
+      { $group: { _id: "$userId", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+    const residentIds = reportAgg.map(r => r._id).filter(Boolean);
+    const residents = await Resident.find(
+      { _id: { $in: residentIds }, ...query },
+      "firstName lastName barangay"
+    );
+    const eligibleMap = {};
+    for (const agg of reportAgg) {
+      const r = residents.find(res => String(res._id) === String(agg._id));
+      if (!r) continue;
+      if (!eligibleMap[r.barangay]) eligibleMap[r.barangay] = [];
+      eligibleMap[r.barangay].push({
+        _id: r._id,
+        name: `${r.firstName} ${r.lastName}`,
+        barangay: r.barangay,
+        reportCount: agg.count,
+      });
+    }
+    res.json(eligibleMap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/rewards/resident/:residentId — resident views their own rewards
+app.get("/api/rewards/resident/:residentId", async (req, res) => {
+  try {
+    const rewards = await Reward.find({ recipientId: req.params.residentId })
+      .sort({ createdAt: -1 });
+    res.json(rewards);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/rewards — list all (filterable by barangay, status, category)
+app.get("/api/rewards", async (req, res) => {
+  try {
+    const { barangay, status, category } = req.query;
+    const filter = {};
+    if (barangay && barangay !== "All") filter.barangay = barangay;
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    const rewards = await Reward.find(filter).sort({ createdAt: -1 });
+    res.json(rewards);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/rewards/:id
+app.get("/api/rewards/:id", async (req, res) => {
+  try {
+    const reward = await Reward.findById(req.params.id);
+    if (!reward) return res.status(404).json({ error: "Reward not found" });
+    res.json(reward);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/rewards — official creates a reward
+app.post("/api/rewards", async (req, res) => {
+  try {
+    const {
+      title, description, category, barangay, rewardType, rewardValue,
+      recipientId, recipientName, issuedBy, issuedByName, notes,
+      claimDeadline, publish,
+    } = req.body;
+    if (!title || !category || !barangay || !rewardType || !recipientId) {
+      return res.status(400).json({ error: "title, category, barangay, rewardType, recipientId are required" });
+    }
+    const deadline = claimDeadline
+      ? new Date(claimDeadline)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const status = publish ? "published" : "draft";
+    let claimCode = null;
+    if (publish) {
+      // ensure unique claim code
+      let attempts = 0;
+      do {
+        claimCode = generateClaimCode();
+        attempts++;
+      } while (attempts < 10 && await Reward.findOne({ claimCode }));
+    }
+
+    const reward = await Reward.create({
+      title, description, category, barangay, rewardType, rewardValue,
+      recipientId, recipientName: recipientName || "",
+      issuedBy: issuedBy || null, issuedByName: issuedByName || "",
+      status, claimCode,
+      issuedDate: publish ? new Date() : null,
+      claimDeadline: deadline,
+      notes: notes || "",
+    });
+
+    if (publish) {
+      // Link to resident
+      await Resident.findByIdAndUpdate(recipientId, {
+        $addToSet: { rewardsReceived: reward._id },
+      });
+      io.to(`resident:${recipientId}`).emit("reward:new", {
+        rewardId: reward._id,
+        title: reward.title,
+        rewardValue: reward.rewardValue,
+        barangay: reward.barangay,
+        claimDeadline: reward.claimDeadline,
+      });
+    }
+
+    res.status(201).json(reward);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/rewards/:id — official updates (publish, mark claimed, expire, revoke)
+app.patch("/api/rewards/:id", async (req, res) => {
+  try {
+    const { action, issuedByName } = req.body;
+    const reward = await Reward.findById(req.params.id);
+    if (!reward) return res.status(404).json({ error: "Reward not found" });
+
+    if (action === "publish" && reward.status === "draft") {
+      let claimCode = reward.claimCode;
+      if (!claimCode) {
+        let attempts = 0;
+        do {
+          claimCode = generateClaimCode();
+          attempts++;
+        } while (attempts < 10 && await Reward.findOne({ claimCode, _id: { $ne: reward._id } }));
+      }
+      reward.status = "published";
+      reward.claimCode = claimCode;
+      reward.issuedDate = new Date();
+      if (issuedByName) reward.issuedByName = issuedByName;
+      await reward.save();
+      await Resident.findByIdAndUpdate(reward.recipientId, {
+        $addToSet: { rewardsReceived: reward._id },
+      });
+      io.to(`resident:${reward.recipientId}`).emit("reward:new", {
+        rewardId: reward._id,
+        title: reward.title,
+        rewardValue: reward.rewardValue,
+        barangay: reward.barangay,
+        claimDeadline: reward.claimDeadline,
+      });
+    } else if (action === "mark_claimed" && reward.status === "published") {
+      reward.status = "claimed";
+      reward.claimedDate = new Date();
+      await reward.save();
+      await Resident.findByIdAndUpdate(reward.recipientId, {
+        $inc: { totalRewardsClaimed: 1 },
+      });
+      io.to(`resident:${reward.recipientId}`).emit("reward:claimed", {
+        rewardId: reward._id,
+        title: reward.title,
+      });
+    } else if (action === "expire") {
+      reward.status = "expired";
+      await reward.save();
+    } else if (action === "revoke") {
+      const hoursSincePublish = reward.issuedDate
+        ? (Date.now() - new Date(reward.issuedDate).getTime()) / 3600000
+        : 0;
+      if (reward.status === "claimed") {
+        return res.status(400).json({ error: "Cannot revoke a claimed reward" });
+      }
+      if (reward.issuedDate && hoursSincePublish > 24) {
+        return res.status(400).json({ error: "Revoke window expired (24 hours after publish)" });
+      }
+      await Resident.findByIdAndUpdate(reward.recipientId, {
+        $pull: { rewardsReceived: reward._id },
+      });
+      await Reward.findByIdAndDelete(reward._id);
+      return res.json({ revoked: true });
+    } else {
+      // Generic field update (title, description, notes, etc.)
+      const allowed = ["title", "description", "rewardType", "rewardValue", "notes", "claimDeadline"];
+      for (const field of allowed) {
+        if (req.body[field] !== undefined) reward[field] = req.body[field];
+      }
+      await reward.save();
+    }
+
+    res.json(reward);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/rewards/:id/claim — resident digitally claims
+app.post("/api/rewards/:id/claim", async (req, res) => {
+  try {
+    const { residentId } = req.body;
+    const reward = await Reward.findById(req.params.id);
+    if (!reward) return res.status(404).json({ error: "Reward not found" });
+    if (String(reward.recipientId) !== String(residentId)) {
+      return res.status(403).json({ error: "This reward does not belong to you" });
+    }
+    if (reward.status !== "published") {
+      return res.status(400).json({ error: `Cannot claim reward with status: ${reward.status}` });
+    }
+    if (reward.claimDeadline && new Date() > new Date(reward.claimDeadline)) {
+      reward.status = "expired";
+      await reward.save();
+      return res.status(400).json({ error: "Claim deadline has passed" });
+    }
+    reward.status = "claimed";
+    reward.claimedDate = new Date();
+    await reward.save();
+    await Resident.findByIdAndUpdate(residentId, { $inc: { totalRewardsClaimed: 1 } });
+    io.emit("reward:claimed", { rewardId: reward._id, title: reward.title, barangay: reward.barangay });
+    res.json({ success: true, reward });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Start ---------------------------------------------------

@@ -347,7 +347,7 @@ function buildLeafletHTML(truckB64) {
 export default function MapScreen() {
   const routeParams = useRoute();
   const { focusTruck } = routeParams.params || {};
-  const { bottom: bottomInset } = useSafeAreaInsets();
+  const { top: topInset, bottom: bottomInset } = useSafeAreaInsets();
   const { user } = useAuth();
   const userBarangay = user?.barangay || '';
 
@@ -1012,7 +1012,7 @@ export default function MapScreen() {
       {showJeepneyView && (
         <View style={styles.jeepneyOverlay}>
           {/* Header */}
-          <View style={styles.jeepneyHeader}>
+          <View style={[styles.jeepneyHeader, { paddingTop: topInset + 14 }]}>
             <TouchableOpacity
               onPress={() => setShowJeepneyView(false)}
               style={styles.jeepneyClose}
@@ -1061,7 +1061,7 @@ export default function MapScreen() {
           <ScrollView
             style={{ flex: 1 }}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.jeepneyList}
+            contentContainerStyle={[styles.jeepneyList, { paddingBottom: bottomInset + 32 }]}
           >
             {enrichedStops.length === 0 ? (
               <View style={styles.jeepneyEmpty}>
@@ -1330,7 +1330,6 @@ const styles = StyleSheet.create({
   jeepneyList: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 32,
   },
   jeepneyEmpty: {
     alignItems: "center",

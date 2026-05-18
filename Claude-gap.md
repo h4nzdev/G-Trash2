@@ -1,111 +1,173 @@
-I need to implement a "jeepney-style" route visualization for the G-TRASH Resident app. This is a UI feature that displays garbage truck routes in a format familiar to Cebu City residents — similar to how jeepney route signs show sequential stops (e.g., "Ayala → SM → Lahug → IT Park").
+I need to implement the LGU-to-Resident reward distribution flow for the G-TRASH system. This is the process where Barangay Officials approve and distribute rewards to residents who perform well on the leaderboard (e.g., "Best in Segregation"). Currently, the system tracks points and shows a leaderboard, but there is no workflow for officials to actually grant rewards and for residents to claim them.
 
 Current setup:
-- The Resident app uses React Native (Expo)
-- The Map screen uses WebView + Leaflet.js for the interactive map
-- Routes are fetched from GET /api/routes which returns route objects with waypoints (array of {lat, lng, name})
-- The app also has a non-map view for users who prefer a simpler interface
+- Backend: Node.js + Express + MongoDB with Mongoose
+- Officials Web App: React + Vite + Tailwind CSS
+- Resident App: React Native (Expo)
+- Socket.io is used for real-time events
+- The scoring system already tracks points per barangay across 4 categories (Report, Response, Collection, IoT)
+- Resident model has fields: name, email, barangay, points (I assume, please confirm or add)
 
 Requirements:
 
-1. Route Display Component (Non-Map View):
-   Create a "Route Board" component that mimics a jeepney route sign. This should show:
-   
-   - A horizontal scrollable card at the top of the Home screen or Map screen
-   - Each stop displayed as a labeled circle connected by arrows (→)
-   - Example visual layout:
-     
-     ┌─────────────────────────────────────────────────┐
-     │  🟢 Ayala  →  🟢 SM Cebu  →  🔴 Lahug  →  🟢 IT Park  │
-     └─────────────────────────────────────────────────┘
-     
-   - Green circle (🟢) = upcoming stop
-   - Red circle (🔴) = current/next stop (where the truck is headed)
-   - Gray circle (⚪️) = completed stop
-   - The truck's current position should be indicated between stops with a small truck icon
+1. BACKEND - New Schemas and Endpoints:
 
-2. Route Details Bottom Sheet:
-   When a user taps on the route board, expand a bottom sheet showing:
-   - Full list of stops with estimated arrival times
-   - Distance between each stop
-   - The truck's current progress (e.g., "2 of 5 stops completed")
-   - A "Set Alert for My Stop" button that triggers the 3-Layer notification for a specific stop
+   a. Reward Model (new Mongoose schema):
+      {
+        title: String,                    // e.g., "Best in Segregation - March 2026"
+        description: String,              // e.g., "Awarded for achieving the highest segregation accuracy"
+        category: String,                 // enum: ['best_segregation', 'most_trash_collected', 'most_reports', 'most_active']
+        barangay: String,                 // which barangay this reward is for
+        rewardType: String,               // enum: ['physical_prize', 'certificate', 'cash', 'discount', 'recognition']
+        rewardValue: String,              // e.g., "₱500 Gift Certificate", "Groceries Package", "Certificate of Recognition"
+        status: String,                   // enum: ['draft', 'published', 'claimed', 'expired']
+        recipientId: mongoose.ObjectId,   // ref to Resident (the winner)
+        recipientName: String,            // denormalized for quick display
+        issuedBy: mongoose.ObjectId,      // ref to Official who approved
+        issuedDate: Date,
+        claimDeadline: Date,              // residents must claim within X days
+        claimedDate: Date,               // when the resident actually claimed
+        claimCode: String,               // unique code for verification
+        notes: String,                    // internal notes for officials
+        createdAt: Date,
+        updatedAt: Date
+      }
 
-3. Map View Integration:
-   On the Leaflet.js map:
-   - Render the route as a colored polyline (use green for the route)
-   - Place custom markers for each stop using numbered icons (1, 2, 3, etc.)
-   - Completed stops get a checkmark overlay on the marker
-   - The current truck position is a moving garbage truck icon
-   - Add a "Jeepney View" toggle button on the map that switches between:
-     - Full map view
-     - Simplified route diagram view (the horizontal scrollable board)
+   b. New API Endpoints:
+      - POST /api/rewards - Official creates a new reward
+      - GET /api/rewards - List all rewards (filterable by barangay, status, category)
+      - GET /api/rewards/:id - Get single reward details
+      - PATCH /api/rewards/:id - Official updates reward (publish, mark as claimed physically)
+      - GET /api/rewards/my-rewards/:residentId - Resident views their rewards
+      - POST /api/rewards/:id/claim - Resident claims a reward digitally (generates claim confirmation)
+      - GET /api/rewards/leaderboard-eligible - Get top residents eligible for rewards per category per barangay
 
-4. Data Format:
-   The route data from the API looks like this:
-   {
-     "_id": "route123",
-     "name": "Lahug-Ayala Route",
-     "barangay": "Lahug",
-     "waypoints": [
-       { "name": "Ayala Terminal", "lat": 10.3175, "lng": 123.9050, "order": 1 },
-       { "name": "SM Cebu", "lat": 10.3110, "lng": 123.9180, "order": 2 },
-       { "name": "Lahug Market", "lat": 10.3254, "lng": 123.9110, "order": 3 },
-       { "name": "IT Park", "lat": 10.3310, "lng": 123.9080, "order": 4 }
-     ],
-     "assignedTruck": { "truckId": "TRK-001", "currentLat": 10.3200, "currentLng": 123.9120 }
-   }
+   c. Updated Resident Schema:
+      Add fields:
+      {
+        rewardsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Reward' }],
+        totalRewardsClaimed: { type: Number, default: 0 }
+      }
 
-5. Styling Requirements:
-   - Use colors that match the G-TRASH branding (Primary green: #006A3B)
-   - The route board should have a white background with rounded corners and subtle shadow
-   - Include the jeepney-inspired design elements (maybe a small jeepney icon)
-   - Font should be clear and readable at a glance
+2. OFFICIALS WEB APP - Reward Management:
 
-6. Edge Cases to Handle:
-   - Route has only 1-2 stops (very short route)
-   - Route has 15+ stops (very long route) — the horizontal scroll must handle this
-   - No active route assigned (show "No active collection route" message)
-   - Truck is offline or GPS signal lost (show last known position with a warning)
-   - Multiple routes serving the same barangay
+   a. New Page: "Rewards Management" (/rewards)
+      - Table showing all rewards with columns: Title, Recipient, Barangay, Type, Status, Date
+      - Filter by: Barangay, Status (Draft/Published/Claimed/Expired), Category, Date Range
+      - "Create Reward" button that opens a modal/form
+
+   b. Create Reward Modal:
+      - Select Reward Category (dropdown populated from leaderboard categories)
+      - The system should AUTO-SUGGEST eligible residents based on leaderboard rankings
+      - Select Recipient from filtered list of top performers in that barangay
+      - Input fields: Title, Description, Reward Type, Reward Value
+      - "Claim Deadline" date picker (default: 30 days from issuance)
+      - "Save as Draft" and "Publish & Notify" buttons
+
+   c. Reward Detail View:
+      - Shows all reward information
+      - Status timeline: Draft → Published → Claimed
+      - "Publish" button (if draft) - triggers notification to resident
+      - "Mark as Claimed" button (if published) - for when resident physically claims the reward
+      - "Expire" button with confirmation dialog
+
+   d. Dashboard Widget:
+      - Add a "Pending Rewards" card on the Officials Dashboard showing:
+        - Number of unclaimed rewards
+        - Rewards expiring within 7 days (highlighted in yellow/red)
+
+3. RESIDENT APP - Reward Claiming:
+
+   a. New Screen: "My Rewards" (accessible from Profile or Leaderboard screen)
+      - List of rewards earned by this resident
+      - Each reward card shows:
+        - Reward title and badge/icon based on category
+        - "Claimed" or "Available to Claim" status
+        - Claim deadline with countdown if approaching
+        - Reward value/prize description
+
+   b. Reward Claim Flow:
+      - Resident taps "Claim Reward" button
+      - App shows reward details with a congratulations animation
+      - Resident must tap "Confirm Claim"
+      - System generates a unique QR-like claim code
+      - App shows: "Show this code to your Barangay Office to receive your reward"
+      - Claim code and details are also stored locally in AsyncStorage
+
+   c. Claim Confirmation Screen:
+      - Large claim code displayed prominently
+      - Barangay office location and contact info
+      - "Add to Calendar" button for claim deadline
+      - Share button to save screenshot
+
+   d. Notification:
+      - When an official publishes a reward, the resident receives an in-app notification:
+        "🎉 Congratulations! You've been awarded [Reward Title] by [Barangay]!"
+      - Tapping the notification opens the My Rewards screen
+
+4. REAL-TIME UPDATES:
+   - New Socket.io events:
+     - reward:new - emitted when official publishes a reward
+     - reward:claimed - emitted when resident claims a reward
+   - The resident app should listen for reward:new and show a celebration modal
+
+5. CLAIM CODE SYSTEM:
+   - Generate a unique 8-character alphanumeric code for each reward
+   - Format: GTR-XXXX-XXXX (e.g., GTR-A3B7-9K2M)
+   - Code is valid until claim deadline
+   - Officials can verify the code on their dashboard when the resident comes to claim
+
+6. EDGE CASES:
+   - What if a resident doesn't claim within the deadline? (Auto-expire the reward)
+   - What if an official accidentally publishes to wrong resident? (Allow revoke within 24 hours)
+   - What if a resident moves to a different barangay? (Rewards stay with the original barangay)
+   - What if multiple residents tie for the same category? (Allow multiple rewards for same category)
 
 Please provide:
-- The RouteBoard component (horizontal scrollable jeepney-style view)
-- The RouteDetails bottom sheet component
-- Updated Map screen with the jeepney-style polyline and markers
-- Utility function to determine which stops are completed vs upcoming based on truck position
-- The "Jeepney View" toggle implementation
+- Complete Reward Mongoose schema
+- All API endpoints with request/response examples
+- Officials Web App pages and components for reward management
+- Resident App screens for viewing and claiming rewards
+- Socket.io event handlers
+- Claim code generation utility
 
 ---
 
 TESTING INSTRUCTIONS:
 After implementing, please tell me exactly how to test this feature by providing:
 
-1. Manual Test Steps (step-by-step):
-   - What screens to navigate to
-   - What buttons to press
-   - What I should see at each step
-   - How to simulate different route states (active, completed, no route)
+1. Manual Test Steps (step-by-step flow):
+   - Step 1: How to seed test data (which official account to use, which resident)
+   - Step 2: How to create a reward as an official (exact navigation path)
+   - Step 3: How to publish the reward and trigger notification
+   - Step 4: How to view the reward as a resident
+   - Step 5: How to claim the reward and see the claim code
+   - Step 6: How to mark as physically claimed as an official
 
 2. Test Data to Use:
-   - Provide a sample route JSON I can insert directly into MongoDB to test with
-   - Provide a sample truck location update I can emit via Socket.io to simulate movement
+   - Sample resident with high points that qualifies for a reward
+   - Sample reward object to insert via Postman or MongoDB
+   - Sample official account that has permission to create rewards
 
 3. Expected Visual Results:
-   - Describe exactly what the RouteBoard should look like for the test data
-   - Describe what happens when a stop is completed
-   - Describe the animation/transition when the truck moves between stops
+   - What the official sees on the Rewards Management page
+   - What the resident sees on the My Rewards screen
+   - What the claim confirmation screen looks like
+   - What notifications appear and where
 
 4. Debugging Checklist:
-   - If the route board is empty, check: [list items]
-   - If the truck icon doesn't move, check: [list items]
-   - If the colors are wrong, check: [list items]
+   - If reward doesn't appear for resident, check: [list items]
+   - If claim code isn't generating, check: [list items]
+   - If notification isn't received, check: [list items]
+   - If deadline isn't auto-expiring, check: [list items]
 
 5. Test Cases Table:
    | Test Case | Action | Expected Result |
    |-----------|--------|-----------------|
-   | Normal route display | Open app with active route | Route board shows all stops |
-   | Truck movement | Simulate truck GPS update | Truck icon moves; stops update color |
-   | No active route | Open app with no route assigned | Shows "No active collection route" |
-   | Long route (15 stops) | Open app with long route | Horizontal scroll works; all stops visible |
-   | Single stop route | Open app with 1-stop route | Shows start and end as same stop |
+   | Create draft reward | Official fills form, saves as draft | Reward appears with "Draft" status |
+   | Publish reward | Official clicks "Publish" | Resident gets notification; status changes to "Published" |
+   | Resident claims digitally | Resident taps "Claim" | Claim code generated; status changes to "Claimed" |
+   | Official marks physical claim | Official clicks "Mark as Claimed" | Status updates; reward moves to history |
+   | Reward expires | Deadline passes without claim | Status auto-changes to "Expired" |
+   | Multiple winners same category | Official creates 2 rewards | Both residents can claim independently |
+   | Revoke within 24 hours | Official clicks "Revoke" | Reward removed from resident's list |

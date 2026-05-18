@@ -15,6 +15,7 @@ import ScheduleRoute from './pages/ScheduleRoute';
 import RouteManager from './pages/RouteManager';
 import BugReports from './pages/BugReports';
 import DriverAnalytics from './pages/DriverAnalytics';
+import RewardsManagement from './pages/RewardsManagement';
 
 function ProtectedLayout() {
   const { official, loading } = useAuth();
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="route-manager" element={<RouteManager />} />
             <Route path="bug-reports" element={<BugReports />} />
             <Route path="fleet/:truckId" element={<DriverAnalytics />} />
+            <Route path="rewards" element={<RewardsManagement />} />
           </Route>
         </Routes>
       </AuthProvider>

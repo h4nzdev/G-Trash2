@@ -14,6 +14,7 @@ import BottomTabNavigator from './src/navigation/BottomTabNavigator';
 import ReportIssueScreen from './src/screens/ReportIssueScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import BugReportScreen from './src/screens/BugReportScreen';
+import MyRewardsScreen from './src/screens/MyRewardsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
@@ -103,10 +104,13 @@ function AppNavigator() {
     setPrevUser(user);
   }, [user]);
 
-  // Global socket — announcements, report status, and truck proximity
+  // Global socket — announcements, report status, truck proximity, and rewards
   useEffect(() => {
     if (!user) { setSocket(null); return; }
     const s = io(API_URL, { transports: ['polling', 'websocket'] });
+
+    // Join resident-specific room for targeted reward notifications
+    s.emit('resident:join', { residentId: user._id || user.id });
 
     s.on('announcement:new', (data) => {
       setAnnouncementQueue((q) => [...q, data]);
@@ -123,6 +127,14 @@ function AppNavigator() {
       const key = report.escalated && report.status === 'pending' ? 'escalated' : report.status;
       const notif = statusMessages[key];
       if (notif) setAnnouncementQueue((q) => [...q, notif]);
+    });
+
+    s.on('reward:new', (data) => {
+      setAnnouncementQueue((q) => [...q, {
+        title: '🎉 You\'ve been awarded!',
+        message: `You received "${data.title}"${data.rewardValue ? ` — ${data.rewardValue}` : ''}. Visit My Rewards to claim it!`,
+        type: 'success',
+      }]);
     });
 
     setSocket(s);
@@ -174,6 +186,7 @@ function AppNavigator() {
             <Stack.Screen name="Report" component={ReportIssueScreen} />
             <Stack.Screen name="Notifications" component={NotificationScreen} />
             <Stack.Screen name="BugReport" component={BugReportScreen} />
+            <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
           </>
         ) : (
           <>
