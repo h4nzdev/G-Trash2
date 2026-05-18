@@ -214,10 +214,11 @@ export default function MyRewardsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('all');
 
   const fetchRewards = useCallback(async (silent = false) => {
-    if (!user?._id) return;
+    const uid = user?.id || user?._id;
+    if (!uid) return;
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/rewards/resident/${user._id}`);
+      const res = await fetch(`${API_URL}/api/rewards/resident/${uid}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setRewards(list);
@@ -249,7 +250,7 @@ export default function MyRewardsScreen({ navigation }) {
               const res = await fetch(`${API_URL}/api/rewards/${reward._id}/claim`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ residentId: user._id }),
+                body: JSON.stringify({ residentId: user?.id || user?._id }),
               });
               const data = await res.json();
               if (!res.ok) throw new Error(data.error || 'Claim failed');
