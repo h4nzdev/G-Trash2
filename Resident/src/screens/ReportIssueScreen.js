@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,12 +34,13 @@ const MapPickerHTML = `
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    html, body, #map { height:100%; width:100%; background:#f3f4f6; }
+    * { margin:0; padding:0; box-sizing:border-box; touch-action:none; -webkit-user-select:none; user-select:none; }
+    html, body { height:100%; width:100%; overflow:hidden; background:#f3f4f6; }
+    #map { height:100%; width:100%; }
     .center-crosshair {
-      position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%, -100%);
-      z-index: 1000; pointer-events: none;
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%, -100%);
+      z-index:1000; pointer-events:none;
     }
   </style>
 </head>
@@ -50,28 +52,42 @@ const MapPickerHTML = `
     </svg>
   </div>
   <script>
-    var map = L.map('map', { zoomControl: false }).setView([10.3157, 123.8854], 14);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 18, attribution: ''
-    }).addTo(map);
-    
-    // Send location whenever map stops moving
-    map.on('moveend', function() {
-      var center = map.getCenter();
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        lat: center.lat,
-        lng: center.lng
-      }));
-    });
+    // Prevent native scroll from stealing touch events
+    document.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: false });
+    document.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: false });
 
-    // Initial send
-    setTimeout(function() {
-      var center = map.getCenter();
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        lat: center.lat,
-        lng: center.lng
-      }));
-    }, 500);
+    window.gtrashMap = L.map('map', {
+      zoomControl: false,
+      tap: false,
+      dragging: true,
+      touchZoom: true,
+      scrollWheelZoom: false,
+      doubleClickZoom: true,
+    }).setView([10.3157, 123.8854], 14);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19, attribution: ''
+    }).addTo(window.gtrashMap);
+
+    function sendCenter() {
+      var c = window.gtrashMap.getCenter();
+      window.ReactNativeWebView.postMessage(JSON.stringify({ lat: c.lat, lng: c.lng }));
+    }
+
+    window.gtrashMap.on('moveend', sendCenter);
+    setTimeout(sendCenter, 600);
+
+    // Listen for "center" messages sent from React Native (geocoding result)
+    function handleMessage(e) {
+      try {
+        var msg = JSON.parse(e.data);
+        if (msg.type === 'center') {
+          window.gtrashMap.setView([msg.lat, msg.lng], 16, { animate: true });
+        }
+      } catch(err) {}
+    }
+    document.addEventListener('message', handleMessage);
+    window.addEventListener('message', handleMessage);
   </script>
 </body>
 </html>
@@ -79,11 +95,12 @@ const MapPickerHTML = `
 
 import { useTranslation } from 'react-i18next';
 
-const InteractiveMapPicker = ({ onLocationSelect }) => {
+const InteractiveMapPicker = ({ onLocationSelect, mapRef, style }) => {
   const { t } = useTranslation();
   return (
-    <View style={styles.mapContainer}>
+    <View style={[styles.mapContainer, style]}>
       <WebView
+        ref={mapRef}
         originWhitelist={['*']}
         source={{ html: MapPickerHTML }}
         style={{ flex: 1 }}
@@ -91,9 +108,14 @@ const InteractiveMapPicker = ({ onLocationSelect }) => {
           try {
             const coord = JSON.parse(event.nativeEvent.data);
             onLocationSelect(coord);
-          } catch (e) { }
+          } catch (e) {}
         }}
         scrollEnabled={false}
+        nestedScrollEnabled={false}
+        bounces={false}
+        overScrollMode="never"
+        javaScriptEnabled
+        domStorageEnabled
       />
       <View style={styles.mapOverlay}>
         <Text style={styles.mapOverlayText}>{t('move_map_pin')}</Text>
@@ -113,6 +135,64 @@ export default function ReportIssueScreen({ navigation }) {
   const [category, setCategory] = useState('Illegal Dumping');
   const [location, setLocation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const mapRef = useRef(null);
+  const geocodeTimer = useRef(null);
+  const [mapModalVisible, setMapModalVisible] = useState(false);
+  const [pendingLocation, setPendingLocation] = useState(null);
+  const [modalSearchText, setModalSearchText] = useState('');
+  const [geocodeResults, setGeocodeResults] = useState([]);
+  const [geocodeLoading, setGeocodeLoading] = useState(false);
+
+  const searchAddress = (text) => {
+    setModalSearchText(text);
+    setGeocodeResults([]);
+    if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
+    if (text.trim().length < 3) return;
+    geocodeTimer.current = setTimeout(async () => {
+      setGeocodeLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text + ', Cebu City, Philippines')}&format=json&limit=5&countrycodes=ph&viewbox=123.8,10.2,124.05,10.45&bounded=1`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        const data = await res.json();
+        setGeocodeResults(data);
+      } catch (_) {}
+      setGeocodeLoading(false);
+    }, 600);
+  };
+
+  const selectGeocode = (result) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    const label = result.display_name.split(',').slice(0, 2).join(',').trim();
+    setModalSearchText(label);
+    setGeocodeResults([]);
+    setPendingLocation({ latitude: lat, longitude: lng });
+    if (mapRef.current) {
+      mapRef.current.injectJavaScript(
+        `window.gtrashMap && window.gtrashMap.setView([${lat}, ${lng}], 17, { animate: true }); true;`
+      );
+    }
+  };
+
+  const openMapModal = () => {
+    setPendingLocation(location);
+    setModalSearchText('');
+    setGeocodeResults([]);
+    setMapModalVisible(true);
+  };
+
+  const confirmLocation = () => {
+    if (pendingLocation) {
+      setLocation(pendingLocation);
+      if (!locationText.trim() && modalSearchText.trim()) {
+        setLocationText(modalSearchText);
+      }
+    }
+    setMapModalVisible(false);
+  };
 
   const categories = [
     t('cat_illegal'),
@@ -180,6 +260,58 @@ export default function ReportIssueScreen({ navigation }) {
     return json.url;
   };
 
+  const submitReport = (payload, force = false) => {
+    const finalPayload = force
+      ? JSON.stringify({ ...JSON.parse(payload), force: true })
+      : payload;
+
+    setIsSubmitting(true);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BACKEND_URL}/api/reports`);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = () => {
+      setIsSubmitting(false);
+      if (xhr.status === 201) {
+        Alert.alert(
+          'Report Submitted',
+          'Your report has been sent to the officials and will be reviewed shortly.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+        setDescription('');
+        setLocationText('');
+        setImage(null);
+        setImageBase64(null);
+        setLocation(null);
+      } else if (xhr.status === 429) {
+        const body = JSON.parse(xhr.responseText);
+        Alert.alert('Slow Down', body.message || 'Too many reports. Please wait before submitting again.');
+      } else if (xhr.status === 409) {
+        const body = JSON.parse(xhr.responseText);
+        Alert.alert(
+          'Report Already Exists Nearby',
+          body.message || 'A similar report was already submitted for this area.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Submit Anyway', onPress: () => submitReport(payload, true) },
+          ]
+        );
+      } else {
+        Alert.alert('Error', `Server responded with ${xhr.status}`);
+      }
+    };
+    xhr.onerror = () => {
+      setIsSubmitting(false);
+      Alert.alert('Network Error', `Could not reach the server at ${BACKEND_URL}`);
+    };
+    xhr.ontimeout = () => {
+      setIsSubmitting(false);
+      Alert.alert('Timeout', 'The server took too long to respond.');
+    };
+    xhr.send(finalPayload);
+  };
+
   const handleSubmit = async () => {
     if (!description.trim()) {
       Alert.alert('Missing Description', 'Please describe the issue.');
@@ -190,7 +322,6 @@ export default function ReportIssueScreen({ navigation }) {
       return;
     }
 
-    setIsSubmitting(true);
     try {
       let reportImage = null;
       if (imageBase64) {
@@ -209,39 +340,8 @@ export default function ReportIssueScreen({ navigation }) {
         reportImage,
       });
 
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${BACKEND_URL}/api/reports`);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.timeout = 30000;
-
-      xhr.onload = () => {
-        setIsSubmitting(false);
-        if (xhr.status === 201) {
-          Alert.alert(
-            'Report Submitted ✅',
-            'Your report has been sent to the officials and will be reviewed shortly.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-          setDescription('');
-          setLocationText('');
-          setImage(null);
-          setImageBase64(null);
-          setLocation(null);
-        } else {
-          Alert.alert('Error', `Server responded with ${xhr.status}`);
-        }
-      };
-      xhr.onerror = () => {
-        setIsSubmitting(false);
-        Alert.alert('Network Error', `Could not reach the server at ${BACKEND_URL}`);
-      };
-      xhr.ontimeout = () => {
-        setIsSubmitting(false);
-        Alert.alert('Timeout', 'The server took too long to respond.');
-      };
-      xhr.send(payload);
+      submitReport(payload);
     } catch (err) {
-      setIsSubmitting(false);
       Alert.alert('Upload Error', err.message || 'Failed to upload image');
     }
   };
@@ -327,11 +427,10 @@ export default function ReportIssueScreen({ navigation }) {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Street / Landmark</Text>
             <TextInput
-              style={styles.descriptionInput}
+              style={{ ...styles.descriptionInput, height: 50 }}
               placeholder="e.g., Carbon Market, near Gate 2"
               value={locationText}
               onChangeText={setLocationText}
-              style={{ ...styles.descriptionInput, height: 50 }}
             />
           </View>
 
@@ -348,10 +447,27 @@ export default function ReportIssueScreen({ navigation }) {
             />
           </View>
 
-          {/* Location Pin (optional GPS) */}
+          {/* Location Pin */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Pin Location</Text>
-            <InteractiveMapPicker onLocationSelect={(coords) => setLocation({ latitude: coords.lat, longitude: coords.lng })} />
+            <TouchableOpacity style={styles.mapPickerBtn} onPress={openMapModal} activeOpacity={0.75}>
+              <View style={styles.mapPickerIcon}>
+                <MaterialIcons name="map" size={24} color={colors.primaryGreen} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mapPickerTitle}>
+                  {location ? 'Location Pinned' : 'Open Map to Pin'}
+                </Text>
+                <Text style={styles.mapPickerSub} numberOfLines={1}>
+                  {location
+                    ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+                    : 'Tap to open full-screen map'}
+                </Text>
+              </View>
+              {location
+                ? <MaterialIcons name="check-circle" size={22} color={colors.primaryGreen} />
+                : <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />}
+            </TouchableOpacity>
           </View>
 
           {/* Submit Button */}
@@ -373,6 +489,81 @@ export default function ReportIssueScreen({ navigation }) {
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Full-screen map modal */}
+      <Modal
+        visible={mapModalVisible}
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setMapModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalSafe}>
+          {/* Modal header */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setMapModalVisible(false)} style={styles.modalCloseBtn}>
+              <MaterialIcons name="close" size={22} color="#374151" />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Pick Location</Text>
+            <TouchableOpacity onPress={confirmLocation} style={styles.modalConfirmBtn}>
+              <Text style={styles.modalConfirmText}>Confirm</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search bar */}
+          <View style={styles.modalSearchWrap}>
+            <MaterialIcons name="search" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
+            <TextInput
+              style={styles.modalSearchInput}
+              placeholder="Search address in Cebu City..."
+              placeholderTextColor="#9CA3AF"
+              value={modalSearchText}
+              onChangeText={searchAddress}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+            {geocodeLoading && (
+              <ActivityIndicator size="small" color={colors.primaryGreen} style={{ marginRight: 12 }} />
+            )}
+          </View>
+
+          {/* Geocode suggestions */}
+          {geocodeResults.length > 0 && (
+            <View style={styles.modalGeocodeList}>
+              {geocodeResults.map((result) => (
+                <TouchableOpacity
+                  key={result.place_id}
+                  style={styles.modalGeocodeItem}
+                  onPress={() => selectGeocode(result)}
+                >
+                  <MaterialIcons name="location-on" size={16} color={colors.primaryGreen} />
+                  <Text style={styles.modalGeocodeText} numberOfLines={2}>
+                    {result.display_name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Full-screen interactive map */}
+          <InteractiveMapPicker
+            mapRef={mapRef}
+            style={{ flex: 1, height: undefined, borderRadius: 0, borderWidth: 0 }}
+            onLocationSelect={(coords) =>
+              setPendingLocation({ latitude: coords.lat, longitude: coords.lng })
+            }
+          />
+
+          {/* Coordinates bar */}
+          <View style={styles.coordsBar}>
+            <MaterialIcons name="my-location" size={16} color={colors.primaryGreen} />
+            <Text style={styles.coordsText}>
+              {pendingLocation
+                ? `${pendingLocation.latitude.toFixed(5)}, ${pendingLocation.longitude.toFixed(5)}`
+                : 'Drag the map to pick a location'}
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -538,5 +729,126 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 16,
+  },
+  mapPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  mapPickerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapPickerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1B1C1C',
+    marginBottom: 2,
+  },
+  mapPickerSub: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  // Modal styles
+  modalSafe: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  modalHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  modalConfirmBtn: {
+    backgroundColor: colors.primaryGreen,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  modalConfirmText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  modalSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  modalSearchInput: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#1B1C1C',
+  },
+  modalGeocodeList: {
+    marginHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  modalGeocodeItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalGeocodeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 18,
+  },
+  coordsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  coordsText: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
   },
 });

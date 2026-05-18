@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ActivityIndicator, StyleSheet,
   Modal, TouchableOpacity, Platform,
@@ -21,6 +21,8 @@ import CustomSplashScreen from './src/screens/CustomSplashScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import colors from './src/constants/colors';
 import API_URL from './src/config';
+import useTruckProximity from './src/hooks/useTruckProximity';
+import TruckProximityBanner from './src/components/TruckProximityBanner';
 import './src/i18n';
 
 const Stack = createNativeStackNavigator();
@@ -80,12 +82,17 @@ function AnnouncementModal({ announcement, onDismiss }) {
   );
 }
 
+const LAYER_ORDER = { FAR: 1, MEDIUM: 2, NEAR: 3 };
+
 function AppNavigator() {
   const { user, isLoading } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [hasSeenTour, setHasSeenTour] = useState(null);
   const [prevUser, setPrevUser] = useState(null);
   const [announcementQueue, setAnnouncementQueue] = useState([]);
+  const [socket, setSocket] = useState(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const prevProxLayerRef = useRef(null);
 
   useEffect(() => {
     checkTourStatus();
@@ -96,17 +103,16 @@ function AppNavigator() {
     setPrevUser(user);
   }, [user]);
 
-  // Global announcement + report-status socket — runs whenever user is logged in
+  // Global socket — announcements, report status, and truck proximity
   useEffect(() => {
-    if (!user) return;
-    const socket = io(API_URL, { transports: ['polling', 'websocket'] });
+    if (!user) { setSocket(null); return; }
+    const s = io(API_URL, { transports: ['polling', 'websocket'] });
 
-    socket.on('announcement:new', (data) => {
+    s.on('announcement:new', (data) => {
       setAnnouncementQueue((q) => [...q, data]);
     });
 
-    socket.on('report:updated', (report) => {
-      // Notify only if it's the current user's report and status changed meaningfully
+    s.on('report:updated', (report) => {
       const isOwn = report.userId?.toString() === user.id || report.userId === user.id;
       if (!isOwn) return;
       const statusMessages = {
@@ -119,8 +125,20 @@ function AppNavigator() {
       if (notif) setAnnouncementQueue((q) => [...q, notif]);
     });
 
-    return () => socket.disconnect();
+    setSocket(s);
+    return () => { s.disconnect(); setSocket(null); };
   }, [user]);
+
+  // Truck proximity — works across all screens while app is in foreground
+  const { proximityLayer, nearestTruck } = useTruckProximity(socket);
+
+  // Re-show banner whenever truck escalates to a more urgent layer
+  useEffect(() => {
+    const prev = LAYER_ORDER[prevProxLayerRef.current] ?? 0;
+    const curr = LAYER_ORDER[proximityLayer] ?? 0;
+    if (curr > prev) setBannerDismissed(false);
+    prevProxLayerRef.current = proximityLayer;
+  }, [proximityLayer]);
 
   const dismissAnnouncement = () => {
     setAnnouncementQueue((q) => q.slice(1));
@@ -172,6 +190,13 @@ function AppNavigator() {
           </>
         )}
       </Stack.Navigator>
+
+      {/* Truck proximity banner — floats over every screen */}
+      <TruckProximityBanner
+        layer={bannerDismissed ? null : proximityLayer}
+        nearestTruck={nearestTruck}
+        onDismiss={() => setBannerDismissed(true)}
+      />
 
       {/* Global announcement modal — renders on top of any screen */}
       <AnnouncementModal

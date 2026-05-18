@@ -1,2 +1,2 @@
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.16.10.48:5000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://g-trash2.onrender.com';
 export default API_URL;

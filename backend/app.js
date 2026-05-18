@@ -717,6 +717,49 @@ app.get("/api/reports", async (req, res) => {
 
 app.post("/api/reports", async (req, res) => {
   try {
+    const { userId, lat, lng, barangay, force } = req.body;
+
+    // --- Rate limit: max 3 reports per user per hour ---
+    if (userId) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const recentCount = await Report.countDocuments({
+        userId,
+        createdAt: { $gte: oneHourAgo },
+      });
+      if (recentCount >= 3) {
+        return res.status(429).json({
+          error: "rate_limit",
+          message:
+            "You have submitted 3 reports in the past hour. Please wait before submitting more.",
+        });
+      }
+    }
+
+    // --- Duplicate proximity: warn if open report exists within 100 m ---
+    // Skipped when the resident explicitly confirms via "Submit Anyway"
+    if (!force && lat != null && lng != null) {
+      const openReports = await Report.find({
+        status: { $in: ["pending", "in-progress"] },
+        lat: { $ne: null },
+        lng: { $ne: null },
+        barangay: barangay || { $exists: true },
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      }).select("lat lng _id title");
+
+      const DUPLICATE_RADIUS_M = 100;
+      const nearby = openReports.find(
+        (r) => haversineM(lat, lng, r.lat, r.lng) <= DUPLICATE_RADIUS_M
+      );
+      if (nearby) {
+        return res.status(409).json({
+          error: "duplicate_nearby",
+          message:
+            "An open report already exists within 100 m of this location. Are you sure this is a different issue?",
+          existingReportId: nearby._id,
+        });
+      }
+    }
+
     const report = await Report.create({
       ...req.body,
       title: req.body.title || req.body.category,
