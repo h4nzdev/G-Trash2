@@ -103,6 +103,8 @@ const reportSchema = new mongoose.Schema({
   },
   resolvedAt: { type: Date, default: null },
   resolvedBy: { type: String, default: null },
+  assignedTruck: { type: String, default: null },
+  assignedDriver: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Report = mongoose.model("Report", reportSchema);
@@ -411,6 +413,18 @@ function getTodayYMD() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // Award points to a barangay — upserts the score document.
@@ -1246,6 +1260,142 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
     if (!report) return res.status(404).json({ error: "Report not found" });
     io.emit("report:updated", report);
     res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/reports/:id/suggestions", async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id).lean();
+    if (!report) return res.status(404).json({ error: "Report not found" });
+
+    const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
+    const suggestions = [];
+
+    // Parallel fetch of routes + trucks
+    const [routes, trucks, fleet] = await Promise.all([
+      Route.find({}).lean(),
+      Truck.find({}).lean(),
+      Fleet.find({}).lean(),
+    ]);
+
+    // 1. Nearest route suggestion
+    if (report.lat != null && report.lng != null) {
+      let nearestRoute = null;
+      let nearestDist = Infinity;
+
+      for (const route of routes) {
+        for (const wp of route.waypoints || []) {
+          if (wp.lat == null || wp.lng == null) continue;
+          const d = haversineM(report.lat, report.lng, wp.lat, wp.lng);
+          if (d < nearestDist) { nearestDist = d; nearestRoute = route; }
+        }
+      }
+
+      if (nearestRoute && nearestDist < 5000) {
+        suggestions.push({
+          type: "route",
+          title: `Add stop to "${nearestRoute.name}"`,
+          description: `The nearest route passes ${Math.round(nearestDist)}m from this location. Adding it as a pickup stop will ensure the area is covered.`,
+          action: {
+            routeId: nearestRoute._id,
+            routeName: nearestRoute.name,
+            lat: report.lat,
+            lng: report.lng,
+            stopName: report.location || report.barangay || "Reported Location",
+          },
+        });
+      }
+
+      // 2. Nearest online truck
+      let nearestTruck = null;
+      let nearestTruckDist = Infinity;
+      for (const truck of trucks) {
+        if (truck.status !== "online" || truck.lat == null || truck.lng == null) continue;
+        const d = haversineM(report.lat, report.lng, truck.lat, truck.lng);
+        if (d < nearestTruckDist) { nearestTruckDist = d; nearestTruck = truck; }
+      }
+
+      if (nearestTruck) {
+        const fleetEntry = fleet.find((f) => f.truckId === nearestTruck.truckId);
+        suggestions.push({
+          type: "truck",
+          title: `Assign ${nearestTruck.truckId}`,
+          description: `${fleetEntry?.driverName ? fleetEntry.driverName + " · " : ""}Nearest online truck, ${Math.round(nearestTruckDist)}m away.`,
+          action: {
+            truckId: nearestTruck.truckId,
+            driverName: fleetEntry?.driverName || "",
+          },
+        });
+      }
+    }
+
+    // 3. Priority escalation if community urgency is high
+    if (urgencyScore >= 5 && report.priority !== "Critical") {
+      suggestions.push({
+        type: "priority",
+        title: "Escalate to Critical",
+        description: `Community urgency score is +${urgencyScore}. High resident concern suggests this needs immediate attention.`,
+        action: { priority: "Critical" },
+      });
+    }
+
+    // 4. Groq AI insight (fire async, with 8s timeout)
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (GROQ_API_KEY) {
+      const routeContext = suggestions.find((s) => s.type === "route");
+      const systemMsg = `You are a smart assistant for G-TRASH, a waste management system in Cebu City, Philippines. Give a 1-2 sentence practical action recommendation for the barangay official. Be concise and specific.`;
+      const userMsg = `Garbage report details:
+- Category: ${report.category}
+- Location: ${report.location || "Unknown"}, Barangay ${report.barangay}
+- Description: ${report.description}
+- Status: ${report.status}
+- Community Urgency Score: +${urgencyScore}
+${routeContext ? `- Nearest route: ${routeContext.action.routeName} (${Math.round(haversineM(report.lat, report.lng, 0, 0))} m — use the route context above)` : ""}
+
+What should the official do first?`;
+
+      const aiText = await new Promise((resolve) => {
+        const body = JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          messages: [
+            { role: "system", content: systemMsg },
+            { role: "user", content: userMsg },
+          ],
+          max_tokens: 120,
+          temperature: 0.4,
+        });
+        const options = {
+          hostname: "api.groq.com",
+          path: "/openai/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${GROQ_API_KEY}`,
+            "Content-Length": Buffer.byteLength(body),
+          },
+        };
+        const groqReq = https.request(options, (r) => {
+          let raw = "";
+          r.on("data", (c) => (raw += c));
+          r.on("end", () => {
+            try { resolve(JSON.parse(raw).choices?.[0]?.message?.content?.trim() || null); }
+            catch { resolve(null); }
+          });
+        });
+        groqReq.on("error", () => resolve(null));
+        groqReq.setTimeout(8000, () => { groqReq.destroy(); resolve(null); });
+        groqReq.write(body);
+        groqReq.end();
+      });
+
+      if (aiText) {
+        suggestions.push({ type: "ai", title: "AI Recommendation", description: aiText, action: null });
+      }
+    }
+
+    res.json(suggestions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -47,7 +47,10 @@
       "Bash(python -m json.tool)",
       "Bash(dir C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\backend /b /a-d)",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\backend\" | Where-Object { $_.Name -ne 'node_modules' } | Select-Object Name, PSIsContainer)",
-      "Bash(findstr *)"
+      "Bash(findstr *)",
+      "Bash(dir \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Officials\\\\src\" /s /b /a-d)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Officials\\\\src\" -Recurse -Filter \"*.jsx\")",
+      "Bash(Select-Object FullName)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"

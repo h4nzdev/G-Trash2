@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, MapPin, Clock, User, CheckCircle, AlertTriangle, FileText, Camera, RefreshCw, ShieldAlert, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, MapPin, Clock, User, CheckCircle, AlertTriangle, FileText, Camera, RefreshCw, ShieldAlert, ThumbsUp, ThumbsDown, Truck, Route, Sparkles, Zap, ChevronRight } from 'lucide-react';
 import ReportCard from '../components/reports/ReportCard';
 import ReportFilter from '../components/reports/ReportFilter';
 import Badge from '../components/shared/Badge';
@@ -31,15 +31,19 @@ export default function ReportsManagement() {
   const [reportList, setReportList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [fleet, setFleet] = useState([]);
+  const [selectedTruckId, setSelectedTruckId] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const fetchReports = async () => {
     setLoading(true);
     setError(null);
     try {
       const { data } = await axios.get(`${API}/api/reports`);
-      setReportList(data.map((r) => ({ 
-        ...r, 
-        id: r._id, 
+      setReportList(data.map((r) => ({
+        ...r,
+        id: r._id,
         time: timeAgo(r.createdAt),
         urgency: (r.upvotes?.length || 0) - (r.downvotes?.length || 0)
       })));
@@ -50,7 +54,49 @@ export default function ReportsManagement() {
     }
   };
 
-  useEffect(() => { fetchReports(); }, []);
+  useEffect(() => {
+    fetchReports();
+    axios.get(`${API}/api/fleet`).then(({ data }) => setFleet(data)).catch(() => {});
+  }, []);
+
+  const openReport = (r) => {
+    setSelectedReport(r);
+    setSelectedTruckId(r.assignedTruck || '');
+    setSuggestions([]);
+    setSuggestionsLoading(true);
+    axios.get(`${API}/api/reports/${r._id}/suggestions`)
+      .then(({ data }) => setSuggestions(data))
+      .catch(() => {})
+      .finally(() => setSuggestionsLoading(false));
+  };
+
+  const handleSuggestionAction = async (suggestion) => {
+    if (suggestion.type === 'route') {
+      const { routeId, lat, lng, stopName } = suggestion.action;
+      try {
+        await axios.patch(`${API}/api/routes/${routeId}`, {
+          $push: { waypoints: { lat, lng, name: stopName } },
+          $inc: { totalStops: 1 },
+        });
+        setSuggestions(prev => prev.map(s =>
+          s === suggestion ? { ...s, done: true } : s
+        ));
+      } catch { /* silent */ }
+    } else if (suggestion.type === 'truck') {
+      setSelectedTruckId(suggestion.action.truckId);
+    } else if (suggestion.type === 'priority') {
+      try {
+        const { data } = await axios.patch(`${API}/api/reports/${selectedReport._id}`, {
+          priority: suggestion.action.priority,
+        });
+        setSelectedReport(prev => ({ ...prev, ...data }));
+        setReportList(prev => prev.map(r => r._id === selectedReport._id ? { ...r, priority: data.priority } : r));
+        setSuggestions(prev => prev.map(s =>
+          s === suggestion ? { ...s, done: true } : s
+        ));
+      } catch { /* silent */ }
+    }
+  };
 
   const handleResolve = async (report) => {
     try {
@@ -60,10 +106,16 @@ export default function ReportsManagement() {
     } catch { /* silent */ }
   };
 
-  const handleAssign = async (report) => {
+  const handleAssign = async (report, truckId) => {
+    const fleetEntry = fleet.find(f => f.truckId === truckId);
     try {
-      await axios.patch(`${API}/api/reports/${report._id}`, { status: 'in-progress' });
-      setReportList((prev) => prev.map((r) => r._id === report._id ? { ...r, status: 'in-progress' } : r));
+      const { data } = await axios.patch(`${API}/api/reports/${report._id}`, {
+        status: 'in-progress',
+        assignedTruck: truckId || null,
+        assignedDriver: fleetEntry?.driverName || null,
+      });
+      setReportList((prev) => prev.map((r) => r._id === report._id ? { ...r, ...data } : r));
+      setSelectedReport((prev) => prev ? { ...prev, ...data } : prev);
     } catch { /* silent */ }
   };
 
@@ -146,7 +198,7 @@ export default function ReportsManagement() {
             <ReportCard
               key={report._id}
               report={report}
-              onView={setSelectedReport}
+              onView={openReport}
               onAssign={handleAssign}
               onResolve={handleResolve}
             />
@@ -174,7 +226,7 @@ export default function ReportsManagement() {
                 </div>
                 <h2 className="text-base font-bold text-slate-900 leading-snug">{selectedReport.title}</h2>
               </div>
-              <button onClick={() => setSelectedReport(null)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0">
+              <button onClick={() => { setSelectedReport(null); setSuggestions([]); }} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -252,6 +304,56 @@ export default function ReportsManagement() {
                 </div>
               )}
 
+              {/* Smart Suggestions */}
+              {(suggestionsLoading || suggestions.length > 0) && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Smart Suggestions</p>
+                  </div>
+
+                  {suggestionsLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-3 bg-violet-50 border border-violet-100 rounded-xl text-xs text-violet-600">
+                      <div className="w-3.5 h-3.5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                      Analyzing report and nearby resources…
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {suggestions.map((s, i) => {
+                        const meta = {
+                          route:    { icon: Route,    bg: 'bg-emerald-50 border-emerald-200', iconColor: 'text-emerald-600', btnStyle: 'bg-emerald-700 hover:bg-emerald-800 text-white', btnLabel: s.done ? 'Added ✓' : 'Add Stop' },
+                          truck:    { icon: Truck,    bg: 'bg-blue-50 border-blue-200',       iconColor: 'text-blue-600',     btnStyle: 'bg-blue-600 hover:bg-blue-700 text-white',         btnLabel: 'Pre-fill' },
+                          priority: { icon: Zap,      bg: 'bg-red-50 border-red-200',         iconColor: 'text-red-600',      btnStyle: 'bg-red-600 hover:bg-red-700 text-white',           btnLabel: s.done ? 'Escalated ✓' : 'Escalate' },
+                          ai:       { icon: Sparkles, bg: 'bg-violet-50 border-violet-100',   iconColor: 'text-violet-500',   btnStyle: null, btnLabel: null },
+                        }[s.type] || {};
+                        const Icon = meta.icon;
+                        return (
+                          <div key={i} className={`flex items-start gap-3 px-3 py-3 rounded-xl border ${meta.bg}`}>
+                            <div className={`flex-shrink-0 mt-0.5 ${meta.iconColor}`}>
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-800 mb-0.5">{s.title}</p>
+                              <p className="text-xs text-slate-600 leading-relaxed">{s.description}</p>
+                            </div>
+                            {meta.btnLabel && (
+                              <button
+                                onClick={() => !s.done && handleSuggestionAction(s)}
+                                disabled={s.done}
+                                className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-colors disabled:opacity-60 ${meta.btnStyle}`}
+                              >
+                                {!s.done && <ChevronRight className="w-3 h-3" />}
+                                {meta.btnLabel}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Activity Timeline from statusHistory */}
               <div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Activity Timeline</p>
@@ -291,13 +393,33 @@ export default function ReportsManagement() {
               {selectedReport.status !== 'resolved' && (
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Assign to Collector</p>
-                  <select className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700">
-                    <option>Select a truck / team</option>
-                    <option>GT-401 — Juan Dela Cruz</option>
-                    <option>GT-402 — Pedro Santos</option>
-                    <option>GT-403 — Maria Reyes</option>
-                    <option>GT-404 — Jose Bautista</option>
-                  </select>
+                  {selectedReport.assignedTruck && (
+                    <div className="flex items-center gap-2 text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mb-2">
+                      <Truck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                      Currently: <span className="font-bold text-slate-700">{selectedReport.assignedTruck}{selectedReport.assignedDriver ? ` — ${selectedReport.assignedDriver}` : ''}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedTruckId}
+                      onChange={e => setSelectedTruckId(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700"
+                    >
+                      <option value="">— Select a truck / driver —</option>
+                      {fleet.map(f => (
+                        <option key={f.truckId} value={f.truckId}>
+                          {f.truckId} — {f.driverName}{f.route ? ` (${f.route})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => { if (selectedTruckId) handleAssign(selectedReport, selectedTruckId); }}
+                      disabled={!selectedTruckId}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 rounded-xl transition-colors"
+                    >
+                      Assign
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -305,7 +427,7 @@ export default function ReportsManagement() {
             {/* Modal Footer */}
             <div className="px-6 pb-6 flex gap-3">
               <button
-                onClick={() => setSelectedReport(null)}
+                onClick={() => { setSelectedReport(null); setSuggestions([]); }}
                 className="flex-1 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
               >
                 Close
