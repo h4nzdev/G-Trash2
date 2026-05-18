@@ -569,8 +569,6 @@ export default function ProfileScreen({ navigation }) {
                 { label: "First Name", key: "firstName", placeholder: "e.g. Juan" },
                 { label: "Last Name",  key: "lastName",  placeholder: "e.g. Dela Cruz" },
                 { label: "Phone",      key: "phone",     placeholder: "+63 9XX XXX XXXX", keyboard: "phone-pad" },
-                { label: "Street / Sitio", key: "street", placeholder: "Enter street or sitio" },
-                { label: "House / Unit No.", key: "houseNo", placeholder: "Enter house or unit no." },
               ].map(({ label, key, placeholder, keyboard }) => (
                 <View key={key} style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{label}</Text>
@@ -585,17 +583,22 @@ export default function ProfileScreen({ navigation }) {
                 </View>
               ))}
 
+              {/* Address — read-only after registration */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Barangay</Text>
-                <TouchableOpacity
-                  style={styles.selectorRow}
-                  onPress={() => setShowBarangayModal(true)}
-                >
-                  <Text style={editForm.barangay ? styles.selectorValue : styles.selectorPlaceholder}>
-                    {editForm.barangay || "Select Barangay"}
+                <Text style={styles.inputLabel}>Registered Address</Text>
+                <View style={styles.readonlyAddress}>
+                  <Ionicons name="home-outline" size={16} color="#7A8C7F" />
+                  <Text style={styles.readonlyAddressText}>
+                    {[editForm.houseNo, editForm.street, editForm.barangay].filter(Boolean).join(', ') || 'No address on record'}
+                    {editForm.barangay ? ', Cebu City' : ''}
                   </Text>
-                  <Ionicons name="chevron-down" size={20} color="#7A8C7F" />
-                </TouchableOpacity>
+                </View>
+                <View style={styles.addressLockNotice}>
+                  <Ionicons name="lock-closed-outline" size={13} color="#D97706" />
+                  <Text style={styles.addressLockText}>
+                    Address cannot be changed here. Contact your Barangay Office to update it.
+                  </Text>
+                </View>
               </View>
 
               <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
@@ -1070,6 +1073,42 @@ const styles = StyleSheet.create({
     color: "#1B1C1C",
     borderWidth: 1,
     borderColor: "#EDF4F0",
+  },
+  readonlyAddress: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#F6FAF8",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
+    marginBottom: 8,
+  },
+  readonlyAddressText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 20,
+  },
+  addressLockNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  addressLockText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    lineHeight: 16,
+    fontWeight: "500",
   },
   selectorRow: {
     flexDirection: "row",

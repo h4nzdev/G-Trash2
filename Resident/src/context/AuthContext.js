@@ -59,7 +59,12 @@ export const AuthProvider = ({ children }) => {
         body: JSON.stringify(formData),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Registration failed');
+      if (!res.ok) {
+        const err = new Error(data.message || data.error || 'Registration failed');
+        err.code = data.error;
+        err.messageCebuano = data.messageCebuano || null;
+        throw err;
+      }
 
       const userData = { ...data.user, token: data.token };
       setUser(userData);

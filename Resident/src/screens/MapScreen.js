@@ -30,9 +30,11 @@ import { io } from "socket.io-client";
 import { useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HeatmapLegend from "../components/HeatmapLegend";
+import RouteBoard from "../components/RouteBoard";
 import API_URL from "../config";
 import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
+import { computeStopStatuses } from "../utils/routeProgress";
 
 const TRACKING_SERVER = API_URL;
 
@@ -48,14 +50,6 @@ const ROUTE_COLORS = [
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const COLLAPSED_HEIGHT = 80;
 const EXPANDED_HEIGHT = SCREEN_HEIGHT * 0.52;
-
-function formatStopTime(index) {
-  const totalMinutes = 8 * 60 + index * 45;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  const ampm = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
-}
 
 function buildLeafletHTML(truckB64) {
   return `<!DOCTYPE html>
@@ -299,17 +293,24 @@ function buildLeafletHTML(truckB64) {
         window.clearResidentStops();
         stops.forEach(function(s, i) {
           var num = i + 1;
+          var status = s.status || 'upcoming';
+          var bg    = status === 'completed' ? '#9CA3AF' : status === 'current' ? '#EF4444' : '#006A3B';
+          var inner = status === 'completed'
+            ? '✓'
+            : status === 'current'
+              ? '🚛'
+              : num;
           var icon = L.divIcon({
-            html: '<div style="background:#006A3B;color:#fff;width:26px;height:26px;border-radius:50%;' +
+            html: '<div style="background:' + bg + ';color:#fff;width:28px;height:28px;border-radius:50%;' +
                   'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;' +
-                  'border:2.5px solid white;box-shadow:0 3px 8px rgba(0,106,59,0.45);">' + num + '</div>',
-            iconSize: [26, 26], iconAnchor: [13, 13], className: '',
+                  'border:2.5px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.3);">' + inner + '</div>',
+            iconSize: [28, 28], iconAnchor: [14, 14], className: '',
           });
           var m = L.marker([s.lat, s.lng], { icon: icon });
           if (s.name) {
             m.bindPopup(
               '<div style="font-family:sans-serif;min-width:120px;">' +
-              '<b style="font-size:11px;">Stop ' + num + '</b><br>' +
+              '<b style="font-size:11px;">Stop ' + num + ' · ' + status + '</b><br>' +
               '<span style="font-size:10px;color:#555;">' + s.name + '</span>' +
               '</div>'
             );
@@ -366,6 +367,8 @@ export default function MapScreen() {
   const [isFollowing, setIsFollowing] = useState(!!focusTruck);
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [iotAreas, setIotAreas] = useState([]);
+  const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
+  const [showJeepneyView, setShowJeepneyView] = useState(false);
 
   const isExpandedRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
@@ -404,15 +407,16 @@ export default function MapScreen() {
       null,
     [schedules, activeRoute],
   );
-  const currentStops = useMemo(() => {
-    if (!activeRoute?.waypoints?.length) return [];
-    return activeRoute.waypoints.map((wp, i) => ({
-      name: wp.name,
-      status: "Pending",
-      time: formatStopTime(i),
-      active: false,
-    }));
-  }, [activeRoute]);
+  // Enriched stops with live truck proximity status
+  const enrichedStops = useMemo(
+    () =>
+      computeStopStatuses(
+        activeRoute?.waypoints || [],
+        truckPosState?.lat ?? null,
+        truckPosState?.lng ?? null,
+      ),
+    [activeRoute, truckPosState],
+  );
 
   const aqStatus = useMemo(() => {
     if (!iotAreas.length) return null;
@@ -538,21 +542,20 @@ export default function MapScreen() {
     );
   }, [selectedRouteId]);
 
-  // Inject numbered stop markers whenever the selected route changes
+  // Re-inject stop markers with status colours whenever enrichedStops changes
   useEffect(() => {
     if (!webViewReady.current) return;
-    const route = routes.find((r) => r._id === selectedRouteId);
-    if (!route?.waypoints?.length) {
+    if (!enrichedStops.length) {
       webViewRef.current?.injectJavaScript('window.clearResidentStops(); true;');
       return;
     }
-    const stops = route.waypoints
+    const stops = enrichedStops
       .filter((wp) => wp.lat && wp.lng)
-      .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '' }));
+      .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '', status: wp.status }));
     webViewRef.current?.injectJavaScript(
       `window.addResidentStops(${JSON.stringify(stops)}); true;`,
     );
-  }, [selectedRouteId, routes]);
+  }, [enrichedStops]);
 
   useEffect(() => {
     const socket = io(TRACKING_SERVER, {
@@ -562,6 +565,7 @@ export default function MapScreen() {
 
     socket.on("truck:location:update", ({ truckId, lat, lng, heading }) => {
       liveTruckPos.current = { lat, lng, truckId, heading };
+      setTruckPosState({ lat, lng, truckId });
       setLiveTruckOnline(true);
       if (webViewReady.current) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
@@ -822,6 +826,12 @@ export default function MapScreen() {
           >
             <MaterialIcons name="crop-free" size={22} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.floatingButton, showJeepneyView && styles.floatingButtonActive]}
+            onPress={() => setShowJeepneyView((v) => !v)}
+          >
+            <MaterialIcons name="directions-bus" size={22} color={showJeepneyView ? "#006A3B" : "#1B1C1C"} />
+          </TouchableOpacity>
         </View>
         <View style={styles.legendOverlay}>
           <HeatmapLegend />
@@ -864,6 +874,16 @@ export default function MapScreen() {
           <View style={styles.handleBarContainer}>
             <View style={styles.handleBar} />
           </View>
+
+          {/* Jeepney-style route board — always visible in collapsed sheet */}
+          {!dataLoading && (
+            <RouteBoard
+              route={activeRoute}
+              enrichedStops={enrichedStops}
+              onPress={() => setShowJeepneyView(true)}
+            />
+          )}
+
           {dataLoading ? (
             <View style={styles.pillsLoading}>
               <ActivityIndicator size="small" color="#006A3B" />
@@ -954,19 +974,32 @@ export default function MapScreen() {
             )}
 
             <View style={styles.timeline}>
-              {currentStops.map((stop, index) => (
+              {enrichedStops.map((stop, index) => (
                 <View key={index} style={styles.timelineStep}>
                   <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot}>
+                    <View style={[
+                      styles.timelineDot,
+                      stop.status === 'completed' && { backgroundColor: '#9CA3AF' },
+                      stop.status === 'current'   && { backgroundColor: '#EF4444' },
+                    ]}>
                       <View style={styles.timelineDotInner} />
                     </View>
-                    {index < currentStops.length - 1 && (
+                    {index < enrichedStops.length - 1 && (
                       <View style={styles.timelineLine} />
                     )}
                   </View>
                   <View style={styles.timelineContent}>
-                    <Text style={styles.timelineStopName}>{stop.name}</Text>
-                    <Text style={styles.timelineTime}>{stop.time}</Text>
+                    <Text style={[
+                      styles.timelineStopName,
+                      stop.status === 'completed' && { color: '#9CA3AF', textDecorationLine: 'line-through' },
+                    ]}>
+                      {stop.name || `Stop ${index + 1}`}
+                    </Text>
+                    {stop.status === 'current' && stop.distFromTruck != null && (
+                      <Text style={styles.timelineTime}>
+                        Truck is {stop.distFromTruck} m away
+                      </Text>
+                    )}
                   </View>
                 </View>
               ))}
@@ -974,6 +1007,127 @@ export default function MapScreen() {
           </ScrollView>
         </Animated.View>
       </Animated.View>
+
+      {/* ── Jeepney View full-screen overlay ── */}
+      {showJeepneyView && (
+        <View style={styles.jeepneyOverlay}>
+          {/* Header */}
+          <View style={styles.jeepneyHeader}>
+            <TouchableOpacity
+              onPress={() => setShowJeepneyView(false)}
+              style={styles.jeepneyClose}
+            >
+              <MaterialIcons name="arrow-back" size={22} color="#1F2937" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.jeepneyTitle}>
+                {activeRoute?.name || "Route View"}
+              </Text>
+              <Text style={styles.jeepneySubtitle}>
+                {liveTruckOnline ? "Live · Truck online" : "Truck offline"}
+                {activeSchedule ? ` · ${activeSchedule.truckId}` : ""}
+              </Text>
+            </View>
+            <View style={[
+              styles.truckStatusDot,
+              { backgroundColor: liveTruckOnline ? "#22C55E" : "#9CA3AF" },
+            ]} />
+          </View>
+
+          {/* RouteBoard — jeepney strip */}
+          <RouteBoard
+            route={activeRoute}
+            enrichedStops={enrichedStops}
+            onPress={() => {}}
+          />
+
+          {/* Progress bar */}
+          {enrichedStops.length > 0 && (() => {
+            const completed = enrichedStops.filter((s) => s.status === 'completed').length;
+            const pct = Math.round((completed / enrichedStops.length) * 100);
+            return (
+              <View style={styles.jeepneyProgress}>
+                <View style={styles.jeepneyProgressBg}>
+                  <View style={[styles.jeepneyProgressFill, { width: `${pct}%` }]} />
+                </View>
+                <Text style={styles.jeepneyProgressLabel}>
+                  {completed} of {enrichedStops.length} stops completed
+                </Text>
+              </View>
+            );
+          })()}
+
+          {/* Detailed stop list */}
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.jeepneyList}
+          >
+            {enrichedStops.length === 0 ? (
+              <View style={styles.jeepneyEmpty}>
+                <MaterialIcons name="route" size={40} color="#E5E7EB" />
+                <Text style={styles.jeepneyEmptyText}>No stops on this route</Text>
+              </View>
+            ) : (
+              enrichedStops.map((stop, i) => {
+                const isCompleted = stop.status === 'completed';
+                const isCurrent   = stop.status === 'current';
+                const dotColor    = isCompleted ? '#9CA3AF' : isCurrent ? '#EF4444' : '#006A3B';
+                return (
+                  <View key={i} style={styles.jeepneyStopRow}>
+                    {/* Timeline column */}
+                    <View style={styles.jeepneyStopTimeline}>
+                      <View style={[styles.jeepneyStopDot, { backgroundColor: dotColor }]}>
+                        {isCompleted && (
+                          <MaterialIcons name="check" size={10} color="#FFF" />
+                        )}
+                        {isCurrent && (
+                          <MaterialIcons name="local-shipping" size={10} color="#FFF" />
+                        )}
+                      </View>
+                      {i < enrichedStops.length - 1 && (
+                        <View style={[
+                          styles.jeepneyStopLine,
+                          { backgroundColor: isCompleted ? '#E5E7EB' : '#BBF7D0' },
+                        ]} />
+                      )}
+                    </View>
+
+                    {/* Stop content */}
+                    <View style={styles.jeepneyStopContent}>
+                      <View style={styles.jeepneyStopTop}>
+                        <Text style={[
+                          styles.jeepneyStopName,
+                          isCompleted && { color: '#9CA3AF', textDecorationLine: 'line-through' },
+                          isCurrent  && { color: '#EF4444', fontWeight: '800' },
+                        ]}>
+                          {stop.name || `Stop ${i + 1}`}
+                        </Text>
+                        <View style={[
+                          styles.jeepneyStopBadge,
+                          { backgroundColor: isCompleted ? '#F3F4F6' : isCurrent ? '#FEF2F2' : '#F0FDF4' },
+                        ]}>
+                          <Text style={[
+                            styles.jeepneyStopBadgeText,
+                            { color: dotColor },
+                          ]}>
+                            {isCurrent ? 'NEXT STOP' : isCompleted ? 'DONE' : `STOP ${i + 1}`}
+                          </Text>
+                        </View>
+                      </View>
+                      {isCurrent && stop.distFromTruck != null && (
+                        <Text style={styles.jeepneyStopTime}>
+                          Truck is {stop.distFromTruck} m away
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1106,4 +1260,142 @@ const styles = StyleSheet.create({
   aqSensorName: { fontSize: 13, fontWeight: "600", color: "#1F2937" },
   aqSensorVals: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
   aqSensorStatus: { fontSize: 11, fontWeight: "700", flexShrink: 0 },
+
+  // ── Jeepney View overlay ──
+  jeepneyOverlay: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "#F8FAFC",
+    zIndex: 50,
+  },
+  jeepneyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+    gap: 12,
+  },
+  jeepneyClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jeepneyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1F2937",
+  },
+  jeepneySubtitle: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1,
+    fontWeight: "500",
+  },
+  truckStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  jeepneyProgress: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+    gap: 6,
+  },
+  jeepneyProgressBg: {
+    height: 5,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  jeepneyProgressFill: {
+    height: 5,
+    backgroundColor: "#006A3B",
+    borderRadius: 3,
+  },
+  jeepneyProgressLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "600",
+  },
+  jeepneyList: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+  jeepneyEmpty: {
+    alignItems: "center",
+    paddingTop: 60,
+    gap: 12,
+  },
+  jeepneyEmptyText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
+  jeepneyStopRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginBottom: 0,
+  },
+  jeepneyStopTimeline: {
+    alignItems: "center",
+    width: 24,
+  },
+  jeepneyStopDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  jeepneyStopLine: {
+    width: 2,
+    flex: 1,
+    minHeight: 24,
+    marginTop: 4,
+    marginBottom: 4,
+    borderRadius: 1,
+  },
+  jeepneyStopContent: {
+    flex: 1,
+    paddingBottom: 20,
+  },
+  jeepneyStopTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 3,
+  },
+  jeepneyStopName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  jeepneyStopBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  jeepneyStopBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  jeepneyStopTime: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
 });

@@ -124,7 +124,7 @@ export default function CollectorHistoryScreen() {
     DAILY_GOAL_KG * 30;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FBF9F8" />
 
       {/* Fixed Header */}

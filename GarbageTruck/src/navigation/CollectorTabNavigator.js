@@ -1,6 +1,7 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import CollectorHomeScreen from "../screens/CollectorHomeScreen";
 import CollectorMapScreen from "../screens/CollectorMapScreen";
@@ -11,6 +12,8 @@ import CollectorProfileScreen from "../screens/CollectorProfileScreen";
 const Tab = createBottomTabNavigator();
 
 export default function CollectorTabNavigator() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -19,9 +22,9 @@ export default function CollectorTabNavigator() {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
           borderTopColor: "#F0EDED",
-          paddingBottom: 8,
+          paddingBottom: 8 + insets.bottom,
           paddingTop: 8,
-          height: 70,
+          height: 60 + insets.bottom,
           elevation: 15,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -4 },

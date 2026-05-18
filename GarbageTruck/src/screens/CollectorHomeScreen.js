@@ -26,7 +26,6 @@ import API_URL from "../config";
 import StatsCard from "../components/StatsCard";
 import RouteTimelineCollector from "../components/RouteTimelineCollector";
 import PickupActionCard from "../components/PickupActionCard";
-import HeatmapMiniCard from "../components/HeatmapMiniCard";
 import CollectionLogItem from "../components/CollectionLogItem";
 import colors from "../constants/colors";
 
@@ -56,12 +55,6 @@ function waypointsToStops(waypoints) {
   }));
 }
 
-const HEATMAP_DATA = [
-  { status: "critical", location: "Carbon Market", count: "2 areas" },
-  { status: "moderate", location: "Colon Street", count: "1 area" },
-  { status: "clean", location: "IT Park", count: "All clear" },
-];
-
 // ─── Skeleton Component ──────────────────────────────────────────────────────
 function SkeletonBlock({ width = "100%", height = 16, radius = 8, style }) {
   return (
@@ -90,10 +83,9 @@ export default function CollectorHomeScreen() {
   const [showCleanedConfetti, setShowCleanedConfetti] = useState(false);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [truckCapacity, setTruckCapacity] = useState(0);
-  const [weather, setWeather] = useState({ temp: 31, condition: 'Sunny' });
   const [navActive, setNavActive] = useState(false);
   const [aiMessages, setAiMessages] = useState([]);
-  const [aiInput, setAiInput] = useState("");
+  const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const chatScrollRef = useRef(null);
 
@@ -475,10 +467,6 @@ export default function CollectorHomeScreen() {
           <View style={styles.truckIdBadge}>
             <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
           </View>
-          <View style={styles.weatherBox}>
-            <MaterialIcons name="wb-sunny" size={16} color="#F59E0B" />
-            <Text style={styles.weatherText}>{weather.temp}°C {weather.condition}</Text>
-          </View>
         </View>
         
         <View style={styles.capacityContainer}>
@@ -660,28 +648,6 @@ export default function CollectorHomeScreen() {
           </View>
         ) : null}
 
-        {/* Area Status / Heatmap */}
-        {!isLoading && !hasError ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Area Status</Text>
-            <View style={styles.heatmapRow}>
-              {HEATMAP_DATA.map(function (item, i) {
-                return (
-                  <HeatmapMiniCard
-                    key={i}
-                    status={item.status}
-                    location={item.location}
-                    count={item.count}
-                    onPress={function () {
-                      Alert.alert(item.location, "Status: " + item.status + "\n" + item.count);
-                    }}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
-
         {/* Collection Log (from completed stops) */}
         {!isLoading && !hasError && routeAssigned ? (
           <View style={styles.section}>
@@ -857,8 +823,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0EDED',
   },
   statusLeft: {
-    flexDirection: 'column',
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   truckIdBadge: {
     backgroundColor: '#F1F5F9',
@@ -872,16 +838,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#64748B',
     letterSpacing: 0.5,
-  },
-  weatherBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  weatherText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1B1C1C',
   },
   capacityContainer: {
     width: 140,
@@ -1121,8 +1077,6 @@ const styles = StyleSheet.create({
     borderColor: "#C8DDD4",
   },
   routeNameBadgeText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
-
-  heatmapRow: { flexDirection: "row", gap: 10 },
 
   stateCard: {
     backgroundColor: "#FFFFFF",

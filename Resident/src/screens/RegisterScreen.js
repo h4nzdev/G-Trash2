@@ -70,6 +70,14 @@ export default function RegisterScreen({ navigation }) {
         Alert.alert(t('error'), 'Please select your barangay.');
         return;
       }
+      if (!form.street.trim()) {
+        Alert.alert(t('error'), 'Please enter your street address.');
+        return;
+      }
+      if (!form.houseNo.trim()) {
+        Alert.alert(t('error'), 'Please enter your house or unit number.');
+        return;
+      }
     }
     if (currentStep < STEPS.length - 1) {
       const next = currentStep + 1;
@@ -113,7 +121,15 @@ export default function RegisterScreen({ navigation }) {
         houseNo: form.houseNo.trim(),
       });
     } catch (error) {
-      Alert.alert(t('error'), error.message || 'Please try again.');
+      if (error.code === 'HOUSEHOLD_EXISTS') {
+        Alert.alert(
+          'Household Already Registered',
+          `${error.message}\n\n${error.messageCebuano}`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(t('error'), error.message || 'Please try again.');
+      }
     }
   };
 
@@ -166,6 +182,14 @@ export default function RegisterScreen({ navigation }) {
             <Text style={styles.stepTitle}>{t('address')}</Text>
             <Text style={styles.stepSubtitle}>Where in Cebu City do you live?</Text>
 
+            {/* Permanence notice */}
+            <View style={styles.addressNotice}>
+              <MaterialIcons name="info-outline" size={16} color="#D97706" />
+              <Text style={styles.addressNoticeText}>
+                Your address is permanent after registration. One account is allowed per household. To update it, contact your Barangay Office.
+              </Text>
+            </View>
+
             <Text style={styles.label}>{t('barangay')} *</Text>
             <TouchableOpacity style={styles.dropdownButton} onPress={() => setShowBarangayModal(true)}>
               <MaterialIcons name="location-city" size={20} color="#6B7280" style={styles.inputIcon} />
@@ -175,7 +199,7 @@ export default function RegisterScreen({ navigation }) {
               <MaterialIcons name="keyboard-arrow-down" size={24} color="#6B7280" />
             </TouchableOpacity>
 
-            <Text style={styles.label}>{t('street')}</Text>
+            <Text style={styles.label}>{t('street')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="signpost" size={20} color="#6B7280" style={styles.inputIcon} />
               <TextInput style={styles.input} placeholder="e.g. Purok 5, Sanciangko St."
@@ -183,10 +207,10 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={v => updateForm('street', v)} />
             </View>
 
-            <Text style={styles.label}>{t('house_no')}</Text>
+            <Text style={styles.label}>{t('house_no')} *</Text>
             <View style={styles.inputContainer}>
               <MaterialIcons name="home" size={20} color="#6B7280" style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="e.g. Block 5, Lot 12"
+              <TextInput style={styles.input} placeholder="e.g. Block 5, Lot 12 or Room 3"
                 placeholderTextColor="#9CA3AF" value={form.houseNo}
                 onChangeText={v => updateForm('houseNo', v)} />
             </View>
@@ -429,6 +453,26 @@ const styles = StyleSheet.create({
     borderRadius: 14, marginBottom: 18, paddingHorizontal: 16, height: 54,
   },
   dropdownText: { flex: 1, fontSize: 16, color: '#1B1C1C' },
+
+  // Address notice
+  addressNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+  },
+  addressNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 17,
+    fontWeight: '500',
+  },
 
   // Selected badge
   selectedBadge: {

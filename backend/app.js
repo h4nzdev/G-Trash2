@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
+const crypto = require("crypto");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -266,11 +267,15 @@ const residentSchema = new mongoose.Schema({
   barangay: { type: String, required: true },
   street: { type: String, default: "" },
   houseNo: { type: String, default: "" },
+  // Deterministic hash of (barangay + street + houseNo) — enforces one account per household
+  householdId: { type: String, default: null },
   profilePicture: { type: String, default: null },
   lastProfilePictureUpdate: { type: Date, default: null },
   notificationsClearedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
+// sparse: true → null householdIds (incomplete address) are not indexed, so old records won't conflict
+residentSchema.index({ householdId: 1 }, { unique: true, sparse: true });
 const Resident = mongoose.model("Resident", residentSchema);
 
 const barangayBoundarySchema = new mongoose.Schema({
@@ -415,6 +420,32 @@ function getTodayYMD() {
   return `${y}-${m}-${day}`;
 }
 
+// Normalize street/house strings so "Purok 5 St." and "Purok 5 Street" match
+function normalizeAddressPart(str) {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/\bst\.?\b/g, "street")
+    .replace(/\bave\.?\b/g, "avenue")
+    .replace(/\bblvd\.?\b/g, "boulevard")
+    .replace(/\bdr\.?\b/g, "drive")
+    .replace(/\brd\.?\b/g, "road")
+    .replace(/\bpurok\b/g, "purok")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// SHA-256 of "barangay||normalizedStreet||normalizedHouseNo" (first 32 hex chars)
+function generateHouseholdId(barangay, street, houseNo) {
+  const key = [
+    barangay.toLowerCase().trim(),
+    normalizeAddressPart(street),
+    normalizeAddressPart(houseNo),
+  ].join("||");
+  return crypto.createHash("sha256").update(key).digest("hex").slice(0, 32);
+}
+
 function haversineM(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -523,25 +554,39 @@ app.post("/api/upload", async (req, res) => {
 
 // --- Resident Auth -------------------------------------------
 app.post("/api/residents/register", async (req, res) => {
-  const {
-    firstName,
-    lastName,
-    email,
-    password,
-    phone,
-    barangay,
-    street,
-    houseNo,
-  } = req.body;
+  const { firstName, lastName, email, password, phone, barangay, street, houseNo } = req.body;
+
   if (!firstName || !lastName || !email || !password || !barangay) {
     return res.status(400).json({
       error: "firstName, lastName, email, password, and barangay are required",
     });
   }
+  if (!street || !street.trim()) {
+    return res.status(400).json({ error: "Street address is required" });
+  }
+  if (!houseNo || !houseNo.trim()) {
+    return res.status(400).json({ error: "House/unit number is required" });
+  }
+
   try {
-    const existing = await Resident.findOne({ email: email.toLowerCase() });
-    if (existing)
+    // Check email uniqueness
+    const existingEmail = await Resident.findOne({ email: email.toLowerCase() });
+    if (existingEmail)
       return res.status(409).json({ error: "Email already registered" });
+
+    // Check household uniqueness (normalized address hash)
+    const householdId = generateHouseholdId(barangay, street, houseNo);
+    const existingHousehold = await Resident.findOne({ householdId });
+    if (existingHousehold) {
+      return res.status(409).json({
+        error: "HOUSEHOLD_EXISTS",
+        message:
+          "This household already has a registered account. Only one account is allowed per household to maintain data integrity.",
+        messageCebuano:
+          "Kini nga panimalay aduna nay rehistradong account. Usa ra ka account ang gitugot kada panimalay.",
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const resident = await Resident.create({
       firstName,
@@ -550,9 +595,11 @@ app.post("/api/residents/register", async (req, res) => {
       passwordHash,
       phone: phone || "",
       barangay,
-      street: street || "",
-      houseNo: houseNo || "",
+      street: street.trim(),
+      houseNo: houseNo.trim(),
+      householdId,
     });
+
     const token = jwt.sign(
       {
         id: resident._id,
@@ -571,7 +618,9 @@ app.post("/api/residents/register", async (req, res) => {
         name: `${resident.firstName} ${resident.lastName}`,
         email: resident.email,
         barangay: resident.barangay,
-        address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
+        street: resident.street,
+        houseNo: resident.houseNo,
+        address: `${resident.houseNo}, ${resident.street}, ${resident.barangay}, Cebu City`,
       },
     });
   } catch (err) {

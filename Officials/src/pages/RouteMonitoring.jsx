@@ -312,14 +312,16 @@ export default function RouteMonitoring() {
       }
     });
     socket.on('truck:off-route', data => {
-      setDeviationAlerts(prev =>
-        [{ ...data, id: Date.now(), ts: new Date(), type: 'off-route' }, ...prev].slice(0, 5)
-      );
+      setDeviationAlerts(prev => {
+        if (prev.some(a => a.truckId === data.truckId && a.type === 'off-route')) return prev;
+        return [{ ...data, id: Date.now(), ts: new Date(), type: 'off-route' }, ...prev].slice(0, 5);
+      });
     });
     socket.on('truck:contact-dispatch', data => {
-      setDeviationAlerts(prev =>
-        [{ ...data, id: Date.now(), ts: new Date(), type: 'contact' }, ...prev].slice(0, 5)
-      );
+      setDeviationAlerts(prev => {
+        if (prev.some(a => a.truckId === data.truckId && a.type === 'contact')) return prev;
+        return [{ ...data, id: Date.now(), ts: new Date(), type: 'contact' }, ...prev].slice(0, 5);
+      });
     });
 
     return () => socket.disconnect();
