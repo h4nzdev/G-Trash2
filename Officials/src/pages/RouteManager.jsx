@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -7,13 +7,11 @@ import {
   Truck,
   Trash2,
   ChevronRight,
-  Filter,
   Plus,
   MoreVertical,
-  Map as MapIcon,
   Calendar,
-  Info,
   Activity,
+  Pencil,
 } from "lucide-react";
 import axios from "axios";
 import API from "../config";
@@ -24,11 +22,23 @@ export default function RouteManager() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchRoutes();
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRoutes = async () => {
     try {
@@ -41,14 +51,14 @@ export default function RouteManager() {
     }
   };
 
-  const handleDelete = async (id, e) => {
-    e.stopPropagation();
-    if (!window.confirm("Are you sure you want to delete this route?")) return;
+  const handleDelete = async (id) => {
+    setOpenMenuId(null);
+    if (!window.confirm("Are you sure you want to delete this route? This cannot be undone.")) return;
     try {
       await axios.delete(`${API}/api/routes/${id}`);
       setRoutes((prev) => prev.filter((r) => r._id !== id));
-    } catch (err) {
-      alert("Failed to delete route");
+    } catch {
+      alert("Failed to delete route. Please try again.");
     }
   };
 
@@ -204,12 +214,46 @@ export default function RouteManager() {
                         {new Date(route.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <button
-                      onClick={(e) => handleDelete(route._id, e)}
-                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+
+                    {/* 3-dots menu */}
+                    <div className="relative" ref={openMenuId === route._id ? menuRef : null}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === route._id ? null : route._id);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {openMenuId === route._id && (
+                        <div className="absolute right-0 top-8 z-30 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 min-w-[160px]">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(null);
+                              navigate("/route-builder", { state: { editRoute: route } });
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-slate-400" />
+                            Edit Route
+                          </button>
+                          <div className="my-1 border-t border-slate-100" />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(route._id);
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete Route
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
