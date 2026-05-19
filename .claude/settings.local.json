@@ -59,7 +59,8 @@
       "Bash(cat src/config.js)",
       "Bash(cat src/config/index.js)",
       "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('HeartPulse' in l, 'Activity' in l\\)\")",
-      "Bash(npx --yes node -e \"import\\('lucide-react'\\).then\\(m => console.log\\('HeartPulse' in m, 'Activity' in m\\)\\)\")"
+      "Bash(npx --yes node -e \"import\\('lucide-react'\\).then\\(m => console.log\\('HeartPulse' in m, 'Activity' in m\\)\\)\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\AdminPanel\\\\src\\\\pages\" -Recurse | Where-Object { $_.Extension -in '.jsx','.js' } | Select-Object FullName)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"

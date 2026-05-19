@@ -2182,6 +2182,27 @@ export default function CollectorMapScreen() {
             <Text style={styles.weightSub}>
               {stops.find((s) => s.id === weightModalStop)?.name || "This stop"}
             </Text>
+            {/* Show nearby zone status before confirming */}
+            {(() => {
+              const stop = stops.find((s) => s.id === weightModalStop);
+              if (!stop?.lat || !stop?.lng) return null;
+              const nearby = heatmapZones.find(z => {
+                const dLat = (z.lat - stop.lat) * 111000;
+                const dLng = (z.lng - stop.lng) * 111000 * Math.cos(stop.lat * Math.PI / 180);
+                return Math.sqrt(dLat * dLat + dLng * dLng) <= 350;
+              });
+              if (!nearby) return null;
+              const statusColors = { critical: '#E53935', moderate: '#FDD835', clean: '#4CAF50' };
+              const statusLabels = { critical: '🔴 Critical', moderate: '🟡 Moderate', clean: '🟢 Clean' };
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: statusColors[nearby.status] || '#FDD835' }} />
+                  <Text style={{ fontSize: 11, color: '#374151', fontWeight: '600' }}>
+                    Current zone: {statusLabels[nearby.status] || nearby.status}
+                  </Text>
+                </View>
+              );
+            })()}
             <View style={styles.weightInputRow}>
               <TextInput
                 style={styles.weightInput}

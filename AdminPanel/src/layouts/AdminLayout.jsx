@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Map as MapIcon,
   ClipboardList, Settings, LogOut, ShieldAlert,
-  AlertTriangle, X, Zap, Bug, ShieldCheck, Megaphone, HeartPulse
+  AlertTriangle, X, Zap, Bug, ShieldCheck, Megaphone, HeartPulse, Layers
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
@@ -53,6 +53,7 @@ export default function AdminLayout() {
     { name: 'Jurisdiction',  path: '/admin/jurisdiction',   icon: ShieldCheck },
     { name: 'Announcements', path: '/admin/announcements',  icon: Megaphone },
     { name: 'System Health', path: '/admin/system-health',  icon: HeartPulse },
+    { name: 'Zone Mgmt',     path: '/admin/zones',          icon: Layers },
     { name: 'Settings',      path: '/admin/settings',       icon: Settings },
   ];
 

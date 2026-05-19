@@ -12,6 +12,7 @@ import JurisdictionManager from './pages/superadmin/JurisdictionManager';
 import Reports from './pages/superadmin/Reports';
 import Announcements from './pages/superadmin/Announcements';
 import SystemHealth from './pages/superadmin/SystemHealth';
+import ZoneManagement from './pages/superadmin/ZoneManagement';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="bugs" element={<BugReports />} />
             <Route path="announcements" element={<Announcements />} />
             <Route path="system-health" element={<SystemHealth />} />
+            <Route path="zones" element={<ZoneManagement />} />
             <Route path="settings" element={<div className="p-8 bg-white rounded-3xl border border-slate-200">Settings coming soon...</div>} />
           </Route>
 
