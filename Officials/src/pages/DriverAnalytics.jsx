@@ -96,7 +96,7 @@ export default function DriverAnalytics() {
   ).size;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6 mx-auto">
       {/* Back button */}
       <button
         onClick={() => navigate('/fleet')}

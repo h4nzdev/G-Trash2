@@ -55,7 +55,11 @@
       "PowerShell(head *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cat src/config.js)",
+      "Bash(cat src/config/index.js)",
+      "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\('HeartPulse' in l, 'Activity' in l\\)\")",
+      "Bash(npx --yes node -e \"import\\('lucide-react'\\).then\\(m => console.log\\('HeartPulse' in m, 'Activity' in m\\)\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"
