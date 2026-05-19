@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon, Polyline, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -105,6 +105,195 @@ function timeAgo(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+// ─── Blue pin icon for the map picker ───────────────────────────────────────
+const pickerPinIcon = L.divIcon({
+  html: `<div style="width:22px;height:22px;background:#2563eb;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div>`,
+  className: '',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+// Flies the map to a new position (used inside MapPickerModal)
+function FlyTo({ pos }) {
+  const map = useMap();
+  useEffect(() => { if (pos) map.flyTo([pos.lat, pos.lng], 17, { animate: true }); }, [pos?.lat, pos?.lng]);
+  return null;
+}
+
+// Captures clicks on the picker map
+function PickerClickCapture({ onPick }) {
+  useMapEvents({ click: e => onPick(e.latlng) });
+  return null;
+}
+
+// ─── Map Picker Modal ────────────────────────────────────────────────────────
+function MapPickerModal({ open, onClose, onConfirm }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [pickedPos, setPickedPos] = useState(null);
+  const [flyTarget, setFlyTarget] = useState(null);
+  const [locationName, setLocationName] = useState('');
+
+  // Debounced Nominatim search
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=ph`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        setResults(await res.json());
+      } catch {}
+      setSearching(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Reverse geocode on map click → auto-fill location name
+  const handleMapClick = async (latlng) => {
+    setPickedPos(latlng);
+    setResults([]);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=json`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      const name = data.name || data.address?.road || data.display_name?.split(',')[0] || '';
+      setLocationName(name);
+    } catch {}
+  };
+
+  const selectResult = (r) => {
+    const pos = { lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+    setPickedPos(pos);
+    setFlyTarget(pos);
+    const name = r.name || r.display_name?.split(',')[0] || '';
+    setLocationName(name);
+    setQuery(name);
+    setResults([]);
+  };
+
+  const handleConfirm = () => {
+    if (!pickedPos) return;
+    onConfirm({ lat: pickedPos.lat, lng: pickedPos.lng, locationName });
+    setPickedPos(null);
+    setFlyTarget(null);
+    setQuery('');
+    setLocationName('');
+  };
+
+  if (!open) return null;
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '640px', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '32px', height: '32px', background: '#dbeafe', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MapPin style={{ width: '16px', height: '16px', color: '#2563eb' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Pick Sensor Location</p>
+              <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>Search or click on the map</p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', borderRadius: '8px' }}>
+            <X style={{ width: '18px', height: '18px' }} />
+          </button>
+        </div>
+
+        {/* Search bar */}
+        <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '8px 14px' }}>
+            <svg style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search for a street, barangay, or place..."
+              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: '#0f172a' }}
+            />
+            {searching && <div style={{ width: '14px', height: '14px', border: '2px solid #2563eb', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
+            {query && !searching && (
+              <button onClick={() => { setQuery(''); setResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>
+                <X style={{ width: '13px', height: '13px' }} />
+              </button>
+            )}
+          </div>
+
+          {/* Search results dropdown */}
+          {results.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: '20px', right: '20px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 10, overflow: 'hidden', marginTop: '4px' }}>
+              {results.map((r, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectResult(r)}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '8px', borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none' }}
+                  onMouseOver={e => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseOut={e => e.currentTarget.style.background = 'none'}
+                >
+                  <MapPin style={{ width: '13px', height: '13px', color: '#2563eb', marginTop: '2px', flexShrink: 0 }} />
+                  <span style={{ fontSize: '12px', color: '#334155', lineHeight: '1.5' }}>{r.display_name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Map */}
+        <div style={{ height: '360px', position: 'relative' }}>
+          <MapContainer
+            center={[10.3157, 123.8854]}
+            zoom={13}
+            style={{ width: '100%', height: '100%' }}
+            zoomControl={true}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
+            <PickerClickCapture onPick={handleMapClick} />
+            {flyTarget && <FlyTo pos={flyTarget} />}
+            {pickedPos && <Marker position={[pickedPos.lat, pickedPos.lng]} icon={pickerPinIcon} />}
+          </MapContainer>
+          {!pickedPos && (
+            <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(15,23,42,0.8)', color: '#fff', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', pointerEvents: 'none', zIndex: 1000, whiteSpace: 'nowrap' }}>
+              Click anywhere on the map to place sensor
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '14px 20px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '12px', background: '#fafafa' }}>
+          {pickedPos ? (
+            <>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#2563eb', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Selected location</p>
+                {locationName && <p style={{ fontSize: '12px', fontWeight: '600', color: '#0f172a', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{locationName}</p>}
+                <p style={{ fontSize: '11px', color: '#64748b', margin: 0, fontFamily: 'monospace' }}>{pickedPos.lat.toFixed(6)}, {pickedPos.lng.toFixed(6)}</p>
+              </div>
+              <button
+                onClick={handleConfirm}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <Save style={{ width: '14px', height: '14px' }} /> Use This Location
+              </button>
+            </>
+          ) : (
+            <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>Search for a place above or click on the map to select coordinates.</p>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export default function HeatmapAnalytics() {
   const { official } = useAuth();
   const isChd = official?.role === 'chd';
@@ -116,8 +305,7 @@ export default function HeatmapAnalytics() {
   const [saving, setSaving] = useState(false);
   const [boundary, setBoundary] = useState(null);
   const [outOfBoundsError, setOutOfBoundsError] = useState(false);
-  const [iotFlash, setIotFlash] = useState(null);
-  const [cleanedFlash, setCleanedFlash] = useState(null);
+  const [toasts, setToasts] = useState([]);
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   const [showCityBoundary, setShowCityBoundary] = useState(true);
   const [healthRiskView, setHealthRiskView] = useState(false);
@@ -126,10 +314,33 @@ export default function HeatmapAnalytics() {
   const [sensorSaving, setSensorSaving] = useState(false);
   const [sensorMsg, setSensorMsg] = useState(null);
   const [sensorZones, setSensorZones] = useState([]);
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const socketRef = useRef(null);
+  const toastTimers = useRef({});
+
+  const addToast = (toast) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts(prev => {
+      // Deduplicate: if same sensorId+status came in last 2s, skip
+      const isDup = prev.some(t => t.sensorId === toast.sensorId && t.status === toast.status);
+      if (isDup) return prev;
+      return [...prev.slice(-3), { ...toast, id }]; // max 4 visible
+    });
+    toastTimers.current[id] = setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+      delete toastTimers.current[id];
+    }, 5000);
+  };
+
+  const dismissToast = (id) => {
+    clearTimeout(toastTimers.current[id]);
+    delete toastTimers.current[id];
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   useEffect(() => {
     fetchCebuCityBoundary().then(coords => { if (coords) setCebuCityBoundary(coords); });
+    return () => Object.values(toastTimers.current).forEach(clearTimeout);
   }, []);
 
   const fetchZonesAndBoundary = async () => {
@@ -206,47 +417,43 @@ export default function HeatmapAnalytics() {
         });
       }
 
-      // Flash notification
-      setIotFlash({
-        name: updatedArea.name,
+      addToast({
+        type: 'iot',
+        sensorId: updatedArea.sensorId || updatedArea._id,
         status: updatedArea.status,
-        ammonia: updatedArea.ammonia,
-        methane: updatedArea.methane,
+        title: `IoT: ${updatedArea.name}`,
+        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.ammonia ? `  ·  NH₃ ${updatedArea.ammonia}` : ''}`,
       });
-      setTimeout(() => setIotFlash(null), 5000);
     });
 
-    // When a new IoT alert arrives, flash it
+    // When a new IoT alert arrives, show as toast (deduplicated — one per gas type per sensor)
     socket.on('iot:alert', (alert) => {
       if (alert.severity === 'critical') {
-        setIotFlash({
-          name: alert.location || alert.sensorId,
+        addToast({
+          type: 'alert',
+          sensorId: `${alert.sensorId}-${alert.gasType}`,
           status: 'critical',
-          message: alert.message,
+          title: `Critical: ${alert.location || alert.sensorId}`,
+          body: alert.message,
         });
-        setTimeout(() => setIotFlash(null), 6000);
       }
     });
 
     // When a zone changes status (collection, IoT, report)
     socket.on('zone:status:update', (update) => {
-      // Update zone in local state
       setZones(prev => prev.map(z =>
         (z._id === String(update.areaId) || z._id === String(update.zoneId))
           ? { ...z, status: update.newStatus }
           : z
       ));
-      // Show cleaned flash notification for collection events
       if (update.reason === 'collection_completed') {
-        setCleanedFlash({
-          name: update.name,
-          barangay: update.barangay,
-          collectedBy: update.changedBy,
-          weight: update.weight,
-          previousStatus: update.previousStatus,
-          newStatus: update.newStatus,
+        addToast({
+          type: 'cleaned',
+          sensorId: `cleaned-${update.areaId}`,
+          status: 'clean',
+          title: `Cleaned: ${update.name}`,
+          body: `${update.changedBy}${update.weight ? ` · ${update.weight}` : ''}${update.previousStatus ? ` · ${update.previousStatus} → ${update.newStatus}` : ''}`,
         });
-        setTimeout(() => setCleanedFlash(null), 6000);
       }
     });
 
@@ -403,57 +610,57 @@ export default function HeatmapAnalytics() {
         {showSensorForm && (
           <form onSubmit={handleRegisterSensor} className="border-t border-blue-100 px-5 py-4 space-y-3">
             <p className="text-xs text-slate-500">
-              Enter the sensor ID exactly as sent by ESP32, and the GPS coordinates of where the sensor is physically installed.
-              The sensor will then auto-update its heatmap circle when it sends readings.
+              Enter the sensor ID exactly as sent by the ESP32, then pick its physical location on the map.
+              After registering, every sensor reading will auto-update the heatmap circle in real time.
             </p>
             {sensorMsg && (
               <div className={`px-3 py-2 rounded-lg text-xs font-medium ${sensorMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
                 {sensorMsg.text}
               </div>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="flex flex-wrap gap-2">
+              {/* Sensor ID */}
               <input
                 required
                 placeholder="Sensor ID (e.g. IR-SENSOR-001)"
                 value={sensorForm.sensorId}
                 onChange={e => setSensorForm(f => ({ ...f, sensorId: e.target.value }))}
-                className="col-span-2 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+                className="flex-1 min-w-[180px] px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
               />
-              <input
-                placeholder="Location name"
-                value={sensorForm.location}
-                onChange={e => setSensorForm(f => ({ ...f, location: e.target.value }))}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
-              />
-              <input
-                required
-                placeholder="Latitude (e.g. 10.3254)"
-                type="number"
-                step="any"
-                value={sensorForm.lat}
-                onChange={e => setSensorForm(f => ({ ...f, lat: e.target.value }))}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
-              />
-              <input
-                required
-                placeholder="Longitude (e.g. 123.9110)"
-                type="number"
-                step="any"
-                value={sensorForm.lng}
-                onChange={e => setSensorForm(f => ({ ...f, lng: e.target.value }))}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
-              />
-            </div>
-            <div className="flex items-center gap-2">
+              {/* Barangay */}
               <input
                 placeholder="Barangay (optional)"
                 value={sensorForm.barangay}
                 onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
-                className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+                className="flex-1 min-w-[140px] px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
               />
+            </div>
+
+            {/* Map picker row */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(true)}
+                className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-blue-300 text-blue-600 text-xs font-bold rounded-xl hover:bg-blue-50 transition-colors"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                {sensorForm.lat ? 'Change Location' : 'Pick Location on Map'}
+              </button>
+              {sensorForm.lat && (
+                <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    {sensorForm.location && <p className="text-xs font-semibold text-slate-700 truncate">{sensorForm.location}</p>}
+                    <p className="text-[10px] text-slate-500 font-mono">{parseFloat(sensorForm.lat).toFixed(6)}, {parseFloat(sensorForm.lng).toFixed(6)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={sensorSaving}
+                disabled={sensorSaving || !sensorForm.lat}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {sensorSaving ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-3 h-3" />}
@@ -584,41 +791,40 @@ export default function HeatmapAnalytics() {
           </div>
         )}
 
-        {/* Zone Cleaned Flash Notification */}
-        {cleanedFlash && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1001] px-5 py-3 rounded-2xl text-sm font-bold shadow-2xl flex items-center gap-3 bg-emerald-600 text-white border border-emerald-400 max-w-md" style={{ animation: 'fadeInDown 0.4s ease-out' }}>
-            <span className="text-xl">✅</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-black truncate">Zone cleaned: {cleanedFlash.name}</p>
-              <p className="text-xs font-medium opacity-90">
-                {cleanedFlash.collectedBy} • {cleanedFlash.weight || 'Weight not logged'}
-                {cleanedFlash.previousStatus && (
-                  <span className="ml-2 capitalize">
-                    ({cleanedFlash.previousStatus} → {cleanedFlash.newStatus})
-                  </span>
-                )}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* IoT Real-time Flash Notification */}
-        {iotFlash && !cleanedFlash && (
-          <div className={`absolute top-6 left-1/2 -translate-x-1/2 z-[1000] px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border ${
-            iotFlash.status === 'critical'
-              ? 'bg-red-600 text-white border-red-400'
-              : iotFlash.status === 'moderate'
-              ? 'bg-amber-500 text-white border-amber-400'
-              : 'bg-emerald-600 text-white border-emerald-400'
-          }`} style={{ animation: 'fadeInDown 0.4s ease-out' }}>
-            <Radio className="w-4 h-4 animate-pulse" />
-            <span>
-              IoT Update: <span className="font-black">{iotFlash.name}</span> → {' '}
-              <span className="uppercase">{iotFlash.status}</span>
-              {iotFlash.ammonia && <span className="ml-2 text-xs opacity-80">NH₃: {iotFlash.ammonia}</span>}
-            </span>
-          </div>
-        )}
+        {/* Toast notification stack — top-right of map, max 4, each auto-dismisses */}
+        <div className="absolute top-4 right-4 z-[1001] flex flex-col gap-2 max-w-xs w-full pointer-events-none">
+          {toasts.map((t) => {
+            const bg =
+              t.type === 'cleaned' ? '#059669'
+              : t.status === 'critical' ? '#dc2626'
+              : t.status === 'moderate' ? '#d97706'
+              : '#059669';
+            const icon =
+              t.type === 'cleaned' ? '✅'
+              : t.status === 'critical' ? '🔴'
+              : t.status === 'moderate' ? '🟡'
+              : '🟢';
+            return (
+              <div
+                key={t.id}
+                className="pointer-events-auto"
+                style={{ background: bg, borderRadius: '14px', padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'flex-start', gap: '10px', animation: 'toastIn 0.3s ease-out' }}
+              >
+                <span style={{ fontSize: '15px', lineHeight: '20px', flexShrink: 0 }}>{icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: '12px', fontWeight: '700', color: '#fff', lineHeight: '16px' }}>{t.title}</p>
+                  {t.body && <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.85)', lineHeight: '15px', wordBreak: 'break-word' }}>{t.body}</p>}
+                </div>
+                <button
+                  onClick={() => dismissToast(t.id)}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', padding: 0 }}
+                >
+                  <X style={{ width: '11px', height: '11px' }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
 
         <MapContainer
           center={[10.3157, 123.8854]}
@@ -887,7 +1093,21 @@ export default function HeatmapAnalytics() {
           from { transform: translate(-50%, -20px); opacity: 0; }
           to   { transform: translate(-50%, 0);     opacity: 1; }
         }
+        @keyframes toastIn {
+          from { transform: translateX(20px); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
       `}</style>
+
+      {/* Map picker modal for sensor registration */}
+      <MapPickerModal
+        open={showMapPicker}
+        onClose={() => setShowMapPicker(false)}
+        onConfirm={({ lat, lng, locationName }) => {
+          setSensorForm(f => ({ ...f, lat: String(lat), lng: String(lng), location: locationName || f.location }));
+          setShowMapPicker(false);
+        }}
+      />
     </div>
   );
 }
