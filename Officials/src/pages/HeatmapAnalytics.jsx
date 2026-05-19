@@ -4,11 +4,30 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge } from 'lucide-react';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
 const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981' };
+
+function parseAmmoniaPpm(ammoniaStr) {
+  if (!ammoniaStr) return 0;
+  return parseFloat(String(ammoniaStr).replace(/[^0-9.]/g, '')) || 0;
+}
+
+function healthRiskColor(ammoniaPpm) {
+  if (ammoniaPpm > 100) return '#ef4444'; // Critical — red
+  if (ammoniaPpm > 50)  return '#f97316'; // High — orange
+  if (ammoniaPpm >= 25) return '#f59e0b'; // Moderate — yellow
+  return '#10b981';                       // Safe — green
+}
+
+function healthRiskLabel(ammoniaPpm) {
+  if (ammoniaPpm > 100) return 'Critical';
+  if (ammoniaPpm > 50)  return 'High Risk';
+  if (ammoniaPpm >= 25) return 'Moderate';
+  return 'Safe';
+}
 
 const CEBU_CITY_OUTLINE = [
   // North border with Consolacion, west coast start
@@ -88,6 +107,7 @@ function timeAgo(dateStr) {
 
 export default function HeatmapAnalytics() {
   const { official } = useAuth();
+  const isChd = official?.role === 'chd';
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedZone, setSelectedZone] = useState(null);
@@ -99,6 +119,7 @@ export default function HeatmapAnalytics() {
   const [iotFlash, setIotFlash] = useState(null);
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   const [showCityBoundary, setShowCityBoundary] = useState(true);
+  const [healthRiskView, setHealthRiskView] = useState(false);
   const socketRef = useRef(null);
 
   useEffect(() => {
@@ -239,6 +260,15 @@ export default function HeatmapAnalytics() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Health Risk View toggle — available to CHD and officials */}
+          <button
+            onClick={() => setHealthRiskView(!healthRiskView)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${healthRiskView ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+          >
+            <Heart className="w-4 h-4" />
+            Health Risk View
+          </button>
+
           <button
             onClick={() => setShowCityBoundary(!showCityBoundary)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${showCityBoundary ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
@@ -254,54 +284,97 @@ export default function HeatmapAnalytics() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
 
-          <button
-            onClick={() => {
-              setIsAdding(!isAdding);
-              setNewArea(null);
-            }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${
-              isAdding 
-                ? 'bg-red-50 text-red-600 border border-red-200' 
-                : 'bg-emerald-700 text-white hover:bg-emerald-800'
-            }`}
-          >
-            {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {isAdding ? 'Cancel' : 'Mark Garbage Area'}
-          </button>
+          {!isChd && (
+            <button
+              onClick={() => {
+                setIsAdding(!isAdding);
+                setNewArea(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${
+                isAdding
+                  ? 'bg-red-50 text-red-600 border border-red-200'
+                  : 'bg-emerald-700 text-white hover:bg-emerald-800'
+              }`}
+            >
+              {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {isAdding ? 'Cancel' : 'Mark Garbage Area'}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${criticalCt > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
-          <div className={`w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold ${criticalCt > 0 ? 'animate-pulse' : ''}`}>{criticalCt}</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Areas</p>
-            <p className="text-xs text-slate-600">Immediate attention needed</p>
+      {healthRiskView ? (
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl border border-red-200 ring-1 ring-red-100 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center font-bold text-red-600">
+              {zones.filter(z => parseAmmoniaPpm(z.ammonia) > 100).length}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Risk</p>
+              <p className="text-xs text-slate-600">NH₃ &gt; 100 ppm</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-orange-200 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center font-bold text-orange-600">
+              {zones.filter(z => { const p = parseAmmoniaPpm(z.ammonia); return p > 50 && p <= 100; }).length}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">High Risk</p>
+              <p className="text-xs text-slate-600">NH₃ 50–100 ppm</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-amber-200 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center font-bold text-amber-600">
+              {zones.filter(z => { const p = parseAmmoniaPpm(z.ammonia); return p >= 25 && p <= 50; }).length}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Moderate</p>
+              <p className="text-xs text-slate-600">NH₃ 25–50 ppm</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-emerald-200 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center font-bold text-emerald-600">
+              {zones.filter(z => parseAmmoniaPpm(z.ammonia) < 25).length}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Safe Zones</p>
+              <p className="text-xs text-slate-600">NH₃ &lt; 25 ppm</p>
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 font-bold">{moderateCt}</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Moderate Areas</p>
-            <p className="text-xs text-slate-600">Scheduled collection active</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${criticalCt > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
+            <div className={`w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold ${criticalCt > 0 ? 'animate-pulse' : ''}`}>{criticalCt}</div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Areas</p>
+              <p className="text-xs text-slate-600">Immediate attention needed</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 font-bold">{moderateCt}</div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Moderate Areas</p>
+              <p className="text-xs text-slate-600">Scheduled collection active</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 font-bold">{cleanCt}</div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Clean Zones</p>
+              <p className="text-xs text-slate-600">Successfully maintained</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
+            <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 font-bold">{totalReports}</div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Reports</p>
+              <p className="text-xs text-slate-600">{bothSourced} zones with IoT + Reports</p>
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-          <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 font-bold">{cleanCt}</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Clean Zones</p>
-            <p className="text-xs text-slate-600">Successfully maintained</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-          <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 font-bold">{totalReports}</div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Reports</p>
-            <p className="text-xs text-slate-600">{bothSourced} zones with IoT + Reports</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Map */}
       <div className="relative h-[600px] bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden ring-1 ring-slate-200">
@@ -384,15 +457,19 @@ export default function HeatmapAnalytics() {
 
           <MapClickHandler onMapClick={handleMapClick} />
 
-          {zones.map((zone) => (
+          {zones.map((zone) => {
+            const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
+            const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
+            const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
+            return (
             <Circle
               key={zone._id}
               center={[zone.lat, zone.lng]}
               radius={zone.status === 'critical' ? 200 : zone.status === 'moderate' ? 130 : 70}
               pathOptions={{
-                fillColor: zoneColor[zone.status],
+                fillColor: circleColor,
                 fillOpacity: zone.status === 'critical' ? 0.5 : 0.35,
-                color: zoneColor[zone.status],
+                color: circleColor,
                 weight: zone.status === 'critical' ? 3 : 2,
                 opacity: 0.7,
               }}
@@ -402,72 +479,101 @@ export default function HeatmapAnalytics() {
                 <div className="p-1 min-w-[200px]">
                   <p className="font-bold text-slate-900 text-sm">{zone.name}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="w-2 h-2 rounded-full" style={{ background: zoneColor[zone.status] }} />
-                    <span className="text-xs capitalize font-semibold" style={{ color: zoneColor[zone.status] }}>{zone.status}</span>
-                    {sourceBadge(zone.source || 'iot')}
+                    <span className="w-2 h-2 rounded-full" style={{ background: circleColor }} />
+                    <span className="text-xs capitalize font-semibold" style={{ color: circleColor }}>{riskLabel}</span>
+                    {!healthRiskView && sourceBadge(zone.source || 'iot')}
+                    {healthRiskView && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">❤️ Health View</span>}
                   </div>
 
-                  {/* Composite Score Breakdown */}
-                  <div style={{ marginTop: '8px', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      📊 Composite Score
-                    </p>
-                    
-                    {/* IoT Data */}
-                    {(zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm') ? (
-                      <div style={{ marginBottom: '6px' }}>
-                        <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '3px' }}>🔬 IoT SENSOR</p>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                          <div>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
-                          </div>
-                          <div>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
-                          </div>
+                  {healthRiskView ? (
+                    <div style={{ marginTop: '8px', padding: '8px', background: '#fff5f5', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#dc2626', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        🏥 Health Risk Assessment
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '6px' }}>
+                        <div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: circleColor }}>{zone.ammonia || '0 ppm'}</span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#334155' }}>{zone.methane || '0 ppm'}</span>
                         </div>
                       </div>
-                    ) : null}
-
-                    {/* Report Data */}
-                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
-                      <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#f97316', marginBottom: '3px' }}>📋 RESIDENT REPORTS</p>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>Count: </span>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.reportCount || 0}</span>
-                        </div>
-                        {zone.lastReportAt && (
-                          <div>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Last: </span>
-                            <span style={{ fontSize: '11px', fontWeight: '600', color: '#334155' }}>{timeAgo(zone.lastReportAt)}</span>
+                      <div style={{ padding: '6px', background: circleColor + '22', borderRadius: '6px', marginBottom: '6px' }}>
+                        <p style={{ fontSize: '11px', fontWeight: 'bold', color: circleColor }}>Risk Level: {riskLabel}</p>
+                        <p style={{ fontSize: '10px', color: '#64748b' }}>
+                          {ammoniaPpm > 100 ? 'Immediate health intervention required' :
+                           ammoniaPpm > 50 ? 'High risk — monitor closely' :
+                           ammoniaPpm >= 25 ? 'Moderate — schedule inspection' :
+                           'Safe levels — no action needed'}
+                        </p>
+                      </div>
+                      {zone.barangay && (
+                        <p style={{ fontSize: '10px', color: '#94a3b8' }}>📍 {zone.barangay}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '8px', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        📊 Composite Score
+                      </p>
+                      {(zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm') ? (
+                        <div style={{ marginBottom: '6px' }}>
+                          <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '3px' }}>🔬 IoT SENSOR</p>
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <div>
+                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
+                              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
+                              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
+                            </div>
                           </div>
-                        )}
+                        </div>
+                      ) : null}
+                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
+                        <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#f97316', marginBottom: '3px' }}>📋 RESIDENT REPORTS</p>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Count: </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.reportCount || 0}</span>
+                          </div>
+                          {zone.lastReportAt && (
+                            <div>
+                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>Last: </span>
+                              <span style={{ fontSize: '11px', fontWeight: '600', color: '#334155' }}>{timeAgo(zone.lastReportAt)}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {zone.barangay && (
+                  {!healthRiskView && zone.barangay && (
                     <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>📍 {zone.barangay}</p>
                   )}
                   <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
                     Updated {timeAgo(zone.updatedAt || zone.createdAt)}
                   </p>
-                  <button 
-                    onClick={() => handleDeleteArea(zone._id)}
-                    style={{
-                      marginTop: '10px', display: 'flex', alignItems: 'center', gap: '4px',
-                      fontSize: '10px', fontWeight: 'bold', color: '#dc2626', cursor: 'pointer',
-                      background: 'none', border: 'none', padding: 0
-                    }}
-                  >
-                    <Trash2 className="w-3 h-3" /> DELETE AREA
-                  </button>
+                  {!isChd && (
+                    <button
+                      onClick={() => handleDeleteArea(zone._id)}
+                      style={{
+                        marginTop: '10px', display: 'flex', alignItems: 'center', gap: '4px',
+                        fontSize: '10px', fontWeight: 'bold', color: '#dc2626', cursor: 'pointer',
+                        background: 'none', border: 'none', padding: 0
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" /> DELETE AREA
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Circle>
-          ))}
+            );
+          })}
 
           {newArea && (
             <Circle
@@ -494,35 +600,58 @@ export default function HeatmapAnalytics() {
 
       {/* Legend */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legend — Composite Scoring</p>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          {[
-            { color: 'bg-red-500', label: 'Critical — IoT hazardous + 5+ reports' },
-            { color: 'bg-amber-500', label: 'Moderate — Elevated readings or 2+ reports' },
-            { color: 'bg-emerald-500', label: 'Clean — Safe levels, no reports' },
-          ].map((l) => (
-            <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-              <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
-              {l.label}
-            </span>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
-          <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-            <span className="w-6 border-t-2 border-blue-600 border-dashed inline-block" />
-            Cebu City boundary
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-            <span className="w-6 border-t-2 border-emerald-600 border-dashed inline-block" />
-            Barangay jurisdiction
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Sources</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700"><Zap className="w-2.5 h-2.5" /> IoT Sensor Only</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700"><AlertTriangle className="w-2.5 h-2.5" /> Resident Reports Only</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700"><Zap className="w-2.5 h-2.5" /> IoT + Reports Combined</span>
-        </div>
+        {healthRiskView ? (
+          <>
+            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1.5">
+              <Heart className="w-3 h-3" /> Health Risk View — Ammonia (NH₃) Levels
+            </p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              {[
+                { color: 'bg-emerald-500', label: 'Safe — NH₃ < 25 ppm' },
+                { color: 'bg-amber-500', label: 'Moderate — NH₃ 25–50 ppm' },
+                { color: 'bg-orange-500', label: 'High Risk — NH₃ 50–100 ppm' },
+                { color: 'bg-red-500', label: 'Critical — NH₃ > 100 ppm' },
+              ].map((l) => (
+                <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                  <span className={`w-3 h-3 rounded-full opacity-80 ${l.color}`} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legend — Composite Scoring</p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              {[
+                { color: 'bg-red-500', label: 'Critical — IoT hazardous + 5+ reports' },
+                { color: 'bg-amber-500', label: 'Moderate — Elevated readings or 2+ reports' },
+                { color: 'bg-emerald-500', label: 'Clean — Safe levels, no reports' },
+              ].map((l) => (
+                <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                  <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
+                  {l.label}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
+              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                <span className="w-6 border-t-2 border-blue-600 border-dashed inline-block" />
+                Cebu City boundary
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                <span className="w-6 border-t-2 border-emerald-600 border-dashed inline-block" />
+                Barangay jurisdiction
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Sources</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700"><Zap className="w-2.5 h-2.5" /> IoT Sensor Only</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700"><AlertTriangle className="w-2.5 h-2.5" /> Resident Reports Only</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700"><Zap className="w-2.5 h-2.5" /> IoT + Reports Combined</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* CSS for flash animation */}

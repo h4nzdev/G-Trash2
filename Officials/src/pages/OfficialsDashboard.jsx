@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -31,19 +32,207 @@ function timeAgo(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function ChdDashboard() {
+  const [healthData, setHealthData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/api/iot/health-summary`)
+      .then(r => r.json())
+      .then(data => { setHealthData(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const riskCounts = healthData?.riskCounts || { high: 0, moderate: 0, low: 0 };
+  const recentAlerts = healthData?.recentAlerts || [];
+  const barangaysAtRisk = healthData?.barangaysAtRisk || [];
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <Heart className="w-5 h-5 text-red-500" />
+            Health Risk Dashboard
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">City Health Department — Environmental health monitoring</p>
+        </div>
+        <button
+          onClick={() => {
+            setLoading(true);
+            fetch(`${API}/api/iot/health-summary`).then(r => r.json()).then(data => { setHealthData(data); setLoading(false); }).catch(() => setLoading(false));
+          }}
+          className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
+
+      {/* Health Risk Overview */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className={`bg-white rounded-2xl border p-5 flex items-center gap-4 ${riskCounts.high > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-red-600 bg-red-100 text-xl font-bold ${riskCounts.high > 0 ? 'animate-pulse' : ''}`}>
+            🔴
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-red-600">{loading ? '–' : riskCounts.high}</p>
+            <p className="text-xs font-semibold text-slate-700">High Risk Zones</p>
+            <p className="text-[10px] text-slate-400">NH₃ &gt;50ppm or CH₄ &gt;25% LEL</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-amber-200 p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-amber-600 bg-amber-100 text-xl font-bold">
+            🟡
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-amber-600">{loading ? '–' : riskCounts.moderate}</p>
+            <p className="text-xs font-semibold text-slate-700">Moderate Risk Zones</p>
+            <p className="text-[10px] text-slate-400">NH₃ 25–50ppm or CH₄ 10–25%</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-emerald-100 p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-emerald-600 bg-emerald-100 text-xl font-bold">
+            🟢
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-emerald-600">{loading ? '–' : riskCounts.low}</p>
+            <p className="text-xs font-semibold text-slate-700">Low Risk Zones</p>
+            <p className="text-[10px] text-slate-400">NH₃ &lt;25ppm — Safe levels</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Health Alerts */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-red-500" />
+              Recent Health Alerts
+              {recentAlerts.length > 0 && (
+                <span className="text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+                  Last 7 days
+                </span>
+              )}
+            </h2>
+          </div>
+          {loading ? (
+            <div className="py-8 text-center">
+              <div className="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            </div>
+          ) : recentAlerts.length === 0 ? (
+            <div className="py-8 text-center text-slate-400">
+              <Activity className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              <p className="text-sm font-medium">No alerts in the last 7 days</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {recentAlerts.slice(0, 6).map((alert, i) => (
+                <div key={alert._id || i} className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border ${
+                  alert.severity === 'critical' ? 'bg-red-50 border-red-200' :
+                  alert.severity === 'moderate' ? 'bg-amber-50 border-amber-200' :
+                  'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
+                    alert.severity === 'critical' ? 'bg-red-500 animate-pulse' :
+                    alert.severity === 'moderate' ? 'bg-amber-500' : 'bg-slate-400'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate">{alert.message}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {alert.location && `📍 ${alert.location}`}{alert.barangay && `, ${alert.barangay}`} · {timeAgo(alert.createdAt)}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                    alert.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                    alert.severity === 'moderate' ? 'bg-amber-100 text-amber-700' :
+                    'bg-slate-100 text-slate-600'
+                  }`}>{alert.severity}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Barangays Requiring Attention */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-red-500" />
+              Barangays Requiring Attention
+            </h2>
+          </div>
+          {loading ? (
+            <div className="py-8 text-center">
+              <div className="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            </div>
+          ) : barangaysAtRisk.length === 0 ? (
+            <div className="py-8 text-center text-slate-400">
+              <Heart className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
+              <p className="text-sm font-medium">All barangays are within safe limits</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {barangaysAtRisk.map((b, i) => {
+                const isHigh = b.maxAmmonia > 50 || b.maxMethane > 25;
+                return (
+                  <div key={b.name} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${isHigh ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                    <span className="text-sm w-6 text-center font-bold text-slate-500">#{i + 1}</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-800">{b.name}</p>
+                      <p className="text-[10px] text-slate-500">
+                        NH₃: <span className={`font-bold ${b.maxAmmonia > 50 ? 'text-red-600' : 'text-amber-600'}`}>{b.maxAmmonia.toFixed(1)} ppm</span>
+                        {' · '}CH₄: <span className={`font-bold ${b.maxMethane > 25 ? 'text-red-600' : 'text-amber-600'}`}>{b.maxMethane.toFixed(1)}%</span>
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isHigh ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {isHigh ? 'HIGH RISK' : 'MODERATE'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
+        <p className="font-semibold mb-1">📊 CHD Data Access</p>
+        <p className="text-xs text-blue-700">
+          You have full access to <strong>Heatmap Analytics</strong> and <strong>Collection History</strong>.
+          You can view and flag health concerns in <strong>Reports</strong>.
+          Use the sidebar to navigate to these sections.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function OfficialsDashboard() {
   const { official } = useAuth();
+  const location = useLocation();
   const socketRef = useRef(null);
+  const isChd = official?.role === 'chd';
 
-  // IoT live state
+  // Shared state — toast for access denied redirect
+  const [accessDeniedToast, setAccessDeniedToast] = useState(false);
+
+  // Officials-only state (always declared, skipped when CHD)
   const [iotSummary, setIotSummary] = useState({ totalSensors: 0, recentReadings: 0, activeAlerts: 0, criticalAlerts: 0 });
   const [pollutionData, setPollutionData] = useState([]);
   const [iotAlerts, setIotAlerts] = useState([]);
   const [latestReadings, setLatestReadings] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [stats, setStats] = useState({ totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 });
   const [rankings, setRankings] = useState([]);
+
+  useEffect(() => {
+    if (location.state?.chdAccessDenied) {
+      setAccessDeniedToast(true);
+      setTimeout(() => setAccessDeniedToast(false), 4000);
+    }
+  }, [location.state]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -72,12 +261,13 @@ export default function OfficialsDashboard() {
   };
 
   useEffect(() => {
+    if (isChd) return; // CHD uses its own data source in ChdDashboard
+
     fetchAll();
 
     const socket = io(API, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
-    // Real-time IoT reading updates
     socket.on('iot:reading', (reading) => {
       setLatestReadings(prev => {
         const filtered = prev.filter(r => r.sensorId !== reading.sensorId);
@@ -86,7 +276,6 @@ export default function OfficialsDashboard() {
       setIotSummary(prev => ({ ...prev, recentReadings: prev.recentReadings + 1 }));
     });
 
-    // Real-time IoT alerts
     socket.on('iot:alert', (alert) => {
       setIotAlerts(prev => [alert, ...prev].slice(0, 10));
       setIotSummary(prev => ({
@@ -96,18 +285,37 @@ export default function OfficialsDashboard() {
       }));
     });
 
-    // New reports (auto or manual)
     socket.on('report:new', () => {
       setStats(prev => ({ ...prev, totalReports: prev.totalReports + 1, pendingReports: prev.pendingReports + 1 }));
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [isChd]);
+
+  // Access denied toast element (shared)
+  const accessDeniedBanner = accessDeniedToast && (
+    <div className="fixed top-4 right-4 z-[2000] flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-xl shadow-lg">
+      <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+      <span className="text-sm font-semibold">Access Denied — CHD does not have access to that page</span>
+      <button onClick={() => setAccessDeniedToast(false)} className="ml-2 hover:opacity-70">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  // CHD sees a health-focused dashboard
+  if (isChd) {
+    return (
+      <>
+        {accessDeniedBanner}
+        <ChdDashboard />
+      </>
+    );
+  }
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const weekNum = Math.ceil((new Date().getDate() + new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay()) / 7);
 
-  // Transform IoT alerts for the RecentAlerts component
   const formattedAlerts = iotAlerts.slice(0, 5).map((a, i) => ({
     id: a._id || i,
     location: `${a.location || 'Unknown'}${a.barangay ? `, ${a.barangay}` : ''}`,
@@ -116,7 +324,6 @@ export default function OfficialsDashboard() {
     message: a.message,
   }));
 
-  // Air quality indicator
   const worstAQ = latestReadings.reduce((worst, r) => {
     const order = { Hazardous: 4, Unhealthy: 3, Moderate: 2, Good: 1 };
     return (order[r.airQuality] || 0) > (order[worst] || 0) ? r.airQuality : worst;

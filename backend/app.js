@@ -108,6 +108,8 @@ const reportSchema = new mongoose.Schema({
   resolvedBy: { type: String, default: null },
   assignedTruck: { type: String, default: null },
   assignedDriver: { type: String, default: null },
+  healthConcern: { type: Boolean, default: false },
+  healthNotes: [{ text: String, addedBy: String, createdAt: { type: Date, default: Date.now } }],
   createdAt: { type: Date, default: Date.now },
 });
 const Report = mongoose.model("Report", reportSchema);
@@ -234,7 +236,7 @@ const officialSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
   passwordHash: { type: String, required: true },
   barangay: { type: String, required: true },
-  role: { type: String, enum: ["official", "superadmin"], default: "official" },
+  role: { type: String, enum: ["official", "superadmin", "chd"], default: "official" },
   status: { type: String, enum: ["active", "revoked"], default: "active" },
   signatureUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
@@ -666,6 +668,12 @@ function authMiddleware(req, res, next) {
   }
 }
 
+const CHD_ALLOWED_PAGES = ['dashboard', 'heatmap', 'reports', 'history'];
+function getAllowedPages(role) {
+  if (role === 'chd') return CHD_ALLOWED_PAGES;
+  return null; // official and superadmin have access to all pages
+}
+
 // Optional Auth
 function optionalAuth(req, res, next) {
   const header = req.headers.authorization;
@@ -696,6 +704,58 @@ app.post("/api/upload", async (req, res) => {
       resource_type: "image",
     });
     res.json({ url: result.secure_url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: List all officials (superadmin only)
+app.get("/api/officials", authMiddleware, async (req, res) => {
+  if (req.official.role !== "superadmin")
+    return res.status(403).json({ error: "Superadmin only" });
+  try {
+    const officials = await Official.find({}, "-passwordHash").sort({ createdAt: -1 });
+    res.json(officials);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Create a new official (superadmin only)
+app.post("/api/officials", authMiddleware, async (req, res) => {
+  if (req.official.role !== "superadmin")
+    return res.status(403).json({ error: "Superadmin only" });
+  const { name, email, password, barangay, role } = req.body;
+  if (!name || !email || !password)
+    return res.status(400).json({ error: "name, email, password required" });
+  try {
+    const exists = await Official.findOne({ email: email.toLowerCase() });
+    if (exists) return res.status(409).json({ error: "Email already in use" });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const official = await Official.create({
+      name,
+      email: email.toLowerCase(),
+      passwordHash,
+      barangay: barangay || "All",
+      role: ["official", "superadmin", "chd"].includes(role) ? role : "official",
+    });
+    res.status(201).json({ id: official._id, name: official.name, email: official.email, role: official.role, barangay: official.barangay });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: Update official role (superadmin only)
+app.patch("/api/officials/:id/role", authMiddleware, async (req, res) => {
+  if (req.official.role !== "superadmin")
+    return res.status(403).json({ error: "Superadmin only" });
+  const { role } = req.body;
+  if (!["official", "superadmin", "chd"].includes(role))
+    return res.status(400).json({ error: "Invalid role" });
+  try {
+    const official = await Official.findByIdAndUpdate(req.params.id, { role }, { new: true, select: "-passwordHash" });
+    if (!official) return res.status(404).json({ error: "Official not found" });
+    res.json(official);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1241,6 +1301,7 @@ app.post("/api/auth/login", async (req, res) => {
         email: official.email,
         barangay: official.barangay,
         role: official.role,
+        allowedPages: getAllowedPages(official.role),
       },
     });
   } catch (err) {
@@ -1249,7 +1310,12 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.get("/api/auth/me", authMiddleware, (req, res) => {
-  res.json({ official: req.official });
+  res.json({
+    official: {
+      ...req.official,
+      allowedPages: getAllowedPages(req.official.role),
+    }
+  });
 });
 
 app.post("/api/auth/seed", async (req, res) => {
@@ -1302,6 +1368,13 @@ app.post("/api/auth/seed", async (req, res) => {
       password: "banilad123",
       barangay: "Banilad",
       role: "official",
+    },
+    {
+      name: "Dr. Maria Santos",
+      email: "chd@cebucity.gov.ph",
+      password: "password123",
+      barangay: "All",
+      role: "chd",
     },
   ];
   try {
@@ -1739,6 +1812,43 @@ app.delete("/api/reports/:id", authMiddleware, async (req, res) => {
   try {
     await Report.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CHD: Flag report as health concern
+app.patch("/api/reports/:id/health-flag", authMiddleware, async (req, res) => {
+  if (req.official.role !== "chd")
+    return res.status(403).json({ error: "Your role (CHD) does not have access to this feature." });
+  try {
+    const report = await Report.findByIdAndUpdate(
+      req.params.id,
+      { healthConcern: true },
+      { new: true }
+    );
+    if (!report) return res.status(404).json({ error: "Report not found" });
+    io.emit("report:updated", report);
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CHD: Add health note to a report
+app.patch("/api/reports/:id/health-note", authMiddleware, async (req, res) => {
+  if (req.official.role !== "chd")
+    return res.status(403).json({ error: "Your role (CHD) does not have access to this feature." });
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: "Note text required" });
+  try {
+    const report = await Report.findByIdAndUpdate(
+      req.params.id,
+      { $push: { healthNotes: { text: text.trim(), addedBy: req.official.name || req.official.email, createdAt: new Date() } } },
+      { new: true }
+    );
+    if (!report) return res.status(404).json({ error: "Report not found" });
+    res.json(report);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3351,6 +3461,55 @@ app.patch("/api/iot/alerts/:id/acknowledge", async (req, res) => {
     if (!alert) return res.status(404).json({ error: "Alert not found" });
     io.emit("iot:alert:acknowledged", alert);
     res.json(alert);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: CHD health risk summary
+app.get("/api/iot/health-summary", async (req, res) => {
+  try {
+    const latest = await SensorReading.aggregate([
+      { $sort: { timestamp: -1 } },
+      { $group: { _id: "$sensorId", doc: { $first: "$$ROOT" } } },
+      { $replaceRoot: { newRoot: "$doc" } },
+    ]);
+
+    const high = latest.filter(r => r.ammonia > 50 || r.methane > 25);
+    const moderate = latest.filter(r =>
+      !high.some(h => h._id?.toString() === r._id?.toString()) &&
+      (r.ammonia >= 25 || r.methane >= 10)
+    );
+    const low = latest.filter(r => r.ammonia < 25 && r.methane < 10);
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentAlerts = await IoTAlert.find({ createdAt: { $gte: sevenDaysAgo } })
+      .sort({ createdAt: -1 }).limit(10);
+
+    const barangayMap = {};
+    latest.forEach(r => {
+      if (r.barangay) {
+        if (!barangayMap[r.barangay]) barangayMap[r.barangay] = { name: r.barangay, sensors: [] };
+        barangayMap[r.barangay].sensors.push(r);
+      }
+    });
+
+    const barangaysAtRisk = Object.values(barangayMap)
+      .filter(b => b.sensors.some(s => s.ammonia > 25 || s.methane > 10))
+      .map(b => ({
+        name: b.name,
+        maxAmmonia: Math.max(...b.sensors.map(s => s.ammonia)),
+        maxMethane: Math.max(...b.sensors.map(s => s.methane)),
+        sensorCount: b.sensors.length,
+      }))
+      .sort((a, b) => b.maxAmmonia - a.maxAmmonia)
+      .slice(0, 5);
+
+    res.json({
+      riskCounts: { high: high.length, moderate: moderate.length, low: low.length },
+      recentAlerts,
+      barangaysAtRisk,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

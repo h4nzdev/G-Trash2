@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle } from 'lucide-react';
+import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle, Users, Plus, X } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -158,8 +158,143 @@ function SignaturePad({ official }) {
   );
 }
 
+const ROLE_LABELS = { official: 'Official', superadmin: 'Super Admin', chd: 'City Health Dept.' };
+const ROLE_COLORS = { official: 'bg-emerald-100 text-emerald-700', superadmin: 'bg-violet-100 text-violet-700', chd: 'bg-red-100 text-red-700' };
+
+function OfficialsManager() {
+  const [officials, setOfficials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', email: '', password: '', barangay: '', role: 'official' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchOfficials = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/api/officials`);
+      setOfficials(data);
+    } catch {
+      /* silent */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchOfficials(); }, []);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      await axios.post(`${API}/api/officials`, form);
+      setShowForm(false);
+      setForm({ name: '', email: '', password: '', barangay: '', role: 'official' });
+      fetchOfficials();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to create official');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRoleChange = async (id, role) => {
+    try {
+      await axios.patch(`${API}/api/officials/${id}/role`, { role });
+      setOfficials(prev => prev.map(o => o._id === id ? { ...o, role } : o));
+    } catch {
+      /* silent */
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">Officials Management</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Create and manage official accounts including CHD users</p>
+        </div>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${showForm ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-700 text-white hover:bg-emerald-800'}`}
+        >
+          {showForm ? <><X className="w-4 h-4" /> Cancel</> : <><Plus className="w-4 h-4" /> New Official</>}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleCreate} className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-slate-800">Create New Official Account</h3>
+          {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Full Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required placeholder="Dr. Maria Santos" className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Email</label>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required placeholder="chd@cebucity.gov.ph" className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Password</label>
+              <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required placeholder="••••••••" className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Barangay / Area</label>
+              <input value={form.barangay} onChange={e => setForm(f => ({ ...f, barangay: e.target.value }))} placeholder="All (for CHD) or Lahug" className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-semibold text-slate-600 mb-1 block">Role</label>
+              <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value="official">Official (LGU / Barangay)</option>
+                <option value="chd">City Health Department (CHD)</option>
+                <option value="superadmin">Super Admin</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-700 text-white text-sm font-bold rounded-xl hover:bg-emerald-800 disabled:opacity-50 transition-colors">
+            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+            Create Account
+          </button>
+        </form>
+      )}
+
+      {loading ? (
+        <div className="py-8 text-center">
+          <div className="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {officials.map(o => (
+            <div key={o._id} className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl">
+              <div className="w-8 h-8 rounded-full bg-emerald-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {o.name?.charAt(0) || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate">{o.name}</p>
+                <p className="text-xs text-slate-500 truncate">{o.email} · {o.barangay === 'All' ? 'All Barangays' : `Brgy. ${o.barangay}`}</p>
+              </div>
+              <select
+                value={o.role}
+                onChange={e => handleRoleChange(o._id, e.target.value)}
+                className={`text-xs font-bold px-2 py-1 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-emerald-500 ${ROLE_COLORS[o.role] || 'bg-slate-100 text-slate-600'}`}
+              >
+                <option value="official">Official</option>
+                <option value="chd">CHD</option>
+                <option value="superadmin">Super Admin</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { official } = useAuth();
+  const isSuperAdmin = official?.role === 'superadmin';
   const [activeSection, setActiveSection] = useState('profile');
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState({
@@ -185,7 +320,7 @@ export default function Settings() {
         {/* Settings Sidebar */}
         <div className="w-56 flex-shrink-0">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            {sections.map(({ id, icon: Icon, label }) => (
+            {[...sections, ...(isSuperAdmin ? [{ id: 'officials', icon: Users, label: 'Manage Officials' }] : [])].map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
                 onClick={() => setActiveSection(id)}
@@ -377,6 +512,9 @@ export default function Settings() {
 
           {/* E-Signature */}
           {activeSection === 'signature' && <SignaturePad official={official} />}
+
+          {/* Officials Management — superadmin only */}
+          {activeSection === 'officials' && <OfficialsManager />}
 
           {/* System Preferences */}
           {activeSection === 'system' && (

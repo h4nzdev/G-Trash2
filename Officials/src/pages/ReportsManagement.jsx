@@ -18,10 +18,14 @@ import {
   Sparkles,
   Zap,
   ChevronRight,
+  Heart,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import ReportCard from "../components/reports/ReportCard";
 import ReportFilter from "../components/reports/ReportFilter";
 import Badge from "../components/shared/Badge";
+import { useAuth } from "../context/AuthContext";
 import API from "../config";
 
 function slaHoursLeft(deadline) {
@@ -38,12 +42,16 @@ function timeAgo(dateStr) {
 }
 
 export default function ReportsManagement() {
+  const { official } = useAuth();
+  const isChd = official?.role === 'chd';
+
   const [filters, setFilters] = useState({
     search: "",
     status: "All",
     barangay: "All Barangays",
     priority: "All Priorities",
     sortBy: "Newest",
+    healthOnly: false,
   });
   const [selectedReport, setSelectedReport] = useState(null);
   const [reportList, setReportList] = useState([]);
@@ -53,6 +61,9 @@ export default function ReportsManagement() {
   const [selectedTruckId, setSelectedTruckId] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [healthNoteText, setHealthNoteText] = useState("");
+  const [healthNoteSaving, setHealthNoteSaving] = useState(false);
+  const [flagging, setFlagging] = useState(false);
 
   const fetchReports = async () => {
     setLoading(true);
@@ -168,6 +179,34 @@ export default function ReportsManagement() {
     }
   };
 
+  const handleHealthFlag = async (report) => {
+    setFlagging(true);
+    try {
+      const { data } = await axios.patch(`${API}/api/reports/${report._id}/health-flag`);
+      setReportList(prev => prev.map(r => r._id === report._id ? { ...r, ...data } : r));
+      setSelectedReport(prev => prev ? { ...prev, ...data } : prev);
+    } catch {
+      /* silent */
+    } finally {
+      setFlagging(false);
+    }
+  };
+
+  const handleHealthNote = async () => {
+    if (!healthNoteText.trim() || !selectedReport) return;
+    setHealthNoteSaving(true);
+    try {
+      const { data } = await axios.patch(`${API}/api/reports/${selectedReport._id}/health-note`, { text: healthNoteText });
+      setReportList(prev => prev.map(r => r._id === selectedReport._id ? { ...r, ...data } : r));
+      setSelectedReport(prev => prev ? { ...prev, ...data } : prev);
+      setHealthNoteText("");
+    } catch {
+      /* silent */
+    } finally {
+      setHealthNoteSaving(false);
+    }
+  };
+
   const filtered = reportList
     .filter((r) => {
       const statusMatch =
@@ -184,7 +223,8 @@ export default function ReportsManagement() {
         !filters.search ||
         r.title.toLowerCase().includes(filters.search.toLowerCase()) ||
         r.location.toLowerCase().includes(filters.search.toLowerCase());
-      return statusMatch && barangayMatch && priorityMatch && searchMatch;
+      const healthMatch = !filters.healthOnly || r.healthConcern;
+      return statusMatch && barangayMatch && priorityMatch && searchMatch && healthMatch;
     })
     .sort((a, b) => {
       if (filters.sortBy === "Highest Urgency") return b.urgency - a.urgency;
@@ -205,13 +245,35 @@ export default function ReportsManagement() {
     <div className="p-6">
       {/* Header with refresh */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-slate-800">Reports Management</h1>
-        <button
-          onClick={fetchReports}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold text-slate-800">Reports Management</h1>
+          {isChd && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
+              <Heart className="w-3 h-3" /> View Only — CHD
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {isChd && (
+            <button
+              onClick={() => setFilters(f => ({ ...f, healthOnly: !f.healthOnly }))}
+              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+                filters.healthOnly
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'text-red-600 bg-red-50 border-red-200 hover:bg-red-100'
+              }`}
+            >
+              <Heart className="w-4 h-4" />
+              {filters.healthOnly ? 'All Reports' : 'Health Flagged'}
+            </button>
+          )}
+          <button
+            onClick={fetchReports}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -294,8 +356,9 @@ export default function ReportsManagement() {
               key={report._id}
               report={report}
               onView={openReport}
-              onAssign={handleAssign}
-              onResolve={handleResolve}
+              onAssign={isChd ? null : handleAssign}
+              onResolve={isChd ? null : handleResolve}
+              isChd={isChd}
             />
           ))}
         </div>
@@ -326,6 +389,11 @@ export default function ReportsManagement() {
                   >
                     {selectedReport.urgency} Urgency Score
                   </div>
+                  {selectedReport.healthConcern && (
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-[10px] font-bold text-white">
+                      <Heart className="w-2.5 h-2.5" /> Health Concern
+                    </div>
+                  )}
                 </div>
                 <h2 className="text-base font-bold text-slate-900 leading-snug">
                   {selectedReport.title}
@@ -457,8 +525,8 @@ export default function ReportsManagement() {
                 </div>
               )}
 
-              {/* Smart Suggestions */}
-              {(suggestionsLoading || suggestions.length > 0) && (
+              {/* Smart Suggestions — hidden for CHD */}
+              {!isChd && (suggestionsLoading || suggestions.length > 0) && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <Sparkles className="w-3.5 h-3.5 text-violet-500" />
@@ -641,8 +709,87 @@ export default function ReportsManagement() {
                 </div>
               </div>
 
+              {/* CHD-only: Health Concern Flag + Health Notes */}
+              {isChd && (
+                <div className="space-y-4">
+                  {/* Flag as Health Concern */}
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Heart className="w-3.5 h-3.5" /> Health Concern Flag
+                        </p>
+                        <p className="text-xs text-red-600 mt-0.5">
+                          {selectedReport.healthConcern
+                            ? "This report is flagged as a health concern — visible to LGU officials"
+                            : "Flag this report to alert LGU officials of a health risk"}
+                        </p>
+                      </div>
+                      {selectedReport.healthConcern ? (
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg">
+                          <Heart className="w-3.5 h-3.5" /> FLAGGED
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleHealthFlag(selectedReport)}
+                          disabled={flagging}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                          {flagging ? (
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Heart className="w-3.5 h-3.5" />
+                          )}
+                          Flag as Health Concern
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Health Notes */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5" /> Health Notes (CHD Internal)
+                    </p>
+                    {selectedReport.healthNotes?.length > 0 && (
+                      <div className="space-y-2 mb-3">
+                        {selectedReport.healthNotes.map((note, i) => (
+                          <div key={i} className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                            <p className="text-xs text-slate-700">{note.text}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              {note.addedBy} · {new Date(note.createdAt).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add a health note…"
+                        value={healthNoteText}
+                        onChange={e => setHealthNoteText(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleHealthNote()}
+                        className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 text-slate-700"
+                      />
+                      <button
+                        onClick={handleHealthNote}
+                        disabled={!healthNoteText.trim() || healthNoteSaving}
+                        className="px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 disabled:opacity-40 transition-colors"
+                      >
+                        {healthNoteSaving ? (
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Assign Dropdown */}
-              {selectedReport.status !== "resolved" && (
+              {!isChd && selectedReport.status !== "resolved" && (
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     Assign to Collector
@@ -699,7 +846,7 @@ export default function ReportsManagement() {
               >
                 Close
               </button>
-              {selectedReport.status !== "resolved" && (
+              {!isChd && selectedReport.status !== "resolved" && (
                 <button
                   onClick={() => handleResolve(selectedReport)}
                   className="flex-1 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-900 hover:to-emerald-800 rounded-xl transition-colors"

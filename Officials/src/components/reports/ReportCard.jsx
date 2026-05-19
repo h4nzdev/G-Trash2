@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle } from 'lucide-react';
 import Badge from '../shared/Badge';
 
 const priorityDot = { Critical: 'bg-red-500', High: 'bg-red-400', Medium: 'bg-amber-500', Low: 'bg-slate-400' };
 const priorityBadge = { Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low' };
 
-export default function ReportCard({ report, onView, onAssign, onResolve }) {
+export default function ReportCard({ report, onView, onAssign, onResolve, isChd }) {
   const [expanded, setExpanded] = useState(false);
   const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = urgencyScore >= 5;
@@ -20,11 +20,16 @@ export default function ReportCard({ report, onView, onAssign, onResolve }) {
         <div className="flex items-start gap-3 mb-3">
           <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[report.priority]}`} />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-slate-900 leading-snug">{report.title}</h3>
               {isHighUrgency && (
                 <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-100 rounded text-[10px] font-bold text-red-600 animate-pulse">
                   <AlertTriangle className="w-2.5 h-2.5" /> URGENT
+                </div>
+              )}
+              {report.healthConcern && (
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded text-[10px] font-bold text-white">
+                  <Heart className="w-2.5 h-2.5" /> Health Concern
                 </div>
               )}
             </div>
@@ -80,7 +85,7 @@ export default function ReportCard({ report, onView, onAssign, onResolve }) {
           >
             <Eye className="w-3.5 h-3.5" /> View
           </button>
-          {report.status !== 'resolved' && (
+          {!isChd && report.status !== 'resolved' && (
             <>
               <button
                 onClick={() => onAssign?.(report)}

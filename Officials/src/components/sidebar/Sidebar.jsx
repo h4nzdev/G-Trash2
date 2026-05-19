@@ -22,6 +22,8 @@ import {
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 
+const CHD_ALLOWED_PATHS = ['/dashboard', '/heatmap', '/reports', '/history'];
+
 const navGroups = [
   {
     label: "Overview",
@@ -43,7 +45,7 @@ const navGroups = [
     label: "Analytics",
     items: [
       { path: "/barangays", icon: Trophy, label: "Barangay Rankings" },
-      { path: "/reports", icon: FileWarning, label: "Reports" },
+      { path: "/reports", icon: FileWarning, label: "Reports", chdLabel: "Reports (View Only)" },
       { path: "/heatmap", icon: MapPin, label: "Heatmap Analytics" },
       { path: "/history", icon: History, label: "Collection History" },
       { path: "/rewards", icon: Gift, label: "Rewards" },
@@ -61,7 +63,8 @@ export default function Sidebar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { official, logout } = useAuth();
-  
+  const isChd = official?.role === 'chd';
+
   // Track which groups are expanded
   const [expandedGroups, setExpandedGroups] = useState({
     Overview: true,
@@ -93,19 +96,28 @@ export default function Sidebar() {
 
       {/* Grouped Navigation with Original Colors */}
       <nav className="flex-1 px-3 mt-4 space-y-4 overflow-y-auto pb-8 scrollbar-hide">
-        {navGroups.map((group) => (
+        {navGroups
+          .map(group => ({
+            ...group,
+            items: isChd
+              ? group.items.filter(item => CHD_ALLOWED_PATHS.includes(item.path))
+              : group.items,
+          }))
+          .filter(group => group.items.length > 0)
+          .map((group) => (
           <div key={group.label} className="space-y-0.5">
-            <button 
+            <button
               onClick={() => toggleGroup(group.label)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
             >
               {group.label}
               <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${expandedGroups[group.label] ? '' : '-rotate-90'}`} />
             </button>
-            
+
             <div className={`space-y-0.5 overflow-hidden transition-all duration-300 ${expandedGroups[group.label] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-              {group.items.map(({ path, icon: Icon, label }) => {
+              {group.items.map(({ path, icon: Icon, label, chdLabel }) => {
                 const isActive = location.pathname === path;
+                const displayLabel = isChd && chdLabel ? chdLabel : label;
                 return (
                   <NavLink
                     key={path}
@@ -125,7 +137,7 @@ export default function Sidebar() {
                       }`}
                       size={18}
                     />
-                    <span className="text-sm">{label}</span>
+                    <span className="text-sm">{displayLabel}</span>
                     {isActive && (
                       <span className="ml-auto w-1.5 h-1.5 bg-emerald-600 rounded-full" />
                     )}
@@ -161,7 +173,9 @@ export default function Sidebar() {
               {official?.name || "Official"}
             </p>
             <p className="text-xs text-slate-500 truncate">
-              {official?.barangay === "All"
+              {official?.role === "chd"
+                ? "City Health Dept."
+                : official?.barangay === "All"
                 ? "Super Admin"
                 : `Brgy. ${official?.barangay}`}
             </p>

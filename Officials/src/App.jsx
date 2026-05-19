@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import DashboardLayout from './layouts/DashboardLayout';
 import LoginPage from './pages/LoginPage';
@@ -29,6 +29,15 @@ function ProtectedLayout() {
   return <DashboardLayout />;
 }
 
+function ChdGuard({ children }) {
+  const { official } = useAuth();
+  const location = useLocation();
+  if (official?.role === 'chd') {
+    return <Navigate to="/dashboard" state={{ chdAccessDenied: true, from: location.pathname }} replace />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -38,18 +47,18 @@ export default function App() {
           <Route path="/" element={<ProtectedLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<OfficialsDashboard />} />
-            <Route path="routes" element={<RouteMonitoring />} />
-            <Route path="fleet" element={<FleetManagement />} />
-            <Route path="route-builder" element={<RouteBuilder />} />
-            <Route path="barangays" element={<BarangayPerformance />} />
+            <Route path="routes" element={<ChdGuard><RouteMonitoring /></ChdGuard>} />
+            <Route path="fleet" element={<ChdGuard><FleetManagement /></ChdGuard>} />
+            <Route path="route-builder" element={<ChdGuard><RouteBuilder /></ChdGuard>} />
+            <Route path="barangays" element={<ChdGuard><BarangayPerformance /></ChdGuard>} />
             <Route path="reports" element={<ReportsManagement />} />
             <Route path="heatmap" element={<HeatmapAnalytics />} />
             <Route path="history" element={<CollectionHistory />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="schedule" element={<ScheduleRoute />} />
-            <Route path="route-manager" element={<RouteManager />} />
-            <Route path="fleet/:truckId" element={<DriverAnalytics />} />
-            <Route path="rewards" element={<RewardsManagement />} />
+            <Route path="settings" element={<ChdGuard><Settings /></ChdGuard>} />
+            <Route path="schedule" element={<ChdGuard><ScheduleRoute /></ChdGuard>} />
+            <Route path="route-manager" element={<ChdGuard><RouteManager /></ChdGuard>} />
+            <Route path="fleet/:truckId" element={<ChdGuard><DriverAnalytics /></ChdGuard>} />
+            <Route path="rewards" element={<ChdGuard><RewardsManagement /></ChdGuard>} />
           </Route>
         </Routes>
       </AuthProvider>

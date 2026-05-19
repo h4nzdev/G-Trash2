@@ -1,160 +1,112 @@
-I need to implement resident-level performance tracking in the G-TRASH system. Currently, the scoring system only tracks points at the Barangay level. My capstone document states that LGU officials will identify "residents with outstanding performance as shown in the G-TRASH data and analytics" and give them rewards. But right now, there is no way for officials to see which individual residents contributed the most to their Barangay's score.
+I need to add City Health Department (CHD) access to the existing G-TRASH Officials Web App. My capstone document names the CHD as a beneficiary that uses "G-TRASH's pollution heatmaps and historical analytics to proactively identify high-risk sanitary zones." The CHD does NOT need a separate dashboard — they will use the same Officials Web App but with a limited, health-focused view.
 
 Current setup:
-- Backend: Node.js + Express + MongoDB with Mongoose
 - Officials Web App: React + Vite + Tailwind CSS
-- Resident App: React Native (Expo)
-- Resident model has fields: name, email, barangay, profilePicture
-- Existing scoring actions that should now track per resident:
-  - AI Scanner: Resident scans trash and gets correct segregation result
-  - Report Submission: Resident submits a garbage report
-  - Report Upvotes: Resident upvotes other reports
-  - Report Comments: Resident comments on reports
-  - Resolution Verification: Resident confirms a reported issue was fixed
+- Backend: Node.js + Express + MongoDB with Mongoose
+- User roles are managed via a "role" field in the user schema
+- Current roles: official, admin
+- The Officials dashboard already has: Dashboard, Reports, Route Monitoring, Route Builder, Schedule Routes, Fleet Management, Heatmap Analytics, Collection History, Barangay Performance, Settings
 
 Requirements:
 
-1. BACKEND - Resident Scoring System:
+1. BACKEND - Role & Permission Updates:
 
-   a. Add points field to Resident Schema:
-      {
-        totalPoints: { type: Number, default: 0 },
-        monthlyPoints: { type: Number, default: 0 },
-        pointsHistory: [{
-          points: Number,
-          action: String,        // enum: ['correct_scan', 'report_submit', 'report_upvote', 'report_comment', 'verify_resolution']
-          description: String,   // e.g., "Correctly scanned biodegradable waste"
-          reportId: mongoose.ObjectId,  // reference if applicable
-          date: { type: Date, default: Date.now }
-        }],
-        stats: {
-          totalScans: { type: Number, default: 0 },
-          correctScans: { type: Number, default: 0 },
-          reportsSubmitted: { type: Number, default: 0 },
-          reportsUpvoted: { type: Number, default: 0 },
-          commentsMade: { type: Number, default: 0 },
-          resolutionsVerified: { type: Number, default: 0 }
-        }
-      }
+   a. Add "chd" to the existing role enum:
+      - role: { type: String, enum: ['official', 'admin', 'chd'], default: 'official' }
 
-   b. Point Values per Action:
-      - Correct AI scan: +5 points
-      - Submit a report: +10 points
-      - Report upvoted by others: +1 point (awarded to the report author)
-      - Add a comment: +2 points
-      - Verify a resolution: +15 points
-      - Report marked as false/fake by official: -20 points (penalty)
+   b. CHD permissions (enforced via middleware):
+      - FULL ACCESS to these pages:
+        - Dashboard (but with health-focused widgets — see frontend section)
+        - Heatmap Analytics
+        - Collection History
+      - READ-ONLY access to:
+        - Reports (can view all, filter, search — but CANNOT change status, assign trucks, or delete)
+      - NO ACCESS to these pages (return 403 or hide from sidebar):
+        - Route Builder
+        - Route Monitoring
+        - Schedule Routes
+        - Fleet Management
+        - Barangay Performance
+        - Settings
 
-   c. Update existing endpoints to award resident points:
-      - POST /api/reports - When resident submits report, add +10 to their points
-      - POST /api/reports/:id/vote - When someone upvotes, give +1 to the report author
-      - POST /api/reports/:id/comments - When resident comments, add +2 points
-      - POST /api/reports/:id/verify - When resident verifies resolution, add +15 points
-      - AI Scanner endpoint - When scan is correct, add +5 points
+   c. Updated auth middleware:
+      - Add a function that checks if the user's role has access to a specific page/feature
+      - Return 403 Forbidden with message: "Your role (CHD) does not have access to this feature."
+      - The GET /api/auth/me endpoint should return the user's role and a list of allowed pages
 
-   d. New Endpoints:
-      - GET /api/residents/:id/points - Get a resident's total points and stats
-      - GET /api/residents/:id/points/history - Get point history with pagination
-      - GET /api/barangays/:barangayName/top-residents - Get top 10 residents in a barangay
-        Query params: period (month/quarter/year/all), category (all/segregation/reports/verification)
-        Response format:
-        {
-          "barangay": "Lahug",
-          "period": "March 2026",
-          "topResidents": [
-            {
-              "rank": 1,
-              "residentId": "...",
-              "name": "Juan Dela Cruz",
-              "totalPoints": 320,
-              "stats": {
-                "correctScans": 45,
-                "reportsSubmitted": 12,
-                "resolutionsVerified": 8
-              },
-              "profilePicture": "url"
-            },
-            // ... more residents
-          ]
-        }
+2. OFFICIALS WEB APP - CHD-Specific View:
 
-2. OFFICIALS WEB APP - Resident Performance View:
+   a. Sidebar Navigation:
+      - When a CHD user logs in, the sidebar shows ONLY these items:
+        - 🏠 Dashboard
+        - 📊 Heatmap Analytics
+        - 📝 Reports (with "(View Only)" label)
+        - 📋 Collection History
+      - All other sidebar items are hidden for CHD users
+      - The sidebar can keep the same green color scheme (no need for separate branding)
 
-   a. New Tab on Barangay Leaderboard Page: "Top Residents"
-      - When an official clicks on a Barangay name in the leaderboard, it opens a drill-down view
-      - This view shows the top 10 residents in that Barangay ranked by points
-      - Each resident card shows:
-        - Rank (1st, 2nd, 3rd with medal icons)
-        - Profile picture and name
-        - Total points
-        - Breakdown icons with counts: 🗑️ Scans | 📝 Reports | ✅ Verifications
-        - A mini bar chart showing their point trend over the last 3 months
+   b. Dashboard - CHD View:
+      - When role === 'chd', the dashboard shows health-focused widgets instead of the full official view:
+        - "Health Risk Overview" card replacing the fleet/routes card:
+          - 🔴 High Risk Barangays: Count (ammonia > 50ppm or methane > 25% LEL)
+          - 🟡 Moderate Risk Barangays: Count (ammonia 25-50ppm or methane 10-25% LEL)
+          - 🟢 Low Risk Barangays: Count (ammonia < 25ppm)
+        - "Recent Health Alerts" list (last 7 days of IoT alerts)
+        - "Barangays Requiring Attention" - barangays with most days above safe threshold this month
+        - Mini heatmap widget showing health risk zones
+      - The existing official widgets (fleet status, pending reports, etc.) are hidden for CHD
 
-   b. Filter Controls:
-      - Time period dropdown: This Month, Last Month, This Quarter, This Year, All Time
-      - Category filter: All, Segregation (scans), Reporting (reports + comments), Verification
-      - Default: This Month, All Categories
+   c. Heatmap Analytics - CHD Enhancements:
+      - Same heatmap page but with an added "Health Risk View" toggle
+      - When toggled ON:
+        - Color coding changes to health risk levels:
+          - Green: Safe (ammonia < 25ppm)
+          - Yellow: Moderate (ammonia 25-50ppm)
+          - Orange: High (ammonia 50-100ppm)
+          - Red: Critical (ammonia > 100ppm)
+        - Clicking a zone shows health-specific info:
+          - Current ammonia/methane levels
+          - Days above safe threshold this month
+          - "Export Health Report" button for that zone
 
-   c. Resident Detail Modal:
-      - When official clicks on a resident card, opens a detailed modal showing:
-        - Full point history table with date, action, points, description
-        - Stats summary cards: Total Scans, Accuracy Rate, Reports, Verifications
-        - Activity timeline (last 30 days) showing each action as a timeline entry
-        - "Award History" section showing past rewards given to this resident (if any)
+   d. Reports Page - CHD View:
+      - Same reports table but:
+        - All action buttons are hidden (no status change, no assign, no delete)
+        - A new "🏥 Flag as Health Concern" button is added
+        - When flagged, the report gets a red "Health Concern" badge visible to LGU officials
+        - CHD can filter reports by: Health-flagged, Category (hazardous waste, illegal dumping)
+        - CHD can add "Health Notes" to a report (internal notes section)
 
-   d. "Select for Reward" Feature:
-      - Checkbox next to each resident in the top 10 list
-      - Official can select one or multiple residents
-      - "Create Reward for Selected" button
-      - This pre-fills the reward creation form with the resident's name and stats
-      - This connects to the reward management system
+   e. Collection History - CHD View:
+      - Same collection history page
+      - Added filter: "Show only barangays with health alerts"
+      - Added column: "Days Since Last Collection" highlighted in red if > 5 days
 
-3. RESIDENT APP - Personal Points Display:
+3. ADMIN PANEL - CHD User Management:
 
-   a. Profile Screen Update:
-      - Show resident's total points prominently at the top of Profile
-      - Show monthly points with a progress ring
-      - Show stats in a grid: Scans, Reports, Verifications
-      - Show current rank within their Barangay (e.g., "You're #3 of 156 residents in Lahug")
+   a. Add to existing user management:
+      - When creating/editing an official account, add "CHD" as a role option in the dropdown
+      - CHD-specific fields (optional):
+        - Department: (e.g., "City Health Department - Cebu City")
+        - Assigned Region: (e.g., "North District", "South District", "All Barangays")
+        - Contact Number
+      - The role dropdown now shows: Official, CHD, Admin
 
-   b. Points History Screen:
-      - Accessible from Profile
-      - Chronological list of all point transactions
-      - Each entry shows: icon, description, points earned, date
-      - Positive points in green, negative in red
-      - Pull-to-refresh
-
-   c. Real-Time Point Updates:
-      - When a resident earns points, show a brief toast/animation:
-        "+5 points! Correct scan 🎉"
-      - Points update in real-time on Profile screen using Socket.io
-
-4. SOCKET.IO EVENTS:
-   - New event: resident:points:update
-     Payload: { residentId, newTotal, pointsEarned, action, description }
-   - Resident app listens for this to update their display
-   - Officials dashboard listens to refresh top residents list
-
-5. EDGE CASES:
-   - What if a resident has 0 points? (Show "No activity yet. Start scanning or reporting!")
-   - What if a resident's report is deleted by admin? (Deduct the points that were awarded)
-   - What if it's a new month and monthlyPoints resets? (Move current monthlyPoints to a monthlyHistory array)
-   - What if two residents have the same points? (Sort by most recent activity)
-
-6. MONTHLY RESET LOGIC:
-   - On the 1st of each month, automatically:
-     - Save current monthlyPoints to a monthlyHistory array
-     - Reset monthlyPoints to 0
-     - Total points never reset (lifetime accumulation)
-   - This can be a cron job or a function that runs when points are queried
+4. EDGE CASES:
+   - What if CHD tries to access a restricted page via direct URL? (Redirect to dashboard with "Access Denied" toast)
+   - What if CHD flags a report that's already resolved? (Allow flagging resolved reports for audit/historical purposes)
+   - What if there are multiple CHD users? (Each has their own account; all see the same data)
+   - What if CHD needs data for a specific time period? (All existing date filters work for CHD too)
 
 Please provide:
-- Updated Resident Mongoose schema with points fields
-- Updated API endpoints that award points
-- New endpoint for top residents per barangay
-- Officials Web App components for resident drill-down view
-- Resident App Profile screen updates with points display
-- Monthly reset utility function
+- Updated user schema with CHD role
+- Backend middleware for CHD permission checking
+- Updated GET /api/auth/me to return role and allowed pages
+- Officials Web App sidebar component that filters based on role
+- Dashboard component with CHD-specific widgets
+- Heatmap page with Health Risk View toggle
+- Reports page with read-only mode and health flagging
+- Admin Panel user management updates
 
 ---
 
@@ -162,38 +114,38 @@ TESTING INSTRUCTIONS:
 After implementing, please tell me exactly how to test this feature by providing:
 
 1. Manual Test Steps:
-   - How to perform actions as a resident to earn points (scan, report, verify)
-   - How to check points on the Resident Profile screen
-   - How to view top residents as an official
-   - How to drill down into a specific resident's activity
-   - How to verify points update in real-time
+   - How to create a CHD account from Admin Panel
+   - How to log in as CHD and verify correct sidebar appears
+   - How to verify restricted pages are inaccessible
+   - How to use the Health Risk View on the heatmap
+   - How to flag a report as a health concern
+   - How to verify LGU officials can see the health flag
 
-2. Test Data Script:
-   Provide MongoDB insert scripts to create 5-6 residents in the same barangay with different point totals and activity mixes:
-   - Resident A: High scanner, low reports
-   - Resident B: High reports, low scans
-   - Resident C: Balanced all-rounder
-   - Resident D: New user with low points
-   - Resident E: Inactive user with 0 points
+2. Test Account:
+   - CHD test user: chd@cebucity.gov.ph / password123 / role: chd
+   - LGU test user: official@lahug.gov.ph / password123 / role: official
 
-3. Expected Visual Results:
-   - What the Profile screen looks like with points displayed
-   - What the Officials top residents drill-down looks like
-   - What the resident detail modal looks like
-   - What the toast animation looks like when points are earned
+3. Test Data:
+   Provide MongoDB script to insert IoT readings at different health risk levels so the CHD dashboard widgets show realistic data
 
-4. Debugging Checklist:
-   - If points aren't being awarded, check: [list items]
-   - If top residents list is empty, check: [list items]
-   - If monthly reset isn't working, check: [list items]
+4. Expected Visual Results:
+   - What the CHD sidebar looks like (only 4 items)
+   - What the CHD dashboard home looks like (health widgets)
+   - What the heatmap looks like in Health Risk View mode
+   - What happens when CHD tries to access /routes via URL
 
-5. Test Cases Table:
+5. Debugging Checklist:
+   - If sidebar shows all items for CHD, check: [list items]
+   - If health risk colors are wrong on heatmap, check: [list items]
+   - If CHD can still edit reports, check: [list items]
+
+6. Test Cases Table:
    | Test Case | Action | Expected Result |
    |-----------|--------|-----------------|
-   | Earn scan points | Resident scans trash correctly | +5 points; toast appears; total updates |
-   | Earn report points | Resident submits report | +10 points; stats reflect new report |
-   | View top residents | Official clicks barangay name | Top 10 residents shown ranked by points |
-   | Filter by category | Official selects "Segregation" filter | Residents re-ranked by scan points only |
-   | Zero-point resident | View profile of inactive user | Shows "No activity yet" message |
-   | Monthly reset | Wait for month rollover | monthlyPoints resets; total remains |
-   | Tie in points | Two residents have same points | Sorted by most recent activity date |
+   | CHD login | Login with CHD credentials | Dashboard shows health widgets |
+   | CHD sidebar | Check sidebar menu | Only 4 items shown |
+   | Access restricted page | CHD navigates to /routes | Redirected with "Access Denied" |
+   | View heatmap | CHD opens Heatmap Analytics | Can toggle Health Risk View |
+   | Flag health concern | CHD clicks flag on a report | Badge appears; visible to officials |
+   | Add health note | CHD adds note to report | Note saved in report |
+   | LGU sees flag | LGU official opens flagged report | Red "Health Concern" badge visible |
