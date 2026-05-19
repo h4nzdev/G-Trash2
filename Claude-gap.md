@@ -37,7 +37,7 @@ void connectWiFi() {
 }
 
 // ===================== SEND DATA =====================
-void sendToBackend(bool objectDetected) {
+void sendToBackend(bool objectDetected) { 
 
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();

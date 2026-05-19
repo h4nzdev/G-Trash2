@@ -193,6 +193,7 @@ function TopResidentsPanel({ barangay, onClose }) {
 }
 
 export default function BarangayPerformance() {
+  const { official } = useAuth();
   const [rankings, setRankings] = useState([]);
   const [drillDown, setDrillDown] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -372,11 +373,12 @@ export default function BarangayPerformance() {
                   {paged.map((b) => {
                     const originalRank = sorted.findIndex(r => r._id === b._id);
                     const barWidth = Math.round(((b.points || 0) / maxPts) * 100);
+                    const canViewResidents = official?.barangay === 'All' || official?.barangay === b.barangay;
                     return (
                       <tr
                         key={b._id || b.barangay}
-                        onClick={() => setDrillDown(b.barangay)}
-                        className={`hover:bg-emerald-50 cursor-pointer transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'}`}
+                        onClick={() => canViewResidents && setDrillDown(b.barangay)}
+                        className={`transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'} ${canViewResidents ? 'hover:bg-emerald-50 cursor-pointer' : 'cursor-default opacity-80'}`}
                       >
                         <td className="px-4 py-4">
                           <span className="text-sm font-bold text-slate-600">
@@ -386,7 +388,10 @@ export default function BarangayPerformance() {
                         <td className="px-4 py-4">
                           <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
                             {b.barangay || '—'}
-                            <Users className="w-3.5 h-3.5 text-slate-300" />
+                            {canViewResidents
+                              ? <Users className="w-3.5 h-3.5 text-slate-300" />
+                              : <span className="text-[10px] text-slate-400 font-normal">(restricted)</span>
+                            }
                           </p>
                           <p className="text-xs text-slate-400">{b.pickupCount ?? 0} pickups · {b.reportVoteCount ?? 0} votes</p>
                         </td>

@@ -134,7 +134,14 @@ export default function HomeScreen({ navigation }) {
   const [todayPickupDone, setTodayPickupDone] = useState(false);
 
   const userBarangayRef = useRef(user?.barangay);
-  useEffect(() => { userBarangayRef.current = user?.barangay; }, [user]);
+  const userIdRef = useRef(user?.id);
+  useEffect(() => {
+    userBarangayRef.current = user?.barangay;
+    userIdRef.current = user?.id;
+  }, [user]);
+
+  const [pointsToast, setPointsToast] = useState(null);
+  const pointsToastTimerRef = useRef(null);
 
   // Fetch barangay IoT areas on mount
   useEffect(() => {
@@ -257,6 +264,33 @@ export default function HomeScreen({ navigation }) {
   // Real-time truck updates via socket
   useEffect(() => {
     const socket = io(API_URL, { transports: ["polling", "websocket"] });
+
+    // Join personal room for targeted events (points, rewards, report updates)
+    if (user?.id) {
+      socket.emit("resident:join", { residentId: user.id });
+    }
+
+    socket.on("resident:points:update", ({ pointsEarned, description, newTotal }) => {
+      clearTimeout(pointsToastTimerRef.current);
+      setPointsToast({ pointsEarned, description, newTotal });
+      pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 5000);
+    });
+
+    socket.on("report:updated", (report) => {
+      if (report.userId && report.userId === userIdRef.current && report.status === "resolved") {
+        clearTimeout(pointsToastTimerRef.current);
+        setPointsToast({ pointsEarned: 10, description: "Your report was resolved!", newTotal: null });
+        pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 6000);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Report Resolved!",
+            body: `Your report "${report.title || report.category}" has been resolved. +10 points earned!`,
+            sound: true,
+          },
+          trigger: null,
+        }).catch(() => {});
+      }
+    });
 
     socket.on("truck:location:update", ({ truckId, lat, lng }) => {
       setTrucks((prev) => {
@@ -385,6 +419,7 @@ export default function HomeScreen({ navigation }) {
     return () => {
       socket.disconnect();
       clearTimeout(toastTimerRef.current);
+      clearTimeout(pointsToastTimerRef.current);
     };
   }, []);
 
@@ -682,6 +717,20 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.proximityToastText} numberOfLines={2}>
             {toastMsg}
           </Text>
+        </View>
+      )}
+
+      {/* Points toast — shows when resident earns points */}
+      {pointsToast && (
+        <View style={[styles.pointsToast, { top: toastMsg ? 134 : 80 }]}>
+          <Ionicons name="star" size={16} color="#FFFFFF" />
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <Text style={styles.pointsToastTitle}>+{pointsToast.pointsEarned} pts earned!</Text>
+            <Text style={styles.pointsToastSub} numberOfLines={1}>{pointsToast.description}</Text>
+          </View>
+          {pointsToast.newTotal != null && (
+            <Text style={styles.pointsToastTotal}>{pointsToast.newTotal} total</Text>
+          )}
         </View>
       )}
 
@@ -1928,6 +1977,40 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     lineHeight: 20,
+  },
+  pointsToast: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    backgroundColor: "#D97706",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#D97706",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 16,
+    zIndex: 998,
+  },
+  pointsToastTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  pointsToastSub: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 11,
+    marginTop: 1,
+  },
+  pointsToastTotal: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 11,
+    fontWeight: "600",
+    marginLeft: 8,
   },
   greetingSection: {
     marginBottom: 20,

@@ -625,6 +625,8 @@ const STAT_MAP = {
   report_upvote:       { inc: 'stats.reportsUpvoted' },
   report_comment:      { inc: 'stats.commentsMade' },
   verify_resolution:   { inc: 'stats.resolutionsVerified' },
+  report_resolved:     { inc: 'stats.reportsSubmitted' },
+  bin_pickedup:        {},
 };
 async function awardResidentPoints(residentId, points, action, description, reportId = null) {
   if (!residentId || points == null) return;
@@ -1672,6 +1674,11 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
         setOps.resolvedAt = new Date();
         setOps.resolvedBy = req.official.name || req.official.email;
         setOps.resolutionConfirmed = "pending";
+        // Award resident +10 points when their report is resolved
+        const existing = await Report.findById(req.params.id).select('userId').lean();
+        if (existing?.userId) {
+          awardResidentPoints(existing.userId, 10, 'report_resolved', 'Your garbage report was resolved', req.params.id).catch(() => {});
+        }
       }
       // Response time bonus: award responseScore when an official picks up a report
       if (status === "in-progress") {
@@ -2665,6 +2672,7 @@ app.post("/api/bin/pickedup", async (req, res) => {
       { upsert: true, new: true },
     );
     await addBarangayScore(barangay, 1, "collectionScore", "pickupCount");
+    awardResidentPoints(residentId, 1, 'bin_pickedup', 'Marked trash as picked up').catch(() => {});
     const counts = await getBinCounts(barangay, date);
     io.emit("bin:status:update", { barangay, date, ...counts });
     res.json({ ok: true, ...counts });
