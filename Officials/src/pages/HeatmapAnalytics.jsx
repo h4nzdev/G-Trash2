@@ -408,6 +408,37 @@ export default function HeatmapAnalytics() {
           </div>
         )}
 
+        {/* Floating save card — appears immediately after placing a pin */}
+        {newArea && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-2xl shadow-2xl border border-slate-200 px-5 py-4 flex items-center gap-4 min-w-[280px]">
+            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
+              <MapPin className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-900">New Hotspot Placed</p>
+              <p className="text-xs text-slate-500">{newArea.lat.toFixed(5)}, {newArea.lng.toFixed(5)}</p>
+            </div>
+            <button
+              disabled={saving}
+              onClick={handleSaveArea}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white text-sm font-bold rounded-xl hover:bg-emerald-800 disabled:opacity-50 transition-colors shrink-0"
+            >
+              {saving ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {saving ? 'Saving...' : 'Save Area'}
+            </button>
+            <button
+              onClick={() => { setNewArea(null); }}
+              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {outOfBoundsError && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-white px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 animate-bounce border border-red-400">
             <ShieldAlert className="w-5 h-5" />

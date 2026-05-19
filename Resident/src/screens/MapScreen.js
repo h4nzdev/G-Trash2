@@ -369,6 +369,7 @@ export default function MapScreen() {
   const [iotAreas, setIotAreas] = useState([]);
   const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
   const [showJeepneyView, setShowJeepneyView] = useState(false);
+  const [cleanedNotif, setCleanedNotif] = useState(null);
 
   const isExpandedRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
@@ -596,10 +597,8 @@ export default function MapScreen() {
       }
     });
 
-    // Real-time IoT air quality — only update if area belongs to user's barangay
+    // Real-time IoT / collection heatmap updates — show all zones (no barangay filter)
     socket.on("garbage-area:updated", (area) => {
-      const brgy = userBarangay;
-      if (brgy && area.barangay !== brgy) return;
       setIotAreas((prev) => {
         const idx = prev.findIndex((a) => a._id === area._id);
         return idx >= 0
@@ -610,6 +609,49 @@ export default function MapScreen() {
         webViewRef.current?.injectJavaScript(
           `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
         );
+      }
+    });
+
+    // Zone status changes (collection completed, IoT alert, report filed)
+    socket.on("zone:status:update", (update) => {
+      // Build a minimal area object and update the map circle directly
+      const updatedArea = {
+        _id: String(update.areaId || update.zoneId),
+        name: update.name,
+        barangay: update.barangay,
+        status: update.newStatus,
+        lat: update.lat,
+        lng: update.lng,
+        ammonia: update.ammonia,
+        methane: update.methane,
+        intensity: update.newStatus === 'critical' ? 0.8 : update.newStatus === 'moderate' ? 0.5 : 0.2,
+      };
+
+      // Update iotAreas state so the zone color changes locally
+      setIotAreas((prev) => {
+        const id = String(update.areaId || update.zoneId);
+        const idx = prev.findIndex((a) => a._id === id);
+        if (idx >= 0) {
+          const merged = { ...prev[idx], status: update.newStatus, intensity: updatedArea.intensity };
+          if (webViewReady.current) {
+            webViewRef.current?.injectJavaScript(
+              `window.updateHeatmapArea(${JSON.stringify(merged)}); true;`,
+            );
+          }
+          return prev.map((a, i) => i === idx ? merged : a);
+        }
+        return prev;
+      });
+
+      // Show "Your area has been cleaned!" notification for collection events
+      if (update.reason === 'collection_completed' && update.newStatus === 'clean') {
+        setCleanedNotif({
+          name: update.name,
+          barangay: update.barangay,
+          collectedBy: update.changedBy,
+          weight: update.weight,
+        });
+        setTimeout(() => setCleanedNotif(null), 5000);
       }
     });
 
@@ -836,6 +878,23 @@ export default function MapScreen() {
         <View style={styles.legendOverlay}>
           <HeatmapLegend />
         </View>
+
+        {/* Zone Cleaned Notification */}
+        {cleanedNotif && (
+          <View style={styles.cleanedNotifWrapper} pointerEvents="none">
+            <View style={styles.cleanedNotif}>
+              <Text style={styles.cleanedNotifEmoji}>🧹</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cleanedNotifTitle}>Your area has been cleaned!</Text>
+                <Text style={styles.cleanedNotifSub} numberOfLines={1}>
+                  {cleanedNotif.name}
+                  {cleanedNotif.collectedBy ? ` · ${cleanedNotif.collectedBy}` : ''}
+                  {cleanedNotif.weight ? ` · ${cleanedNotif.weight}` : ''}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Barangay Air Quality Status Banner */}
         {aqStatus && (
@@ -1229,6 +1288,18 @@ const styles = StyleSheet.create({
   timelineStopName: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
   timelineTime: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
   // Air quality banner (floating top-center of map)
+  cleanedNotifWrapper: {
+    position: "absolute", top: 50, left: 12, right: 12, zIndex: 20,
+  },
+  cleanedNotif: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#ECFDF5", borderRadius: 16, borderWidth: 1, borderColor: "#6EE7B7",
+    paddingHorizontal: 14, paddingVertical: 10,
+    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 8, elevation: 5,
+  },
+  cleanedNotifEmoji: { fontSize: 22 },
+  cleanedNotifTitle: { fontSize: 13, fontWeight: "700", color: "#065F46" },
+  cleanedNotifSub: { fontSize: 11, color: "#047857", marginTop: 1 },
   aqBannerWrapper: {
     position: "absolute", top: 12, left: 0, right: 0,
     alignItems: "center", zIndex: 10,

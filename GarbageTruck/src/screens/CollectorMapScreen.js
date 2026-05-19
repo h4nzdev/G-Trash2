@@ -852,7 +852,30 @@ export default function CollectorMapScreen() {
     });
 
     socket.on("zone:status:update", (update) => {
-      if (update.reason === "collection_completed" && update.changedBy === TRUCK_ID) {
+      // Update the heatmap circle color in real-time for any zone change
+      const id = String(update.areaId || update.zoneId);
+      if (id) {
+        setHeatmapZones(prev => {
+          const idx = prev.findIndex(z => String(z.id) === id);
+          if (idx < 0) return prev;
+          const meta = STATUS_META[update.newStatus] || STATUS_META.moderate;
+          const updated = {
+            ...prev[idx],
+            status: update.newStatus,
+            color: meta.color,
+            level: meta.level,
+            riskLevel: meta.riskLevel,
+            recommendation: meta.recommendation,
+            intensity: update.newStatus === 'critical' ? 0.8 : update.newStatus === 'moderate' ? 0.5 : 0.2,
+          };
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        });
+      }
+
+      // Show zone transition toast for collection events
+      if (update.reason === 'collection_completed') {
         setZoneChange({
           name: update.name,
           previousStatus: update.previousStatus,
