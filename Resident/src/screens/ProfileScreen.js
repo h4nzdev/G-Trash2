@@ -36,6 +36,8 @@ export default function ProfileScreen({ navigation }) {
   const [reportsLoading, setReportsLoading] = useState(false);
   const { user, logout, updateProfile } = useAuth();
 
+  const [points, setPoints] = useState(null);
+  const [rank, setRank] = useState(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [showBarangayModal, setShowBarangayModal] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
@@ -140,7 +142,20 @@ export default function ProfileScreen({ navigation }) {
     finally { setReportsLoading(false); }
   }, [user?.id]);
 
-  useEffect(() => { fetchReports(); }, [fetchReports]);
+  const fetchPoints = useCallback(async () => {
+    const uid = user?.id || user?._id;
+    if (!uid) return;
+    try {
+      const [ptRes, rkRes] = await Promise.all([
+        fetch(`${API_URL}/api/residents/${uid}/points`),
+        fetch(`${API_URL}/api/residents/${uid}/rank`),
+      ]);
+      if (ptRes.ok) setPoints(await ptRes.json());
+      if (rkRes.ok) setRank(await rkRes.json());
+    } catch (_) {}
+  }, [user?.id, user?._id]);
+
+  useEffect(() => { fetchReports(); fetchPoints(); }, [fetchReports, fetchPoints]);
 
   const handleDeleteReport = async (reportId) => {
     Alert.alert("Delete Report", "Are you sure? This cannot be undone.", [
@@ -267,6 +282,51 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </View>
 
+          {/* ── Points card ── */}
+          <TouchableOpacity
+            style={styles.pointsCard}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('PointsHistory')}
+          >
+            <View style={styles.pointsLeft}>
+              <Ionicons name="star" size={28} color="#F59E0B" />
+              <View>
+                <Text style={styles.pointsTotal}>{points?.totalPoints ?? '—'}</Text>
+                <Text style={styles.pointsLabel}>Total Points</Text>
+              </View>
+            </View>
+            <View style={styles.pointsMid}>
+              <Text style={styles.pointsMonthly}>{points?.monthlyPoints ?? 0}</Text>
+              <Text style={styles.pointsMonthLabel}>This month</Text>
+            </View>
+            <View style={styles.pointsRight}>
+              {rank ? (
+                <>
+                  <Text style={styles.rankNum}>#{rank.monthlyRank}</Text>
+                  <Text style={styles.rankLabel}>of {rank.total} in Brgy.</Text>
+                </>
+              ) : null}
+              <Ionicons name="chevron-forward" size={16} color="#C4CEC7" style={{ marginTop: 4 }} />
+            </View>
+          </TouchableOpacity>
+
+          {/* ── Activity mini-stats ── */}
+          {points?.stats && (
+            <View style={styles.activityRow}>
+              {[
+                { icon: 'scan-outline', label: 'Scans', val: points.stats.correctScans ?? 0 },
+                { icon: 'document-text-outline', label: 'Reports', val: points.stats.reportsSubmitted ?? 0 },
+                { icon: 'checkmark-circle-outline', label: 'Verified', val: points.stats.resolutionsVerified ?? 0 },
+              ].map(({ icon, label, val }) => (
+                <View key={label} style={styles.activityCell}>
+                  <Ionicons name={icon} size={20} color="#006A3B" />
+                  <Text style={styles.activityVal}>{val}</Text>
+                  <Text style={styles.activityLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* ── Body content ── */}
           <View style={styles.body}>
 
@@ -370,6 +430,22 @@ export default function ProfileScreen({ navigation }) {
                     <Ionicons name="person" size={18} color="#006A3B" />
                   </View>
                   <Text style={styles.menuText}>{t("edit_profile")}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={() => navigation.navigate('PointsHistory')}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#FFFBEB" }]}>
+                    <Ionicons name="star-outline" size={18} color="#F59E0B" />
+                  </View>
+                  <Text style={styles.menuText}>Points History</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
               </TouchableOpacity>
@@ -861,6 +937,33 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   statDivider: { width: 1, backgroundColor: "#EDF4F0" },
+
+  // ── Points card ──
+  pointsCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#006A3B', borderRadius: 20, marginHorizontal: 16, marginTop: 14,
+    paddingHorizontal: 18, paddingVertical: 16, shadowColor: '#006A3B',
+    shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  pointsLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pointsTotal: { fontSize: 26, fontWeight: '900', color: '#fff' },
+  pointsLabel: { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginTop: 1 },
+  pointsMid: { alignItems: 'center' },
+  pointsMonthly: { fontSize: 20, fontWeight: '800', color: '#FFD700' },
+  pointsMonthLabel: { fontSize: 10, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+  pointsRight: { alignItems: 'center' },
+  rankNum: { fontSize: 18, fontWeight: '900', color: '#fff' },
+  rankLabel: { fontSize: 9, color: 'rgba(255,255,255,0.65)', fontWeight: '600', textAlign: 'center' },
+
+  // ── Activity mini-stats ──
+  activityRow: {
+    flexDirection: 'row', marginHorizontal: 16, marginTop: 12,
+    backgroundColor: '#fff', borderRadius: 16, paddingVertical: 14,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  activityCell: { flex: 1, alignItems: 'center', gap: 4 },
+  activityVal: { fontSize: 18, fontWeight: '900', color: '#1F2937' },
+  activityLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600' },
 
   // ── Body ──
   body: {

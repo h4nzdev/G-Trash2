@@ -42,6 +42,7 @@ mongoose
     loadBoundaries();
     startSLAChecker();
     startRewardExpirer();
+    startMonthlyReset();
   })
   .catch((err) => console.error("ERR: MongoDB error:", err.message));
 
@@ -235,6 +236,7 @@ const officialSchema = new mongoose.Schema({
   barangay: { type: String, required: true },
   role: { type: String, enum: ["official", "superadmin"], default: "official" },
   status: { type: String, enum: ["active", "revoked"], default: "active" },
+  signatureUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Official = mongoose.model("Official", officialSchema);
@@ -275,6 +277,26 @@ const residentSchema = new mongoose.Schema({
   notificationsClearedAt: { type: Date, default: null },
   rewardsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: "Reward" }],
   totalRewardsClaimed: { type: Number, default: 0 },
+  // ── Resident points system ───────────────────────────────────
+  totalPoints: { type: Number, default: 0 },
+  monthlyPoints: { type: Number, default: 0 },
+  monthlyHistory: [{ month: String, points: Number }],
+  pointsHistory: [{
+    points: Number,
+    action: { type: String, enum: ['correct_scan', 'report_submit', 'report_upvote', 'report_comment', 'verify_resolution', 'report_penalty'] },
+    description: String,
+    reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'Report', default: null },
+    date: { type: Date, default: Date.now },
+  }],
+  stats: {
+    totalScans:          { type: Number, default: 0 },
+    correctScans:        { type: Number, default: 0 },
+    reportsSubmitted:    { type: Number, default: 0 },
+    reportsUpvoted:      { type: Number, default: 0 },
+    commentsMade:        { type: Number, default: 0 },
+    resolutionsVerified: { type: Number, default: 0 },
+  },
+  lastPointsAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 // sparse: true → null householdIds (incomplete address) are not indexed, so old records won't conflict
@@ -309,6 +331,7 @@ const rewardSchema = new mongoose.Schema({
   claimDeadline: { type: Date, default: null },
   claimedDate: { type: Date, default: null },
   claimCode: { type: String, default: null, unique: true, sparse: true },
+  officialSignatureUrl: { type: String, default: null },
   notes: { type: String, default: "" },
   revokedAt: { type: Date, default: null },
 }, { timestamps: true });
@@ -532,6 +555,73 @@ async function addBarangayScore(barangay, points, scoreCategory, countField) {
   );
 }
 
+// Award points to an individual resident and emit real-time update
+const STAT_MAP = {
+  correct_scan:        { inc: 'stats.correctScans', scan: true },
+  report_submit:       { inc: 'stats.reportsSubmitted' },
+  report_upvote:       { inc: 'stats.reportsUpvoted' },
+  report_comment:      { inc: 'stats.commentsMade' },
+  verify_resolution:   { inc: 'stats.resolutionsVerified' },
+};
+async function awardResidentPoints(residentId, points, action, description, reportId = null) {
+  if (!residentId || points == null) return;
+  try {
+    const inc = { totalPoints: points, monthlyPoints: points };
+    const stat = STAT_MAP[action];
+    if (stat) {
+      if (stat.inc && points !== 0) inc[stat.inc] = points > 0 ? 1 : 0;
+      if (stat.scan) inc['stats.totalScans'] = 1;
+    }
+    const entry = { points, action, description, date: new Date() };
+    if (reportId) entry.reportId = reportId;
+    const resident = await Resident.findByIdAndUpdate(
+      residentId,
+      {
+        $inc: inc,
+        $push: { pointsHistory: { $each: [entry], $position: 0 } },
+        $set: { lastPointsAt: new Date() },
+      },
+      { new: true, select: 'totalPoints monthlyPoints' }
+    );
+    if (resident) {
+      io.to(`resident:${residentId}`).emit('resident:points:update', {
+        residentId,
+        newTotal: resident.totalPoints,
+        monthlyPoints: resident.monthlyPoints,
+        pointsEarned: points,
+        action,
+        description,
+      });
+    }
+  } catch (err) {
+    console.error('[Points] Award failed:', err.message);
+  }
+}
+
+// Monthly reset: on the 1st of each month, archive monthlyPoints → monthlyHistory and reset to 0
+function startMonthlyReset() {
+  const msUntilTomorrow = () => {
+    const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(0, 2, 0, 0);
+    return t - Date.now();
+  };
+  const run = async () => {
+    if (new Date().getDate() === 1) {
+      const label = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+        .toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+      await Resident.updateMany(
+        { monthlyPoints: { $gt: 0 } },
+        [{ $set: {
+          monthlyHistory: { $concatArrays: ['$monthlyHistory', [{ month: label, points: '$monthlyPoints' }]] },
+          monthlyPoints: 0,
+        }}]
+      ).catch(() => {});
+      console.log('[Monthly Reset] Resident monthly points archived and reset');
+    }
+    setTimeout(run, msUntilTomorrow());
+  };
+  setTimeout(run, msUntilTomorrow());
+}
+
 const BARANGAY_BOUNDARIES = {};
 
 async function loadBoundaries() {
@@ -606,6 +696,22 @@ app.post("/api/upload", async (req, res) => {
       resource_type: "image",
     });
     res.json({ url: result.secure_url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save official e-signature URL
+app.patch("/api/officials/signature", authMiddleware, async (req, res) => {
+  try {
+    const { signatureUrl } = req.body;
+    if (!signatureUrl) return res.status(400).json({ error: "signatureUrl required" });
+    const official = await Official.findByIdAndUpdate(
+      req.official.id,
+      { signatureUrl },
+      { new: true, select: "-passwordHash" }
+    );
+    res.json({ signatureUrl: official.signatureUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -910,6 +1016,10 @@ app.post("/api/reports", async (req, res) => {
       ],
     });
     io.emit("report:new", report);
+    // Award resident points for submitting a report
+    if (req.body.userId) {
+      awardResidentPoints(req.body.userId, 10, 'report_submit', 'Submitted a garbage report', report._id).catch(() => {});
+    }
 
     // --- Composite Heatmap: Link report to nearest garbage area ---
     const reportLat = report.lat;
@@ -1023,12 +1133,11 @@ app.post("/api/reports/:id/vote", async (req, res) => {
     await report.save();
     // +1 pt to barangay for every vote cast (community engagement)
     if (report.barangay) {
-      addBarangayScore(
-        report.barangay,
-        1,
-        "reportScore",
-        "reportVoteCount",
-      ).catch(() => {});
+      addBarangayScore(report.barangay, 1, "reportScore", "reportVoteCount").catch(() => {});
+    }
+    // +1 pt to report author for receiving an upvote
+    if (type === "up" && report.userId && String(report.userId) !== String(userId)) {
+      awardResidentPoints(report.userId, 1, 'report_upvote', 'Your report received an upvote', report._id).catch(() => {});
     }
     res.json({
       upvotes: report.upvotes.length,
@@ -1051,6 +1160,7 @@ app.post("/api/reports/:id/comments", async (req, res) => {
 
     report.comments.push({ userId, text });
     await report.save();
+    awardResidentPoints(userId, 2, 'report_comment', 'Added a comment on a report', report._id).catch(() => {});
 
     const updatedReport = await Report.findById(req.params.id).populate(
       "comments.userId",
@@ -1606,9 +1716,11 @@ app.post("/api/reports/:id/verify", async (req, res) => {
       if (report.barangay)
         await addBarangayScore(report.barangay, -15, "reportScore");
     } else {
-      // Confirmed fixed — award points to barangay
+      // Confirmed fixed — award points to barangay and resident
       if (report.barangay)
         await addBarangayScore(report.barangay, 20, "reportScore");
+      if (userId)
+        awardResidentPoints(userId, 15, 'verify_resolution', 'Verified a reported issue was resolved', report._id).catch(() => {});
     }
 
     const updated = await Report.findByIdAndUpdate(
@@ -3411,6 +3523,90 @@ Keep responses short and practical — drivers read on a phone while working. Us
   request.end();
 });
 
+// --- Resident Points -----------------------------------------
+
+// Award +5 for a correct AI scan
+app.post("/api/residents/:id/award-scan-points", async (req, res) => {
+  try {
+    const { item } = req.body;
+    await awardResidentPoints(req.params.id, 5, 'correct_scan', `Correctly scanned: ${item || 'waste item'}`);
+    res.json({ ok: true, pointsAwarded: 5 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET points + stats summary
+app.get("/api/residents/:id/points", async (req, res) => {
+  try {
+    const r = await Resident.findById(req.params.id, "totalPoints monthlyPoints stats lastPointsAt monthlyHistory");
+    if (!r) return res.status(404).json({ error: "Not found" });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET paginated points history
+app.get("/api/residents/:id/points/history", async (req, res) => {
+  try {
+    const page = Math.max(0, parseInt(req.query.page) || 0);
+    const limit = Math.min(50, parseInt(req.query.limit) || 30);
+    const r = await Resident.findById(req.params.id, "pointsHistory");
+    if (!r) return res.status(404).json({ error: "Not found" });
+    const history = r.pointsHistory.slice(page * limit, (page + 1) * limit);
+    res.json({ history, total: r.pointsHistory.length, page, limit });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET top 10 residents in a barangay
+app.get("/api/barangays/:barangayName/top-residents", async (req, res) => {
+  try {
+    const { barangayName } = req.params;
+    const { period = 'month' } = req.query;
+    const sortField = period === 'month' ? 'monthlyPoints' : 'totalPoints';
+    const residents = await Resident.find(
+      { barangay: { $regex: new RegExp(`^${barangayName.trim()}$`, 'i') } },
+      'firstName lastName profilePicture totalPoints monthlyPoints stats lastPointsAt'
+    ).sort({ [sortField]: -1, lastPointsAt: -1 }).limit(10);
+
+    res.json({
+      barangay: barangayName,
+      period,
+      topResidents: residents.map((r, i) => ({
+        rank: i + 1,
+        residentId: r._id,
+        name: `${r.firstName} ${r.lastName}`,
+        totalPoints: r.totalPoints || 0,
+        monthlyPoints: r.monthlyPoints || 0,
+        stats: r.stats || {},
+        profilePicture: r.profilePicture || null,
+        lastPointsAt: r.lastPointsAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET a resident's barangay rank
+app.get("/api/residents/:id/rank", async (req, res) => {
+  try {
+    const r = await Resident.findById(req.params.id, "barangay totalPoints monthlyPoints");
+    if (!r) return res.status(404).json({ error: "Not found" });
+    const [aboveMonth, aboveAll, total] = await Promise.all([
+      Resident.countDocuments({ barangay: r.barangay, monthlyPoints: { $gt: r.monthlyPoints || 0 } }),
+      Resident.countDocuments({ barangay: r.barangay, totalPoints: { $gt: r.totalPoints || 0 } }),
+      Resident.countDocuments({ barangay: r.barangay }),
+    ]);
+    res.json({ monthlyRank: aboveMonth + 1, allTimeRank: aboveAll + 1, total });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Rewards -------------------------------------------------
 
 // GET /api/rewards/leaderboard-eligible — top residents per category per barangay
@@ -3511,6 +3707,13 @@ app.post("/api/rewards", async (req, res) => {
       } while (attempts < 10 && await Reward.findOne({ claimCode }));
     }
 
+    // Embed the official's signature so the resident can view it on their certificate
+    let officialSignatureUrl = null;
+    if (issuedBy) {
+      const issuer = await Official.findById(issuedBy).select("signatureUrl");
+      officialSignatureUrl = issuer?.signatureUrl || null;
+    }
+
     const reward = await Reward.create({
       title, description, category, barangay, rewardType, rewardValue,
       recipientId, recipientName: recipientName || "",
@@ -3518,6 +3721,7 @@ app.post("/api/rewards", async (req, res) => {
       status, claimCode,
       issuedDate: publish ? new Date() : null,
       claimDeadline: deadline,
+      officialSignatureUrl,
       notes: notes || "",
     });
 
@@ -3603,7 +3807,7 @@ app.patch("/api/rewards/:id", async (req, res) => {
       return res.json({ revoked: true });
     } else {
       // Generic field update (title, description, notes, etc.)
-      const allowed = ["title", "description", "rewardType", "rewardValue", "notes", "claimDeadline"];
+      const allowed = ["title", "description", "rewardType", "rewardValue", "notes", "claimDeadline", "officialSignatureUrl"];
       for (const field of allowed) {
         if (req.body[field] !== undefined) reward[field] = req.body[field];
       }

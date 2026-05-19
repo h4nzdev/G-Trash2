@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert, Modal,
-  ScrollView, Share, Animated,
+  ScrollView, Share, Animated, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -120,8 +120,172 @@ const ccStyles = StyleSheet.create({
   closeBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
 });
 
+// ── Certificate Modal ─────────────────────────────────────────
+function CertificateModal({ reward, onClose }) {
+  const { bottom } = useSafeAreaInsets();
+  const categoryMeta = CATEGORY_META[reward.category] || CATEGORY_META.most_active;
+
+  const share = async () => {
+    try {
+      await Share.share({
+        message: `G-TRASH Certificate of Recognition\n\nThis certifies that ${reward.recipientName} has been recognized for ${categoryMeta.label}.\n\nIssued by: ${reward.issuedByName || 'Barangay Official'}, Brgy. ${reward.barangay}\nDate: ${reward.issuedDate ? new Date(reward.issuedDate).toLocaleDateString() : 'N/A'}`,
+      });
+    } catch { /* silent */ }
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={certStyles.safeArea} edges={['top']}>
+        {/* Close button */}
+        <TouchableOpacity style={certStyles.closeTopBtn} onPress={onClose} activeOpacity={0.8}>
+          <MaterialIcons name="close" size={22} color="#fff" />
+        </TouchableOpacity>
+
+        <ScrollView contentContainerStyle={certStyles.scroll} showsVerticalScrollIndicator={false}>
+          {/* Certificate card */}
+          <View style={certStyles.cert}>
+            {/* Decorative top border strip */}
+            <View style={certStyles.topStrip}>
+              <View style={certStyles.stripInner} />
+            </View>
+
+            {/* Header */}
+            <View style={certStyles.header}>
+              <View style={certStyles.sealCircle}>
+                <MaterialIcons name="emoji-events" size={36} color="#FFD700" />
+              </View>
+              <Text style={certStyles.govLabel}>G-TRASH SMART WASTE MANAGEMENT</Text>
+              <Text style={certStyles.certTitle}>Certificate of Recognition</Text>
+              <View style={certStyles.dividerLine} />
+            </View>
+
+            {/* Body */}
+            <View style={certStyles.body}>
+              <Text style={certStyles.presentsText}>This certifies that</Text>
+              <Text style={certStyles.recipientName}>{reward.recipientName}</Text>
+              <Text style={certStyles.bodyText}>has been recognized for outstanding contribution in</Text>
+              <View style={[certStyles.categoryBadge, { backgroundColor: categoryMeta.color + '18', borderColor: categoryMeta.color + '40' }]}>
+                <MaterialIcons name={categoryMeta.icon} size={16} color={categoryMeta.color} />
+                <Text style={[certStyles.categoryText, { color: categoryMeta.color }]}>{categoryMeta.label}</Text>
+              </View>
+              {reward.description ? (
+                <Text style={certStyles.description}>"{reward.description}"</Text>
+              ) : null}
+              {reward.rewardValue ? (
+                <View style={certStyles.prizeBox}>
+                  <MaterialIcons name="card-giftcard" size={14} color="#006A3B" />
+                  <Text style={certStyles.prizeText}>{reward.rewardValue}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Signature + Seal row */}
+            <View style={certStyles.sigRow}>
+              {/* Official's signature block */}
+              <View style={certStyles.sigBlock}>
+                {reward.officialSignatureUrl ? (
+                  <Image
+                    source={{ uri: reward.officialSignatureUrl }}
+                    style={certStyles.sigImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={certStyles.sigPlaceholder} />
+                )}
+                <View style={certStyles.sigUnderline} />
+                <Text style={certStyles.sigName}>{reward.issuedByName || 'Barangay Official'}</Text>
+                <Text style={certStyles.sigRole}>Brgy. {reward.barangay}</Text>
+              </View>
+
+              {/* Official seal */}
+              <View style={certStyles.sealBlock}>
+                <View style={certStyles.sealRing}>
+                  <View style={certStyles.sealInner}>
+                    <MaterialIcons name="verified" size={32} color="#006A3B" />
+                  </View>
+                </View>
+                <Text style={certStyles.sealLabel}>OFFICIAL{'\n'}SEAL</Text>
+              </View>
+            </View>
+
+            {/* Date */}
+            <View style={certStyles.dateRow}>
+              <Text style={certStyles.dateText}>
+                Issued on {reward.issuedDate
+                  ? new Date(reward.issuedDate).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+                  : 'N/A'}
+              </Text>
+            </View>
+
+            {/* Bottom strip */}
+            <View style={certStyles.bottomStrip}>
+              <Text style={certStyles.bottomStripText}>
+                Barangay {reward.barangay}  ·  G-TRASH System  ·  Cebu City
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Actions */}
+        <View style={[certStyles.actions, { paddingBottom: bottom + 16 }]}>
+          <TouchableOpacity style={certStyles.shareBtn} onPress={share} activeOpacity={0.85}>
+            <MaterialIcons name="share" size={18} color="#006A3B" />
+            <Text style={certStyles.shareBtnText}>Share Certificate</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={certStyles.doneBtn} onPress={onClose} activeOpacity={0.85}>
+            <Text style={certStyles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const certStyles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#1a1a2e' },
+  closeTopBtn: { position: 'absolute', top: 56, right: 20, zIndex: 10, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  scroll: { padding: 20, paddingTop: 60 },
+  cert: { backgroundColor: '#FFFDF7', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 20, elevation: 12 },
+  topStrip: { height: 10, backgroundColor: '#006A3B', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  stripInner: { flex: 1, height: 3, marginHorizontal: 20, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 2 },
+  header: { alignItems: 'center', paddingTop: 28, paddingHorizontal: 24, paddingBottom: 20 },
+  sealCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#006A3B', alignItems: 'center', justifyContent: 'center', marginBottom: 14, shadowColor: '#006A3B', shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
+  govLabel: { fontSize: 9, fontWeight: '800', color: '#006A3B', letterSpacing: 2, textAlign: 'center', marginBottom: 6 },
+  certTitle: { fontSize: 22, fontWeight: '900', color: '#1a1a2e', letterSpacing: 0.5, textAlign: 'center' },
+  dividerLine: { width: 60, height: 2, backgroundColor: '#D4AF37', borderRadius: 1, marginTop: 12 },
+  body: { alignItems: 'center', paddingHorizontal: 28, paddingVertical: 20, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#F0EDE0' },
+  presentsText: { fontSize: 13, color: '#9CA3AF', fontStyle: 'italic', marginBottom: 10 },
+  recipientName: { fontSize: 26, fontWeight: '900', color: '#1a1a2e', textAlign: 'center', letterSpacing: 0.5, marginBottom: 12, fontStyle: 'italic' },
+  bodyText: { fontSize: 12, color: '#6B7280', textAlign: 'center', marginBottom: 14 },
+  categoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, marginBottom: 14 },
+  categoryText: { fontSize: 13, fontWeight: '800' },
+  description: { fontSize: 12, color: '#6B7280', fontStyle: 'italic', textAlign: 'center', lineHeight: 18, marginBottom: 10 },
+  prizeBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F0FDF4', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#BBF7D0' },
+  prizeText: { fontSize: 13, fontWeight: '700', color: '#006A3B' },
+  sigRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 28, paddingVertical: 24 },
+  sigBlock: { alignItems: 'center', flex: 1 },
+  sigImage: { width: 140, height: 56, marginBottom: 4 },
+  sigPlaceholder: { width: 140, height: 56, marginBottom: 4 },
+  sigUnderline: { width: 130, height: 1, backgroundColor: '#374151', marginBottom: 6 },
+  sigName: { fontSize: 12, fontWeight: '800', color: '#1F2937', textAlign: 'center' },
+  sigRole: { fontSize: 10, color: '#9CA3AF', textAlign: 'center', marginTop: 2 },
+  sealBlock: { alignItems: 'center', marginLeft: 16 },
+  sealRing: { width: 72, height: 72, borderRadius: 36, borderWidth: 2.5, borderColor: '#006A3B', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  sealInner: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#006A3B', alignItems: 'center', justifyContent: 'center' },
+  sealLabel: { fontSize: 8, fontWeight: '800', color: '#006A3B', letterSpacing: 1.5, textAlign: 'center', marginTop: 6 },
+  dateRow: { alignItems: 'center', paddingBottom: 16 },
+  dateText: { fontSize: 11, color: '#9CA3AF' },
+  bottomStrip: { backgroundColor: '#006A3B', paddingVertical: 10, alignItems: 'center' },
+  bottomStripText: { fontSize: 9, color: 'rgba(255,255,255,0.8)', letterSpacing: 1.5, fontWeight: '600' },
+  actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 16, backgroundColor: '#1a1a2e' },
+  shareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 16, borderWidth: 1, borderColor: '#BBF7D0' },
+  shareBtnText: { fontSize: 14, fontWeight: '700', color: '#006A3B' },
+  doneBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#006A3B', borderRadius: 16 },
+  doneBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+});
+
 // ── Reward Card ──────────────────────────────────────────────
-function RewardCard({ reward, onClaim, onViewCode }) {
+function RewardCard({ reward, onClaim, onViewCode, onViewCertificate }) {
   const meta = CATEGORY_META[reward.category] || CATEGORY_META.most_active;
   const statusMeta = STATUS_META[reward.status] || STATUS_META.draft;
   const days = daysLeft(reward.claimDeadline);
@@ -165,17 +329,26 @@ function RewardCard({ reward, onClaim, onViewCode }) {
           <Text style={cardStyles.deadlineText}>Claimed {new Date(reward.claimedDate).toLocaleDateString()}</Text>
         ) : <View />}
 
-        {isClaimable && (
-          <TouchableOpacity style={cardStyles.claimBtn} onPress={() => onClaim(reward)} activeOpacity={0.85}>
-            <Text style={cardStyles.claimBtnText}>Claim Reward</Text>
-            <MaterialIcons name="arrow-forward" size={14} color="#FFF" />
+        {reward.rewardType === 'certificate' ? (
+          <TouchableOpacity style={cardStyles.certBtn} onPress={() => onViewCertificate(reward)} activeOpacity={0.85}>
+            <MaterialIcons name="workspace-premium" size={14} color="#fff" />
+            <Text style={cardStyles.certBtnText}>View Certificate</Text>
           </TouchableOpacity>
-        )}
-        {reward.status === 'claimed' && reward.claimCode && (
-          <TouchableOpacity style={cardStyles.codeBtn} onPress={() => onViewCode(reward)} activeOpacity={0.85}>
-            <MaterialIcons name="qr-code" size={14} color="#006A3B" />
-            <Text style={cardStyles.codeBtnText}>View Code</Text>
-          </TouchableOpacity>
+        ) : (
+          <>
+            {isClaimable && (
+              <TouchableOpacity style={cardStyles.claimBtn} onPress={() => onClaim(reward)} activeOpacity={0.85}>
+                <Text style={cardStyles.claimBtnText}>Claim Reward</Text>
+                <MaterialIcons name="arrow-forward" size={14} color="#FFF" />
+              </TouchableOpacity>
+            )}
+            {reward.status === 'claimed' && reward.claimCode && (
+              <TouchableOpacity style={cardStyles.codeBtn} onPress={() => onViewCode(reward)} activeOpacity={0.85}>
+                <MaterialIcons name="qr-code" size={14} color="#006A3B" />
+                <Text style={cardStyles.codeBtnText}>View Code</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -200,6 +373,8 @@ const cardStyles = StyleSheet.create({
   claimBtnText: { fontSize: 12, fontWeight: '800', color: '#FFF' },
   codeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F0FDF4', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, borderWidth: 1, borderColor: '#BBF7D0' },
   codeBtnText: { fontSize: 12, fontWeight: '700', color: '#006A3B' },
+  certBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#D97706', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 },
+  certBtnText: { fontSize: 12, fontWeight: '800', color: '#FFF' },
 });
 
 // ── Main Screen ──────────────────────────────────────────────
@@ -211,6 +386,7 @@ export default function MyRewardsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimCodeReward, setClaimCodeReward] = useState(null);
+  const [certificateReward, setCertificateReward] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
 
   const fetchRewards = useCallback(async (silent = false) => {
@@ -345,6 +521,7 @@ export default function MyRewardsScreen({ navigation }) {
               reward={item}
               onClaim={handleClaim}
               onViewCode={setClaimCodeReward}
+              onViewCertificate={setCertificateReward}
             />
           )}
           contentContainerStyle={[styles.list, { paddingBottom: bottom + 24 }]}
@@ -364,6 +541,9 @@ export default function MyRewardsScreen({ navigation }) {
 
       {claimCodeReward && (
         <ClaimCodeModal reward={claimCodeReward} onClose={() => setClaimCodeReward(null)} />
+      )}
+      {certificateReward && (
+        <CertificateModal reward={certificateReward} onClose={() => setCertificateReward(null)} />
       )}
     </SafeAreaView>
   );

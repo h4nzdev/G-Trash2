@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi } from 'lucide-react';
+import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight } from 'lucide-react';
 import ProgressBar from '../components/shared/ProgressBar';
 import API from '../config';
+import { useAuth } from '../context/AuthContext';
 
 const ROWS_PER_PAGE = 6;
 
@@ -56,8 +57,144 @@ const CATEGORIES = [
   },
 ];
 
+const PERIOD_OPTIONS = [
+  { value: 'month', label: 'This Month' },
+  { value: 'all',   label: 'All Time' },
+];
+
+function TopResidentsPanel({ barangay, onClose }) {
+  const { official } = useAuth();
+  const [residents, setResidents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('month');
+  const [selected, setSelected] = useState(null);
+
+  const fetchTopResidents = useCallback(async (p) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/barangays/${encodeURIComponent(barangay)}/top-residents?period=${p}`);
+      const data = await res.json();
+      setResidents(data.topResidents || []);
+    } catch { setResidents([]); }
+    finally { setLoading(false); }
+  }, [barangay]);
+
+  useEffect(() => { fetchTopResidents(period); }, [period, fetchTopResidents]);
+
+  const MEDAL = ['🥇', '🥈', '🥉'];
+  const sortField = period === 'month' ? 'monthlyPoints' : 'totalPoints';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/30" onClick={onClose}>
+      <div className="h-full w-full max-w-md bg-white shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Top Residents</h2>
+            <p className="text-xs text-slate-500">Brgy. {barangay}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={period}
+              onChange={e => setPeriod(e.target.value)}
+              className="text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+              <X className="w-4 h-4 text-slate-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+            </div>
+          ) : residents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-2">
+              <Users className="w-10 h-10 text-slate-200" />
+              <p className="text-sm font-medium">No resident activity yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {residents.map((r, i) => (
+                <button
+                  key={r.residentId}
+                  onClick={() => setSelected(selected?.residentId === r.residentId ? null : r)}
+                  className="w-full px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl w-8 flex-shrink-0">{MEDAL[i] || `#${i + 1}`}</span>
+                    <div className="w-9 h-9 bg-gradient-to-br from-emerald-700 to-emerald-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-bold">
+                      {r.name?.charAt(0) || '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{r.name}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                          <ScanLine className="w-3 h-3" />{r.stats?.correctScans ?? 0}
+                        </span>
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                          <FileText className="w-3 h-3" />{r.stats?.reportsSubmitted ?? 0}
+                        </span>
+                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                          <CheckCircle className="w-3 h-3" />{r.stats?.resolutionsVerified ?? 0}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-emerald-700">{r[sortField] ?? 0}</p>
+                      <p className="text-[10px] text-slate-400">pts</p>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform ${selected?.residentId === r.residentId ? 'rotate-90' : ''}`} />
+                  </div>
+
+                  {/* Expanded detail */}
+                  {selected?.residentId === r.residentId && (
+                    <div className="mt-3 ml-11 p-3 bg-slate-50 rounded-xl space-y-2 text-xs" onClick={e => e.stopPropagation()}>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { icon: Star, label: 'Total Pts', val: r.totalPoints },
+                          { icon: Star, label: 'Monthly Pts', val: r.monthlyPoints },
+                          { icon: ScanLine, label: 'Scans', val: r.stats?.correctScans ?? 0 },
+                          { icon: FileText, label: 'Reports', val: r.stats?.reportsSubmitted ?? 0 },
+                          { icon: CheckCircle, label: 'Verified', val: r.stats?.resolutionsVerified ?? 0 },
+                          { icon: ThumbsUp, label: 'Upvoted', val: r.stats?.reportsUpvoted ?? 0 },
+                        ].map(({ icon: Icon, label, val }) => (
+                          <div key={label} className="bg-white rounded-lg p-2 text-center">
+                            <Icon className="w-3.5 h-3.5 text-emerald-600 mx-auto mb-1" />
+                            <p className="font-bold text-slate-900 text-sm">{val}</p>
+                            <p className="text-slate-400 text-[10px]">{label}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {official?.barangay === 'All' || official?.barangay === barangay ? (
+                        <a
+                          href={`/rewards?prefill=${encodeURIComponent(JSON.stringify({ recipientId: r.residentId, recipientName: r.name, barangay }))}`}
+                          className="flex items-center justify-center gap-2 w-full mt-2 py-2 text-xs font-bold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <Award className="w-3.5 h-3.5" /> Create Reward for {r.name.split(' ')[0]}
+                        </a>
+                      ) : null}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BarangayPerformance() {
   const [rankings, setRankings] = useState([]);
+  const [drillDown, setDrillDown] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState('points');
   const [sortDir, setSortDir] = useState('desc');
@@ -238,7 +375,8 @@ export default function BarangayPerformance() {
                     return (
                       <tr
                         key={b._id || b.barangay}
-                        className={`hover:bg-slate-50 transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'}`}
+                        onClick={() => setDrillDown(b.barangay)}
+                        className={`hover:bg-emerald-50 cursor-pointer transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'}`}
                       >
                         <td className="px-4 py-4">
                           <span className="text-sm font-bold text-slate-600">
@@ -246,7 +384,10 @@ export default function BarangayPerformance() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm font-semibold text-slate-900">{b.barangay || '—'}</p>
+                          <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                            {b.barangay || '—'}
+                            <Users className="w-3.5 h-3.5 text-slate-300" />
+                          </p>
                           <p className="text-xs text-slate-400">{b.pickupCount ?? 0} pickups · {b.reportVoteCount ?? 0} votes</p>
                         </td>
                         <td className="px-4 py-4">
@@ -300,6 +441,10 @@ export default function BarangayPerformance() {
           </>
         )}
       </div>
+
+      {drillDown && (
+        <TopResidentsPanel barangay={drillDown} onClose={() => setDrillDown(null)} />
+      )}
     </div>
   );
 }

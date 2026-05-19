@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
   Gift, Plus, X, Check, AlertCircle, Search,
-  RefreshCw, Eye, Send, User,
+  RefreshCw, Eye, Send, User, PenLine, Trash2, CheckCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -354,6 +354,52 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showRevoke, setShowRevoke] = useState(false);
+  const [showSigPad, setShowSigPad] = useState(false);
+  const [sigSaving, setSigSaving] = useState(false);
+  const [sigSaved, setSigSaved] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [currentSig, setCurrentSig] = useState(reward.officialSignatureUrl || null);
+  const canvasRef = useRef(null);
+  const isDrawing = useRef(false);
+  const lastPos = useRef(null);
+
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  };
+  const startDraw = (e) => { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); };
+  const draw = (e) => {
+    e.preventDefault();
+    if (!isDrawing.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    const pos = getPos(e);
+    ctx.beginPath(); ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = '#1E293B'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke();
+    lastPos.current = pos; setHasDrawn(true);
+  };
+  const stopDraw = () => { isDrawing.current = false; };
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  };
+  const saveSignature = async () => {
+    if (!hasDrawn) return;
+    setSigSaving(true);
+    try {
+      const dataUrl = canvasRef.current.toDataURL('image/png');
+      const { data: up } = await axios.post(`${API}/api/upload`, { data: dataUrl });
+      const { data: updated } = await axios.patch(`${API}/api/rewards/${reward._id}`, { officialSignatureUrl: up.url });
+      setCurrentSig(up.url);
+      setSigSaved(true);
+      setTimeout(() => { setSigSaved(false); setShowSigPad(false); }, 2000);
+      onUpdated(updated);
+    } catch { setError('Failed to save signature.'); }
+    finally { setSigSaving(false); }
+  };
 
   const act = async (action) => {
     setLoading(true);
@@ -430,6 +476,55 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
           </div>
 
           {reward.description ? <p className="text-sm text-slate-600 leading-relaxed">{reward.description}</p> : null}
+
+          {/* E-Signature section — certificates only */}
+          {reward.rewardType === 'certificate' && (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50">
+                <div className="flex items-center gap-2">
+                  <PenLine className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="text-xs font-bold text-slate-600">Official E-Signature</span>
+                </div>
+                <button
+                  onClick={() => { setShowSigPad(!showSigPad); setHasDrawn(false); }}
+                  className="text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  {showSigPad ? 'Cancel' : currentSig ? 'Update' : '+ Add'}
+                </button>
+              </div>
+
+              {currentSig && !showSigPad && (
+                <div className="p-3 bg-white">
+                  <img src={currentSig} alt="E-signature" className="max-h-14 object-contain" />
+                  <p className="text-[10px] text-slate-400 mt-1">{reward.issuedByName || official?.name}</p>
+                </div>
+              )}
+
+              {showSigPad && (
+                <div className="p-3 bg-white space-y-2">
+                  <div className="relative border border-dashed border-slate-300 rounded-lg overflow-hidden bg-slate-50 cursor-crosshair">
+                    <canvas
+                      ref={canvasRef} width={340} height={100}
+                      className="w-full touch-none"
+                      onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                      onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+                    />
+                    {!hasDrawn && (
+                      <p className="absolute inset-0 flex items-center justify-center text-xs text-slate-300 pointer-events-none">Draw signature here</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={clearCanvas} disabled={!hasDrawn} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-40">
+                      <Trash2 className="w-3 h-3" /> Clear
+                    </button>
+                    <button onClick={saveSignature} disabled={!hasDrawn || sigSaving} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:opacity-40">
+                      {sigSaving ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />Saving…</> : sigSaved ? <><CheckCircle className="w-3 h-3" />Saved!</> : 'Save Signature'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Status timeline */}
           <div className="flex items-center gap-1 pt-1">

@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle } from 'lucide-react';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import API from '../config';
 
 const sections = [
   { id: 'profile', icon: User, label: 'Profile' },
@@ -7,9 +10,156 @@ const sections = [
   { id: 'language', icon: Globe, label: 'Language & Region' },
   { id: 'security', icon: Lock, label: 'Security' },
   { id: 'system', icon: Sliders, label: 'System Preferences' },
+  { id: 'signature', icon: PenLine, label: 'E-Signature' },
 ];
 
+function SignaturePad({ official }) {
+  const canvasRef = useRef(null);
+  const isDrawing = useRef(false);
+  const lastPos = useRef(null);
+  const [savedUrl, setSavedUrl] = useState(official?.signatureUrl || null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    isDrawing.current = true;
+    lastPos.current = getPos(e);
+  };
+
+  const draw = useCallback((e) => {
+    e.preventDefault();
+    if (!isDrawing.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    lastPos.current = pos;
+    setHasDrawn(true);
+  }, []);
+
+  const stopDraw = () => { isDrawing.current = false; };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  };
+
+  const saveSignature = async () => {
+    const canvas = canvasRef.current;
+    if (!hasDrawn) return;
+    setSaving(true);
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const { data: uploadData } = await axios.post(`${API}/api/upload`, { data: dataUrl });
+      await axios.patch(`${API}/api/officials/signature`, { signatureUrl: uploadData.url });
+      setSavedUrl(uploadData.url);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      alert('Failed to save signature. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
+      <div>
+        <h2 className="text-base font-bold text-slate-900">E-Signature</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Draw your signature below. It will appear on certificates you issue to residents.
+        </p>
+      </div>
+
+      {/* Saved signature preview */}
+      {savedUrl && (
+        <div className="border border-emerald-200 rounded-xl p-4 bg-emerald-50">
+          <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2">Current Saved Signature</p>
+          <img src={savedUrl} alt="Saved signature" className="max-h-20 object-contain" />
+        </div>
+      )}
+
+      {/* Canvas pad */}
+      <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+          {savedUrl ? 'Draw New Signature' : 'Draw Your Signature'}
+        </p>
+        <div className="relative border-2 border-dashed border-slate-200 rounded-xl overflow-hidden bg-slate-50 cursor-crosshair">
+          <canvas
+            ref={canvasRef}
+            width={560}
+            height={180}
+            className="w-full touch-none"
+            onMouseDown={startDraw}
+            onMouseMove={draw}
+            onMouseUp={stopDraw}
+            onMouseLeave={stopDraw}
+            onTouchStart={startDraw}
+            onTouchMove={draw}
+            onTouchEnd={stopDraw}
+          />
+          {!hasDrawn && (
+            <p className="absolute inset-0 flex items-center justify-center text-sm text-slate-300 pointer-events-none select-none">
+              Sign here
+            </p>
+          )}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1.5">Use your mouse or trackpad to draw your signature</p>
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={clearCanvas}
+          disabled={!hasDrawn}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-40"
+        >
+          <Trash2 className="w-4 h-4" /> Clear
+        </button>
+        <button
+          onClick={saveSignature}
+          disabled={!hasDrawn || saving}
+          className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold text-white bg-emerald-700 rounded-xl hover:bg-emerald-800 transition-colors disabled:opacity-40"
+        >
+          {saving ? (
+            <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
+          ) : saved ? (
+            <><CheckCircle className="w-4 h-4" /> Saved!</>
+          ) : (
+            <><Save className="w-4 h-4" /> Save Signature</>
+          )}
+        </button>
+      </div>
+
+      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+        <p className="font-semibold mb-1">How it works</p>
+        <p className="text-xs leading-5">
+          Your saved e-signature will automatically appear on any <strong>Certificate</strong> reward you issue to residents.
+          The resident will see it on the certificate in their G-TRASH app.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
+  const { official } = useAuth();
   const [activeSection, setActiveSection] = useState('profile');
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState({
@@ -224,6 +374,9 @@ export default function Settings() {
               )}
             </div>
           )}
+
+          {/* E-Signature */}
+          {activeSection === 'signature' && <SignaturePad official={official} />}
 
           {/* System Preferences */}
           {activeSection === 'system' && (

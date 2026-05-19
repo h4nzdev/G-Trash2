@@ -22,6 +22,8 @@ import { decodeJpeg } from "@tensorflow/tfjs-react-native";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import ScanResultCard from "../components/ScanResultCard";
 import colors from "../constants/colors";
+import { useAuth } from "../context/AuthContext";
+import API_URL from "../config";
 
 // ── ENHANCED TRASH CLASSIFICATION DATABASE ─────
 const TRASH_CLASSES = {
@@ -471,6 +473,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // ── MAIN COMPONENT ─────────────────────────────
 export default function ScannerScreen() {
+  const { user } = useAuth();
   // State management
   const [permissionMessage, setPermissionMessage] = useState(
     "Checking camera permission...",
@@ -602,6 +605,15 @@ export default function ScannerScreen() {
         setDetectionResult(topResult);
         setAllDetections(results);
         setEcoImpact(calculateEnvironmentalImpact(topResult));
+        // Award +5 points for a successful scan
+        const uid = user?.id || user?._id;
+        if (uid && topResult.label !== 'No Item Detected') {
+          fetch(`${API_URL}/api/residents/${uid}/award-scan-points`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item: topResult.label }),
+          }).catch(() => {});
+        }
       } else {
         setDetectionResult({
           label: "No Item Detected",

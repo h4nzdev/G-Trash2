@@ -1,173 +1,199 @@
-I need to implement the LGU-to-Resident reward distribution flow for the G-TRASH system. This is the process where Barangay Officials approve and distribute rewards to residents who perform well on the leaderboard (e.g., "Best in Segregation"). Currently, the system tracks points and shows a leaderboard, but there is no workflow for officials to actually grant rewards and for residents to claim them.
+I need to implement resident-level performance tracking in the G-TRASH system. Currently, the scoring system only tracks points at the Barangay level. My capstone document states that LGU officials will identify "residents with outstanding performance as shown in the G-TRASH data and analytics" and give them rewards. But right now, there is no way for officials to see which individual residents contributed the most to their Barangay's score.
 
 Current setup:
 - Backend: Node.js + Express + MongoDB with Mongoose
 - Officials Web App: React + Vite + Tailwind CSS
 - Resident App: React Native (Expo)
-- Socket.io is used for real-time events
-- The scoring system already tracks points per barangay across 4 categories (Report, Response, Collection, IoT)
-- Resident model has fields: name, email, barangay, points (I assume, please confirm or add)
+- Resident model has fields: name, email, barangay, profilePicture
+- Existing scoring actions that should now track per resident:
+  - AI Scanner: Resident scans trash and gets correct segregation result
+  - Report Submission: Resident submits a garbage report
+  - Report Upvotes: Resident upvotes other reports
+  - Report Comments: Resident comments on reports
+  - Resolution Verification: Resident confirms a reported issue was fixed
 
 Requirements:
 
-1. BACKEND - New Schemas and Endpoints:
+1. BACKEND - Resident Scoring System:
 
-   a. Reward Model (new Mongoose schema):
+   a. Add points field to Resident Schema:
       {
-        title: String,                    // e.g., "Best in Segregation - March 2026"
-        description: String,              // e.g., "Awarded for achieving the highest segregation accuracy"
-        category: String,                 // enum: ['best_segregation', 'most_trash_collected', 'most_reports', 'most_active']
-        barangay: String,                 // which barangay this reward is for
-        rewardType: String,               // enum: ['physical_prize', 'certificate', 'cash', 'discount', 'recognition']
-        rewardValue: String,              // e.g., "₱500 Gift Certificate", "Groceries Package", "Certificate of Recognition"
-        status: String,                   // enum: ['draft', 'published', 'claimed', 'expired']
-        recipientId: mongoose.ObjectId,   // ref to Resident (the winner)
-        recipientName: String,            // denormalized for quick display
-        issuedBy: mongoose.ObjectId,      // ref to Official who approved
-        issuedDate: Date,
-        claimDeadline: Date,              // residents must claim within X days
-        claimedDate: Date,               // when the resident actually claimed
-        claimCode: String,               // unique code for verification
-        notes: String,                    // internal notes for officials
-        createdAt: Date,
-        updatedAt: Date
+        totalPoints: { type: Number, default: 0 },
+        monthlyPoints: { type: Number, default: 0 },
+        pointsHistory: [{
+          points: Number,
+          action: String,        // enum: ['correct_scan', 'report_submit', 'report_upvote', 'report_comment', 'verify_resolution']
+          description: String,   // e.g., "Correctly scanned biodegradable waste"
+          reportId: mongoose.ObjectId,  // reference if applicable
+          date: { type: Date, default: Date.now }
+        }],
+        stats: {
+          totalScans: { type: Number, default: 0 },
+          correctScans: { type: Number, default: 0 },
+          reportsSubmitted: { type: Number, default: 0 },
+          reportsUpvoted: { type: Number, default: 0 },
+          commentsMade: { type: Number, default: 0 },
+          resolutionsVerified: { type: Number, default: 0 }
+        }
       }
 
-   b. New API Endpoints:
-      - POST /api/rewards - Official creates a new reward
-      - GET /api/rewards - List all rewards (filterable by barangay, status, category)
-      - GET /api/rewards/:id - Get single reward details
-      - PATCH /api/rewards/:id - Official updates reward (publish, mark as claimed physically)
-      - GET /api/rewards/my-rewards/:residentId - Resident views their rewards
-      - POST /api/rewards/:id/claim - Resident claims a reward digitally (generates claim confirmation)
-      - GET /api/rewards/leaderboard-eligible - Get top residents eligible for rewards per category per barangay
+   b. Point Values per Action:
+      - Correct AI scan: +5 points
+      - Submit a report: +10 points
+      - Report upvoted by others: +1 point (awarded to the report author)
+      - Add a comment: +2 points
+      - Verify a resolution: +15 points
+      - Report marked as false/fake by official: -20 points (penalty)
 
-   c. Updated Resident Schema:
-      Add fields:
-      {
-        rewardsReceived: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Reward' }],
-        totalRewardsClaimed: { type: Number, default: 0 }
-      }
+   c. Update existing endpoints to award resident points:
+      - POST /api/reports - When resident submits report, add +10 to their points
+      - POST /api/reports/:id/vote - When someone upvotes, give +1 to the report author
+      - POST /api/reports/:id/comments - When resident comments, add +2 points
+      - POST /api/reports/:id/verify - When resident verifies resolution, add +15 points
+      - AI Scanner endpoint - When scan is correct, add +5 points
 
-2. OFFICIALS WEB APP - Reward Management:
+   d. New Endpoints:
+      - GET /api/residents/:id/points - Get a resident's total points and stats
+      - GET /api/residents/:id/points/history - Get point history with pagination
+      - GET /api/barangays/:barangayName/top-residents - Get top 10 residents in a barangay
+        Query params: period (month/quarter/year/all), category (all/segregation/reports/verification)
+        Response format:
+        {
+          "barangay": "Lahug",
+          "period": "March 2026",
+          "topResidents": [
+            {
+              "rank": 1,
+              "residentId": "...",
+              "name": "Juan Dela Cruz",
+              "totalPoints": 320,
+              "stats": {
+                "correctScans": 45,
+                "reportsSubmitted": 12,
+                "resolutionsVerified": 8
+              },
+              "profilePicture": "url"
+            },
+            // ... more residents
+          ]
+        }
 
-   a. New Page: "Rewards Management" (/rewards)
-      - Table showing all rewards with columns: Title, Recipient, Barangay, Type, Status, Date
-      - Filter by: Barangay, Status (Draft/Published/Claimed/Expired), Category, Date Range
-      - "Create Reward" button that opens a modal/form
+2. OFFICIALS WEB APP - Resident Performance View:
 
-   b. Create Reward Modal:
-      - Select Reward Category (dropdown populated from leaderboard categories)
-      - The system should AUTO-SUGGEST eligible residents based on leaderboard rankings
-      - Select Recipient from filtered list of top performers in that barangay
-      - Input fields: Title, Description, Reward Type, Reward Value
-      - "Claim Deadline" date picker (default: 30 days from issuance)
-      - "Save as Draft" and "Publish & Notify" buttons
+   a. New Tab on Barangay Leaderboard Page: "Top Residents"
+      - When an official clicks on a Barangay name in the leaderboard, it opens a drill-down view
+      - This view shows the top 10 residents in that Barangay ranked by points
+      - Each resident card shows:
+        - Rank (1st, 2nd, 3rd with medal icons)
+        - Profile picture and name
+        - Total points
+        - Breakdown icons with counts: 🗑️ Scans | 📝 Reports | ✅ Verifications
+        - A mini bar chart showing their point trend over the last 3 months
 
-   c. Reward Detail View:
-      - Shows all reward information
-      - Status timeline: Draft → Published → Claimed
-      - "Publish" button (if draft) - triggers notification to resident
-      - "Mark as Claimed" button (if published) - for when resident physically claims the reward
-      - "Expire" button with confirmation dialog
+   b. Filter Controls:
+      - Time period dropdown: This Month, Last Month, This Quarter, This Year, All Time
+      - Category filter: All, Segregation (scans), Reporting (reports + comments), Verification
+      - Default: This Month, All Categories
 
-   d. Dashboard Widget:
-      - Add a "Pending Rewards" card on the Officials Dashboard showing:
-        - Number of unclaimed rewards
-        - Rewards expiring within 7 days (highlighted in yellow/red)
+   c. Resident Detail Modal:
+      - When official clicks on a resident card, opens a detailed modal showing:
+        - Full point history table with date, action, points, description
+        - Stats summary cards: Total Scans, Accuracy Rate, Reports, Verifications
+        - Activity timeline (last 30 days) showing each action as a timeline entry
+        - "Award History" section showing past rewards given to this resident (if any)
 
-3. RESIDENT APP - Reward Claiming:
+   d. "Select for Reward" Feature:
+      - Checkbox next to each resident in the top 10 list
+      - Official can select one or multiple residents
+      - "Create Reward for Selected" button
+      - This pre-fills the reward creation form with the resident's name and stats
+      - This connects to the reward management system
 
-   a. New Screen: "My Rewards" (accessible from Profile or Leaderboard screen)
-      - List of rewards earned by this resident
-      - Each reward card shows:
-        - Reward title and badge/icon based on category
-        - "Claimed" or "Available to Claim" status
-        - Claim deadline with countdown if approaching
-        - Reward value/prize description
+3. RESIDENT APP - Personal Points Display:
 
-   b. Reward Claim Flow:
-      - Resident taps "Claim Reward" button
-      - App shows reward details with a congratulations animation
-      - Resident must tap "Confirm Claim"
-      - System generates a unique QR-like claim code
-      - App shows: "Show this code to your Barangay Office to receive your reward"
-      - Claim code and details are also stored locally in AsyncStorage
+   a. Profile Screen Update:
+      - Show resident's total points prominently at the top of Profile
+      - Show monthly points with a progress ring
+      - Show stats in a grid: Scans, Reports, Verifications
+      - Show current rank within their Barangay (e.g., "You're #3 of 156 residents in Lahug")
 
-   c. Claim Confirmation Screen:
-      - Large claim code displayed prominently
-      - Barangay office location and contact info
-      - "Add to Calendar" button for claim deadline
-      - Share button to save screenshot
+   b. Points History Screen:
+      - Accessible from Profile
+      - Chronological list of all point transactions
+      - Each entry shows: icon, description, points earned, date
+      - Positive points in green, negative in red
+      - Pull-to-refresh
 
-   d. Notification:
-      - When an official publishes a reward, the resident receives an in-app notification:
-        "🎉 Congratulations! You've been awarded [Reward Title] by [Barangay]!"
-      - Tapping the notification opens the My Rewards screen
+   c. Real-Time Point Updates:
+      - When a resident earns points, show a brief toast/animation:
+        "+5 points! Correct scan 🎉"
+      - Points update in real-time on Profile screen using Socket.io
 
-4. REAL-TIME UPDATES:
-   - New Socket.io events:
-     - reward:new - emitted when official publishes a reward
-     - reward:claimed - emitted when resident claims a reward
-   - The resident app should listen for reward:new and show a celebration modal
+4. SOCKET.IO EVENTS:
+   - New event: resident:points:update
+     Payload: { residentId, newTotal, pointsEarned, action, description }
+   - Resident app listens for this to update their display
+   - Officials dashboard listens to refresh top residents list
 
-5. CLAIM CODE SYSTEM:
-   - Generate a unique 8-character alphanumeric code for each reward
-   - Format: GTR-XXXX-XXXX (e.g., GTR-A3B7-9K2M)
-   - Code is valid until claim deadline
-   - Officials can verify the code on their dashboard when the resident comes to claim
+5. EDGE CASES:
+   - What if a resident has 0 points? (Show "No activity yet. Start scanning or reporting!")
+   - What if a resident's report is deleted by admin? (Deduct the points that were awarded)
+   - What if it's a new month and monthlyPoints resets? (Move current monthlyPoints to a monthlyHistory array)
+   - What if two residents have the same points? (Sort by most recent activity)
 
-6. EDGE CASES:
-   - What if a resident doesn't claim within the deadline? (Auto-expire the reward)
-   - What if an official accidentally publishes to wrong resident? (Allow revoke within 24 hours)
-   - What if a resident moves to a different barangay? (Rewards stay with the original barangay)
-   - What if multiple residents tie for the same category? (Allow multiple rewards for same category)
+6. MONTHLY RESET LOGIC:
+   - On the 1st of each month, automatically:
+     - Save current monthlyPoints to a monthlyHistory array
+     - Reset monthlyPoints to 0
+     - Total points never reset (lifetime accumulation)
+   - This can be a cron job or a function that runs when points are queried
 
 Please provide:
-- Complete Reward Mongoose schema
-- All API endpoints with request/response examples
-- Officials Web App pages and components for reward management
-- Resident App screens for viewing and claiming rewards
-- Socket.io event handlers
-- Claim code generation utility
+- Updated Resident Mongoose schema with points fields
+- Updated API endpoints that award points
+- New endpoint for top residents per barangay
+- Officials Web App components for resident drill-down view
+- Resident App Profile screen updates with points display
+- Monthly reset utility function
 
 ---
 
 TESTING INSTRUCTIONS:
 After implementing, please tell me exactly how to test this feature by providing:
 
-1. Manual Test Steps (step-by-step flow):
-   - Step 1: How to seed test data (which official account to use, which resident)
-   - Step 2: How to create a reward as an official (exact navigation path)
-   - Step 3: How to publish the reward and trigger notification
-   - Step 4: How to view the reward as a resident
-   - Step 5: How to claim the reward and see the claim code
-   - Step 6: How to mark as physically claimed as an official
+1. Manual Test Steps:
+   - How to perform actions as a resident to earn points (scan, report, verify)
+   - How to check points on the Resident Profile screen
+   - How to view top residents as an official
+   - How to drill down into a specific resident's activity
+   - How to verify points update in real-time
 
-2. Test Data to Use:
-   - Sample resident with high points that qualifies for a reward
-   - Sample reward object to insert via Postman or MongoDB
-   - Sample official account that has permission to create rewards
+2. Test Data Script:
+   Provide MongoDB insert scripts to create 5-6 residents in the same barangay with different point totals and activity mixes:
+   - Resident A: High scanner, low reports
+   - Resident B: High reports, low scans
+   - Resident C: Balanced all-rounder
+   - Resident D: New user with low points
+   - Resident E: Inactive user with 0 points
 
 3. Expected Visual Results:
-   - What the official sees on the Rewards Management page
-   - What the resident sees on the My Rewards screen
-   - What the claim confirmation screen looks like
-   - What notifications appear and where
+   - What the Profile screen looks like with points displayed
+   - What the Officials top residents drill-down looks like
+   - What the resident detail modal looks like
+   - What the toast animation looks like when points are earned
 
 4. Debugging Checklist:
-   - If reward doesn't appear for resident, check: [list items]
-   - If claim code isn't generating, check: [list items]
-   - If notification isn't received, check: [list items]
-   - If deadline isn't auto-expiring, check: [list items]
+   - If points aren't being awarded, check: [list items]
+   - If top residents list is empty, check: [list items]
+   - If monthly reset isn't working, check: [list items]
 
 5. Test Cases Table:
    | Test Case | Action | Expected Result |
    |-----------|--------|-----------------|
-   | Create draft reward | Official fills form, saves as draft | Reward appears with "Draft" status |
-   | Publish reward | Official clicks "Publish" | Resident gets notification; status changes to "Published" |
-   | Resident claims digitally | Resident taps "Claim" | Claim code generated; status changes to "Claimed" |
-   | Official marks physical claim | Official clicks "Mark as Claimed" | Status updates; reward moves to history |
-   | Reward expires | Deadline passes without claim | Status auto-changes to "Expired" |
-   | Multiple winners same category | Official creates 2 rewards | Both residents can claim independently |
-   | Revoke within 24 hours | Official clicks "Revoke" | Reward removed from resident's list |
+   | Earn scan points | Resident scans trash correctly | +5 points; toast appears; total updates |
+   | Earn report points | Resident submits report | +10 points; stats reflect new report |
+   | View top residents | Official clicks barangay name | Top 10 residents shown ranked by points |
+   | Filter by category | Official selects "Segregation" filter | Residents re-ranked by scan points only |
+   | Zero-point resident | View profile of inactive user | Shows "No activity yet" message |
+   | Monthly reset | Wait for month rollover | monthlyPoints resets; total remains |
+   | Tie in points | Two residents have same points | Sorted by most recent activity date |

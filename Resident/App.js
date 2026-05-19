@@ -15,6 +15,7 @@ import ReportIssueScreen from './src/screens/ReportIssueScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import BugReportScreen from './src/screens/BugReportScreen';
 import MyRewardsScreen from './src/screens/MyRewardsScreen';
+import PointsHistoryScreen from './src/screens/PointsHistoryScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
@@ -137,6 +138,16 @@ function AppNavigator() {
       }]);
     });
 
+    s.on('resident:points:update', (data) => {
+      if (data.pointsEarned > 0) {
+        setAnnouncementQueue((q) => [...q, {
+          title: `+${data.pointsEarned} points earned!`,
+          message: data.description || 'Keep it up!',
+          type: 'info',
+        }]);
+      }
+    });
+
     setSocket(s);
     return () => { s.disconnect(); setSocket(null); };
   }, [user]);
@@ -187,6 +198,7 @@ function AppNavigator() {
             <Stack.Screen name="Notifications" component={NotificationScreen} />
             <Stack.Screen name="BugReport" component={BugReportScreen} />
             <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
+            <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
           </>
         ) : (
           <>
