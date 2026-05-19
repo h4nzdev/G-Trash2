@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { io } from "socket.io-client";
 import {
   View,
   Text,
@@ -89,13 +90,30 @@ export default function CollectorHomeScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const chatScrollRef = useRef(null);
 
+  // Re-fetch route data every time the Home tab comes into focus (covers tab switches + notification taps)
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem('@truck_nav_active').then((val) => {
         setNavActive(val === 'true');
       }).catch(() => {});
-    }, [])
+      // Always refresh on focus — catches notification taps and tab switches
+      fetchRouteData();
+      // Clear the schedule refresh flag set by notification handlers
+      AsyncStorage.removeItem('@schedule_refresh_needed').catch(() => {});
+    }, [fetchRouteData])
   );
+
+  // Socket: re-fetch when an official assigns a new schedule or route to this truck
+  useEffect(() => {
+    const socket = io(API_URL, { transports: ['websocket', 'polling'] });
+    socket.on('schedule:changed', ({ truckId }) => {
+      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchRouteData();
+    });
+    socket.on('route:assigned', ({ truckId }) => {
+      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchRouteData();
+    });
+    return () => socket.disconnect();
+  }, [TRUCK_ID, fetchRouteData]);
 
   useEffect(() => {
     // Simulate capacity based on weight collected (max 1000kg for this truck)

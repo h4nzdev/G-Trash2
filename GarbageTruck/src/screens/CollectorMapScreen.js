@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -686,6 +687,13 @@ export default function CollectorMapScreen() {
 
   // Initial fetch on mount (updates also come via socket events)
   useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
+
+  // Re-fetch schedule whenever the Map tab comes into focus (handles tab-switch from Home + notification taps)
+  useFocusEffect(
+    useCallback(() => {
+      fetchTodaySchedules();
+    }, [fetchTodaySchedules])
+  );
 
   // Fetch today's bin preparation counts whenever barangay is known
   useEffect(() => {

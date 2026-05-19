@@ -53,15 +53,27 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     loadStorageData();
-    // Listen for notifications received while app is open
+    // Notification received while app is in foreground — save + badge
     notifListenerRef.current = Notifications.addNotificationReceivedListener((notification) => {
       const { title, body, data } = notification.request.content;
       saveNotification({ title, body, data }).then(() => {
         setUnreadCount((c) => c + 1);
       });
+      // Write a flag so screens know to re-fetch on next focus
+      if (data?.type === 'schedule' || data?.type === 'route') {
+        AsyncStorage.setItem('@schedule_refresh_needed', 'true').catch(() => {});
+      }
+    });
+    // Notification tapped — user opens app by tapping the notification
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'schedule' || data?.type === 'route') {
+        AsyncStorage.setItem('@schedule_refresh_needed', 'true').catch(() => {});
+      }
     });
     return () => {
       if (notifListenerRef.current) Notifications.removeNotificationSubscription(notifListenerRef.current);
+      Notifications.removeNotificationSubscription(responseSub);
     };
   }, []);
 
