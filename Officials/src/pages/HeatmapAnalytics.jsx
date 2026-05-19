@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart } from 'lucide-react';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -121,6 +121,11 @@ export default function HeatmapAnalytics() {
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   const [showCityBoundary, setShowCityBoundary] = useState(true);
   const [healthRiskView, setHealthRiskView] = useState(false);
+  const [showSensorForm, setShowSensorForm] = useState(false);
+  const [sensorForm, setSensorForm] = useState({ sensorId: '', location: '', barangay: '', lat: '', lng: '' });
+  const [sensorSaving, setSensorSaving] = useState(false);
+  const [sensorMsg, setSensorMsg] = useState(null);
+  const [sensorZones, setSensorZones] = useState([]);
   const socketRef = useRef(null);
 
   useEffect(() => {
@@ -130,11 +135,13 @@ export default function HeatmapAnalytics() {
   const fetchZonesAndBoundary = async () => {
     setLoading(true);
     try {
-      const [zonesRes, boundaryRes] = await Promise.all([
+      const [zonesRes, boundaryRes, sensorRes] = await Promise.all([
         axios.get(`${API}/api/garbage-areas`),
-        official?.barangay ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`) : Promise.resolve({ data: { boundary: [] } })
+        official?.barangay ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`) : Promise.resolve({ data: { boundary: [] } }),
+        axios.get(`${API}/api/sensor-zones`),
       ]);
       setZones(zonesRes.data);
+      setSensorZones(sensorRes.data);
       if (boundaryRes.data.boundary?.length > 0) {
         setBoundary(boundaryRes.data.boundary);
       }
@@ -142,6 +149,38 @@ export default function HeatmapAnalytics() {
       console.error('Failed to fetch data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegisterSensor = async (e) => {
+    e.preventDefault();
+    const { sensorId, location, barangay, lat, lng } = sensorForm;
+    if (!sensorId || !lat || !lng) return;
+    setSensorSaving(true);
+    setSensorMsg(null);
+    try {
+      const { data } = await axios.post(`${API}/api/sensor-zones`, {
+        sensorId: sensorId.trim().toUpperCase(),
+        location: location.trim() || sensorId.trim().toUpperCase(),
+        barangay: barangay.trim(),
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
+      });
+      setSensorZones(prev => {
+        const exists = prev.find(z => z.sensorId === data.sensorId);
+        return exists ? prev.map(z => z.sensorId === data.sensorId ? data : z) : [data, ...prev];
+      });
+      setZones(prev => {
+        const exists = prev.find(z => z._id === data._id);
+        return exists ? prev.map(z => z._id === data._id ? data : z) : [data, ...prev];
+      });
+      setSensorMsg({ type: 'ok', text: `Sensor "${data.sensorId}" registered at (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` });
+      setSensorForm({ sensorId: '', location: '', barangay: '', lat: '', lng: '' });
+      setTimeout(() => setSensorMsg(null), 5000);
+    } catch (err) {
+      setSensorMsg({ type: 'err', text: err?.response?.data?.error || 'Failed to register sensor' });
+    } finally {
+      setSensorSaving(false);
     }
   };
 
@@ -156,12 +195,16 @@ export default function HeatmapAnalytics() {
     socket.on('garbage-area:updated', (updatedArea) => {
       setZones(prev => {
         const exists = prev.find(z => z._id === updatedArea._id);
-        if (exists) {
-          return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
-        } else {
-          return [updatedArea, ...prev];
-        }
+        if (exists) return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
+        return [updatedArea, ...prev];
       });
+      if (updatedArea.sensorId) {
+        setSensorZones(prev => {
+          const exists = prev.find(z => z._id === updatedArea._id);
+          if (exists) return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
+          return [updatedArea, ...prev];
+        });
+      }
 
       // Flash notification
       setIotFlash({
@@ -324,6 +367,101 @@ export default function HeatmapAnalytics() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* IoT Sensor Registration Panel */}
+      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setShowSensorForm(!showSensorForm)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-blue-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Cpu className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold text-slate-800">IoT Sensor Zones</p>
+              <p className="text-xs text-slate-500">
+                {sensorZones.length} registered sensor{sensorZones.length !== 1 ? 's' : ''} — zones auto-update when sensor sends data
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {sensorZones.map(z => (
+              <span key={z.sensorId} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                z.status === 'clean' ? 'bg-emerald-100 text-emerald-700' :
+                z.status === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${z.status === 'clean' ? 'bg-emerald-500' : z.status === 'critical' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                {z.sensorId}
+              </span>
+            ))}
+            <span className="text-xs font-bold text-blue-600">{showSensorForm ? '▲ Hide' : '▼ Register Sensor'}</span>
+          </div>
+        </button>
+
+        {showSensorForm && (
+          <form onSubmit={handleRegisterSensor} className="border-t border-blue-100 px-5 py-4 space-y-3">
+            <p className="text-xs text-slate-500">
+              Enter the sensor ID exactly as sent by ESP32, and the GPS coordinates of where the sensor is physically installed.
+              The sensor will then auto-update its heatmap circle when it sends readings.
+            </p>
+            {sensorMsg && (
+              <div className={`px-3 py-2 rounded-lg text-xs font-medium ${sensorMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {sensorMsg.text}
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <input
+                required
+                placeholder="Sensor ID (e.g. IR-SENSOR-001)"
+                value={sensorForm.sensorId}
+                onChange={e => setSensorForm(f => ({ ...f, sensorId: e.target.value }))}
+                className="col-span-2 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+              />
+              <input
+                placeholder="Location name"
+                value={sensorForm.location}
+                onChange={e => setSensorForm(f => ({ ...f, location: e.target.value }))}
+                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+              />
+              <input
+                required
+                placeholder="Latitude (e.g. 10.3254)"
+                type="number"
+                step="any"
+                value={sensorForm.lat}
+                onChange={e => setSensorForm(f => ({ ...f, lat: e.target.value }))}
+                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+              />
+              <input
+                required
+                placeholder="Longitude (e.g. 123.9110)"
+                type="number"
+                step="any"
+                value={sensorForm.lng}
+                onChange={e => setSensorForm(f => ({ ...f, lng: e.target.value }))}
+                className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                placeholder="Barangay (optional)"
+                value={sensorForm.barangay}
+                onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
+                className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
+              />
+              <button
+                type="submit"
+                disabled={sensorSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {sensorSaving ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-3 h-3" />}
+                {sensorSaving ? 'Registering...' : 'Register Sensor'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Stats row */}
@@ -533,6 +671,7 @@ export default function HeatmapAnalytics() {
             const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
             const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
             const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
+            const isIotZone = !!zone.sensorId;
             return (
             <Circle
               key={zone._id}
@@ -541,15 +680,20 @@ export default function HeatmapAnalytics() {
               pathOptions={{
                 fillColor: circleColor,
                 fillOpacity: zone.status === 'critical' ? 0.5 : 0.35,
-                color: circleColor,
-                weight: zone.status === 'critical' ? 3 : 2,
-                opacity: 0.7,
+                color: isIotZone ? '#2563eb' : circleColor,
+                weight: isIotZone ? 3 : (zone.status === 'critical' ? 3 : 2),
+                opacity: 0.9,
               }}
               eventHandlers={{ click: () => setSelectedZone(zone) }}
             >
               <Popup>
                 <div className="p-1 min-w-[200px]">
                   <p className="font-bold text-slate-900 text-sm">{zone.name}</p>
+                  {isIotZone && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', background: '#dbeafe', borderRadius: '12px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#1d4ed8' }}>📡 LIVE IoT — {zone.sensorId}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <span className="w-2 h-2 rounded-full" style={{ background: circleColor }} />
                     <span className="text-xs capitalize font-semibold" style={{ color: circleColor }}>{riskLabel}</span>
@@ -721,6 +865,17 @@ export default function HeatmapAnalytics() {
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700"><Zap className="w-2.5 h-2.5" /> IoT Sensor Only</span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700"><AlertTriangle className="w-2.5 h-2.5" /> Resident Reports Only</span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700"><Zap className="w-2.5 h-2.5" /> IoT + Reports Combined</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IoT Zones</span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                <span className="w-4 h-4 rounded-full border-2 border-blue-600 bg-emerald-200 inline-block" />
+                Blue border = live IoT sensor zone (auto-updates)
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                <Cpu className="w-3.5 h-3.5 text-blue-600" />
+                Register sensors in the panel above
+              </span>
             </div>
           </>
         )}

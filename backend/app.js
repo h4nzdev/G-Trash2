@@ -212,6 +212,7 @@ const garbageAreaSchema = new mongoose.Schema({
   lastCollectionAt: { type: Date, default: null },
   lastCollectionBy: { type: String, default: null },
   lastCollectionId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  sensorId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 const GarbageArea = mongoose.model("GarbageArea", garbageAreaSchema);
@@ -3361,6 +3362,50 @@ app.patch("/api/zones/:zoneId/status", async (req, res) => {
   }
 });
 
+// --- Sensor Zones (IoT-linked garbage areas) ------------------
+
+// GET: all GarbageAreas that have a registered sensorId
+app.get("/api/sensor-zones", async (req, res) => {
+  try {
+    const zones = await GarbageArea.find({ sensorId: { $ne: null } }).sort({ createdAt: -1 });
+    res.json(zones);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: register or update a sensor zone (links sensorId → GPS coordinates)
+// Use this once to seed the sensor's physical location in the DB.
+// After seeding, every POST /api/iot/sensor-data will update this zone automatically.
+app.post("/api/sensor-zones", async (req, res) => {
+  const { sensorId, location, barangay, lat, lng } = req.body;
+  if (!sensorId || lat == null || lng == null) {
+    return res.status(400).json({ error: "sensorId, lat, and lng are required" });
+  }
+  try {
+    const zone = await GarbageArea.findOneAndUpdate(
+      { sensorId },
+      {
+        $set: {
+          sensorId,
+          name: location || sensorId,
+          barangay: barangay || "",
+          lat,
+          lng,
+          source: "iot",
+        },
+        $setOnInsert: { status: "moderate", reportCount: 0, intensity: 0.5 },
+      },
+      { upsert: true, new: true },
+    );
+    io.emit("garbage-area:updated", zone);
+    console.log(`[IoT] Sensor zone registered: ${sensorId} at (${lat}, ${lng})`);
+    res.json(zone);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- IoT Sensor API ------------------------------------------
 
 // Thresholds (rule-based AI)
@@ -3509,9 +3554,10 @@ app.post("/api/iot/sensor-data", async (req, res) => {
           : airQuality === "Moderate"
             ? 0.5
             : 0.2;
+    // 4a. If sensor sends GPS: upsert GarbageArea by name and tag with sensorId
     if (lat != null && lng != null) {
       const updatedArea = await GarbageArea.findOneAndUpdate(
-        { name: location || sensorId },
+        { $or: [{ sensorId }, { name: location || sensorId }] },
         {
           lat,
           lng,
@@ -3520,11 +3566,13 @@ app.post("/api/iot/sensor-data", async (req, res) => {
           methane: `${methane}%`,
           intensity: areaIntensity,
           barangay: barangay || "",
+          sensorId,
+          source: "iot",
+          name: location || sensorId,
         },
         { upsert: true, new: true },
       );
       io.emit("garbage-area:updated", updatedArea);
-      // Emit zone:status:update for IoT-triggered changes
       const iotColorMap = { critical: "red", moderate: "yellow", clean: "green" };
       io.emit("zone:status:update", {
         zoneId: updatedArea._id,
@@ -3538,28 +3586,41 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         changedBy: `Sensor ${sensorId}`,
         timestamp: new Date().toISOString(),
       });
-      // IoT quality scoring: positive for clean/moderate, negative for unhealthy/hazardous
       if (updatedArea.barangay) {
         const qualityPts =
-          airQuality === "Good"
-            ? 3
-            : airQuality === "Moderate"
-              ? 1
-              : airQuality === "Unhealthy"
-                ? -2
-                : airQuality === "Hazardous"
-                  ? -5
-                  : 0;
+          airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
+          airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
         if (qualityPts !== 0) {
-          // Only increment legacy areaQualityPts counter for positive readings
-          const countField = qualityPts > 0 ? "areaQualityPts" : undefined;
-          addBarangayScore(
-            updatedArea.barangay,
-            qualityPts,
-            "iotScore",
-            countField,
-          ).catch(() => {});
+          addBarangayScore(updatedArea.barangay, qualityPts, "iotScore",
+            qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});
         }
+      }
+    }
+
+    // 4b. No GPS in payload — update a pre-registered sensor zone by sensorId
+    if (lat == null || lng == null) {
+      const preReg = await GarbageArea.findOne({ sensorId });
+      if (preReg) {
+        const prevStatus = preReg.status;
+        preReg.ammonia = `${ammonia} ppm`;
+        preReg.methane = `${methane}%`;
+        preReg.source = "iot";
+        await preReg.save();
+        const updated = await recalculateAndEmitZone(preReg._id, "iot_sensor_reading", `Sensor ${sensorId}`);
+        console.log(
+          `[IoT] Pre-registered zone "${preReg.name}" updated: ${prevStatus} → ${updated?.status || preReg.status}`,
+        );
+        if (preReg.barangay) {
+          const qualityPts =
+            airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
+            airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
+          if (qualityPts !== 0) {
+            addBarangayScore(preReg.barangay, qualityPts, "iotScore",
+              qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});
+          }
+        }
+      } else {
+        console.log(`[IoT] Sensor ${sensorId} not registered — no GPS in payload, zone not updated. Register via POST /api/sensor-zones`);
       }
     }
 
