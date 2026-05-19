@@ -21,6 +21,7 @@ import {
   Heart,
   MessageSquare,
   Send,
+  Trash2,
 } from "lucide-react";
 import ReportCard from "../components/reports/ReportCard";
 import ReportFilter from "../components/reports/ReportFilter";
@@ -207,6 +208,30 @@ export default function ReportsManagement() {
     }
   };
 
+  const isIotReport = (r) => r.reportedBy?.toLowerCase().startsWith('iot sensor');
+
+  const handleDeleteIotReport = async (id) => {
+    try {
+      await axios.delete(`${API}/api/reports/${id}`);
+      setReportList(prev => prev.filter(r => r._id !== id));
+      if (selectedReport?._id === id) setSelectedReport(null);
+    } catch { /* silent */ }
+  };
+
+  const [clearingIot, setClearingIot] = useState(false);
+  const handleClearAllIot = async () => {
+    if (!window.confirm('Delete all IoT auto-generated reports? This cannot be undone.')) return;
+    setClearingIot(true);
+    try {
+      const { data } = await axios.delete(`${API}/api/reports/iot-bulk`);
+      setReportList(prev => prev.filter(r => !isIotReport(r)));
+      if (selectedReport && isIotReport(selectedReport)) setSelectedReport(null);
+    } catch { /* silent */ }
+    setClearingIot(false);
+  };
+
+  const iotCount = reportList.filter(isIotReport).length;
+
   const filtered = reportList
     .filter((r) => {
       const statusMatch =
@@ -265,6 +290,18 @@ export default function ReportsManagement() {
             >
               <Heart className="w-4 h-4" />
               {filters.healthOnly ? 'All Reports' : 'Health Flagged'}
+            </button>
+          )}
+          {iotCount > 0 && !isChd && (
+            <button
+              onClick={handleClearAllIot}
+              disabled={clearingIot}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {clearingIot
+                ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                : <Trash2 className="w-4 h-4" />}
+              Clear IoT ({iotCount})
             </button>
           )}
           <button
@@ -358,6 +395,7 @@ export default function ReportsManagement() {
               onView={openReport}
               onAssign={isChd ? null : handleAssign}
               onResolve={isChd ? null : handleResolve}
+              onDelete={!isChd && isIotReport(report) ? handleDeleteIotReport : null}
               isChd={isChd}
             />
           ))}

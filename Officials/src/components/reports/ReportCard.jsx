@@ -1,19 +1,28 @@
 import { useState } from 'react';
-import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle } from 'lucide-react';
+import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle, Trash2, Zap } from 'lucide-react';
 import Badge from '../shared/Badge';
 
 const priorityDot = { Critical: 'bg-red-500', High: 'bg-red-400', Medium: 'bg-amber-500', Low: 'bg-slate-400' };
 const priorityBadge = { Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low' };
 
-export default function ReportCard({ report, onView, onAssign, onResolve, isChd }) {
+export default function ReportCard({ report, onView, onAssign, onResolve, onDelete, isChd }) {
   const [expanded, setExpanded] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = urgencyScore >= 5;
+  const isIot = report.reportedBy?.toLowerCase().startsWith('iot sensor');
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    await onDelete(report._id);
+    setDeleting(false);
+  };
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border ${isHighUrgency ? 'border-red-200 bg-red-50/10' : 'border-slate-100'} overflow-hidden hover:shadow-md transition-shadow duration-200`}>
+    <div className={`bg-white rounded-2xl shadow-sm border ${isHighUrgency ? 'border-red-200 bg-red-50/10' : isIot ? 'border-blue-100 bg-blue-50/20' : 'border-slate-100'} overflow-hidden hover:shadow-md transition-shadow duration-200`}>
       {/* Priority stripe */}
-      <div className={`h-1 ${priorityDot[report.priority]} w-full`} />
+      <div className={`h-1 ${isIot ? 'bg-blue-400' : priorityDot[report.priority]} w-full`} />
 
       <div className="p-5">
         {/* Header */}
@@ -22,6 +31,11 @@ export default function ReportCard({ report, onView, onAssign, onResolve, isChd 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-slate-900 leading-snug">{report.title}</h3>
+              {isIot && (
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 rounded text-[10px] font-bold text-blue-600">
+                  <Zap className="w-2.5 h-2.5" /> IoT Auto
+                </div>
+              )}
               {isHighUrgency && (
                 <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-100 rounded text-[10px] font-bold text-red-600 animate-pulse">
                   <AlertTriangle className="w-2.5 h-2.5" /> URGENT
@@ -100,6 +114,19 @@ export default function ReportCard({ report, onView, onAssign, onResolve, isChd 
                 <CheckCircle className="w-3.5 h-3.5" /> Resolve
               </button>
             </>
+          )}
+          {onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors ml-auto disabled:opacity-50"
+              title="Delete IoT report"
+            >
+              {deleting
+                ? <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                : <Trash2 className="w-3.5 h-3.5" />}
+              Delete
+            </button>
           )}
         </div>
       </div>

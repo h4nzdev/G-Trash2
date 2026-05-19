@@ -1308,6 +1308,17 @@ app.post("/api/reports/:id/comments", async (req, res) => {
   }
 });
 
+// Bulk-delete all IoT auto-generated reports (must be before /:id)
+app.delete("/api/reports/iot-bulk", async (req, res) => {
+  try {
+    const result = await Report.deleteMany({ reportedBy: { $regex: /^IoT Sensor/i } });
+    console.log(`[DELETE] Cleared ${result.deletedCount} IoT auto-reports`);
+    res.json({ deleted: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete("/api/reports/:id", async (req, res) => {
   console.log(`[DELETE] Request to delete report: ${req.params.id}`);
   try {
