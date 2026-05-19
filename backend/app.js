@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const crypto = require("crypto");
+const os = require("os");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -26,8 +27,47 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// --- API Metrics (in-memory, last 24h) ---
+const apiMetrics = []; // { path, method, statusCode, responseTime, timestamp }
+const METRICS_TTL = 24 * 60 * 60 * 1000;
+function pruneMetrics() {
+  const cutoff = Date.now() - METRICS_TTL;
+  while (apiMetrics.length && apiMetrics[0].timestamp < cutoff) apiMetrics.shift();
+}
+setInterval(pruneMetrics, 5 * 60 * 1000);
+
+// --- Error Logger ---
+async function logError(message, { severity = "error", source = "Server", stack = "" } = {}) {
+  try {
+    const doc = await ErrorLog.create({ message, severity, source, stack });
+    if (global._io) global._io.emit("system:error:new", doc);
+  } catch (_) {}
+}
+
+// --- CPU sampling ---
+let lastCpuUsage = process.cpuUsage();
+let lastCpuTime = Date.now();
+let currentCpuPct = 0;
+setInterval(() => {
+  const now = Date.now();
+  const elapsed = (now - lastCpuTime) * 1000; // µs
+  const usage = process.cpuUsage(lastCpuUsage);
+  if (elapsed > 0) currentCpuPct = Math.min(100, ((usage.user + usage.system) / elapsed) * 100);
+  lastCpuUsage = process.cpuUsage();
+  lastCpuTime = now;
+}, 5000);
+
+// --- API tracking middleware ---
 app.use((req, res, next) => {
+  const start = Date.now();
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  res.on("finish", () => {
+    const responseTime = Date.now() - start;
+    // Normalise path: remove IDs (/api/reports/abc123 → /api/reports/:id)
+    const normPath = req.path.replace(/\/[a-f0-9]{24}/gi, "/:id").replace(/\/\d+/g, "/:id");
+    apiMetrics.push({ path: normPath, method: req.method, statusCode: res.statusCode, responseTime, timestamp: Date.now() });
+    pruneMetrics();
+  });
   next();
 });
 
@@ -242,6 +282,19 @@ const officialSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 const Official = mongoose.model("Official", officialSchema);
+
+const errorLogSchema = new mongoose.Schema({
+  timestamp: { type: Date, default: Date.now },
+  severity: { type: String, enum: ["error", "warning", "info"], default: "error" },
+  source: { type: String, default: "Server" },
+  message: { type: String, required: true },
+  stack: { type: String, default: "" },
+  resolved: { type: Boolean, default: false },
+  resolvedBy: { type: String, default: null },
+  resolvedAt: { type: Date, default: null },
+});
+errorLogSchema.index({ timestamp: -1 });
+const ErrorLog = mongoose.model("ErrorLog", errorLogSchema);
 
 const bugReportSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -3547,9 +3600,15 @@ app.get("/api/iot/summary", optionalAuth, async (req, res) => {
 
 // --- Socket.io -----------------------------------------------
 const socketTruckMap = new Map(); // socketId → truckId (for auto-offline on disconnect)
+const socketRoleMap = new Map();  // socketId → role (for active-sessions count)
 
 io.on("connection", (socket) => {
   console.log(`Client connected: ${socket.id}`);
+
+  // Clients announce their role so we can track active sessions
+  socket.on("session:register", ({ role }) => {
+    if (role) socketRoleMap.set(socket.id, role);
+  });
 
   // Resident app joins its own room to receive targeted reward notifications
   socket.on("resident:join", ({ residentId }) => {
@@ -3609,6 +3668,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", async () => {
+    socketRoleMap.delete(socket.id);
     const truckId = socketTruckMap.get(socket.id);
     if (truckId) {
       socketTruckMap.delete(socket.id);
@@ -3620,6 +3680,192 @@ io.on("connection", (socket) => {
     }
     console.log(`Client disconnected: ${socket.id}`);
   });
+});
+
+// --- System Health -------------------------------------------
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function formatBytes(bytes) {
+  return `${Math.round(bytes / 1024 / 1024)} MB`;
+}
+
+async function pingService(host, path = "/") {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const req = https.get({ host, path, timeout: 3000 }, (res) => {
+      resolve({ status: "connected", latency: `${Date.now() - start}ms` });
+      res.resume();
+    });
+    req.on("error", () => resolve({ status: "down", latency: "N/A" }));
+    req.on("timeout", () => { req.destroy(); resolve({ status: "down", latency: "N/A" }); });
+  });
+}
+
+async function buildSystemHealth() {
+  const memTotal = os.totalmem();
+  const memFree = os.freemem();
+  const memUsed = memTotal - memFree;
+  const memPct = parseFloat(((memUsed / memTotal) * 100).toFixed(1));
+
+  // DB status
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? "connected" : dbState === 2 ? "connecting" : "disconnected";
+  let dbLatency = "N/A";
+  if (dbState === 1) {
+    const t = Date.now();
+    try { await mongoose.connection.db.admin().ping(); dbLatency = `${Date.now() - t}ms`; } catch (_) {}
+  }
+
+  // API metrics aggregation
+  pruneMetrics();
+  const now = Date.now();
+  const metrics24 = apiMetrics.filter(m => m.timestamp > now - METRICS_TTL);
+  const totalReq = metrics24.length;
+  const errorReq = metrics24.filter(m => m.statusCode >= 400).length;
+  const avgTime = totalReq ? Math.round(metrics24.reduce((s, m) => s + m.responseTime, 0) / totalReq) : 0;
+  const errorRate = totalReq ? parseFloat(((errorReq / totalReq) * 100).toFixed(2)) : 0;
+
+  // Per-endpoint aggregation
+  const endpointMap = {};
+  metrics24.forEach(m => {
+    const key = `${m.method} ${m.path}`;
+    if (!endpointMap[key]) endpointMap[key] = { path: m.path, method: m.method, requests: 0, totalTime: 0, errors: 0 };
+    endpointMap[key].requests++;
+    endpointMap[key].totalTime += m.responseTime;
+    if (m.statusCode >= 400) endpointMap[key].errors++;
+  });
+  const endpoints = Object.values(endpointMap)
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 10)
+    .map(e => ({
+      path: e.path,
+      method: e.method,
+      requests: e.requests,
+      avgTime: `${Math.round(e.totalTime / e.requests)}ms`,
+      errors: e.errors,
+      errorRate: parseFloat(((e.errors / e.requests) * 100).toFixed(1)),
+    }));
+
+  // External services (simple ping)
+  const [cloudinaryStatus, groqStatus, geminiStatus] = await Promise.all([
+    pingService("api.cloudinary.com", "/"),
+    pingService("api.groq.com", "/"),
+    pingService("generativelanguage.googleapis.com", "/"),
+  ]);
+
+  const activeConnections = io.sockets.sockets.size;
+
+  // Server overall status
+  const serverStatus = memPct > 95 || currentCpuPct > 95 ? "degraded" : "online";
+
+  return {
+    server: {
+      status: serverStatus,
+      uptime: formatUptime(process.uptime()),
+      nodeVersion: process.version,
+      memoryUsage: { total: formatBytes(memTotal), used: formatBytes(memUsed), percentage: memPct },
+      cpuUsage: { percentage: parseFloat(currentCpuPct.toFixed(1)) },
+    },
+    database: {
+      status: dbStatus,
+      type: "MongoDB",
+      latency: dbLatency,
+      lastBackup: null,
+    },
+    api: {
+      totalRequests24h: totalReq,
+      averageResponseTime: `${avgTime}ms`,
+      errorRate24h: errorRate,
+      endpoints,
+    },
+    externalServices: {
+      cloudinary: cloudinaryStatus,
+      groqApi: groqStatus,
+      geminiApi: geminiStatus,
+      socketio: { status: "connected", activeConnections },
+    },
+  };
+}
+
+app.get("/api/admin/system-health", authMiddleware, async (req, res) => {
+  try {
+    const health = await buildSystemHealth();
+    res.json(health);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/error-logs", authMiddleware, async (req, res) => {
+  const { page = 1, limit = 20, severity, startDate, endDate, resolved } = req.query;
+  const filter = {};
+  if (severity) filter.severity = severity;
+  if (resolved !== undefined) filter.resolved = resolved === "true";
+  if (startDate || endDate) {
+    filter.timestamp = {};
+    if (startDate) filter.timestamp.$gte = new Date(startDate);
+    if (endDate) filter.timestamp.$lte = new Date(endDate);
+  }
+  try {
+    const [logs, total] = await Promise.all([
+      ErrorLog.find(filter).sort({ timestamp: -1 }).skip((page - 1) * limit).limit(Number(limit)),
+      ErrorLog.countDocuments(filter),
+    ]);
+    res.json({ logs, total, page: Number(page), pages: Math.ceil(total / limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/admin/error-logs/:id/resolve", authMiddleware, async (req, res) => {
+  try {
+    const log = await ErrorLog.findByIdAndUpdate(
+      req.params.id,
+      { resolved: true, resolvedBy: req.official?.name || req.official?.email, resolvedAt: new Date() },
+      { new: true }
+    );
+    if (!log) return res.status(404).json({ error: "Log not found" });
+    res.json(log);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/error-logs/seed", authMiddleware, async (req, res) => {
+  const samples = [
+    { severity: "error", source: "IoT Controller", message: "Sensor SENSOR-005 failed to respond after 3 retries", stack: "Error: Timeout\n    at IoTController.ping (iot.js:42)" },
+    { severity: "warning", source: "API Gateway", message: "Rate limit approaching for /api/ai/chat (85% of quota)", stack: "" },
+    { severity: "error", source: "Database", message: "Slow query detected: 1.2s on SensorReading.find()", stack: "" },
+    { severity: "info", source: "Scheduler", message: "Monthly reward reset completed successfully", stack: "" },
+    { severity: "warning", source: "Cloudinary", message: "Upload latency high: 2800ms (threshold: 2000ms)", stack: "" },
+    { severity: "error", source: "Auth Service", message: "5 failed login attempts for admin@gtrash.ph", stack: "" },
+  ];
+  try {
+    await ErrorLog.insertMany(samples.map(s => ({ ...s, timestamp: new Date(Date.now() - Math.random() * 86400000 * 3) })));
+    res.json({ inserted: samples.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/admin/active-sessions", authMiddleware, async (req, res) => {
+  const counts = { total: 0, residents: 0, drivers: 0, officials: 0, admins: 0, chd: 0, unknown: 0 };
+  socketRoleMap.forEach((role) => {
+    counts.total++;
+    if (role === "resident") counts.residents++;
+    else if (role === "driver") counts.drivers++;
+    else if (role === "official") counts.officials++;
+    else if (role === "superadmin" || role === "admin") counts.admins++;
+    else if (role === "chd") counts.chd++;
+    else counts.unknown++;
+  });
+  res.json(counts);
 });
 
 // --- EcoAssist AI (Groq) -------------------------------------
@@ -4009,5 +4255,20 @@ app.post("/api/rewards/:id/claim", async (req, res) => {
 
 // --- Start ---------------------------------------------------
 server.listen(PORT, "0.0.0.0", () => {
+  global._io = io;
   console.log(`OK: G-TRASH unified server running on port ${PORT}`);
+  // Emit system health every 30 seconds
+  setInterval(async () => {
+    try {
+      const health = await buildSystemHealth();
+      io.emit("system:health:update", health);
+      // Check alert thresholds
+      const mem = health.server.memoryUsage.percentage;
+      const cpu = health.server.cpuUsage.percentage;
+      const errRate = health.api.errorRate24h;
+      if (mem > 85) logError(`Memory usage critical: ${mem.toFixed(1)}%`, { severity: "error", source: "System Monitor" });
+      if (cpu > 90) logError(`CPU usage critical: ${cpu.toFixed(1)}%`, { severity: "error", source: "System Monitor" });
+      if (errRate > 5) logError(`API error rate critical: ${errRate.toFixed(2)}%`, { severity: "error", source: "API Monitor" });
+    } catch (_) {}
+  }, 30000);
 });
