@@ -52,7 +52,10 @@
       "Bash(Get-ChildItem \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Officials\\\\src\" -Recurse -Filter \"*.jsx\")",
       "Bash(Select-Object FullName)",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\" -Recurse -Force | Select-Object FullName | Sort-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\Resident\\\\src\\\\\", \"\"\\).Replace\\(\"\\\\\", \"/\"\\) })",
-      "PowerShell(head *)"
+      "PowerShell(head *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"
