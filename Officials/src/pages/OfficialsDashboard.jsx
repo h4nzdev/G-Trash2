@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X } from 'lucide-react';
+import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X, Leaf, Wrench, Building2, Home } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -30,6 +30,72 @@ function timeAgo(dateStr) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+const DEPT_CONFIG = {
+  ccenro: {
+    label: 'CCENRO',
+    name: 'Cebu City Environment & Natural Resources Office',
+    icon: Leaf,
+    color: 'emerald',
+    badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    banner: 'bg-emerald-50 border-emerald-200',
+    text: 'text-emerald-800',
+    focus: 'Environmental Monitoring & Policy',
+  },
+  dps: {
+    label: 'DPS',
+    name: 'Department of Public Service',
+    icon: Wrench,
+    color: 'blue',
+    badge: 'bg-blue-100 text-blue-800 border-blue-200',
+    banner: 'bg-blue-50 border-blue-200',
+    text: 'text-blue-800',
+    focus: 'Waste Collection & Fleet Operations',
+  },
+  lgu_general: {
+    label: 'LGU',
+    name: 'General LGU Administration',
+    icon: Building2,
+    color: 'amber',
+    badge: 'bg-amber-100 text-amber-800 border-amber-200',
+    banner: 'bg-amber-50 border-amber-200',
+    text: 'text-amber-800',
+    focus: 'Overall Waste Management Oversight',
+  },
+  barangay: {
+    label: 'BRGY',
+    name: 'Barangay Official',
+    icon: Home,
+    color: 'teal',
+    badge: 'bg-teal-100 text-teal-800 border-teal-200',
+    banner: 'bg-teal-50 border-teal-200',
+    text: 'text-teal-800',
+    focus: 'Local Community Waste Management',
+  },
+};
+
+function DepartmentBanner({ official }) {
+  const dept = official?.department;
+  const cfg = DEPT_CONFIG[dept];
+  if (!cfg || !dept || official?.role === 'chd') return null;
+  const Icon = cfg.icon;
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${cfg.banner} mb-0`}>
+      <div className={`p-1.5 rounded-lg bg-white/60`}>
+        <Icon className="w-4 h-4" style={{ color: cfg.text.replace('text-', '') }} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${cfg.badge}`}>{cfg.label}</span>
+          <span className={`text-sm font-semibold ${cfg.text} truncate`}>{cfg.name}</span>
+        </div>
+        {official?.departmentPosition && (
+          <p className="text-xs text-slate-500 mt-0.5">{official.departmentPosition} · {cfg.focus}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ChdDashboard() {
@@ -214,6 +280,10 @@ export default function OfficialsDashboard() {
   const location = useLocation();
   const socketRef = useRef(null);
   const isChd = official?.role === 'chd';
+  const dept = official?.department || 'lgu_general';
+  const showIoT = dept !== 'dps';           // CCENRO, LGU General, Barangay see IoT
+  const showFleet = dept !== 'ccenro';      // DPS, LGU General, Barangay see fleet
+  const showPollution = dept !== 'dps';     // CCENRO, LGU General see pollution charts
 
   // Shared state — toast for access denied redirect
   const [accessDeniedToast, setAccessDeniedToast] = useState(false);
@@ -333,6 +403,9 @@ export default function OfficialsDashboard() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Department Banner */}
+      <DepartmentBanner official={official} />
+
       {/* Date Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -356,38 +429,55 @@ export default function OfficialsDashboard() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {showIoT && (
+          <StatCard
+            icon={Radio}
+            title="IoT Sensors Active"
+            value={iotSummary.totalSensors}
+            subtitle={`${iotSummary.recentReadings} readings in last hour`}
+            color="blue"
+          />
+        )}
+        {showFleet && (
+          <StatCard
+            icon={Truck}
+            title="Active Trucks"
+            value={`${stats.activeTrucks}/${stats.totalFleet}`}
+            subtitle="On route"
+            color="green"
+          />
+        )}
+        {showIoT && (
+          <StatCard
+            icon={AlertTriangle}
+            title="Active IoT Alerts"
+            value={iotSummary.activeAlerts}
+            subtitle={`${iotSummary.criticalAlerts} critical`}
+            color={iotSummary.criticalAlerts > 0 ? 'red' : 'amber'}
+          />
+        )}
         <StatCard
-          icon={Radio}
-          title="IoT Sensors Active"
-          value={iotSummary.totalSensors}
-          subtitle={`${iotSummary.recentReadings} readings in last hour`}
-          color="blue"
+          icon={showIoT ? Wind : AlertTriangle}
+          title={showIoT ? "Air Quality" : "Pending Reports"}
+          value={showIoT ? worstAQ : stats.pendingReports}
+          subtitle={showIoT
+            ? (latestReadings.length > 0 ? `Across ${latestReadings.length} sensor${latestReadings.length > 1 ? 's' : ''}` : 'No sensor data yet')
+            : 'Awaiting action'}
+          color={showIoT ? (aqColor[worstAQ] || 'green') : 'amber'}
         />
-        <StatCard
-          icon={Truck}
-          title="Active Trucks"
-          value={`${stats.activeTrucks}/${stats.totalFleet}`}
-          subtitle="On route"
-          color="green"
-        />
-        <StatCard
-          icon={AlertTriangle}
-          title="Active IoT Alerts"
-          value={iotSummary.activeAlerts}
-          subtitle={`${iotSummary.criticalAlerts} critical`}
-          color={iotSummary.criticalAlerts > 0 ? 'red' : 'amber'}
-        />
-        <StatCard
-          icon={Wind}
-          title="Air Quality"
-          value={worstAQ}
-          subtitle={latestReadings.length > 0 ? `Across ${latestReadings.length} sensor${latestReadings.length > 1 ? 's' : ''}` : 'No sensor data yet'}
-          color={aqColor[worstAQ] || 'green'}
-        />
+        {!showIoT && (
+          <StatCard
+            icon={Truck}
+            title="Total Reports"
+            value={stats.totalReports}
+            subtitle="All time"
+            color="blue"
+          />
+        )}
       </div>
 
-      {/* Live Sensor Readings Strip */}
-      {latestReadings.length > 0 && (
+      {/* Live Sensor Readings Strip — hidden for DPS (fleet focus) */}
+      {showIoT && latestReadings.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {latestReadings.map((r) => {
             const aqStyles = {
@@ -451,8 +541,8 @@ export default function OfficialsDashboard() {
         </div>
       )}
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Charts Row — pollution hidden for DPS */}
+      {showPollution && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pollution Trends — LIVE from IoT */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
@@ -520,12 +610,12 @@ export default function OfficialsDashboard() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* IoT Alerts — LIVE */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+        {/* IoT Alerts — LIVE — hidden for DPS */}
+        {showIoT && <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -553,7 +643,7 @@ export default function OfficialsDashboard() {
               <p className="text-xs mt-1">Send sensor data with high readings to trigger alerts</p>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Top Barangays */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">

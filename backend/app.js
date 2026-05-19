@@ -271,12 +271,22 @@ const iotAlertSchema = new mongoose.Schema({
 iotAlertSchema.index({ createdAt: -1 });
 const IoTAlert = mongoose.model("IoTAlert", iotAlertSchema);
 
+const DEPT_NAMES = {
+  ccenro: "Cebu City Environment and Natural Resources Office",
+  dps: "Department of Public Service",
+  lgu_general: "General LGU Administration",
+  barangay: "Barangay Official",
+};
+
 const officialSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   passwordHash: { type: String, required: true },
   barangay: { type: String, required: true },
   role: { type: String, enum: ["official", "superadmin", "chd"], default: "official" },
+  department: { type: String, enum: ["ccenro", "dps", "lgu_general", "barangay"], default: "barangay" },
+  departmentPosition: { type: String, default: "" },
+  assignedBarangays: { type: [String], default: [] },
   status: { type: String, enum: ["active", "revoked"], default: "active" },
   signatureUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
@@ -1342,6 +1352,9 @@ app.post("/api/auth/login", async (req, res) => {
         email: official.email,
         barangay: official.barangay,
         role: official.role,
+        department: official.department || "barangay",
+        departmentPosition: official.departmentPosition || "",
+        assignedBarangays: official.assignedBarangays || [],
       },
       JWT_SECRET,
       { expiresIn: "12h" },
@@ -1354,6 +1367,10 @@ app.post("/api/auth/login", async (req, res) => {
         email: official.email,
         barangay: official.barangay,
         role: official.role,
+        department: official.department || "barangay",
+        departmentName: DEPT_NAMES[official.department] || DEPT_NAMES.barangay,
+        departmentPosition: official.departmentPosition || "",
+        assignedBarangays: official.assignedBarangays || [],
         allowedPages: getAllowedPages(official.role),
       },
     });
@@ -1362,13 +1379,28 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.get("/api/auth/me", authMiddleware, (req, res) => {
-  res.json({
-    official: {
-      ...req.official,
-      allowedPages: getAllowedPages(req.official.role),
-    }
-  });
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  try {
+    const dbOfficial = await Official.findById(req.official.id).select("-passwordHash");
+    if (!dbOfficial) return res.status(404).json({ error: "Official not found" });
+    res.json({
+      official: {
+        id: dbOfficial._id,
+        name: dbOfficial.name,
+        email: dbOfficial.email,
+        barangay: dbOfficial.barangay,
+        role: dbOfficial.role,
+        department: dbOfficial.department || "barangay",
+        departmentName: DEPT_NAMES[dbOfficial.department] || DEPT_NAMES.barangay,
+        departmentPosition: dbOfficial.departmentPosition || "",
+        assignedBarangays: dbOfficial.assignedBarangays || [],
+        signatureUrl: dbOfficial.signatureUrl,
+        allowedPages: getAllowedPages(dbOfficial.role),
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/auth/seed", async (req, res) => {
@@ -1428,6 +1460,46 @@ app.post("/api/auth/seed", async (req, res) => {
       password: "password123",
       barangay: "All",
       role: "chd",
+    },
+    {
+      name: "Engr. Ana Reyes",
+      email: "ccenro@cebucity.gov.ph",
+      password: "password123",
+      barangay: "All",
+      role: "official",
+      department: "ccenro",
+      departmentPosition: "Environmental Officer",
+      assignedBarangays: ["Lahug", "Mabolo", "IT Park"],
+    },
+    {
+      name: "Dir. Ben Dela Cruz",
+      email: "dps@cebucity.gov.ph",
+      password: "password123",
+      barangay: "All",
+      role: "official",
+      department: "dps",
+      departmentPosition: "Fleet Supervisor",
+      assignedBarangays: [],
+    },
+    {
+      name: "Sec. Carlos Lim",
+      email: "lgu@cebucity.gov.ph",
+      password: "password123",
+      barangay: "All",
+      role: "official",
+      department: "lgu_general",
+      departmentPosition: "City Administrator",
+      assignedBarangays: [],
+    },
+    {
+      name: "Kap. Rosa Tan",
+      email: "brgy.lahug@cebucity.gov.ph",
+      password: "password123",
+      barangay: "Lahug",
+      role: "official",
+      department: "barangay",
+      departmentPosition: "Barangay Captain",
+      assignedBarangays: ["Lahug"],
     },
   ];
   try {
@@ -2801,7 +2873,7 @@ app.post("/api/admin/officials", authMiddleware, async (req, res) => {
     return res.status(403).json({ error: "Superadmin access required" });
   }
   try {
-    const { email, password, barangay, name } = req.body;
+    const { email, password, barangay, name, department, departmentPosition, assignedBarangays } = req.body;
     if (!email || !password || !barangay) {
       return res
         .status(400)
@@ -2820,6 +2892,9 @@ app.post("/api/admin/officials", authMiddleware, async (req, res) => {
       name: name || email,
       role: "official",
       status: "active",
+      department: ["ccenro", "dps", "lgu_general", "barangay"].includes(department) ? department : "barangay",
+      departmentPosition: departmentPosition || "",
+      assignedBarangays: Array.isArray(assignedBarangays) ? assignedBarangays : [],
     });
 
     const out = newOfficial.toObject();
@@ -2863,13 +2938,14 @@ app.put("/api/admin/officials/:id", authMiddleware, async (req, res) => {
     return res.status(403).json({ error: "Superadmin access required" });
   }
   try {
-    const { name, barangay, password } = req.body;
+    const { name, barangay, password, department, departmentPosition, assignedBarangays } = req.body;
     const update = {};
     if (name) update.name = name;
     if (barangay) update.barangay = barangay;
-    if (password) {
-      update.passwordHash = await bcrypt.hash(password, 10);
-    }
+    if (password) update.passwordHash = await bcrypt.hash(password, 10);
+    if (department && ["ccenro", "dps", "lgu_general", "barangay"].includes(department)) update.department = department;
+    if (departmentPosition !== undefined) update.departmentPosition = departmentPosition;
+    if (Array.isArray(assignedBarangays)) update.assignedBarangays = assignedBarangays;
     const official = await Official.findByIdAndUpdate(req.params.id, update, {
       new: true,
     }).select("-passwordHash");

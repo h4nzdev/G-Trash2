@@ -1,202 +1,168 @@
-I need to implement system health monitoring for the Developer Admin role in the G-TRASH Admin Panel. My capstone document states that the Developer Admin "oversees the platform's technical health, manages bug reports, pushes updates and notifications, and monitors active IoT hardware metrics." Currently, the Admin Panel has a dashboard, user management, master map, reports overview, fleet overview, IoT dashboard, bug reports, announcements, and barangay scores. But it lacks actual system health monitoring — server status, API performance, database connection, and error tracking.
+I need to add department-level differentiation for LGU officials in the G-TRASH Officials Web App. My capstone document specifically names two Cebu City government departments as beneficiaries:
+
+- CCENRO (Cebu City Environment and Natural Resources Office): Responsible for environmental protection and policy implementation
+- DPS (Department of Public Service): Tasked with physical collection, transportation, and management of solid waste
+
+Currently, all officials are grouped under a single "official" role with no way to differentiate which department they belong to. While they share the same dashboard, their focus areas are different:
+- CCENRO focuses on environmental monitoring, pollution data, and policy
+- DPS focuses on fleet management, route operations, and collection logistics
 
 Current setup:
-- Admin Panel: React + Vite + Tailwind CSS + Recharts
+- Officials Web App: React + Vite + Tailwind CSS
 - Backend: Node.js + Express + MongoDB with Mongoose
-- Socket.io for real-time events
-- Admin role already exists with full system access
+- Current user roles: official, admin, chd
+- The Officials dashboard has: Dashboard, Reports, Route Monitoring, Route Builder, Schedule Routes, Fleet Management, Heatmap Analytics, Collection History, Barangay Performance, Settings
 
 Requirements:
 
-1. BACKEND - System Health Endpoints:
+1. BACKEND - Department Field & Filtering:
 
-   a. New endpoint: GET /api/admin/system-health
-      Returns real-time system health metrics:
+   a. Add department field to the User/Official schema:
       {
-        "server": {
-          "status": "online",           // online/degraded/offline
-          "uptime": "14d 6h 32m",       // time since last restart
-          "nodeVersion": "v18.17.0",
-          "memoryUsage": {
-            "total": "512 MB",
-            "used": "245 MB",
-            "percentage": 47.8
-          },
-          "cpuUsage": {
-            "percentage": 23.5
-          }
+        department: { 
+          type: String, 
+          enum: ['ccenro', 'dps', 'lgu_general', 'barangay'],
+          default: 'barangay'
         },
-        "database": {
-          "status": "connected",        // connected/disconnected/error
-          "type": "MongoDB",
-          "connectionPool": "5 active / 10 max",
-          "latency": "12ms",
-          "lastBackup": "2026-03-15T08:00:00Z"
-        },
-        "api": {
-          "totalRequests24h": 15420,
-          "averageResponseTime": "85ms",
-          "errorRate24h": 0.3,          // percentage
-          "endpoints": [
-            { "path": "/api/reports", "requests": 3420, "avgTime": "45ms", "errors": 2 },
-            { "path": "/api/ai/chat", "requests": 890, "avgTime": "320ms", "errors": 5 },
-            { "path": "/api/iot/readings", "requests": 5600, "avgTime": "25ms", "errors": 1 }
-          ]
-        },
-        "externalServices": {
-          "cloudinary": { "status": "connected", "latency": "180ms" },
-          "groqApi": { "status": "connected", "latency": "450ms" },
-          "geminiApi": { "status": "connected", "latency": "520ms" },
-          "socketio": { "status": "connected", "activeConnections": 47 }
+        departmentPosition: { type: String },  // e.g., "Environmental Officer", "Fleet Supervisor"
+        assignedBarangays: [{ type: String }]   // barangays this official oversees
+      }
+
+   b. Department descriptions (stored as constant):
+      - ccenro: "Cebu City Environment and Natural Resources Office — Environmental monitoring & policy"
+      - dps: "Department of Public Service — Waste collection & fleet operations"
+      - lgu_general: "General LGU Administration — Overall waste management oversight"
+      - barangay: "Barangay Official — Local community waste management"
+
+   c. Updated GET /api/auth/me response:
+      Include department info:
+      {
+        "user": {
+          "id": "...",
+          "name": "Maria Santos",
+          "email": "maria@cebucity.gov.ph",
+          "role": "official",
+          "department": "ccenro",
+          "departmentName": "Cebu City Environment and Natural Resources Office",
+          "position": "Environmental Officer",
+          "assignedBarangays": ["Lahug", "Mabolo", "IT Park"]
         }
       }
 
-   b. New endpoint: GET /api/admin/error-logs
-      Returns recent errors with pagination:
-      Query params: page, limit, severity (error/warning/info), startDate, endDate
-      Response:
-      {
-        "logs": [
-          {
-            "timestamp": "2026-03-15T14:32:10Z",
-            "severity": "error",
-            "source": "IoT Controller",
-            "message": "Sensor SENSOR-005 failed to respond after 3 retries",
-            "stack": "...",
-            "resolved": false
-          }
-        ],
-        "total": 45,
-        "page": 1
-      }
+   d. Optional: API filtering by department
+      - No new endpoints needed
+      - Existing endpoints can accept ?department=ccenro query param for filtering data
 
-   c. New endpoint: GET /api/admin/active-sessions
-      Returns count of currently connected users per role:
-      {
-        "total": 128,
-        "residents": 110,
-        "drivers": 8,
-        "officials": 7,
-        "admins": 2,
-        "chd": 1
-      }
+2. OFFICIALS WEB APP - Department-Aware Dashboard:
 
-   d. Backend middleware for API tracking:
-      - Create a middleware that logs every API request:
-        - Endpoint path
-        - Response time
-        - Status code
-        - Timestamp
-      - Store in a lightweight collection or in-memory cache (last 24 hours only)
-      - Used to populate the API metrics in system-health
+   a. Dashboard Header:
+      - Show the official's department name and logo/badge below their name
+      - Example: "Maria Santos — CCENRO Environmental Officer"
+      - Department badge with color:
+        - CCENRO: Green badge 🟢 (environmental focus)
+        - DPS: Blue badge 🔵 (operational focus)
+        - LGU General: Gold badge 🟡 (administrative focus)
+        - Barangay: Teal badge (community focus)
 
-   e. Error logging utility:
-      - Create a centralized error logger used across all controllers
-      - Catches unhandled errors and stores them in an ErrorLog collection
-      - ErrorLog schema:
-        {
-          timestamp: Date,
-          severity: String,      // error, warning, info
-          source: String,        // controller or service name
-          message: String,
-          stack: String,
-          resolved: { type: Boolean, default: false },
-          resolvedBy: String,
-          resolvedAt: Date
-        }
+   b. Department-Specific Dashboard Views:
+      The dashboard widgets change priority based on department:
 
-2. ADMIN PANEL - System Health Dashboard:
+      CCENRO View (Environment-Focused):
+      - PRIMARY WIDGETS (shown first, larger):
+        - Pollution Heatmap mini-view
+        - IoT Sensor Status (active sensors, alerts today)
+        - Air Quality Index summary per barangay
+        - Environmental Reports (filtered to pollution/illegal dumping categories)
+      - SECONDARY WIDGETS (shown below, smaller):
+        - Recent Reports
+        - Collection History summary
+      - HIDDEN: Fleet status, Active trucks, Route schedule
 
-   a. New Page: "System Health" (/admin/system-health)
-      Accessible from sidebar with a heartbeat icon
+      DPS View (Operations-Focused):
+      - PRIMARY WIDGETS (shown first, larger):
+        - Fleet Status (active trucks, trucks in maintenance)
+        - Today's Active Routes
+        - Pending Collections count
+        - Driver Status overview
+      - SECONDARY WIDGETS (shown below, smaller):
+        - Recent Reports (filtered to collection issues)
+        - Collection History summary
+      - HIDDEN: Pollution heatmap, Air quality details
 
-   b. Status Overview Cards (top row):
-      - Server Status: Green/Red indicator + uptime
-      - Database Status: Green/Red indicator + latency
-      - API Health: Response time + error rate (color-coded: green <1%, yellow 1-5%, red >5%)
-      - Active Users: Total count with role breakdown
+      LGU General View (Full Access):
+      - Shows ALL widgets (current dashboard behavior)
+      - Equal priority to all sections
 
-   c. System Resources Section:
-      - Memory Usage: Circular progress gauge (0-100%)
-        - Green: 0-60%, Yellow: 60-85%, Red: 85-100%
-      - CPU Usage: Same gauge style
-      - Both update every 10 seconds (polling or Socket.io)
+      Barangay View (Local Focus):
+      - PRIMARY WIDGETS:
+        - Reports from their barangay only
+        - Collection schedule for their barangay
+        - Local leaderboard position
+      - SECONDARY WIDGETS:
+        - Nearby truck locations
+        - Recent resolutions
 
-   d. API Performance Table:
-      - Columns: Endpoint, Requests (24h), Avg Response Time, Error Count, Error Rate
-      - Sort by any column
-      - Highlight endpoints with high error rate in red
-      - Auto-refresh every 30 seconds
+   c. Sidebar Adjustments (Optional):
+      - Same sidebar for all departments
+      - But the default landing page after login could differ:
+        - CCENRO → Heatmap Analytics
+        - DPS → Fleet Management
+        - LGU General → Dashboard
+        - Barangay → Reports
 
-   e. External Services Status:
-      - Grid of service cards:
-        - Cloudinary: Status indicator + latency
-        - Groq AI: Status indicator + latency
-        - Gemini AI: Status indicator + latency
-        - Socket.io: Active connections count
-      - Each card is green if connected, red if down
+3. REPORT FILTERING BY DEPARTMENT RELEVANCE:
 
-   f. Error Logs Table:
-      - Below the status cards
-      - Columns: Timestamp, Severity (color badge), Source, Message (truncated), Status
-      - "Resolve" button for each error
-      - Filter by: Severity, Date Range, Resolved/Unresolved
-      - Click row to expand and see full stack trace
-      - Pagination
+   a. On the Reports page, add a "Department View" toggle:
+      - CCENRO View: Auto-filters to show reports in categories:
+        - Illegal Dumping
+        - Hazardous Waste
+        - Environmental Concern
+        - Pollution
+      - DPS View: Auto-filters to show reports in categories:
+        - Uncollected Garbage
+        - Overflowing Bins
+        - Missed Collection
+        - Truck Delay
+      - All Reports: Shows everything (LGU General)
 
-   g. Active Sessions Panel:
-      - Side panel or card showing:
-        - Total active connections
-        - Breakdown by role with icons:
-          - 📱 Residents: 110
-          - 🚛 Drivers: 8
-          - 🏛️ Officials: 7
-          - ⚙️ Admins: 2
-          - 🏥 CHD: 1
+   b. Report cards show which department is handling it:
+      - "Assigned to: DPS" or "Under CCENRO Review"
+      - Helps officials know who is responsible
 
-3. REAL-TIME SYSTEM MONITORING:
+4. CROSS-DEPARTMENT VISIBILITY:
 
-   a. New Socket.io events:
-      - system:health:update - emitted every 30 seconds with current health metrics
-      - system:error:new - emitted when a new error is logged
-      - system:service:down - emitted when an external service disconnects
-      - system:service:up - emitted when an external service reconnects
+   a. CCENRO can see DPS-assigned reports (read-only)
+   b. DPS can see CCENRO environmental flags on reports
+   c. When CCENRO flags a report as "Environmental Hazard," DPS sees a red alert on that report
+   d. When DPS marks a collection as complete, CCENRO sees the updated heatmap
 
-   b. Admin Panel listens for these events to update in real-time
+   This creates collaboration without role confusion.
 
-4. ALERT THRESHOLDS FOR ADMIN:
+5. ADMIN PANEL - Department Management:
 
-   a. Auto-alert when:
-      - Memory usage exceeds 85%
-      - CPU usage exceeds 90%
-      - Database latency exceeds 500ms
-      - API error rate exceeds 5%
-      - Any external service goes down
-      - Disk space below 10%
+   a. When creating/editing an official account:
+      - Add "Department" dropdown: CCENRO, DPS, LGU General, Barangay
+      - Add "Position" text field
+      - Add "Assigned Barangays" multi-select
+      - Show department description next to dropdown
 
-   b. When threshold is exceeded:
-      - Show red banner at top of Admin Panel
-      - Log as error in ErrorLogs
-      - Emit system:health:update with degraded status
-
-5. DATABASE BACKUP STATUS:
-   - Show last backup date/time
-   - If no backup in 7 days, show warning
-   - "Request Backup" button (can trigger a manual backup script)
+   b. Officials list table:
+      - Add "Department" column with color-coded badge
+      - Filter by department
 
 6. EDGE CASES:
-   - What if MongoDB is the thing that's down? (Health endpoint should still respond for server/API metrics)
-   - What if there are thousands of error logs? (Pagination + auto-cleanup of logs older than 30 days)
-   - What if CPU/memory data is unavailable? (Show "N/A" instead of error)
+   - What if an official belongs to CCENRO but needs to see fleet data? (They can still navigate to Fleet page; only the dashboard widgets are customized)
+   - What if an official is reassigned to a different department? (Admin can edit; dashboard updates immediately)
+   - What if a small LGU has one person doing both roles? (Use "LGU General" which shows everything)
+   - What if barangay officials only need their barangay data? (Barangay role filters to their assigned barangay)
 
 Please provide:
-- Backend system health endpoint implementation
-- API tracking middleware
-- Error logging utility
-- ErrorLog Mongoose schema
-- Admin Panel System Health page with all sections
-- Socket.io events for real-time monitoring
-- Alert threshold logic
+- Updated User schema with department field
+- Updated GET /api/auth/me endpoint
+- Dashboard component that renders different widgets based on department
+- Reports page with department view toggle
+- Admin Panel user management updates for department assignment
+- Department badge component
 
 ---
 
@@ -204,38 +170,36 @@ TESTING INSTRUCTIONS:
 After implementing, please tell me exactly how to test this feature by providing:
 
 1. Manual Test Steps:
-   - How to access the System Health page as admin
-   - How to verify server status, database status, and API metrics are showing
-   - How to simulate an error and see it appear in the error logs
-   - How to verify external service statuses
-   - How to check active sessions
-   - How to trigger an alert threshold (e.g., simulate high memory)
+   - How to create officials with different departments from Admin Panel
+   - How to log in as CCENRO and verify the dashboard shows environment widgets
+   - How to log in as DPS and verify the dashboard shows operations widgets
+   - How to switch department views on the Reports page
+   - How to verify cross-department visibility (CCENRO flag visible to DPS)
 
-2. Test Data:
-   Provide a script or instructions to:
-   - Generate some fake error logs for display
-   - Simulate an external service going down
-   - Show different API endpoint performance data
+2. Test Accounts:
+   - CCENRO: ccenro@cebucity.gov.ph / password123 / department: ccenro
+   - DPS: dps@cebucity.gov.ph / password123 / department: dps
+   - LGU General: admin@cebucity.gov.ph / password123 / department: lgu_general
+   - Barangay: brgy.lahug@cebucity.gov.ph / password123 / department: barangay
 
 3. Expected Visual Results:
-   - What the full System Health page looks like
-   - What the status cards look like when all green vs when something is red
-   - What the error log table looks like with different severity badges
-   - What the alert banner looks like at the top of the page
+   - What the CCENRO dashboard looks like (heatmap + IoT widgets first)
+   - What the DPS dashboard looks like (fleet + routes widgets first)
+   - What the department badge looks like in the header
+   - What the Reports page looks like with department toggle active
 
 4. Debugging Checklist:
-   - If health metrics show "N/A", check: [list items]
-   - If error logs are empty, check: [list items]
-   - If real-time updates aren't working, check: [list items]
+   - If dashboard shows wrong widgets, check: [list items]
+   - If department badge doesn't appear, check: [list items]
+   - If report filtering by department doesn't work, check: [list items]
 
 5. Test Cases Table:
    | Test Case | Action | Expected Result |
    |-----------|--------|-----------------|
-   | View system health | Open /admin/system-health | All status cards show green |
-   | Check memory gauge | Observe memory usage gauge | Shows current % with color coding |
-   | View error logs | Scroll to error logs table | Shows recent errors with severity |
-   | Resolve an error | Click "Resolve" on an error | Status changes to resolved |
-   | Filter errors | Select "Error" severity filter | Only error-level logs shown |
-   | Service down alert | Disconnect from Cloudinary | Service card turns red; alert banner shows |
-   | High memory alert | Memory exceeds 85% | Red banner appears; error logged |
-   | Active sessions | Check sessions panel | Shows user count by role |
+   | CCENRO login | Login as CCENRO user | Dashboard shows heatmap + IoT first |
+   | DPS login | Login as DPS user | Dashboard shows fleet + routes first |
+   | CCENRO reports view | Toggle "CCENRO View" on Reports | Shows only environmental reports |
+   | DPS reports view | Toggle "DPS View" on Reports | Shows only collection reports |
+   | Cross-department flag | CCENRO flags report as hazard | DPS sees red alert on that report |
+   | Admin creates official | Select department in dropdown | Department saved; badge shows on login |
+   | Barangay official login | Login as barangay official | Sees only their barangay data |

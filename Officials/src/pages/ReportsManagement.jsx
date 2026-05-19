@@ -41,9 +41,14 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)} days ago`;
 }
 
+const CCENRO_CATEGORIES = ["Illegal Dumping", "Hazardous Waste", "Environmental Concern", "Pollution"];
+const DPS_CATEGORIES    = ["Uncollected Waste", "Overflowing Bin", "Missed Collection", "Truck Delay", "Other"];
+
 export default function ReportsManagement() {
   const { official } = useAuth();
   const isChd = official?.role === 'chd';
+  const dept = official?.department || 'lgu_general';
+  const [deptFilter, setDeptFilter] = useState(dept !== 'lgu_general' ? dept : 'all');
 
   const [filters, setFilters] = useState({
     search: "",
@@ -224,7 +229,14 @@ export default function ReportsManagement() {
         r.title.toLowerCase().includes(filters.search.toLowerCase()) ||
         r.location.toLowerCase().includes(filters.search.toLowerCase());
       const healthMatch = !filters.healthOnly || r.healthConcern;
-      return statusMatch && barangayMatch && priorityMatch && searchMatch && healthMatch;
+      const deptMatch = deptFilter === 'all'
+        ? true
+        : deptFilter === 'ccenro'
+        ? CCENRO_CATEGORIES.some(cat => r.category?.toLowerCase().includes(cat.toLowerCase()))
+        : deptFilter === 'dps'
+        ? DPS_CATEGORIES.some(cat => r.category?.toLowerCase().includes(cat.toLowerCase()))
+        : true;
+      return statusMatch && barangayMatch && priorityMatch && searchMatch && healthMatch && deptMatch;
     })
     .sort((a, b) => {
       if (filters.sortBy === "Highest Urgency") return b.urgency - a.urgency;
@@ -245,12 +257,34 @@ export default function ReportsManagement() {
     <div className="p-6">
       {/* Header with refresh */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-lg font-bold text-slate-800">Reports Management</h1>
           {isChd && (
             <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
               <Heart className="w-3 h-3" /> View Only — CHD
             </span>
+          )}
+          {/* Department View Toggle (non-CHD) */}
+          {!isChd && (
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+              {[
+                { key: 'all',    label: 'All Reports' },
+                { key: 'ccenro', label: '🌿 CCENRO' },
+                { key: 'dps',    label: '🚛 DPS' },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setDeptFilter(opt.key)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    deptFilter === opt.key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">

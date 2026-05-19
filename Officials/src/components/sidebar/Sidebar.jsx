@@ -24,6 +24,13 @@ import { useAuth } from "../../context/AuthContext";
 
 const CHD_ALLOWED_PATHS = ['/dashboard', '/heatmap', '/reports', '/history'];
 
+const DEPT_BADGE = {
+  ccenro:      { label: 'CCENRO', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  dps:         { label: 'DPS',    color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  lgu_general: { label: 'LGU',   color: 'bg-amber-100 text-amber-800 border-amber-200' },
+  barangay:    { label: 'BRGY',  color: 'bg-teal-100 text-teal-800 border-teal-200' },
+};
+
 const navGroups = [
   {
     label: "Overview",
@@ -172,13 +179,24 @@ export default function Sidebar() {
             <p className="text-sm font-semibold text-slate-900 truncate">
               {official?.name || "Official"}
             </p>
-            <p className="text-xs text-slate-500 truncate">
-              {official?.role === "chd"
-                ? "City Health Dept."
-                : official?.barangay === "All"
-                ? "Super Admin"
-                : `Brgy. ${official?.barangay}`}
-            </p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {official?.role === "chd" ? (
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">CHD</span>
+              ) : official?.department && DEPT_BADGE[official.department] ? (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${DEPT_BADGE[official.department].color}`}>
+                  {DEPT_BADGE[official.department].label}
+                </span>
+              ) : null}
+              <p className="text-xs text-slate-500 truncate">
+                {official?.role === "chd"
+                  ? "City Health Dept."
+                  : official?.departmentPosition
+                  ? official.departmentPosition
+                  : official?.barangay === "All"
+                  ? "Super Admin"
+                  : `Brgy. ${official?.barangay}`}
+              </p>
+            </div>
           </div>
           <button
             onClick={logout}
