@@ -791,6 +791,7 @@ export default function CollectorMapScreen() {
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [weightModalStop, setWeightModalStop] = useState(null);
   const [weightInput, setWeightInput] = useState("");
+  const [zoneChange, setZoneChange] = useState(null);
   const [deviationAlert, setDeviationAlert] = useState(false);
   const [deviationInfo, setDeviationInfo] = useState(null);
 
@@ -847,6 +848,17 @@ export default function CollectorMapScreen() {
     socket.on("bin:status:update", ({ barangay, preparedCount, pickedUpCount }) => {
       if (barangay === assignedRouteBarangay || !assignedRouteBarangay) {
         setBinStatus({ preparedCount, pickedUpCount });
+      }
+    });
+
+    socket.on("zone:status:update", (update) => {
+      if (update.reason === "collection_completed" && update.changedBy === TRUCK_ID) {
+        setZoneChange({
+          name: update.name,
+          previousStatus: update.previousStatus,
+          newStatus: update.newStatus,
+        });
+        setTimeout(() => setZoneChange(null), 4000);
       }
     });
 
@@ -1147,7 +1159,7 @@ export default function CollectorMapScreen() {
     });
     triggerSuccessAnimation(stopId);
 
-    // Persist to collection history
+    // Persist to collection history and trigger zone recalculation
     fetch(`${TRACKING_SERVER}/api/collections`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1161,6 +1173,9 @@ export default function CollectorMapScreen() {
         bins: stop?.bins || 1,
         routeId: activeScheduleId || "",
         routeName: assignedRouteName || "",
+        lat: stop?.lat ?? null,
+        lng: stop?.lng ?? null,
+        driverName: TRUCK_ID,
       }),
     }).catch(() => {});
   };
@@ -1726,7 +1741,14 @@ export default function CollectorMapScreen() {
             ]}
           >
             <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.successText}>Area marked as cleaned!</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.successText}>Stop completed!</Text>
+              {zoneChange ? (
+                <Text style={styles.successSubText}>
+                  Zone: {zoneChange.previousStatus || '?'} → {zoneChange.newStatus}
+                </Text>
+              ) : null}
+            </View>
           </Animated.View>
         )}
       </View>
@@ -2947,6 +2969,7 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
   successText: { fontSize: 14, fontWeight: "600", color: "#FFFFFF" },
+  successSubText: { fontSize: 11, color: "rgba(255,255,255,0.85)", marginTop: 1, textTransform: "capitalize" },
 
   bottomSheet: {
     position: "absolute",

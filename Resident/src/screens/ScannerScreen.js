@@ -11,6 +11,7 @@ import {
   ScrollView,
   Animated,
   Platform,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -241,6 +242,22 @@ const TRASH_CLASSES = {
     ],
   },
 };
+
+// ── MANUAL CLASSIFICATION ITEMS ────────────────
+const MANUAL_ITEMS = [
+  { key: "banana",       icon: "🍌", label: "Food / Organic",    className: "banana" },
+  { key: "bottle",       icon: "🍾", label: "Plastic Bottle",     className: "bottle" },
+  { key: "newspaper",    icon: "📰", label: "Paper / Cardboard",  className: "newspaper" },
+  { key: "plastic bag",  icon: "🛍️", label: "Plastic Bag",        className: "plastic bag" },
+  { key: "cellphone",    icon: "🔋", label: "Battery / E-Waste",  className: "cellphone" },
+  { key: "can",          icon: "🥫", label: "Metal Can",          className: "can" },
+  { key: "wine glass",   icon: "🥂", label: "Glass",              className: "wine glass" },
+  { key: "cup",          icon: "🥤", label: "Disposable Cup",     className: "cup" },
+  { key: "cardboard",    icon: "📦", label: "Cardboard Box",      className: "cardboard" },
+  { key: "fork",         icon: "🍴", label: "Plastic Utensil",    className: "fork" },
+  { key: "laptop",       icon: "💻", label: "Electronics",        className: "laptop" },
+  { key: "default",      icon: "🗑️", label: "Other / Unknown",    className: "default" },
+];
 
 // ── SIMPLIFIED WASTE DETECTION SYSTEM ──────────
 class WasteDetectionSystem {
@@ -493,6 +510,9 @@ export default function ScannerScreen() {
     height: 0,
   });
   const [showResults, setShowResults] = useState(false);
+  const [showHowSection, setShowHowSection] = useState(false);
+  const [showManualPicker, setShowManualPicker] = useState(false);
+  const [multiObjectPicker, setMultiObjectPicker] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const hasPermission = cameraPermission?.status === "granted";
@@ -605,14 +625,15 @@ export default function ScannerScreen() {
         setDetectionResult(topResult);
         setAllDetections(results);
         setEcoImpact(calculateEnvironmentalImpact(topResult));
-        // Award +5 points for a successful scan
+        // Award +5 points and log the scan
         const uid = user?.id || user?._id;
         if (uid && topResult.label !== 'No Item Detected') {
-          fetch(`${API_URL}/api/residents/${uid}/award-scan-points`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item: topResult.label }),
-          }).catch(() => {});
+          logScan(uid, topResult.className || topResult.label, topResult.category, topResult.confidence, true);
+        }
+
+        // If multiple objects detected, prompt user to pick one
+        if (results.length > 1) {
+          setMultiObjectPicker(true);
         }
       } else {
         setDetectionResult({
@@ -659,7 +680,51 @@ export default function ScannerScreen() {
     setDetectionResult(null);
     setEcoImpact(null);
     setAllDetections([]);
+    setShowHowSection(false);
+    setShowManualPicker(false);
+    setMultiObjectPicker(false);
     fadeAnim.setValue(0);
+  };
+
+  // ── LOG SCAN TO BACKEND ──────────────────────
+  const logScan = (uid, objectDetected, category, confidence, correct) => {
+    if (!uid) return;
+    fetch(`${API_URL}/api/residents/${uid}/scan-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objectDetected, category, confidence, correct }),
+    }).catch(() => {});
+  };
+
+  // ── MANUAL CLASSIFICATION SELECT ─────────────
+  const handleManualSelect = (manualItem) => {
+    const classInfo = detectionSystem?.getClassInfo(manualItem.className) || {
+      label: manualItem.label,
+      category: "Non-Recyclable",
+      binColor: "#9E9E9E",
+      binType: "Trash Bin",
+      tips: ["Consult local recycling guidelines"],
+    };
+    const result = { ...classInfo, confidence: 100, className: manualItem.className, bbox: null };
+    const uid = user?.id || user?._id;
+    if (uid) logScan(uid, manualItem.className, classInfo.category, 100, true);
+    setDetectionResult(result);
+    setEcoImpact(calculateEnvironmentalImpact(result));
+    setAllDetections([result]);
+    setShowManualPicker(false);
+    setMultiObjectPicker(false);
+    setShowHowSection(false);
+    setShowResults(true);
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  };
+
+  // ── SELECT FROM MULTIPLE DETECTIONS ──────────
+  const handleSelectDetection = (detection) => {
+    setDetectionResult(detection);
+    setEcoImpact(calculateEnvironmentalImpact(detection));
+    setMultiObjectPicker(false);
+    setShowHowSection(false);
   };
 
   // ── LOADING STATE ────────────────────────────
@@ -674,11 +739,45 @@ export default function ScannerScreen() {
     );
   }
 
+  // ── MANUAL PICKER SCREEN ─────────────────────
+  if (showManualPicker) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.manualHeader}>
+          <TouchableOpacity onPress={() => setShowManualPicker(false)} style={styles.manualBackBtn}>
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.manualTitle}>Select Waste Type</Text>
+            <Text style={styles.manualSubtitle}>Tap the item that best matches what you have</Text>
+          </View>
+        </View>
+        <FlatList
+          data={MANUAL_ITEMS}
+          keyExtractor={(item) => item.key}
+          numColumns={3}
+          contentContainerStyle={styles.manualGrid}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.manualGridItem}
+              onPress={() => handleManualSelect(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.manualGridIcon}>{item.icon}</Text>
+              <Text style={styles.manualGridLabel}>{item.label}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      </SafeAreaView>
+    );
+  }
+
   // ── RESULTS VIEW ─────────────────────────────
   if (showResults && photoUri) {
-    const containerWidth = SCREEN_WIDTH - 48; // Increased margins
+    const containerWidth = SCREEN_WIDTH - 48;
     const containerHeight =
       (photoDimensions.height / photoDimensions.width) * containerWidth;
+    const isLowConfidence = detectionResult && detectionResult.confidence < 60 && detectionResult.label !== "No Item Detected";
 
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -687,7 +786,7 @@ export default function ScannerScreen() {
           showsVerticalScrollIndicator={false}
           bounces={true}
         >
-          {/* Header with proper spacing */}
+          {/* Header */}
           <View style={styles.resultsHeader}>
             <View style={styles.resultsHeaderLeft}>
               <Ionicons name="leaf" size={28} color={colors.primaryGreen} />
@@ -698,15 +797,48 @@ export default function ScannerScreen() {
               style={styles.closeButton}
               activeOpacity={0.7}
             >
-              <Ionicons
-                name="close-circle"
-                size={32}
-                color={colors.primaryGreen}
-              />
+              <Ionicons name="close-circle" size={32} color={colors.primaryGreen} />
             </TouchableOpacity>
           </View>
 
-          {/* Image with Detection Boxes - Enhanced spacing */}
+          {/* Low confidence warning */}
+          {isLowConfidence && (
+            <TouchableOpacity
+              style={styles.lowConfidenceWarning}
+              onPress={() => setShowManualPicker(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="warning-outline" size={20} color="#856404" />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.lowConfidenceText}>
+                  Not sure about this item? ({detectionResult.confidence}% confidence)
+                </Text>
+                <Text style={styles.lowConfidenceSub}>Tap for manual classification</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#856404" />
+            </TouchableOpacity>
+          )}
+
+          {/* Multiple objects picker */}
+          {multiObjectPicker && allDetections.length > 1 && (
+            <View style={styles.multiObjectCard}>
+              <Text style={styles.multiObjectTitle}>Multiple items detected — pick one:</Text>
+              {allDetections.map((det, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.multiObjectRow, detectionResult === det && styles.multiObjectRowActive]}
+                  onPress={() => handleSelectDetection(det)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.multiObjectDot, { backgroundColor: det.binColor }]} />
+                  <Text style={styles.multiObjectLabel}>{det.label}</Text>
+                  <Text style={styles.multiObjectConf}>{det.confidence}%</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Image with Detection Boxes */}
           <View style={styles.imageSection}>
             <View style={styles.imageLabelContainer}>
               <Ionicons name="image-outline" size={16} color="#666" />
@@ -723,44 +855,35 @@ export default function ScannerScreen() {
                 style={styles.capturedImage}
                 resizeMode="contain"
               />
-              {allDetections.map((detection, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.boundingBox,
-                    {
-                      left:
-                        (detection.bbox[0] / photoDimensions.width) *
-                        containerWidth,
-                      top:
-                        (detection.bbox[1] / photoDimensions.height) *
-                        containerHeight,
-                      width:
-                        (detection.bbox[2] / photoDimensions.width) *
-                        containerWidth,
-                      height:
-                        (detection.bbox[3] / photoDimensions.height) *
-                        containerHeight,
-                      borderColor: detection.binColor,
-                    },
-                  ]}
-                >
+              {allDetections.map((detection, index) =>
+                detection.bbox ? (
                   <View
+                    key={index}
                     style={[
-                      styles.detectionLabel,
-                      { backgroundColor: detection.binColor },
+                      styles.boundingBox,
+                      {
+                        left: (detection.bbox[0] / photoDimensions.width) * containerWidth,
+                        top: (detection.bbox[1] / photoDimensions.height) * containerHeight,
+                        width: (detection.bbox[2] / photoDimensions.width) * containerWidth,
+                        height: (detection.bbox[3] / photoDimensions.height) * containerHeight,
+                        borderColor: detection.binColor,
+                        borderWidth: detectionResult === detection ? 4 : 2,
+                        opacity: detectionResult === detection ? 1 : 0.5,
+                      },
                     ]}
                   >
-                    <Text style={styles.detectionLabelText}>
-                      {detection.label} ({detection.confidence}%)
-                    </Text>
+                    <View style={[styles.detectionLabel, { backgroundColor: detection.binColor }]}>
+                      <Text style={styles.detectionLabelText}>
+                        {detection.label} ({detection.confidence}%)
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                ) : null
+              )}
             </View>
           </View>
 
-          {/* Eco Score Card - Enhanced with proper spacing */}
+          {/* Eco Score Card */}
           {ecoImpact && (
             <Animated.View
               style={[
@@ -783,27 +906,15 @@ export default function ScannerScreen() {
                   <Ionicons name="earth" size={22} color="#4CAF50" />
                   <Text style={styles.ecoCardTitle}>Environmental Impact</Text>
                 </View>
-                <View
-                  style={[
-                    styles.ecoBadge,
-                    { backgroundColor: `${ecoImpact.color}15` },
-                  ]}
-                >
-                  <Text
-                    style={[styles.ecoBadgeText, { color: ecoImpact.color }]}
-                  >
+                <View style={[styles.ecoBadge, { backgroundColor: `${ecoImpact.color}15` }]}>
+                  <Text style={[styles.ecoBadgeText, { color: ecoImpact.color }]}>
                     {ecoImpact.score >= 60 ? "🌍 Good" : "⚠️ Poor"}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.ecoScoreRow}>
-                <View
-                  style={[
-                    styles.ecoScoreCircle,
-                    { borderColor: ecoImpact.color },
-                  ]}
-                >
+                <View style={[styles.ecoScoreCircle, { borderColor: ecoImpact.color }]}>
                   <Text style={[styles.ecoGrade, { color: ecoImpact.color }]}>
                     {ecoImpact.grade}
                   </Text>
@@ -811,17 +922,12 @@ export default function ScannerScreen() {
 
                 <View style={styles.ecoScoreInfo}>
                   <Text style={styles.ecoScoreLabel}>Recyclability Score</Text>
-                  <Text style={styles.ecoScoreValue}>
-                    {ecoImpact.score}/100
-                  </Text>
+                  <Text style={styles.ecoScoreValue}>{ecoImpact.score}/100</Text>
                   <View style={styles.ecoProgressBar}>
                     <View
                       style={[
                         styles.ecoProgressFill,
-                        {
-                          width: `${ecoImpact.score}%`,
-                          backgroundColor: ecoImpact.color,
-                        },
+                        { width: `${ecoImpact.score}%`, backgroundColor: ecoImpact.color },
                       ]}
                     />
                   </View>
@@ -839,7 +945,7 @@ export default function ScannerScreen() {
             </Animated.View>
           )}
 
-          {/* Detection Result Card with proper spacing */}
+          {/* Detection Result Card */}
           <View style={styles.resultCardSection}>
             <View style={styles.sectionLabel}>
               <Ionicons name="analytics-outline" size={16} color="#666" />
@@ -856,7 +962,56 @@ export default function ScannerScreen() {
             )}
           </View>
 
-          {/* Action Buttons with enhanced spacing */}
+          {/* "How did we determine this?" expandable */}
+          {detectionResult && detectionResult.label !== "No Item Detected" && (
+            <View style={styles.howCard}>
+              <TouchableOpacity
+                style={styles.howHeader}
+                onPress={() => setShowHowSection(!showHowSection)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="help-circle-outline" size={18} color="#555" />
+                <Text style={styles.howHeaderText}>How did we determine this?</Text>
+                <Ionicons
+                  name={showHowSection ? "chevron-up" : "chevron-down"}
+                  size={18}
+                  color="#555"
+                  style={{ marginLeft: "auto" }}
+                />
+              </TouchableOpacity>
+              {showHowSection && (
+                <View style={styles.howBody}>
+                  <View style={styles.howStep}>
+                    <Text style={styles.howStepNum}>1.</Text>
+                    <Text style={styles.howStepText}>
+                      AI (COCO-SSD) identified this as:{" "}
+                      <Text style={styles.howStepBold}>{detectionResult.className || detectionResult.label}</Text>
+                      {detectionResult.confidence ? ` (${detectionResult.confidence}% confidence)` : ""}
+                    </Text>
+                  </View>
+                  <View style={styles.howStep}>
+                    <Text style={styles.howStepNum}>2.</Text>
+                    <Text style={styles.howStepText}>
+                      Our waste rules classify{" "}
+                      <Text style={styles.howStepBold}>{detectionResult.className || detectionResult.label}</Text> as:{" "}
+                      <Text style={styles.howStepBold}>{detectionResult.category}</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.howStep}>
+                    <Text style={styles.howStepNum}>3.</Text>
+                    <Text style={styles.howStepText}>
+                      In Cebu City, this goes in the:{" "}
+                      <Text style={[styles.howStepBold, { color: detectionResult.binColor }]}>
+                        {detectionResult.binType}
+                      </Text>
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Action Buttons */}
           <View style={styles.actionButtonsSection}>
             <TouchableOpacity
               style={[styles.actionButton, styles.scanAgainBtn]}
@@ -868,21 +1023,21 @@ export default function ScannerScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionButton, styles.learnMoreBtn]}
-              onPress={() =>
-                Alert.alert(
-                  "Recycling Tips",
-                  "Always check your local recycling guidelines for the most accurate disposal information.",
-                )
-              }
+              style={[styles.actionButton, styles.incorrectBtn]}
+              onPress={() => {
+                const uid = user?.id || user?._id;
+                if (uid && detectionResult) {
+                  logScan(uid, detectionResult.className || detectionResult.label, detectionResult.category, detectionResult.confidence, false);
+                }
+                setShowManualPicker(true);
+              }}
               activeOpacity={0.8}
             >
-              <Ionicons name="information-circle" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Learn More</Text>
+              <Ionicons name="close-circle" size={24} color="#fff" />
+              <Text style={styles.actionButtonText}>Incorrect?</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Bottom spacing for scroll */}
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </SafeAreaView>
@@ -1462,9 +1617,191 @@ const styles = StyleSheet.create({
   learnMoreBtn: {
     backgroundColor: "#2196F3",
   },
+  incorrectBtn: {
+    backgroundColor: "#F44336",
+  },
   actionButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
+  },
+
+  // ── Low Confidence Warning ──────────────────
+  lowConfidenceWarning: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF3CD",
+    borderWidth: 1,
+    borderColor: "#FFE69C",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  lowConfidenceText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#856404",
+  },
+  lowConfidenceSub: {
+    fontSize: 12,
+    color: "#856404",
+    marginTop: 2,
+  },
+
+  // ── Multi-object Picker ─────────────────────
+  multiObjectCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  multiObjectTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#555",
+    marginBottom: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  multiObjectRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+    backgroundColor: "#F8F9FA",
+  },
+  multiObjectRowActive: {
+    backgroundColor: "#E8F5E9",
+    borderWidth: 1,
+    borderColor: colors.primaryGreen,
+  },
+  multiObjectDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 10,
+  },
+  multiObjectLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  multiObjectConf: {
+    fontSize: 13,
+    color: "#888",
+    fontWeight: "600",
+  },
+
+  // ── How did we determine this? ──────────────
+  howCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    overflow: "hidden",
+  },
+  howHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    gap: 10,
+  },
+  howHeaderText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#444",
+  },
+  howBody: {
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    padding: 16,
+    gap: 12,
+  },
+  howStep: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  howStepNum: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.primaryGreen,
+    width: 20,
+  },
+  howStepText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#555",
+    lineHeight: 20,
+  },
+  howStepBold: {
+    fontWeight: "700",
+    color: "#333",
+  },
+
+  // ── Manual Picker Screen ────────────────────
+  manualHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 20,
+    paddingTop: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+    backgroundColor: "#fff",
+  },
+  manualBackBtn: {
+    padding: 4,
+    marginTop: 2,
+  },
+  manualTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1A1A1A",
+  },
+  manualSubtitle: {
+    fontSize: 13,
+    color: "#777",
+    marginTop: 2,
+  },
+  manualGrid: {
+    padding: 16,
+    gap: 12,
+  },
+  manualGridItem: {
+    flex: 1,
+    margin: 6,
+    aspectRatio: 1,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  manualGridIcon: {
+    fontSize: 36,
+    marginBottom: 6,
+  },
+  manualGridLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#444",
+    textAlign: "center",
+    paddingHorizontal: 4,
   },
 });

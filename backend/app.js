@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const https = require("https");
 const cloudinary = require("cloudinary").v2;
+const { wasteClassificationMap, lookupWasteClassification } = require("./config/wasteClassification");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -208,8 +209,11 @@ const garbageAreaSchema = new mongoose.Schema({
   reportCount: { type: Number, default: 0 },
   lastReportAt: { type: Date, default: null },
   source: { type: String, enum: ["iot", "reports", "both"], default: "iot" },
+  lastCollectionAt: { type: Date, default: null },
+  lastCollectionBy: { type: String, default: null },
+  lastCollectionId: { type: mongoose.Schema.Types.ObjectId, default: null },
   createdAt: { type: Date, default: Date.now },
-});
+}, { timestamps: true });
 const GarbageArea = mongoose.model("GarbageArea", garbageAreaSchema);
 
 const collectionLogSchema = new mongoose.Schema({
@@ -222,6 +226,9 @@ const collectionLogSchema = new mongoose.Schema({
   bins: { type: Number, default: 1 },
   routeId: { type: String, default: "" },
   routeName: { type: String, default: "" },
+  lat: { type: Number, default: null },
+  lng: { type: Number, default: null },
+  driverName: { type: String, default: "" },
   completedAt: { type: Date, default: Date.now },
 });
 const CollectionLog = mongoose.model("CollectionLog", collectionLogSchema);
@@ -271,22 +278,12 @@ const iotAlertSchema = new mongoose.Schema({
 iotAlertSchema.index({ createdAt: -1 });
 const IoTAlert = mongoose.model("IoTAlert", iotAlertSchema);
 
-const DEPT_NAMES = {
-  ccenro: "Cebu City Environment and Natural Resources Office",
-  dps: "Department of Public Service",
-  lgu_general: "General LGU Administration",
-  barangay: "Barangay Official",
-};
-
 const officialSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   passwordHash: { type: String, required: true },
   barangay: { type: String, required: true },
   role: { type: String, enum: ["official", "superadmin", "chd"], default: "official" },
-  department: { type: String, enum: ["ccenro", "dps", "lgu_general", "barangay"], default: "barangay" },
-  departmentPosition: { type: String, default: "" },
-  assignedBarangays: { type: [String], default: [] },
   status: { type: String, enum: ["active", "revoked"], default: "active" },
   signatureUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
@@ -1200,6 +1197,20 @@ app.post("/api/reports", async (req, res) => {
           { new: true },
         );
         io.emit("garbage-area:updated", updated);
+        const reportColorMap = { critical: "red", moderate: "yellow", clean: "green" };
+        io.emit("zone:status:update", {
+          zoneId: updated._id,
+          areaId: updated._id,
+          name: updated.name,
+          barangay: updated.barangay,
+          previousStatus: nearest.status,
+          newStatus,
+          previousColor: reportColorMap[nearest.status] || "yellow",
+          newColor: reportColorMap[newStatus] || "yellow",
+          reason: "report_filed",
+          changedBy: report.reportedBy || "Resident",
+          timestamp: new Date().toISOString(),
+        });
         console.log(
           `[Heatmap] Report linked to area "${nearest.name}" (${newCount} reports, ${nearestDist.toFixed(0)}m away)`,
         );
@@ -1352,9 +1363,6 @@ app.post("/api/auth/login", async (req, res) => {
         email: official.email,
         barangay: official.barangay,
         role: official.role,
-        department: official.department || "barangay",
-        departmentPosition: official.departmentPosition || "",
-        assignedBarangays: official.assignedBarangays || [],
       },
       JWT_SECRET,
       { expiresIn: "12h" },
@@ -1367,10 +1375,6 @@ app.post("/api/auth/login", async (req, res) => {
         email: official.email,
         barangay: official.barangay,
         role: official.role,
-        department: official.department || "barangay",
-        departmentName: DEPT_NAMES[official.department] || DEPT_NAMES.barangay,
-        departmentPosition: official.departmentPosition || "",
-        assignedBarangays: official.assignedBarangays || [],
         allowedPages: getAllowedPages(official.role),
       },
     });
@@ -1379,28 +1383,13 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.get("/api/auth/me", authMiddleware, async (req, res) => {
-  try {
-    const dbOfficial = await Official.findById(req.official.id).select("-passwordHash");
-    if (!dbOfficial) return res.status(404).json({ error: "Official not found" });
-    res.json({
-      official: {
-        id: dbOfficial._id,
-        name: dbOfficial.name,
-        email: dbOfficial.email,
-        barangay: dbOfficial.barangay,
-        role: dbOfficial.role,
-        department: dbOfficial.department || "barangay",
-        departmentName: DEPT_NAMES[dbOfficial.department] || DEPT_NAMES.barangay,
-        departmentPosition: dbOfficial.departmentPosition || "",
-        assignedBarangays: dbOfficial.assignedBarangays || [],
-        signatureUrl: dbOfficial.signatureUrl,
-        allowedPages: getAllowedPages(dbOfficial.role),
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get("/api/auth/me", authMiddleware, (req, res) => {
+  res.json({
+    official: {
+      ...req.official,
+      allowedPages: getAllowedPages(req.official.role),
+    }
+  });
 });
 
 app.post("/api/auth/seed", async (req, res) => {
@@ -1460,46 +1449,6 @@ app.post("/api/auth/seed", async (req, res) => {
       password: "password123",
       barangay: "All",
       role: "chd",
-    },
-    {
-      name: "Engr. Ana Reyes",
-      email: "ccenro@cebucity.gov.ph",
-      password: "password123",
-      barangay: "All",
-      role: "official",
-      department: "ccenro",
-      departmentPosition: "Environmental Officer",
-      assignedBarangays: ["Lahug", "Mabolo", "IT Park"],
-    },
-    {
-      name: "Dir. Ben Dela Cruz",
-      email: "dps@cebucity.gov.ph",
-      password: "password123",
-      barangay: "All",
-      role: "official",
-      department: "dps",
-      departmentPosition: "Fleet Supervisor",
-      assignedBarangays: [],
-    },
-    {
-      name: "Sec. Carlos Lim",
-      email: "lgu@cebucity.gov.ph",
-      password: "password123",
-      barangay: "All",
-      role: "official",
-      department: "lgu_general",
-      departmentPosition: "City Administrator",
-      assignedBarangays: [],
-    },
-    {
-      name: "Kap. Rosa Tan",
-      email: "brgy.lahug@cebucity.gov.ph",
-      password: "password123",
-      barangay: "Lahug",
-      role: "official",
-      department: "barangay",
-      departmentPosition: "Barangay Captain",
-      assignedBarangays: ["Lahug"],
     },
   ];
   try {
@@ -2873,7 +2822,7 @@ app.post("/api/admin/officials", authMiddleware, async (req, res) => {
     return res.status(403).json({ error: "Superadmin access required" });
   }
   try {
-    const { email, password, barangay, name, department, departmentPosition, assignedBarangays } = req.body;
+    const { email, password, barangay, name } = req.body;
     if (!email || !password || !barangay) {
       return res
         .status(400)
@@ -2892,9 +2841,6 @@ app.post("/api/admin/officials", authMiddleware, async (req, res) => {
       name: name || email,
       role: "official",
       status: "active",
-      department: ["ccenro", "dps", "lgu_general", "barangay"].includes(department) ? department : "barangay",
-      departmentPosition: departmentPosition || "",
-      assignedBarangays: Array.isArray(assignedBarangays) ? assignedBarangays : [],
     });
 
     const out = newOfficial.toObject();
@@ -2938,14 +2884,13 @@ app.put("/api/admin/officials/:id", authMiddleware, async (req, res) => {
     return res.status(403).json({ error: "Superadmin access required" });
   }
   try {
-    const { name, barangay, password, department, departmentPosition, assignedBarangays } = req.body;
+    const { name, barangay, password } = req.body;
     const update = {};
     if (name) update.name = name;
     if (barangay) update.barangay = barangay;
-    if (password) update.passwordHash = await bcrypt.hash(password, 10);
-    if (department && ["ccenro", "dps", "lgu_general", "barangay"].includes(department)) update.department = department;
-    if (departmentPosition !== undefined) update.departmentPosition = departmentPosition;
-    if (Array.isArray(assignedBarangays)) update.assignedBarangays = assignedBarangays;
+    if (password) {
+      update.passwordHash = await bcrypt.hash(password, 10);
+    }
     const official = await Official.findByIdAndUpdate(req.params.id, update, {
       new: true,
     }).select("-passwordHash");
@@ -3234,6 +3179,9 @@ app.post("/api/collections", async (req, res) => {
     bins,
     routeId,
     routeName,
+    lat,
+    lng,
+    driverName,
   } = req.body;
   if (!truckId || !date) {
     return res.status(400).json({ error: "truckId and date are required" });
@@ -3249,9 +3197,165 @@ app.post("/api/collections", async (req, res) => {
       bins: bins != null ? bins : 1,
       routeId: routeId || "",
       routeName: routeName || "",
+      lat: lat != null ? lat : null,
+      lng: lng != null ? lng : null,
+      driverName: driverName || truckId || "",
     });
     io.emit("collection:new", log);
+
+    // Find nearby garbage areas and recalculate zone status
+    if (lat != null && lng != null) {
+      const latDelta = 0.003; // ~300m bounding box
+      const lngDelta = 0.003;
+      const nearbyAreas = await GarbageArea.find({
+        lat: { $gte: lat - latDelta, $lte: lat + latDelta },
+        lng: { $gte: lng - lngDelta, $lte: lng + lngDelta },
+      });
+      for (const area of nearbyAreas) {
+        if (haversineDistance(lat, lng, area.lat, area.lng) <= 300) {
+          area.lastCollectionAt = new Date();
+          area.lastCollectionBy = driverName || truckId || "Unknown";
+          area.lastCollectionId = log._id;
+          await area.save();
+          await recalculateAndEmitZone(area._id, "collection_completed", driverName || truckId, weight, log._id);
+        }
+      }
+    }
+
     res.status(201).json(log);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Zone Utilities ------------------------------------------
+
+// Haversine distance in metres between two lat/lng points
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Determine zone color from current area data
+function calculateZoneColor(area) {
+  const ammoniaPpm = parseFloat(String(area.ammonia || "0").replace(/[^0-9.]/g, "")) || 0;
+  const methanePct = parseFloat(String(area.methane || "0").replace(/[^0-9.]/g, "")) || 0;
+  const reportCount = area.reportCount || 0;
+  const daysSince = area.lastCollectionAt
+    ? (Date.now() - new Date(area.lastCollectionAt).getTime()) / 86400000
+    : Infinity;
+
+  if (reportCount >= 3 || ammoniaPpm > 50 || methanePct > 2.5 || daysSince > 5) {
+    return { status: "critical", colorCode: "red", intensity: 0.8 };
+  }
+  if (reportCount >= 1 || ammoniaPpm >= 25 || methanePct >= 1.5 || daysSince > 3) {
+    return { status: "moderate", colorCode: "yellow", intensity: 0.5 };
+  }
+  return { status: "clean", colorCode: "green", intensity: 0.2 };
+}
+
+// Recalculate a zone's status, save it, and emit zone:status:update
+async function recalculateAndEmitZone(areaId, reason = "recalculated", changedBy = "System", weight = null, collectionId = null) {
+  const area = await GarbageArea.findById(areaId);
+  if (!area) return null;
+  const previousStatus = area.status;
+  const { status, colorCode, intensity } = calculateZoneColor(area);
+  area.status = status;
+  area.intensity = intensity;
+  await area.save();
+
+  const previousColor = previousStatus === "critical" ? "red" : previousStatus === "moderate" ? "yellow" : "green";
+  if (global._io) {
+    global._io.emit("zone:status:update", {
+      zoneId: area._id,
+      areaId: area._id,
+      name: area.name,
+      barangay: area.barangay,
+      previousStatus,
+      newStatus: status,
+      previousColor,
+      newColor: colorCode,
+      reason,
+      changedBy,
+      weight: weight ? `${weight} kg` : null,
+      collectionId,
+      timestamp: new Date().toISOString(),
+    });
+    global._io.emit("garbage-area:updated", area);
+  }
+  return area;
+}
+
+// --- Zone Management Endpoints --------------------------------
+
+// GET all zones (wrapper around garbage-areas with zone format)
+app.get("/api/zones", async (req, res) => {
+  try {
+    const areas = await GarbageArea.find().sort({ createdAt: -1 });
+    res.json(areas);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET single zone
+app.get("/api/zones/:zoneId", async (req, res) => {
+  try {
+    const area = await GarbageArea.findById(req.params.zoneId);
+    if (!area) return res.status(404).json({ error: "Zone not found" });
+    res.json(area);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST force-recalculate zone color
+app.post("/api/zones/:zoneId/recalculate", async (req, res) => {
+  try {
+    const area = await recalculateAndEmitZone(req.params.zoneId, "manual_recalculate", req.body.triggeredBy || "Admin");
+    if (!area) return res.status(404).json({ error: "Zone not found" });
+    res.json({ ok: true, zone: area });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH manually override zone status (admin)
+app.patch("/api/zones/:zoneId/status", async (req, res) => {
+  try {
+    const { status, changedBy } = req.body;
+    if (!["critical", "moderate", "clean"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status. Use: critical, moderate, clean" });
+    }
+    const intensityMap = { critical: 0.8, moderate: 0.5, clean: 0.2 };
+    const area = await GarbageArea.findByIdAndUpdate(
+      req.params.zoneId,
+      { status, intensity: intensityMap[status] },
+      { new: true }
+    );
+    if (!area) return res.status(404).json({ error: "Zone not found" });
+
+    const colorMap = { critical: "red", moderate: "yellow", clean: "green" };
+    if (global._io) {
+      global._io.emit("zone:status:update", {
+        zoneId: area._id,
+        areaId: area._id,
+        name: area.name,
+        barangay: area.barangay,
+        previousStatus: null,
+        newStatus: status,
+        newColor: colorMap[status],
+        reason: "admin_override",
+        changedBy: changedBy || "Admin",
+        timestamp: new Date().toISOString(),
+      });
+      global._io.emit("garbage-area:updated", area);
+    }
+    res.json({ ok: true, zone: area });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3420,6 +3524,20 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         { upsert: true, new: true },
       );
       io.emit("garbage-area:updated", updatedArea);
+      // Emit zone:status:update for IoT-triggered changes
+      const iotColorMap = { critical: "red", moderate: "yellow", clean: "green" };
+      io.emit("zone:status:update", {
+        zoneId: updatedArea._id,
+        areaId: updatedArea._id,
+        name: updatedArea.name,
+        barangay: updatedArea.barangay,
+        previousStatus: null,
+        newStatus: areaStatus,
+        newColor: iotColorMap[areaStatus] || "yellow",
+        reason: "iot_sensor_reading",
+        changedBy: `Sensor ${sensorId}`,
+        timestamp: new Date().toISOString(),
+      });
       // IoT quality scoring: positive for clean/moderate, negative for unhealthy/hazardous
       if (updatedArea.barangay) {
         const qualityPts =
@@ -4324,6 +4442,45 @@ app.post("/api/rewards/:id/claim", async (req, res) => {
     await Resident.findByIdAndUpdate(residentId, { $inc: { totalRewardsClaimed: 1 } });
     io.emit("reward:claimed", { rewardId: reward._id, title: reward.title, barangay: reward.barangay });
     res.json({ success: true, reward });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Waste Classification -----------------------------------------------
+
+// GET full mapping (reference)
+app.get("/api/waste-classification", (req, res) => {
+  res.json(wasteClassificationMap);
+});
+
+// POST lookup by object name
+app.post("/api/waste-classification/lookup", (req, res) => {
+  const { objectName } = req.body;
+  if (!objectName) return res.status(400).json({ error: "objectName is required" });
+  const result = lookupWasteClassification(objectName);
+  res.json({ objectName, ...result });
+});
+
+// POST scan log — records a completed scan and optionally awards points
+app.post("/api/residents/:id/scan-log", async (req, res) => {
+  try {
+    const { objectDetected, category, confidence, correct } = req.body;
+    const resident = await Resident.findById(req.params.id);
+    if (!resident) return res.status(404).json({ error: "Resident not found" });
+
+    // Always log the scan in pointsHistory
+    const description = `Scanned: ${objectDetected || "unknown"} (${category || "?"}) — ${correct ? "correct" : "corrected"}`;
+    if (correct) {
+      await awardResidentPoints(req.params.id, 5, "correct_scan", description);
+    } else {
+      // Log without awarding points for corrections
+      resident.pointsHistory = resident.pointsHistory || [];
+      resident.pointsHistory.unshift({ type: "correct_scan", points: 0, description, date: new Date() });
+      await resident.save();
+    }
+
+    res.json({ ok: true, logged: true, pointsAwarded: correct ? 5 : 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

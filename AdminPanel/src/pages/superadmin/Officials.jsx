@@ -6,26 +6,9 @@ import {
   MapPin, Key, CheckCircle,
   AlertCircle, X, MoreVertical,
   Edit, UserX, Trash2, UserCircle,
-  Truck, Navigation, Clipboard, Contact, Filter
+  Truck, Navigation, Clipboard, Contact
 } from 'lucide-react';
 import API from '../../config';
-
-const DEPT_OPTIONS = [
-  { value: 'barangay',    label: 'Barangay Official',               badge: 'bg-teal-100 text-teal-800 border-teal-200' },
-  { value: 'ccenro',      label: 'CCENRO (Environment)',            badge: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  { value: 'dps',         label: 'DPS (Public Service)',            badge: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: 'lgu_general', label: 'LGU General Administration',      badge: 'bg-amber-100 text-amber-800 border-amber-200' },
-];
-
-function DeptBadge({ dept }) {
-  const opt = DEPT_OPTIONS.find(o => o.value === dept) || DEPT_OPTIONS[0];
-  const short = { barangay: 'BRGY', ccenro: 'CCENRO', dps: 'DPS', lgu_general: 'LGU' };
-  return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${opt.badge}`}>
-      {short[dept] || dept?.toUpperCase()}
-    </span>
-  );
-}
 
 export default function Officials() {
   const navigate = useNavigate();
@@ -33,14 +16,11 @@ export default function Officials() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
-  const [deptFilter, setDeptFilter] = useState('all');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: '',
-    barangay: 'Lahug',
-    department: 'barangay',
-    departmentPosition: '',
+    barangay: 'Lahug'
   });
   const [isEditing, setIsEditing] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -95,11 +75,9 @@ export default function Officials() {
   const handleEdit = (off) => {
     setFormData({
       email: off.email,
-      password: '',
+      password: '', // Don't show password
       name: off.name,
-      barangay: off.barangay,
-      department: off.department || 'barangay',
-      departmentPosition: off.departmentPosition || '',
+      barangay: off.barangay
     });
     setSelectedId(off._id);
     setIsEditing(true);
@@ -126,7 +104,7 @@ export default function Officials() {
         fetchOfficials();
       }
       setShowAdd(false);
-      setFormData({ email: '', password: '', name: '', barangay: 'Lahug', department: 'barangay', departmentPosition: '' });
+      setFormData({ email: '', password: '', name: '', barangay: 'Lahug' });
       setIsEditing(false);
       setSelectedId(null);
     } catch (err) {
@@ -162,31 +140,12 @@ export default function Officials() {
         </div>
       )}
 
-      {/* Department Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-slate-400" />
-        {[{ value: 'all', label: 'All Departments' }, ...DEPT_OPTIONS].map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => setDeptFilter(opt.value)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all ${
-              deptFilter === opt.value
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
       {/* Officials Table */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="text-left px-6 py-3.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest rounded-tl-2xl">Official</th>
-              <th className="text-left px-6 py-3.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Department</th>
               <th className="text-left px-6 py-3.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Barangay</th>
               <th className="text-left px-6 py-3.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Email</th>
               <th className="text-left px-6 py-3.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
@@ -194,31 +153,21 @@ export default function Officials() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {officials
-              .filter(o => deptFilter === 'all' || o.department === deptFilter || (!o.department && deptFilter === 'barangay'))
-              .length === 0 ? (
+            {officials.length === 0 ? (
               <tr>
-                <td colSpan="6" className="px-6 py-12 text-center text-slate-400 font-medium">
+                <td colSpan="5" className="px-6 py-12 text-center text-slate-400 font-medium">
                   {loading ? 'Loading officials...' : 'No officials found. Add your first official above.'}
                 </td>
               </tr>
-            ) : officials
-              .filter(o => deptFilter === 'all' || o.department === deptFilter || (!o.department && deptFilter === 'barangay'))
-              .map((off, i) => (
+            ) : officials.map((off, i) => (
               <tr key={off._id} className={`hover:bg-slate-50 transition-colors ${activeDropdown === i ? 'relative z-50' : ''}`}>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 shrink-0">
                       <Shield className="w-4 h-4" />
                     </div>
-                    <div>
-                      <span className="font-semibold text-slate-900 block">{off.name}</span>
-                      {off.departmentPosition && <span className="text-xs text-slate-400">{off.departmentPosition}</span>}
-                    </div>
+                    <span className="font-semibold text-slate-900">{off.name}</span>
                   </div>
-                </td>
-                <td className="px-6 py-4">
-                  <DeptBadge dept={off.department || 'barangay'} />
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-1.5 text-slate-600">
@@ -363,40 +312,6 @@ export default function Officials() {
                   className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest ml-1">Department</label>
-                  <select
-                    value={formData.department}
-                    onChange={e => setFormData({...formData, department: e.target.value})}
-                    className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
-                  >
-                    {DEPT_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest ml-1">Position Title</label>
-                  <input
-                    value={formData.departmentPosition}
-                    onChange={e => setFormData({...formData, departmentPosition: e.target.value})}
-                    placeholder="e.g. Fleet Supervisor"
-                    className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
-                  />
-                </div>
-              </div>
-
-              {formData.department && (
-                <p className="text-xs text-slate-400 px-1">
-                  {DEPT_OPTIONS.find(o => o.value === formData.department)?.label}
-                  {formData.department === 'ccenro' && ' — Environmental monitoring & policy'}
-                  {formData.department === 'dps' && ' — Waste collection & fleet operations'}
-                  {formData.department === 'lgu_general' && ' — Overall waste management oversight'}
-                  {formData.department === 'barangay' && ' — Local community waste management'}
-                </p>
-              )}
 
               <button
                 type="submit"

@@ -117,6 +117,7 @@ export default function HeatmapAnalytics() {
   const [boundary, setBoundary] = useState(null);
   const [outOfBoundsError, setOutOfBoundsError] = useState(false);
   const [iotFlash, setIotFlash] = useState(null);
+  const [cleanedFlash, setCleanedFlash] = useState(null);
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   const [showCityBoundary, setShowCityBoundary] = useState(true);
   const [healthRiskView, setHealthRiskView] = useState(false);
@@ -181,6 +182,28 @@ export default function HeatmapAnalytics() {
           message: alert.message,
         });
         setTimeout(() => setIotFlash(null), 6000);
+      }
+    });
+
+    // When a zone changes status (collection, IoT, report)
+    socket.on('zone:status:update', (update) => {
+      // Update zone in local state
+      setZones(prev => prev.map(z =>
+        (z._id === String(update.areaId) || z._id === String(update.zoneId))
+          ? { ...z, status: update.newStatus }
+          : z
+      ));
+      // Show cleaned flash notification for collection events
+      if (update.reason === 'collection_completed') {
+        setCleanedFlash({
+          name: update.name,
+          barangay: update.barangay,
+          collectedBy: update.changedBy,
+          weight: update.weight,
+          previousStatus: update.previousStatus,
+          newStatus: update.newStatus,
+        });
+        setTimeout(() => setCleanedFlash(null), 6000);
       }
     });
 
@@ -392,8 +415,26 @@ export default function HeatmapAnalytics() {
           </div>
         )}
 
+        {/* Zone Cleaned Flash Notification */}
+        {cleanedFlash && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1001] px-5 py-3 rounded-2xl text-sm font-bold shadow-2xl flex items-center gap-3 bg-emerald-600 text-white border border-emerald-400 max-w-md" style={{ animation: 'fadeInDown 0.4s ease-out' }}>
+            <span className="text-xl">✅</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-black truncate">Zone cleaned: {cleanedFlash.name}</p>
+              <p className="text-xs font-medium opacity-90">
+                {cleanedFlash.collectedBy} • {cleanedFlash.weight || 'Weight not logged'}
+                {cleanedFlash.previousStatus && (
+                  <span className="ml-2 capitalize">
+                    ({cleanedFlash.previousStatus} → {cleanedFlash.newStatus})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* IoT Real-time Flash Notification */}
-        {iotFlash && (
+        {iotFlash && !cleanedFlash && (
           <div className={`absolute top-6 left-1/2 -translate-x-1/2 z-[1000] px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border ${
             iotFlash.status === 'critical'
               ? 'bg-red-600 text-white border-red-400'
