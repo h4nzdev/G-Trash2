@@ -6,7 +6,6 @@ import Dashboard from './pages/superadmin/Dashboard';
 import Officials from './pages/superadmin/Officials';
 import OfficialDetail from './pages/superadmin/OfficialDetail';
 import MasterMap from './pages/superadmin/MasterMap';
-import IoTSimulator from './pages/superadmin/IoTSimulator';
 import BugReports from './pages/superadmin/BugReports';
 import JurisdictionManager from './pages/superadmin/JurisdictionManager';
 import Reports from './pages/superadmin/Reports';

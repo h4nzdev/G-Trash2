@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#064E3B"/>
+  <rect x="80" y="48" width="352" height="416" rx="32" fill="#065F46"/>
+  <!-- Trash bin body -->
+  <rect x="156" y="200" width="200" height="220" rx="16" fill="#10B981"/>
+  <!-- Trash bin lid -->
+  <rect x="136" y="168" width="240" height="36" rx="12" fill="#34D399"/>
+  <!-- Handle -->
+  <rect x="216" y="140" width="80" height="32" rx="10" fill="#6EE7B7"/>
+  <!-- Lines on bin -->
+  <rect x="196" y="236" width="12" height="148" rx="6" fill="#059669"/>
+  <rect x="250" y="236" width="12" height="148" rx="6" fill="#059669"/>
+  <rect x="304" y="236" width="12" height="148" rx="6" fill="#059669"/>
+  <!-- Map pin / signal waves above bin -->
+  <circle cx="256" cy="96" r="22" fill="#34D399"/>
+  <circle cx="256" cy="96" r="10" fill="#064E3B"/>
+  <path d="M210 96 Q210 56 256 56 Q302 56 302 96" stroke="#6EE7B7" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <path d="M186 96 Q186 32 256 32 Q326 32 326 96" stroke="#34D399" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.6"/>
+</svg>
