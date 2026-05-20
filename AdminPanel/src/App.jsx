@@ -39,7 +39,6 @@ export default function App() {
             <Route path="officials" element={<Officials />} />
             <Route path="officials/:id" element={<OfficialDetail />} />
             <Route path="map" element={<MasterMap />} />
-            <Route path="iot-simulator" element={<IoTSimulator />} />
             <Route path="reports" element={<Reports />} />
             <Route path="jurisdiction" element={<JurisdictionManager />} />
             <Route path="bugs" element={<BugReports />} />

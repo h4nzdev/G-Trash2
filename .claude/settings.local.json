@@ -65,7 +65,8 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Force)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Recurse -ErrorAction SilentlyContinue)",
       "Bash(Select-Object -First 50)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(Remove-Item *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"
