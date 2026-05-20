@@ -62,7 +62,10 @@
       "Bash(npx --yes node -e \"import\\('lucide-react'\\).then\\(m => console.log\\('HeartPulse' in m, 'Activity' in m\\)\\)\")",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\\\\AdminPanel\\\\src\\\\pages\" -Recurse | Where-Object { $_.Extension -in '.jsx','.js' } | Select-Object FullName)",
       "Bash(xargs cat)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Force)"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Force)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\hanzc\\\\Documents\\\\Get-Trash\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 50)",
+      "Bash(git log *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\hanzc\\.claude\\projects\\c--Users-hanzc-Documents-Get-Trash\\memory"

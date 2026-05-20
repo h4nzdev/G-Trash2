@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight } from 'lucide-react';
+import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight, Lock } from 'lucide-react';
 import ProgressBar from '../components/shared/ProgressBar';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
@@ -196,6 +196,7 @@ export default function BarangayPerformance() {
   const { official } = useAuth();
   const [rankings, setRankings] = useState([]);
   const [drillDown, setDrillDown] = useState(null);
+  const [restrictedAlert, setRestrictedAlert] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState('points');
   const [sortDir, setSortDir] = useState('desc');
@@ -377,8 +378,8 @@ export default function BarangayPerformance() {
                     return (
                       <tr
                         key={b._id || b.barangay}
-                        onClick={() => canViewResidents && setDrillDown(b.barangay)}
-                        className={`transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'} ${canViewResidents ? 'hover:bg-emerald-50 cursor-pointer' : 'cursor-default opacity-80'}`}
+                        onClick={() => canViewResidents ? setDrillDown(b.barangay) : setRestrictedAlert(b.barangay)}
+                        className={`transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'} ${canViewResidents ? 'hover:bg-emerald-50 cursor-pointer' : 'hover:bg-slate-50 cursor-not-allowed opacity-80'}`}
                       >
                         <td className="px-4 py-4">
                           <span className="text-sm font-bold text-slate-600">
@@ -449,6 +450,32 @@ export default function BarangayPerformance() {
 
       {drillDown && (
         <TopResidentsPanel barangay={drillDown} onClose={() => setDrillDown(null)} />
+      )}
+
+      {/* Restricted access modal */}
+      {restrictedAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setRestrictedAlert(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-7 max-w-sm w-full mx-4 flex flex-col items-center gap-4" onClick={e => e.stopPropagation()}>
+            <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center">
+              <Lock className="w-7 h-7 text-red-500" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900 mb-1">Access Restricted</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                You can only view resident performance for{' '}
+                <span className="font-semibold text-slate-700">Brgy. {official?.barangay}</span>.
+                Contact your administrator if you need access to{' '}
+                <span className="font-semibold text-slate-700">Brgy. {restrictedAlert}</span>.
+              </p>
+            </div>
+            <button
+              onClick={() => setRestrictedAlert(null)}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
