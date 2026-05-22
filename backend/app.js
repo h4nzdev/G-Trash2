@@ -603,6 +603,69 @@ function haversineM(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// --- Geofencing -------------------------------------------
+
+const CLEANUP_RADIUS_M = 80;
+const CLEANUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+// truckId → { areaId, areaName, barangay, enteredAt, timerId }
+const truckProximityMap = new Map();
+
+async function checkTruckProximity(truckId) {
+  const truck = await Truck.findOne({ truckId }).select("lat lng").lean();
+  if (!truck || truck.lat == null) return;
+
+  const areas = await GarbageArea.find({ status: { $ne: "clean" } })
+    .select("_id name barangay lat lng")
+    .lean();
+
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const area of areas) {
+    if (area.lat == null || area.lng == null) continue;
+    const d = haversineM(truck.lat, truck.lng, area.lat, area.lng);
+    if (d <= CLEANUP_RADIUS_M && d < nearestDist) {
+      nearestDist = d;
+      nearest = area;
+    }
+  }
+
+  const existing = truckProximityMap.get(truckId);
+
+  if (nearest) {
+    if (existing && existing.areaId.toString() === nearest._id.toString()) return;
+    if (existing) clearTimeout(existing.timerId);
+
+    const timerId = setTimeout(() => {
+      truckProximityMap.delete(truckId);
+      global._io?.to("truck:" + truckId).emit("truck:area-timeout", {
+        areaId: nearest._id,
+        areaName: nearest.name,
+        barangay: nearest.barangay,
+      });
+    }, CLEANUP_TIMEOUT_MS);
+
+    truckProximityMap.set(truckId, {
+      areaId: nearest._id,
+      areaName: nearest.name,
+      barangay: nearest.barangay,
+      enteredAt: Date.now(),
+      timerId,
+    });
+
+    global._io?.to("truck:" + truckId).emit("truck:near-area", {
+      areaId: nearest._id,
+      areaName: nearest.name,
+      barangay: nearest.barangay,
+      distance: Math.round(nearestDist),
+    });
+  } else if (existing) {
+    clearTimeout(existing.timerId);
+    truckProximityMap.delete(truckId);
+    global._io?.to("truck:" + truckId).emit("truck:left-area", {});
+  }
+}
+
 // Award points to a barangay — upserts the score document.
 // scoreCategory: one of reportScore | iotScore | collectionScore | responseScore
 // countField: optional legacy count-only field (pickupCount, reportVoteCount, areaQualityPts) — only incremented when points > 0
@@ -1610,6 +1673,7 @@ app.post("/api/trucks/location", async (req, res) => {
       speed,
       timestamp: new Date().toISOString(),
     });
+    checkTruckProximity(truckId).catch(() => {});
     res.json(truck);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1950,7 +2014,17 @@ app.patch("/api/reports/:id/health-note", authMiddleware, async (req, res) => {
 // --- Fleet ---------------------------------------------------
 app.get("/api/fleet", optionalAuth, async (req, res) => {
   try {
-    const filter = barangayFilter(req.official);
+    let filter = {};
+    const o = req.official;
+    if (o && o.barangay !== 'All' && o.role !== 'superadmin') {
+      // Own trucks + any shared truck that lists this barangay as a service area
+      filter = {
+        $or: [
+          { barangay: o.barangay },
+          { type: 'shared', serviceBarangays: o.barangay },
+        ],
+      };
+    }
     res.json(await Fleet.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3890,23 +3964,25 @@ io.on("connection", (socket) => {
   });
 
   // GarbageTruck app sends live GPS position
-  socket.on("truck:location", async (data, ack) => {
+  socket.on(“truck:location”, async (data, ack) => {
     const { truckId, lat, lng, heading = 0, speed = 0 } = data;
     socketTruckMap.set(socket.id, truckId);
     if (!truckId || lat == null || lng == null) {
-      if (typeof ack === "function")
-        ack({ ok: false, error: "Missing fields" });
+      if (typeof ack === “function”)
+        ack({ ok: false, error: “Missing fields” });
       return;
     }
+    // Join a named room so we can emit back to this specific truck
+    socket.join(“truck:” + truckId);
     try {
       const truck = await Truck.findOneAndUpdate(
         { truckId },
-        { lat, lng, heading, speed, status: "online", updatedAt: new Date() },
+        { lat, lng, heading, speed, status: “online”, updatedAt: new Date() },
         { upsert: true, new: true },
       );
-      if (typeof ack === "function") ack({ ok: true, truckId, lat, lng });
+      if (typeof ack === “function”) ack({ ok: true, truckId, lat, lng });
       // Broadcast to Resident app + Officials dashboard â€” same io instance, no relay
-      socket.broadcast.emit("truck:location:update", {
+      socket.broadcast.emit(“truck:location:update”, {
         truckId,
         lat,
         lng,
@@ -3914,8 +3990,9 @@ io.on("connection", (socket) => {
         speed,
         timestamp: new Date().toISOString(),
       });
+      checkTruckProximity(truckId).catch(() => {});
     } catch (err) {
-      if (typeof ack === "function") ack({ ok: false, error: err.message });
+      if (typeof ack === “function”) ack({ ok: false, error: err.message });
     }
   });
 
@@ -4561,6 +4638,160 @@ app.post("/api/residents/:id/scan-log", async (req, res) => {
     }
 
     res.json({ ok: true, logged: true, pointsAwarded: correct ? 5 : 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Cleanup Posts -------------------------------------------
+
+const cleanupPostSchema = new mongoose.Schema({
+  truckId: { type: String, required: true },
+  driverName: { type: String, default: "" },
+  areaId: { type: mongoose.Schema.Types.ObjectId, ref: "GarbageArea", default: null },
+  areaName: { type: String, default: "" },
+  barangay: { type: String, default: "" },
+  photo: { type: String, required: true },
+  note: { type: String, default: "" },
+  autoDetected: { type: Boolean, default: true },
+  lat: { type: Number, default: null },
+  lng: { type: Number, default: null },
+  createdAt: { type: Date, default: Date.now },
+});
+const CleanupPost = mongoose.model("CleanupPost", cleanupPostSchema);
+
+app.get("/api/cleanup", async (req, res) => {
+  try {
+    const { barangay, limit = 30 } = req.query;
+    const filter = barangay ? { barangay } : {};
+    const posts = await CleanupPost.find(filter).sort({ createdAt: -1 }).limit(parseInt(limit));
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/cleanup", async (req, res) => {
+  try {
+    const { truckId, driverName, areaId, areaName, barangay, photo, note, lat, lng, autoDetected } = req.body;
+    if (!truckId || !photo) return res.status(400).json({ error: "truckId and photo are required" });
+
+    const uploadRes = await cloudinary.uploader.upload(photo, {
+      folder: "gtrash/cleanups",
+      quality: "auto",
+      fetch_format: "auto",
+    });
+
+    const post = await CleanupPost.create({
+      truckId,
+      driverName: driverName || "",
+      areaId: areaId || null,
+      areaName: areaName || "",
+      barangay: barangay || "",
+      photo: uploadRes.secure_url,
+      note: note || "",
+      autoDetected: autoDetected !== false,
+      lat: lat || null,
+      lng: lng || null,
+    });
+
+    if (areaId) {
+      await GarbageArea.findByIdAndUpdate(areaId, {
+        status: "clean",
+        lastCollectionAt: new Date(),
+        lastCollectionBy: truckId,
+        lastCollectionId: post._id,
+      });
+    }
+
+    const prox = truckProximityMap.get(truckId);
+    if (prox) {
+      clearTimeout(prox.timerId);
+      truckProximityMap.delete(truckId);
+    }
+
+    if (barangay) {
+      await addBarangayScore(barangay, 5, "collectionScore", "pickupCount").catch(() => {});
+    }
+
+    global._io?.emit("cleanup:new", post);
+    global._io?.emit("area:status:update", { areaId, status: "clean" });
+
+    res.json({ success: true, post });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Survey --------------------------------------------------
+
+const surveyResponseSchema = new mongoose.Schema({
+  residentId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident" },
+  barangay: { type: String, default: "" },
+  questionId: { type: String, default: "gamification_motivation" },
+  question: { type: String, default: "" },
+  answer: { type: String, required: true },
+  context: { type: String, default: "" }, // after_scan | after_report | viewing_leaderboard
+  submittedAt: { type: Date, default: Date.now },
+});
+const SurveyResponse = mongoose.model("SurveyResponse", surveyResponseSchema);
+
+app.post("/api/survey/response", async (req, res) => {
+  try {
+    const { residentId, barangay, questionId, question, answer, context } = req.body;
+    if (!answer) return res.status(400).json({ error: "answer is required" });
+    await SurveyResponse.create({ residentId, barangay, questionId, question, answer, context });
+    res.json({ success: true, message: "Thank you for your feedback!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/survey/results", optionalAuth, async (req, res) => {
+  try {
+    const { period, context } = req.query;
+    const dateFilter = {};
+    if (period === "week") dateFilter.submittedAt = { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
+    else if (period === "month") dateFilter.submittedAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+
+    const baseFilter = { ...dateFilter };
+    if (context && context !== "all") baseFilter.context = context;
+
+    const total = await SurveyResponse.countDocuments(baseFilter);
+
+    const byAnswer = await SurveyResponse.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: "$answer", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const results = byAnswer.map((r) => ({
+      answer: r._id,
+      count: r.count,
+      percentage: total > 0 ? Math.round((r.count / total) * 100) : 0,
+    }));
+
+    const contexts = ["after_scan", "after_report", "viewing_leaderboard"];
+    const byContext = {};
+    for (const ctx of contexts) {
+      const ctxFilter = { ...dateFilter, context: ctx };
+      const ctxTotal = await SurveyResponse.countDocuments(ctxFilter);
+      const ctxRows = await SurveyResponse.aggregate([
+        { $match: ctxFilter },
+        { $group: { _id: "$answer", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]);
+      byContext[ctx] = {
+        total: ctxTotal,
+        results: ctxRows.map((r) => ({
+          answer: r._id,
+          count: r.count,
+          percentage: ctxTotal > 0 ? Math.round((r.count / ctxTotal) * 100) : 0,
+        })),
+      };
+    }
+
+    res.json({ totalResponses: total, results, byContext });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

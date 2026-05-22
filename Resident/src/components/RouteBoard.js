@@ -72,7 +72,11 @@ export default function RouteBoard({ route, enrichedStops, onPress }) {
                     ) : stop.status === 'current' ? (
                       <MaterialIcons name="local-shipping" size={12} color={cfg.text} />
                     ) : (
-                      <Text style={[styles.stopNum, { color: cfg.text }]}>{i + 1}</Text>
+                      <Text style={[styles.stopNum, { color: cfg.text }]} numberOfLines={1}>
+                        {stop.name
+                          ? stop.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase().slice(0, 3)
+                          : `${i + 1}`}
+                      </Text>
                     )}
                   </View>
                   <Text
@@ -173,26 +177,28 @@ const styles = StyleSheet.create({
   },
   stopNode: {
     alignItems: 'center',
-    width: 60,
+    width: 68,
   },
   stopCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
+    paddingHorizontal: 2,
   },
   stopNum: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '800',
+    textAlign: 'center',
   },
   stopLabel: {
     fontSize: 9,
     fontWeight: '600',
     textAlign: 'center',
-    width: 58,
+    width: 66,
   },
   arrowIcon: {
     marginHorizontal: 2,

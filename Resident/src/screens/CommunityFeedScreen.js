@@ -130,6 +130,8 @@ export default function CommunityFeedScreen() {
   );
   const [reports, setReports] = useState([]);
   const [pickupRuns, setPickupRuns] = useState([]);
+  const [cleanups, setCleanups] = useState([]);
+  const [activeTab, setActiveTab] = useState('feed');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hiddenReports, setHiddenReports] = useState([]);
@@ -145,9 +147,10 @@ export default function CommunityFeedScreen() {
   const fetchFeed = useCallback(async () => {
     if (!user?.barangay) return;
     try {
-      const [reportsRes, pickupRes] = await Promise.allSettled([
+      const [reportsRes, pickupRes, cleanupRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/reports?barangay=${user.barangay}`),
         fetch(`${API_URL}/api/pickup?barangay=${user.barangay}`),
+        fetch(`${API_URL}/api/cleanup?barangay=${user.barangay}`),
       ]);
       if (reportsRes.status === "fulfilled" && reportsRes.value.ok) {
         const data = await reportsRes.value.json();
@@ -156,6 +159,10 @@ export default function CommunityFeedScreen() {
       if (pickupRes.status === "fulfilled" && pickupRes.value.ok) {
         const data = await pickupRes.value.json();
         if (Array.isArray(data)) setPickupRuns(data);
+      }
+      if (cleanupRes.status === "fulfilled" && cleanupRes.value.ok) {
+        const data = await cleanupRes.value.json();
+        if (Array.isArray(data)) setCleanups(data);
       }
     } catch (error) {
       console.error("Feed fetch error:", error);
@@ -186,6 +193,11 @@ export default function CommunityFeedScreen() {
     socket.on("pickup:completed", (run) => {
       if (!run.barangay || run.barangay === user?.barangay) {
         setPickupRuns((prev) => [run, ...prev]);
+      }
+    });
+    socket.on("cleanup:new", (post) => {
+      if (!post.barangay || post.barangay === user?.barangay) {
+        setCleanups((prev) => [post, ...prev]);
       }
     });
     return () => socket.disconnect();
@@ -350,6 +362,50 @@ export default function CommunityFeedScreen() {
     );
     setActiveReportForOptions(null);
   };
+
+  const renderCleanupCard = ({ item }) => (
+    <View style={styles.cleanupCard}>
+      {item.photo ? (
+        <Image
+          source={{ uri: item.photo }}
+          style={styles.cleanupPhoto}
+          resizeMode="cover"
+        />
+      ) : null}
+      <View style={styles.cleanupBody}>
+        <View style={styles.cleanupHeaderRow}>
+          <View style={styles.cleanupIconWrap}>
+            <MaterialIcons name="check-circle" size={18} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cleanupTitle}>Area Cleaned</Text>
+            <Text style={styles.cleanupArea} numberOfLines={1}>
+              {item.areaName || 'Garbage Area'}
+            </Text>
+          </View>
+          <View style={styles.cleanupBadge}>
+            <Text style={styles.cleanupBadgeText}>CLEAN</Text>
+          </View>
+        </View>
+        <View style={styles.cleanupMeta}>
+          <MaterialIcons name="local-shipping" size={13} color="#6B7280" />
+          <Text style={styles.cleanupMetaText}>Truck {item.truckId}</Text>
+          {item.driverName ? (
+            <>
+              <View style={styles.metaDot} />
+              <Text style={styles.cleanupMetaText}>{item.driverName}</Text>
+            </>
+          ) : null}
+          <View style={styles.metaDot} />
+          <MaterialIcons name="schedule" size={13} color="#6B7280" />
+          <Text style={styles.cleanupMetaText}>{formatRelativeTime(item.createdAt)}</Text>
+        </View>
+        {item.note ? (
+          <Text style={styles.cleanupNote}>{item.note}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
 
   const renderPickupCard = ({ item }) => (
     <View style={styles.pickupCard}>
@@ -673,6 +729,30 @@ export default function CommunityFeedScreen() {
             <MaterialIcons name="add" size={28} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
+
+        {/* Tabs */}
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'feed' && styles.tabBtnActive]}
+            onPress={() => setActiveTab('feed')}
+          >
+            <MaterialIcons name="forum" size={14} color={activeTab === 'feed' ? '#fff' : '#6B7280'} />
+            <Text style={[styles.tabBtnText, activeTab === 'feed' && styles.tabBtnTextActive]}>Reports</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'cleanups' && styles.tabBtnActive]}
+            onPress={() => setActiveTab('cleanups')}
+          >
+            <MaterialIcons name="check-circle" size={14} color={activeTab === 'cleanups' ? '#fff' : '#6B7280'} />
+            <Text style={[styles.tabBtnText, activeTab === 'cleanups' && styles.tabBtnTextActive]}>Cleanups</Text>
+            {cleanups.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{cleanups.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.barangayLabel}>
           <MaterialIcons
             name="location-city"
@@ -685,42 +765,73 @@ export default function CommunityFeedScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={feedItems}
-        renderItem={renderFeedItem}
-        keyExtractor={(item) => item._id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => {
-              setIsRefreshing(true);
-              fetchFeed();
-            }}
-            colors={[colors.primaryGreen]}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="megaphone-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyTitle}>Quiet in {user?.barangay}</Text>
-            <Text style={styles.emptySub}>
-              No issues reported in your area yet. Be the first to report
-              something!
-            </Text>
-          </View>
-        }
-        ListFooterComponent={
-          feedItems.length > 0 ? (
-            <View style={styles.feedEndRow}>
-              <View style={styles.feedEndLine} />
-              <Text style={styles.feedEndText}>No more posts</Text>
-              <View style={styles.feedEndLine} />
+      {activeTab === 'feed' ? (
+        <FlatList
+          data={feedItems}
+          renderItem={renderFeedItem}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => { setIsRefreshing(true); fetchFeed(); }}
+              colors={[colors.primaryGreen]}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="megaphone-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>Quiet in {user?.barangay}</Text>
+              <Text style={styles.emptySub}>
+                No issues reported in your area yet. Be the first to report something!
+              </Text>
             </View>
-          ) : null
-        }
-      />
+          }
+          ListFooterComponent={
+            feedItems.length > 0 ? (
+              <View style={styles.feedEndRow}>
+                <View style={styles.feedEndLine} />
+                <Text style={styles.feedEndText}>No more posts</Text>
+                <View style={styles.feedEndLine} />
+              </View>
+            ) : null
+          }
+        />
+      ) : (
+        <FlatList
+          data={cleanups}
+          renderItem={renderCleanupCard}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => { setIsRefreshing(true); fetchFeed(); }}
+              colors={[colors.primaryGreen]}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="local-shipping" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No cleanups yet</Text>
+              <Text style={styles.emptySub}>
+                Photos from garbage truck cleanups will appear here.
+              </Text>
+            </View>
+          }
+          ListFooterComponent={
+            cleanups.length > 0 ? (
+              <View style={styles.feedEndRow}>
+                <View style={styles.feedEndLine} />
+                <Text style={styles.feedEndText}>No more cleanups</Text>
+                <View style={styles.feedEndLine} />
+              </View>
+            ) : null
+          }
+        />
+      )}
 
       {/* Discussion Modal */}
       <Modal
@@ -1421,6 +1532,106 @@ const styles = StyleSheet.create({
     color: "#006A3B",
     marginTop: 8,
     fontWeight: "600",
+  },
+
+  // Tab bar
+  tabRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  tabBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: "#F3F4F6",
+  },
+  tabBtnActive: { backgroundColor: "#006A3B" },
+  tabBtnText: { fontSize: 13, fontWeight: "700", color: "#6B7280" },
+  tabBtnTextActive: { color: "#fff" },
+  tabBadge: {
+    backgroundColor: "#EF4444",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  tabBadgeText: { fontSize: 9, fontWeight: "800", color: "#fff" },
+
+  // Cleanup card
+  cleanupCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    marginBottom: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cleanupPhoto: {
+    width: "100%",
+    height: 200,
+  },
+  cleanupBody: {
+    padding: 14,
+  },
+  cleanupHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  cleanupIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#006A3B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cleanupTitle: { fontSize: 14, fontWeight: "800", color: "#1F2937" },
+  cleanupArea: { fontSize: 12, color: "#6B7280", marginTop: 1 },
+  cleanupBadge: {
+    backgroundColor: "#D1FAE5",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  cleanupBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#065F46",
+    letterSpacing: 0.5,
+  },
+  cleanupMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    flexWrap: "wrap",
+  },
+  cleanupMetaText: { fontSize: 12, color: "#6B7280" },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#D1D5DB",
+  },
+  cleanupNote: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#374151",
+    fontStyle: "italic",
+    lineHeight: 18,
   },
 });
 

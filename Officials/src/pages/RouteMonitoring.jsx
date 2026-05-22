@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
 import axios from 'axios';
-import { RefreshCw, Truck, MapPin, Navigation, UserPlus, X, Check, AlertCircle, AlertTriangle, Phone, Layers } from 'lucide-react';
+import { RefreshCw, Truck, MapPin, Navigation, UserPlus, X, Check, CheckCircle, AlertCircle, AlertTriangle, Phone, Layers } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 import truckIconUrl from '../../assets/truck-icon.png';
@@ -197,18 +197,41 @@ function AssignModal({ route, fleet, onClose, onSave }) {
           {/* Truck selector */}
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Truck / Driver</label>
-            <select
-              value={selectedTruckId}
-              onChange={e => setSelectedTruckId(e.target.value)}
-              className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
-            >
-              <option value="">— Select a truck —</option>
-              {fleet.map(f => (
-                <option key={f.truckId} value={f.truckId}>
-                  {f.truckId} · {f.driverName}{f.route ? ` (${f.route})` : ''}
-                </option>
-              ))}
-            </select>
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+              {fleet.length === 0 && (
+                <p className="text-xs text-slate-400 italic py-2">No trucks available.</p>
+              )}
+              {fleet.map(f => {
+                const isShared = f.type === 'shared';
+                const isSelected = selectedTruckId === f.truckId;
+                return (
+                  <button
+                    key={f.truckId}
+                    type="button"
+                    onClick={() => setSelectedTruckId(f.truckId)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                      isSelected
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isShared ? 'bg-blue-100' : 'bg-emerald-100'}`}>
+                      <Truck className={`w-4 h-4 ${isShared ? 'text-blue-600' : 'text-emerald-700'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-slate-800">{f.truckId}</span>
+                        {isShared && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">Shared</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate">{f.driverName}{f.route ? ` · ${f.route}` : ''}</p>
+                    </div>
+                    {isSelected && <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {error && (
@@ -564,7 +587,7 @@ export default function RouteMonitoring() {
                     <div
                       key={route._id}
                       onClick={() => setSelectedRoute(isSelected ? null : route)}
-                      className={`flex-shrink-0 w-56 rounded-xl border p-3 cursor-pointer transition-all ${
+                      className={`flex-shrink-0 w-56 rounded-xl border p-3 cursor-pointer transition-all flex flex-col ${
                         isSelected
                           ? 'border-emerald-400 bg-emerald-50 shadow-sm'
                           : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
@@ -598,15 +621,15 @@ export default function RouteMonitoring() {
                         <p className="text-xs text-slate-400 italic mb-2">No driver assigned</p>
                       )}
 
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-slate-400">
-                          <MapPin className="w-3 h-3 inline mr-0.5" />{route.totalStops} stops
+                      <div className="flex items-center justify-between mt-auto pt-2">
+                        <p className="text-xs text-slate-400 flex items-center gap-0.5">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />{route.totalStops} stops
                         </p>
                         <button
                           onClick={e => { e.stopPropagation(); setAssignTarget(route); }}
-                          className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 transition-colors"
+                          className="flex items-center justify-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex-shrink-0 min-w-[72px]"
                         >
-                          <UserPlus className="w-3 h-3" />
+                          <UserPlus className="w-3 h-3 flex-shrink-0" />
                           {isAssigned ? 'Reassign' : 'Assign'}
                         </button>
                       </div>

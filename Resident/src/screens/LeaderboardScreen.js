@@ -1,18 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
+import SurveyPopup, { canShowSurvey } from '../components/SurveyPopup';
+import { hasShownSurveyThisSession, markSurveyShownThisSession } from '../utils/surveySession';
 import API_URL from '../config';
 import colors from '../constants/colors';
 
 const TROPHY_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32'];
 
 export default function LeaderboardScreen() {
+  const { user } = useAuth();
   const [rankings, setRankings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [surveyVisible, setSurveyVisible] = useState(false);
+  const surveyTimerRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overall');
 
@@ -31,6 +38,23 @@ export default function LeaderboardScreen() {
   }, []);
 
   useEffect(() => { fetchLeaderboard(); }, [fetchLeaderboard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasShownSurveyThisSession()) {
+        surveyTimerRef.current = setTimeout(async () => {
+          const ok = await canShowSurvey();
+          if (ok && !hasShownSurveyThisSession()) {
+            markSurveyShownThisSession();
+            setSurveyVisible(true);
+          }
+        }, 10000);
+      }
+      return () => {
+        if (surveyTimerRef.current) clearTimeout(surveyTimerRef.current);
+      };
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -204,6 +228,14 @@ export default function LeaderboardScreen() {
           {renderTips()}
         </ScrollView>
       )}
+
+      <SurveyPopup
+        visible={surveyVisible}
+        context="viewing_leaderboard"
+        residentId={user?._id || user?.id}
+        barangay={user?.barangay}
+        onDismiss={() => setSurveyVisible(false)}
+      />
     </SafeAreaView>
   );
 }

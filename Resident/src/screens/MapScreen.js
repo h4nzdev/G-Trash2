@@ -1155,13 +1155,18 @@ export default function MapScreen() {
                     {/* Stop content */}
                     <View style={styles.jeepneyStopContent}>
                       <View style={styles.jeepneyStopTop}>
-                        <Text style={[
-                          styles.jeepneyStopName,
-                          isCompleted && { color: '#9CA3AF', textDecorationLine: 'line-through' },
-                          isCurrent  && { color: '#EF4444', fontWeight: '800' },
-                        ]}>
-                          {stop.name || `Stop ${i + 1}`}
-                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[
+                            styles.jeepneyStopName,
+                            isCompleted && { color: '#9CA3AF', textDecorationLine: 'line-through' },
+                            isCurrent  && { color: '#EF4444', fontWeight: '800' },
+                          ]}>
+                            {stop.name || `Stop ${i + 1}`}
+                          </Text>
+                          {stop.name ? (
+                            <Text style={styles.jeepneyStopSeq}>Stop {i + 1}</Text>
+                          ) : null}
+                        </View>
                         <View style={[
                           styles.jeepneyStopBadge,
                           { backgroundColor: isCompleted ? '#F3F4F6' : isCurrent ? '#FEF2F2' : '#F0FDF4' },
@@ -1170,7 +1175,7 @@ export default function MapScreen() {
                             styles.jeepneyStopBadgeText,
                             { color: dotColor },
                           ]}>
-                            {isCurrent ? 'NEXT STOP' : isCompleted ? 'DONE' : `STOP ${i + 1}`}
+                            {isCurrent ? 'NEXT' : isCompleted ? 'DONE' : `#${i + 1}`}
                           </Text>
                         </View>
                       </View>
@@ -1448,10 +1453,15 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   jeepneyStopName: {
-    flex: 1,
     fontSize: 15,
     fontWeight: "600",
     color: "#1F2937",
+  },
+  jeepneyStopSeq: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontWeight: "500",
+    marginTop: 1,
   },
   jeepneyStopBadge: {
     paddingHorizontal: 8,

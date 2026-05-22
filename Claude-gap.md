@@ -1,156 +1,168 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
+I need to add a simple survey feature to the G-TRASH Resident app that validates whether the gamification (leaderboard and points) actually motivates residents to use the app. My panelist asked: "How can you prove the gamification is really being used?" This survey will collect data directly from residents about what motivates them.
 
-// ===================== IR SENSOR =====================
-const int irSensorPin = 18;
+Current setup:
+- Resident App: React Native (Expo)
+- Backend: Node.js + Express + MongoDB with Mongoose
+- The app already has: AI Scanner, Report Submission, Leaderboard screen
+- AsyncStorage is used for local data persistence
+- The leaderboard shows Barangay rankings and points
 
-// ===================== LED PINS =====================
-const int greenLed = 19;
-const int redLed = 21;
+Requirements:
 
-// ===================== WIFI =====================
-const char* WIFI_SSID = "ALPHA8_2.4";
-const char* WIFI_PASSWORD = "Cocogingerberry14";
+1. BACKEND - Survey Model & Endpoints:
 
-// ===================== BACKEND =====================
-const char* SERVER_URL = "https://g-trash2.onrender.com/api/iot/sensor-data";
+   a. SurveyResponse Mongoose Schema:
+      {
+        residentId: { type: mongoose.ObjectId, ref: 'Resident' },
+        barangay: String,
+        questionId: String,           // which question was asked
+        question: String,             // the actual question text
+        answer: String,               // the selected answer
+        context: String,              // what the user just did (e.g., "after_scan", "after_report", "viewing_leaderboard")
+        submittedAt: { type: Date, default: Date.now }
+      }
 
-// ===================== VARIABLES =====================
-bool detected = false;
+   b. Simple endpoint:
+      - POST /api/survey/response
+        Body: { residentId, questionId, question, answer, context }
+        Response: { success: true, message: "Thank you for your feedback!" }
 
-// ===================== WIFI CONNECT =====================
-void connectWiFi() {
+      - GET /api/survey/results
+        Returns aggregated results:
+        {
+          "totalResponses": 50,
+          "results": [
+            { "answer": "I want my barangay to win", "count": 22, "percentage": 44 },
+            { "answer": "I want to earn points", "count": 12, "percentage": 24 },
+            { "answer": "I just want to keep my area clean", "count": 10, "percentage": 20 },
+            { "answer": "Other", "count": 6, "percentage": 12 }
+          ],
+          "byContext": {
+            "after_scan": { ... },
+            "after_report": { ... },
+            "viewing_leaderboard": { ... }
+          }
+        }
 
-  Serial.println("Connecting to WiFi...");
+2. RESIDENT APP - Simple Survey Popup:
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+   a. When to show the survey:
+      Trigger the survey popup after these actions (show ONCE per session):
+      - After a successful AI scan
+      - After submitting a report
+      - After viewing the leaderboard for more than 10 seconds
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
+   b. Survey Popup Component (simple and quick):
+      
+      A small card that appears at the bottom of the screen:
+      
+      ┌─────────────────────────────────────────┐
+      │  💬 Quick Question                       │
+      │                                         │
+      │  What motivated you to scan/report       │
+      │  today?                                  │
+      │                                         │
+      │  ○ I want my barangay to win            │
+      │  ○ I want to earn points                │
+      │  ○ I just want to keep my area clean    │
+      │  ○ Other                                │
+      │                                         │
+      │  [ Submit ]   [ Skip ]                  │
+      └─────────────────────────────────────────┘
 
-  Serial.println("\nWiFi Connected!");
-  Serial.print("ESP32 IP: ");
-  Serial.println(WiFi.localIP());
-}
+   c. Survey behavior:
+      - Only show ONCE per app session (store in AsyncStorage)
+      - If user taps "Skip", don't show again that session
+      - If user answers, show a brief "Thank you! 🙏" message
+      - The popup should NOT block app usage — user can ignore it
+      - Small and unobtrusive — doesn't cover the whole screen
 
-// ===================== SEND DATA =====================
-void sendToBackend(bool objectDetected) { 
+   d. Context tracking:
+      - If shown after a scan → context: "after_scan"
+      - If shown after a report → context: "after_report"
+      - If shown after viewing leaderboard → context: "viewing_leaderboard"
 
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-  }
+3. OFFICIALS WEB APP - Simple Survey Results View:
 
-  StaticJsonDocument<300> doc;
+   a. Add a small section to the Dashboard or a new tab "User Feedback":
+      - Show a simple pie chart or bar chart with survey results
+      - Show total responses count
+      - Filter by: All Time, This Month, This Week
+      - Filter by context: After Scan, After Report, Viewing Leaderboard
 
-  doc["sensorId"] = "IR-SENSOR-001";
-  doc["deviceType"] = "ESP32";
-  doc["location"] = "Test Area";
-  doc["barangay"] = "Test Barangay";
+   b. Simple stats cards:
+      ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+      │  44%          │  │  24%          │  │  20%          │
+      │ Want to win  │  │ Want points  │  │ Keep clean   │
+      └──────────────┘  └──────────────┘  └──────────────┘
 
-  // GOOD AREA
-  if (objectDetected == false) {
+   c. Key insight text:
+      "68% of residents are motivated by gamification (winning + points)"
+      "This proves the leaderboard and rewards system drives engagement"
 
-    doc["ammonia"] = 5;
-    doc["methane"] = 0.2;
-    doc["hydrogen"] = 3;
-    doc["co2"] = 300;
-    doc["binLevel"] = 10;
-  }
+4. PROVING THE GAMIFICATION WORKS:
 
-  // DIRTY / DETECTED
-  else {
+   The two answers that prove gamification works:
+   - "I want my barangay to win" → Leaderboard motivation
+   - "I want to earn points" → Points/rewards motivation
 
-    doc["ammonia"] = 40;
-    doc["methane"] = 3;
-    doc["hydrogen"] = 20;
-    doc["co2"] = 1200;
-    doc["binLevel"] = 90;
-  }
+   Combined percentage = proof that gamification drives usage
 
-  doc["temperature"] = 28;
-  doc["humidity"] = 60;
+   If this combined percentage is above 50%, you can confidently say:
+   "The majority of our users are motivated by gamification features"
 
-  String payload;
-  serializeJson(doc, payload);
+5. EDGE CASES:
+   - What if user has no internet? (Save response locally, submit when online)
+   - What if user already answered this week? (Don't show again for 7 days)
+   - What if user rapidly does multiple actions? (Show survey max once per session)
+   - What if survey endpoint fails? (Silently fail — don't disrupt the user)
 
-  Serial.println("\nSending Data:");
-  Serial.println(payload);
+Please provide:
+- Backend: SurveyResponse model, POST endpoint, GET results endpoint
+- Resident App: SurveyPopup component, trigger logic, AsyncStorage tracking
+- Officials Web App: Simple survey results display with chart and stats cards
+- The key insight calculation (combined gamification percentage)
 
-  HTTPClient http;
+---
 
-  http.begin(SERVER_URL);
-  http.addHeader("Content-Type", "application/json");
+TESTING INSTRUCTIONS:
 
-  int httpCode = http.POST(payload);
+1. Manual Test Steps:
+   - Step 1: Open Resident app, perform an AI scan
+   - Step 2: Verify the survey popup appears after the scan result
+   - Step 3: Select "I want my barangay to win" and submit
+   - Step 4: Verify "Thank you!" message appears
+   - Step 5: Do another scan — verify survey does NOT appear again (same session)
+   - Step 6: Close and reopen app — do a scan — verify survey appears again (new session)
+   - Step 7: Open Officials dashboard → check survey results updated
+   - Step 8: Verify the combined gamification percentage is showing
 
-  Serial.print("HTTP Response: ");
-  Serial.println(httpCode);
+2. Test Data Script:
+   Provide MongoDB insert script to create sample survey responses:
+   - 22 responses: "I want my barangay to win"
+   - 12 responses: "I want to earn points"
+   - 10 responses: "I just want to keep my area clean"
+   - 6 responses: "Other"
 
-  String response = http.getString();
+3. Expected Visual Results:
+   - What the survey popup looks like at the bottom of the screen
+   - What the "Thank you" message looks like
+   - What the Officials dashboard survey section looks like with pie chart
+   - What the stats cards look like
 
-  Serial.println("Server Response:");
-  Serial.println(response);
+4. Debugging Checklist:
+   - If survey doesn't appear after scan, check: [list items]
+   - If survey appears twice in same session, check: [list items]
+   - If results don't update on dashboard, check: [list items]
+   - If percentage calculation is wrong, check: [list items]
 
-  http.end();
-}
-
-// ===================== SETUP =====================
-void setup() {
-
-  Serial.begin(115200);
-
-  pinMode(irSensorPin, INPUT);
-
-  pinMode(greenLed, OUTPUT);
-  pinMode(redLed, OUTPUT);
-
-  connectWiFi();
-}
-
-// ===================== LOOP =====================
-void loop() {
-
-  int irValue = digitalRead(irSensorPin);
-
-  Serial.print("IR Value: ");
-  Serial.println(irValue);
-
-  // ===================== OBJECT DETECTED =====================
-  if (irValue == 0 && detected == false) {
-
-    detected = true;
-
-    Serial.println("OBJECT DETECTED!");
-
-    // RED LIGHT
-    digitalWrite(redLed, HIGH);
-    digitalWrite(greenLed, LOW);
-
-    // SEND BAD STATUS
-    sendToBackend(true);
-
-    delay(1000);
-  }
-
-  // ===================== NO OBJECT =====================
-  if (irValue == 1 && detected == true) {
-
-    detected = false;
-
-    Serial.println("AREA CLEAN");
-
-    // GREEN LIGHT
-    digitalWrite(redLed, LOW);
-    digitalWrite(greenLed, HIGH);
-
-    // SEND GOOD STATUS
-    sendToBackend(false);
-
-    delay(1000);
-  }
-
-  delay(200);
-}
+5. Test Cases Table:
+   | Test Case | Action | Expected Result |
+   |-----------|--------|-----------------|
+   | Survey after scan | Complete an AI scan | Survey popup appears at bottom |
+   | Submit answer | Select option and submit | "Thank you!" shown; popup dismissed |
+   | Skip survey | Tap "Skip" | Popup dismissed; won't show this session |
+   | Same session | Do another scan | Survey does NOT appear |
+   | New session | Close and reopen app, scan | Survey appears again |
+   | View results | Open Officials dashboard | Pie chart shows response breakdown |
+   | Combined stat | Check gamification percentage | Shows "68% motivated by gamification" |

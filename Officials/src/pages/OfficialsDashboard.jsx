@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X } from 'lucide-react';
+import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X, MessageSquare, Users } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
 } from 'recharts';
 import { io } from 'socket.io-client';
 import StatCard from '../components/dashboard/StatCard';
@@ -209,6 +210,169 @@ function ChdDashboard() {
   );
 }
 
+const PIE_COLORS = ['#065f46', '#10b981', '#6ee7b7', '#d1fae5'];
+
+const ANSWER_LABELS = {
+  'I want my barangay to win': 'Win for Barangay',
+  'I want to earn points': 'Earn Points',
+  'I just want to keep my area clean': 'Keep Area Clean',
+  'Other': 'Other',
+};
+
+function SurveyResultsCard({ data, period, context, onPeriodChange, onContextChange }) {
+  const total = data?.totalResponses ?? 0;
+  const results = data?.results ?? [];
+
+  const gamificationPct = total > 0
+    ? results
+        .filter(r => r.answer === 'I want my barangay to win' || r.answer === 'I want to earn points')
+        .reduce((sum, r) => sum + r.count, 0) / total * 100
+    : 0;
+
+  const pieData = results.map((r, i) => ({
+    name: ANSWER_LABELS[r.answer] ?? r.answer,
+    value: r.count,
+    color: PIE_COLORS[i % PIE_COLORS.length],
+  }));
+
+  const periodBtns = [
+    { key: 'all', label: 'All Time' },
+    { key: 'month', label: 'This Month' },
+    { key: 'week', label: 'This Week' },
+  ];
+
+  const contextBtns = [
+    { key: 'all', label: 'All' },
+    { key: 'after_scan', label: 'After Scan' },
+    { key: 'after_report', label: 'After Report' },
+    { key: 'viewing_leaderboard', label: 'Leaderboard' },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-emerald-600" />
+          <h2 className="text-sm font-bold text-slate-900">User Feedback — Gamification Survey</h2>
+          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+            {total} responses
+          </span>
+        </div>
+        {/* Period filters */}
+        <div className="flex items-center gap-1.5">
+          {periodBtns.map(b => (
+            <button
+              key={b.key}
+              onClick={() => onPeriodChange(b.key)}
+              className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition-colors ${
+                period === b.key
+                  ? 'bg-emerald-800 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Context filters */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Trigger:</span>
+        {contextBtns.map(b => (
+          <button
+            key={b.key}
+            onClick={() => onContextChange(b.key)}
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors border ${
+              context === b.key
+                ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+
+      {total === 0 ? (
+        <div className="py-10 text-center text-slate-400">
+          <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+          <p className="text-sm font-medium">No survey responses yet</p>
+          <p className="text-xs mt-1">Responses appear after residents submit the in-app survey</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pie chart */}
+          <div className="flex items-center justify-center">
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={90}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  {pieData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Legend
+                  iconType="circle"
+                  iconSize={8}
+                  formatter={(value) => <span style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>{value}</span>}
+                />
+                <Tooltip
+                  formatter={(value, name) => [`${value} responses`, name]}
+                  contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Stats + insight */}
+          <div className="space-y-3">
+            {results.map((r, i) => (
+              <div key={r.answer} className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">{r.answer}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex-1 bg-slate-100 rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full transition-all"
+                        style={{ width: `${r.percentage}%`, backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500 w-8 text-right">{r.percentage}%</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-slate-400 w-6 text-right">{r.count}</span>
+              </div>
+            ))}
+
+            {/* Key insight */}
+            <div className={`mt-4 rounded-xl p-3.5 ${gamificationPct >= 50 ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-200'}`}>
+              <p className={`text-xs font-bold mb-1 ${gamificationPct >= 50 ? 'text-emerald-800' : 'text-amber-800'}`}>
+                {gamificationPct >= 50 ? '✅ Gamification is working!' : '📊 Gamification insight'}
+              </p>
+              <p className={`text-[11px] leading-relaxed ${gamificationPct >= 50 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                <strong>{Math.round(gamificationPct)}%</strong> of residents are motivated by gamification
+                (winning + points). {gamificationPct >= 50
+                  ? 'The majority of users are driven by the leaderboard and rewards system.'
+                  : 'More responses needed to confirm gamification effectiveness.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OfficialsDashboard() {
   const { official } = useAuth();
   const location = useLocation();
@@ -226,6 +390,9 @@ export default function OfficialsDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 });
   const [rankings, setRankings] = useState([]);
+  const [surveyData, setSurveyData] = useState(null);
+  const [surveyPeriod, setSurveyPeriod] = useState('all');
+  const [surveyContext, setSurveyContext] = useState('all');
 
   useEffect(() => {
     if (location.state?.chdAccessDenied) {
@@ -233,6 +400,17 @@ export default function OfficialsDashboard() {
       setTimeout(() => setAccessDeniedToast(false), 4000);
     }
   }, [location.state]);
+
+  const fetchSurvey = async (period = surveyPeriod, ctx = surveyContext) => {
+    try {
+      const params = new URLSearchParams();
+      if (period !== 'all') params.set('period', period);
+      if (ctx !== 'all') params.set('context', ctx);
+      const res = await fetch(`${API}/api/survey/results?${params}`);
+      const data = await res.json();
+      setSurveyData(data);
+    } catch {}
+  };
 
   const fetchAll = async () => {
     setLoading(true);
@@ -258,6 +436,7 @@ export default function OfficialsDashboard() {
     } finally {
       setLoading(false);
     }
+    fetchSurvey();
   };
 
   useEffect(() => {
@@ -521,6 +700,15 @@ export default function OfficialsDashboard() {
           )}
         </div>
       </div>
+
+      {/* Survey Results */}
+      <SurveyResultsCard
+        data={surveyData}
+        period={surveyPeriod}
+        context={surveyContext}
+        onPeriodChange={(p) => { setSurveyPeriod(p); fetchSurvey(p, surveyContext); }}
+        onContextChange={(c) => { setSurveyContext(c); fetchSurvey(surveyPeriod, c); }}
+      />
 
       {/* Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

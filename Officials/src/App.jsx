@@ -15,6 +15,7 @@ import ScheduleRoute from './pages/ScheduleRoute';
 import RouteManager from './pages/RouteManager';
 import DriverAnalytics from './pages/DriverAnalytics';
 import RewardsManagement from './pages/RewardsManagement';
+import DriverView from './pages/DriverView';
 
 function ProtectedLayout() {
   const { official, loading } = useAuth();
@@ -44,6 +45,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/driver" element={<DriverView />} />
           <Route path="/" element={<ProtectedLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<OfficialsDashboard />} />

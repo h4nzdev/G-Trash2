@@ -19,6 +19,8 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import colors from '../constants/colors';
+import SurveyPopup, { canShowSurvey } from '../components/SurveyPopup';
+import { hasShownSurveyThisSession, markSurveyShownThisSession } from '../utils/surveySession';
 
 import API_URL from '../config';
 const BACKEND_URL = API_URL;
@@ -135,6 +137,7 @@ export default function ReportIssueScreen({ navigation }) {
   const [category, setCategory] = useState('Illegal Dumping');
   const [location, setLocation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [surveyVisible, setSurveyVisible] = useState(false);
 
   const mapRef = useRef(null);
   const geocodeTimer = useRef(null);
@@ -284,6 +287,14 @@ export default function ReportIssueScreen({ navigation }) {
         setImage(null);
         setImageBase64(null);
         setLocation(null);
+        if (!hasShownSurveyThisSession()) {
+          canShowSurvey().then((ok) => {
+            if (ok) {
+              markSurveyShownThisSession();
+              setTimeout(() => setSurveyVisible(true), 800);
+            }
+          });
+        }
       } else if (xhr.status === 429) {
         const body = JSON.parse(xhr.responseText);
         Alert.alert('Slow Down', body.message || 'Too many reports. Please wait before submitting again.');
@@ -564,6 +575,14 @@ export default function ReportIssueScreen({ navigation }) {
           </View>
         </SafeAreaView>
       </Modal>
+
+      <SurveyPopup
+        visible={surveyVisible}
+        context="after_report"
+        residentId={user?._id || user?.id}
+        barangay={user?.barangay}
+        onDismiss={() => setSurveyVisible(false)}
+      />
     </SafeAreaView>
   );
 }

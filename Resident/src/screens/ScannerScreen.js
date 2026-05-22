@@ -22,6 +22,8 @@ import "@tensorflow/tfjs-react-native";
 import { decodeJpeg } from "@tensorflow/tfjs-react-native";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import ScanResultCard from "../components/ScanResultCard";
+import SurveyPopup, { canShowSurvey } from "../components/SurveyPopup";
+import { hasShownSurveyThisSession, markSurveyShownThisSession } from "../utils/surveySession";
 import colors from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
@@ -513,6 +515,7 @@ export default function ScannerScreen() {
   const [showHowSection, setShowHowSection] = useState(false);
   const [showManualPicker, setShowManualPicker] = useState(false);
   const [multiObjectPicker, setMultiObjectPicker] = useState(false);
+  const [surveyVisible, setSurveyVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const hasPermission = cameraPermission?.status === "granted";
@@ -662,6 +665,16 @@ export default function ScannerScreen() {
         duration: 500,
         useNativeDriver: true,
       }).start();
+
+      // Survey: show once per session, 7-day cooldown
+      if (!hasShownSurveyThisSession()) {
+        canShowSurvey().then((ok) => {
+          if (ok) {
+            markSurveyShownThisSession();
+            setTimeout(() => setSurveyVisible(true), 1200);
+          }
+        });
+      }
     } catch (error) {
       console.error("Scan error:", error);
       Alert.alert(
@@ -1160,6 +1173,14 @@ export default function ScannerScreen() {
           binColor={colors.primaryGreen}
         />
       </View>
+
+      <SurveyPopup
+        visible={surveyVisible}
+        context="after_scan"
+        residentId={user?._id || user?.id}
+        barangay={user?.barangay}
+        onDismiss={() => setSurveyVisible(false)}
+      />
     </SafeAreaView>
   );
 }
