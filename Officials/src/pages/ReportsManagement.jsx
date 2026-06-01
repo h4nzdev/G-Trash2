@@ -22,6 +22,8 @@ import {
   MessageSquare,
   Send,
   Trash2,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import ReportCard from "../components/reports/ReportCard";
 import ReportFilter from "../components/reports/ReportFilter";
@@ -218,6 +220,7 @@ export default function ReportsManagement() {
     } catch { /* silent */ }
   };
 
+  const [viewMode, setViewMode] = useState("list");
   const [clearingIot, setClearingIot] = useState(false);
   const handleClearAllIot = async () => {
     if (!window.confirm('Delete all IoT auto-generated reports? This cannot be undone.')) return;
@@ -310,6 +313,30 @@ export default function ReportsManagement() {
           >
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
+          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode("list")}
+              title="List view"
+              className={`flex items-center px-2.5 py-1.5 transition-colors ${
+                viewMode === "list"
+                  ? "bg-emerald-700 text-white"
+                  : "bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              className={`flex items-center px-2.5 py-1.5 transition-colors border-l border-slate-200 ${
+                viewMode === "grid"
+                  ? "bg-emerald-700 text-white"
+                  : "bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -376,15 +403,100 @@ export default function ReportsManagement() {
         <div className="bg-white rounded-2xl border border-slate-100 py-20 text-center">
           <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
           <p className="text-sm font-semibold text-slate-600">
-            {reportList.length === 0
-              ? "No reports submitted yet"
-              : "No reports match your filters"}
+            {reportList.length === 0 ? "No reports submitted yet" : "No reports match your filters"}
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            {reportList.length === 0
-              ? "Reports from residents will appear here"
-              : "Try adjusting the filter criteria above"}
+            {reportList.length === 0 ? "Reports from residents will appear here" : "Try adjusting the filter criteria above"}
           </p>
+        </div>
+      ) : viewMode === "list" ? (
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+          {/* List header */}
+          <div className="grid grid-cols-[1fr_2fr_1fr_80px_88px_56px_40px] gap-3 items-center px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            <span>Status</span>
+            <span>Report</span>
+            <span className="hidden md:block">Reporter</span>
+            <span className="hidden lg:block">Time</span>
+            <span>Priority</span>
+            <span className="text-right">Score</span>
+            <span />
+          </div>
+
+          {/* List rows */}
+          <div className="divide-y divide-slate-50">
+            {filtered.map((report) => {
+              const statusDot = {
+                pending: "bg-amber-400",
+                "in-progress": "bg-blue-500",
+                resolved: "bg-emerald-500",
+              }[report.status] ?? "bg-slate-300";
+
+              const statusLabel = report.status === "in-progress"
+                ? "In Progress"
+                : report.status.charAt(0).toUpperCase() + report.status.slice(1);
+
+              const priorityColor = {
+                High: "text-red-600 bg-red-50 border-red-200",
+                Medium: "text-amber-600 bg-amber-50 border-amber-200",
+                Low: "text-slate-500 bg-slate-50 border-slate-200",
+              }[report.priority] ?? "text-slate-500 bg-slate-50 border-slate-200";
+
+              return (
+                <div
+                  key={report._id}
+                  onClick={() => openReport(report)}
+                  className="grid grid-cols-[1fr_2fr_1fr_80px_88px_56px_40px] gap-3 items-center px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors group"
+                >
+                  {/* Status */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`} />
+                    <span className="text-xs font-medium text-slate-600 truncate">{statusLabel}</span>
+                    {report.escalated && (
+                      <ShieldAlert className="w-3 h-3 text-red-500 flex-shrink-0" />
+                    )}
+                  </div>
+
+                  {/* Title + location */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{report.title}</p>
+                      {report.healthConcern && (
+                        <Heart className="w-3 h-3 text-red-500 flex-shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 truncate">
+                      {report.location}{report.barangay ? `, Brgy. ${report.barangay}` : ""}
+                    </p>
+                  </div>
+
+                  {/* Reporter */}
+                  <p className="hidden md:block text-xs text-slate-500 truncate">{report.reportedBy}</p>
+
+                  {/* Time */}
+                  <p className="hidden lg:block text-xs text-slate-400 truncate">{report.time}</p>
+
+                  {/* Priority */}
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border w-fit ${priorityColor}`}>
+                    {report.priority}
+                  </span>
+
+                  {/* Urgency score */}
+                  <span className={`text-xs font-bold text-right ${report.urgency > 0 ? "text-emerald-600" : "text-slate-400"}`}>
+                    {report.urgency > 0 ? "+" : ""}{report.urgency}
+                  </span>
+
+                  {/* Action */}
+                  <div className="flex justify-end">
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+            <p className="text-xs text-slate-400">{filtered.length} report{filtered.length !== 1 ? "s" : ""}</p>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

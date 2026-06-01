@@ -19,7 +19,7 @@ import API_URL from "../config";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const DATE_FILTERS = ["Today", "This Week", "This Month"];
-const DAILY_GOAL_KG = 270;
+const DAILY_STOP_GOAL = 8;
 
 function formatTime(dateStr) {
   const d = new Date(dateStr);
@@ -95,33 +95,33 @@ export default function CollectorHistoryScreen() {
     return DAYS_SHORT.map((day, i) => {
       const dateStr = weekDates[i];
       const dayLogs = allLogs.filter((l) => l.date === dateStr);
-      const kg = dayLogs.reduce((sum, l) => sum + (l.weight || 0), 0);
-      return { day, kg, target: 65, date: dateStr };
+      const stops = dayLogs.length;
+      const bins = dayLogs.reduce((sum, l) => sum + (l.bins || 0), 0);
+      return { day, stops, bins, target: DAILY_STOP_GOAL, date: dateStr };
     });
   }, [allLogs, weekDates]);
 
   // Derived stats
-  const totalKg = filteredLogs.reduce((sum, l) => sum + (l.weight || 0), 0);
   const totalBins = filteredLogs.reduce((sum, l) => sum + (l.bins || 0), 0);
   const completedStops = filteredLogs.length;
   const totalStops = activeFilter === "Today" && scheduledStops > 0 ? scheduledStops : completedStops;
   const efficiency = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
 
-  const weeklyTotal = weeklyData.reduce((sum, d) => sum + d.kg, 0);
-  const weeklyNonZero = weeklyData.filter((d) => d.kg > 0);
+  const weeklyTotal = weeklyData.reduce((sum, d) => sum + d.stops, 0);
+  const weeklyNonZero = weeklyData.filter((d) => d.stops > 0);
   const weeklyAverage = weeklyNonZero.length > 0 ? Math.round(weeklyTotal / weeklyNonZero.length) : 0;
-  const bestDay = weeklyData.reduce((best, curr) => (curr.kg > best.kg ? curr : best), { day: "—", kg: 0 });
-  const MAX_KG = Math.max(80, ...weeklyData.map((d) => d.kg));
+  const bestDay = weeklyData.reduce((best, curr) => (curr.stops > best.stops ? curr : best), { day: "—", stops: 0 });
+  const MAX_STOPS = Math.max(DAILY_STOP_GOAL, ...weeklyData.map((d) => d.stops));
 
   const summaryLabel =
     activeFilter === "Today" ? "Today's Summary" :
     activeFilter === "This Week" ? "This Week's Summary" :
     "This Month's Summary";
 
-  const periodGoal =
-    activeFilter === "Today" ? DAILY_GOAL_KG :
-    activeFilter === "This Week" ? DAILY_GOAL_KG * 7 :
-    DAILY_GOAL_KG * 30;
+  const periodStopGoal =
+    activeFilter === "Today" ? DAILY_STOP_GOAL :
+    activeFilter === "This Week" ? DAILY_STOP_GOAL * 5 :
+    DAILY_STOP_GOAL * 22;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -193,10 +193,10 @@ export default function CollectorHistoryScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <View style={[styles.statIconBg, { backgroundColor: "#E4EEE9" }]}>
-                  <MaterialIcons name="monitor-weight" size={20} color="#006A3B" />
+                  <MaterialIcons name="delete-sweep" size={20} color="#006A3B" />
                 </View>
-                <Text style={styles.statValue}>{totalKg}kg</Text>
-                <Text style={styles.statLabel}>Collected</Text>
+                <Text style={styles.statValue}>{totalBins}</Text>
+                <Text style={styles.statLabel}>Bins</Text>
               </View>
               <View style={styles.statCard}>
                 <View style={[styles.statIconBg, { backgroundColor: "#E4EEE9" }]}>
@@ -221,20 +221,22 @@ export default function CollectorHistoryScreen() {
               <View style={styles.summaryTop}>
                 <View>
                   <Text style={styles.summaryLabel}>{summaryLabel}</Text>
-                  <Text style={styles.summaryValue}>{totalKg}kg collected</Text>
+                  <Text style={styles.summaryValue}>
+                    {completedStops} {completedStops === 1 ? "stop" : "stops"} done
+                  </Text>
                 </View>
               </View>
               <View style={styles.progressBar}>
                 <View
                   style={[
                     styles.progressFill,
-                    { width: Math.min((totalKg / periodGoal) * 100, 100) + "%" },
+                    { width: Math.min((completedStops / Math.max(periodStopGoal, 1)) * 100, 100) + "%" },
                   ]}
                 />
               </View>
               <View style={styles.summaryBottom}>
                 <Text style={styles.summaryMeta}>{totalBins} bins collected</Text>
-                <Text style={styles.summaryMeta}>Goal: {periodGoal}kg</Text>
+                <Text style={styles.summaryMeta}>Goal: {periodStopGoal} stops</Text>
               </View>
             </View>
 
@@ -272,9 +274,8 @@ export default function CollectorHistoryScreen() {
                               </View>
                             </View>
                             <View style={styles.logContentRight}>
-                              <Text style={styles.logWeight}>
-                                {item.weight > 0 ? `${item.weight}kg` : "—"}
-                              </Text>
+                              <Text style={styles.logBins}>{item.bins || 0}</Text>
+                              <Text style={styles.logBinsLabel}>bins</Text>
                             </View>
                           </View>
                         </View>
@@ -291,26 +292,26 @@ export default function CollectorHistoryScreen() {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Weekly Performance</Text>
                 <View style={styles.weekTotalBadge}>
-                  <Text style={styles.weekTotalText}>{weeklyTotal}kg total</Text>
+                  <Text style={styles.weekTotalText}>{weeklyTotal} stops</Text>
                 </View>
               </View>
 
               <View style={styles.weekCard}>
                 <View style={styles.chartContainer}>
                   {weeklyData.map((item, index) => {
-                    const barHeight = item.kg > 0 ? Math.max(4, (item.kg / MAX_KG) * 100) : 0;
-                    const isAbove = item.kg >= item.target;
+                    const barHeight = item.stops > 0 ? Math.max(4, (item.stops / MAX_STOPS) * 100) : 0;
+                    const isAbove = item.stops >= item.target;
                     const isTodayBar = item.date === today;
                     return (
                       <View key={item.day} style={styles.barGroup}>
                         <Text style={[styles.barValue, isAbove && styles.barValueGood]}>
-                          {item.kg > 0 ? item.kg : ""}
+                          {item.stops > 0 ? item.stops : ""}
                         </Text>
                         <View style={styles.barTrack}>
                           <View
                             style={[
                               styles.barTargetLine,
-                              { bottom: (item.target / MAX_KG) * 100 },
+                              { bottom: (item.target / MAX_STOPS) * 100 },
                             ]}
                           />
                           <View
@@ -333,7 +334,7 @@ export default function CollectorHistoryScreen() {
                 <View style={styles.legendRow}>
                   <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: "#006A3B" }]} />
-                    <Text style={styles.legendText}>Collected</Text>
+                    <Text style={styles.legendText}>Stops done</Text>
                   </View>
                   <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: "#4CAF50" }]} />
@@ -351,7 +352,7 @@ export default function CollectorHistoryScreen() {
                     <Text style={styles.weekStatText}>
                       Best:{" "}
                       <Text style={styles.weekStatBold}>
-                        {bestDay.day} ({bestDay.kg}kg)
+                        {bestDay.day} ({bestDay.stops} stops)
                       </Text>
                     </Text>
                   </View>
@@ -359,7 +360,7 @@ export default function CollectorHistoryScreen() {
                     <MaterialIcons name="show-chart" size={16} color="#2196F3" />
                     <Text style={styles.weekStatText}>
                       Avg:{" "}
-                      <Text style={styles.weekStatBold}>{weeklyAverage}kg/day</Text>
+                      <Text style={styles.weekStatBold}>{weeklyAverage} stops/day</Text>
                     </Text>
                   </View>
                 </View>
@@ -374,10 +375,10 @@ export default function CollectorHistoryScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.achievementsRow}
               >
-                <View style={[styles.achievementCard, totalKg < 100 && styles.achievementLocked]}>
-                  <Text style={styles.achievementEmoji}>{totalKg >= 100 ? "🏆" : "🔒"}</Text>
-                  <Text style={styles.achievementTitle}>100kg Club</Text>
-                  <Text style={styles.achievementDesc}>Reach 100kg collected</Text>
+                <View style={[styles.achievementCard, completedStops < 50 && styles.achievementLocked]}>
+                  <Text style={styles.achievementEmoji}>{completedStops >= 50 ? "🏆" : "🔒"}</Text>
+                  <Text style={styles.achievementTitle}>50 Stops</Text>
+                  <Text style={styles.achievementDesc}>Complete 50 pickups</Text>
                 </View>
                 <View style={[styles.achievementCard, styles.achievementLocked]}>
                   <Text style={styles.achievementEmoji}>🔒</Text>
@@ -603,7 +604,8 @@ const styles = StyleSheet.create({
   logMetaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: "#DCD9D9" },
   logMetaText: { fontSize: 12, color: "#6F7A70" },
   logContentRight: { alignItems: "flex-end", justifyContent: "center", paddingLeft: 12 },
-  logWeight: { fontSize: 18, fontWeight: "800", color: "#006A3B" },
+  logBins: { fontSize: 20, fontWeight: "800", color: "#006A3B" },
+  logBinsLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
   logDivider: { height: 1, backgroundColor: "#F6F3F2", marginLeft: 48 },
 
   // Weekly Card

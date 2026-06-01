@@ -27,6 +27,9 @@ import * as Location from "expo-location";
 import { io } from "socket.io-client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
+import { useNetwork } from "../context/NetworkContext";
+import NetworkBanner from "../components/NetworkBanner";
+import { saveRouteCache, loadRouteCache } from "../utils/routeCache";
 import API_URL from "../config";
 import TRUCK_B64 from "../constants/truckBase64";
 
@@ -516,6 +519,7 @@ async function fetchORSRoute(waypoints) {
 // ── Main Component (identical to yours) ──────────────────
 export default function CollectorMapScreen() {
   const { user } = useAuth();
+  const { networkChangeKey } = useNetwork();
   // Helper for distance calculation
   const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; // meters
@@ -539,6 +543,7 @@ export default function CollectorMapScreen() {
   const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
   const [activeScheduleId, setActiveScheduleId] = useState(null);
   const [isPreferredRoute, setIsPreferredRoute] = useState(false);
+  const [isOfflineRoute, setIsOfflineRoute] = useState(false);
 
   // Fetch all of today's scheduled routes for this truck
   const fetchTodaySchedules = useCallback(() => {
@@ -644,6 +649,38 @@ export default function CollectorMapScreen() {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
     xhr.timeout = 6000;
+    const applyLiveRoute = (route) => {
+      setStops(waypointsToStops(route.waypoints));
+      setRouteAssigned(true);
+      setIsPreferredRoute(false);
+      setIsOfflineRoute(false);
+      setAssignedRouteName(route.name || '');
+      setAssignedRouteBarangay(route.barangay || '');
+      routeCoordsRef.current = route.routeCoords?.length > 1
+        ? route.routeCoords
+        : route.waypoints.map(wp => [wp.lat, wp.lng]);
+      saveRouteCache(TRUCK_ID, route);
+    };
+
+    const applyCachedRoute = async () => {
+      const cached = await loadRouteCache(TRUCK_ID);
+      if (cached?.waypoints?.length >= 1) {
+        setStops(waypointsToStops(cached.waypoints));
+        setRouteAssigned(true);
+        setIsPreferredRoute(false);
+        setIsOfflineRoute(true);
+        setAssignedRouteName(cached.name || '');
+        setAssignedRouteBarangay(cached.barangay || '');
+        routeCoordsRef.current = cached.routeCoords?.length > 1
+          ? cached.routeCoords
+          : cached.waypoints.map(wp => [wp.lat, wp.lng]);
+      } else {
+        setRouteAssigned(false);
+        setStops([]);
+        routeCoordsRef.current = [];
+      }
+    };
+
     xhr.onload = () => {
       console.log(`[App] Route response status: ${xhr.status}`);
       if (xhr.status === 200) {
@@ -651,36 +688,23 @@ export default function CollectorMapScreen() {
           const route = JSON.parse(xhr.responseText);
           console.log(`[App] Received route data:`, route);
           if (route.waypoints?.length >= 1) {
-            setStops(waypointsToStops(route.waypoints));
-            setRouteAssigned(true);
-            setIsPreferredRoute(false);
-            setAssignedRouteName(route.name || '');
-            setAssignedRouteBarangay(route.barangay || '');
-            routeCoordsRef.current = route.routeCoords?.length > 1
-              ? route.routeCoords
-              : route.waypoints.map(wp => [wp.lat, wp.lng]);
+            applyLiveRoute(route);
             console.log(`[App] Route successfully assigned: ${route.name}`);
           } else {
             console.warn(`[App] Route has no waypoints!`);
-            setRouteAssigned(false);
-            setStops([]);
-            routeCoordsRef.current = [];
+            applyCachedRoute();
           }
         } catch (e) {
           console.error(`[App] Parse error in route:`, e);
-          setRouteAssigned(false);
-          setStops([]);
-          routeCoordsRef.current = [];
+          applyCachedRoute();
         }
       } else {
         console.warn(`[App] Non-200 status for route: ${xhr.status}`);
-        setRouteAssigned(false);
-        setStops([]);
-        routeCoordsRef.current = [];
+        applyCachedRoute();
       }
     };
-    xhr.onerror = (e) => { console.error(`[App] XHR Error (Route):`, e); setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
-    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Route)`); setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
+    xhr.onerror = (e) => { console.error(`[App] XHR Error (Route):`, e); applyCachedRoute(); };
+    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Route)`); applyCachedRoute(); };
     xhr.send();
     return () => xhr.abort();
   }, [activeScheduleId, todaySchedules]);
@@ -994,7 +1018,9 @@ export default function CollectorMapScreen() {
       socket.disconnect();
       locationSub?.remove();
     };
-  }, [fetchTodaySchedules]);
+  // networkChangeKey bumps when WiFi → cellular (or back), forcing the socket
+  // to reconnect immediately over the new interface instead of timing out.
+  }, [fetchTodaySchedules, networkChangeKey]);
   // Shift elapsed timer — updates every 15 s while navigating
   useEffect(() => {
     if (!navigationActive) return;
@@ -1353,6 +1379,7 @@ export default function CollectorMapScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
+      <NetworkBanner />
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
@@ -1806,6 +1833,12 @@ export default function CollectorMapScreen() {
                   <View style={styles.prefBadge}>
                     <MaterialIcons name="star" size={10} color="#92400E" />
                     <Text style={styles.prefBadgeText}>Preferred</Text>
+                  </View>
+                )}
+                {isOfflineRoute && (
+                  <View style={[styles.prefBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                    <MaterialIcons name="cloud-off" size={10} color="#92400E" />
+                    <Text style={styles.prefBadgeText}>Cached</Text>
                   </View>
                 )}
               </View>

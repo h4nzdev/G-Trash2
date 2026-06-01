@@ -245,52 +245,6 @@ export default function DriverAnalytics() {
         </div>
       </div>
 
-      {/* Collection Logs */}
-      {collections.length > 0 && (
-        <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-              <Package className="w-4 h-4 text-amber-500" /> Collection Logs (This Month)
-            </h2>
-            <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">{collections.length} entries</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50">
-                  <th className="px-5 py-3">Stop</th>
-                  <th className="px-5 py-3">Type</th>
-                  <th className="px-5 py-3">Weight</th>
-                  <th className="px-5 py-3">Bins</th>
-                  <th className="px-5 py-3">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {collections.slice(0, 20).map((c) => (
-                  <tr key={c._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3">
-                      <p className="text-sm font-medium text-slate-700">{c.stopName || '—'}</p>
-                      {c.stopAddress && c.stopAddress !== c.stopName && (
-                        <p className="text-xs text-slate-400">{c.stopAddress}</p>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                        {c.wasteType || '—'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-sm font-semibold text-slate-700">{c.weight ? `${c.weight} kg` : '—'}</td>
-                    <td className="px-5 py-3 text-sm text-slate-500">{c.bins ?? '—'}</td>
-                    <td className="px-5 py-3 text-xs text-slate-400">
-                      {c.date ? new Date(c.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import CollectorTabNavigator from './src/navigation/CollectorTabNavigator';
 import LoginScreen from './src/screens/LoginScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { NetworkProvider } from './src/context/NetworkContext';
 import colors from './src/constants/colors';
 
 function RootNavigation() {
@@ -28,9 +29,11 @@ function RootNavigation() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <RootNavigation />
-      </AuthProvider>
+      <NetworkProvider>
+        <AuthProvider>
+          <RootNavigation />
+        </AuthProvider>
+      </NetworkProvider>
     </SafeAreaProvider>
   );
 }

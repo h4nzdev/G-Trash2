@@ -72,8 +72,8 @@ export const AuthProvider = ({ children }) => {
       }
     });
     return () => {
-      if (notifListenerRef.current) Notifications.removeNotificationSubscription(notifListenerRef.current);
-      Notifications.removeNotificationSubscription(responseSub);
+      notifListenerRef.current?.remove();
+      responseSub.remove();
     };
   }, []);
 

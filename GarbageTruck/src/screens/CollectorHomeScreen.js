@@ -22,8 +22,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useNetwork } from "../context/NetworkContext";
+import { saveRouteCache, loadRouteCache } from "../utils/routeCache";
 import API_URL from "../config";
 
+import NetworkBanner from "../components/NetworkBanner";
 import StatsCard from "../components/StatsCard";
 import RouteTimelineCollector from "../components/RouteTimelineCollector";
 import PickupActionCard from "../components/PickupActionCard";
@@ -71,6 +74,7 @@ function SkeletonBlock({ width = "100%", height = 16, radius = 8, style }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CollectorHomeScreen() {
   const { user, unreadCount, clearUnread } = useAuth();
+  const { networkChangeKey } = useNetwork();
   const navigation = useNavigation();
   const TRUCK_ID = user?.truckId ?? "GT-000";
   const driverName = user?.driverName ?? "Collector";
@@ -81,6 +85,7 @@ export default function CollectorHomeScreen() {
   const [pickupStatus, setPickupStatus] = useState("pending");
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [isOfflineRoute, setIsOfflineRoute] = useState(false);
   const [showCleanedConfetti, setShowCleanedConfetti] = useState(false);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [truckCapacity, setTruckCapacity] = useState(0);
@@ -103,7 +108,9 @@ export default function CollectorHomeScreen() {
     }, [fetchRouteData])
   );
 
-  // Socket: re-fetch when an official assigns a new schedule or route to this truck
+  // Socket: re-fetch when an official assigns a new schedule or route to this truck.
+  // networkChangeKey bumps whenever the interface switches (WiFi → cellular or back),
+  // which tears down the stale socket and opens a fresh one immediately.
   useEffect(() => {
     const socket = io(API_URL, { transports: ['websocket', 'polling'] });
     socket.on('schedule:changed', ({ truckId }) => {
@@ -113,7 +120,7 @@ export default function CollectorHomeScreen() {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchRouteData();
     });
     return () => socket.disconnect();
-  }, [TRUCK_ID, fetchRouteData]);
+  }, [TRUCK_ID, fetchRouteData, networkChangeKey]);
 
   useEffect(() => {
     // Simulate capacity based on weight collected (max 1000kg for this truck)
@@ -130,17 +137,30 @@ export default function CollectorHomeScreen() {
   const successScale = useRef(new Animated.Value(1)).current;
   const cleanedOpacity = useRef(new Animated.Value(0)).current;
 
-  const applyRoute = useCallback((route) => {
+  const applyRoute = useCallback((route, fromCache = false) => {
     if (route?.waypoints?.length >= 1) {
       setStops(waypointsToStops(route.waypoints));
       setRouteName(route.name || "");
       setRouteAssigned(true);
+      if (!fromCache) saveRouteCache(TRUCK_ID, route);
     } else {
       setRouteAssigned(false);
       setStops([]);
     }
     setIsLoading(false);
-  }, []);
+  }, [TRUCK_ID]);
+
+  // Last-resort fallback: load today's cached route when all network calls fail.
+  const tryOfflineCache = useCallback(async () => {
+    const cached = await loadRouteCache(TRUCK_ID);
+    if (cached) {
+      applyRoute(cached, true);
+      setIsOfflineRoute(true);
+    } else {
+      setHasError(true);
+      setIsLoading(false);
+    }
+  }, [TRUCK_ID, applyRoute]);
 
   // Fallback: route assigned directly to this truck
   const fetchRouteDirect = useCallback(() => {
@@ -150,20 +170,19 @@ export default function CollectorHomeScreen() {
     xhr.onload = () => {
       if (xhr.status === 200) {
         try { applyRoute(JSON.parse(xhr.responseText)); }
-        catch (_) { setHasError(true); setIsLoading(false); }
+        catch (_) { tryOfflineCache(); }
       } else if (xhr.status === 404) {
         setRouteAssigned(false);
         setStops([]);
         setIsLoading(false);
       } else {
-        setHasError(true);
-        setIsLoading(false);
+        tryOfflineCache();
       }
     };
-    xhr.onerror = () => { setHasError(true); setIsLoading(false); };
-    xhr.ontimeout = () => { setHasError(true); setIsLoading(false); };
+    xhr.onerror = () => tryOfflineCache();
+    xhr.ontimeout = () => tryOfflineCache();
     xhr.send();
-  }, [TRUCK_ID, applyRoute]);
+  }, [TRUCK_ID, applyRoute, tryOfflineCache]);
 
   // Fetch a route by its ID
   const fetchRouteById = useCallback((routeId) => {
@@ -186,6 +205,7 @@ export default function CollectorHomeScreen() {
   const fetchRouteData = useCallback(() => {
     setIsLoading(true);
     setHasError(false);
+    setIsOfflineRoute(false);
 
     // Device-local date (YYYY-MM-DD) sent to avoid server UTC vs device timezone mismatch
     const now = new Date();
@@ -360,26 +380,27 @@ export default function CollectorHomeScreen() {
   var renderSkeleton = function () {
     return (
       <Animated.View style={{ opacity: pulseAnim }}>
-        <View style={styles.statsRow}>
-          {[0, 1].map(function (i) {
-            return (
-              <View key={i} style={[styles.skeletonCard, { flex: 1 }]}>
-                <SkeletonBlock width={36} height={36} radius={10} style={{ marginBottom: 12 }} />
-                <SkeletonBlock width="55%" height={26} style={{ marginBottom: 8 }} />
-                <SkeletonBlock width="75%" height={11} style={{ marginBottom: 10 }} />
-                <SkeletonBlock height={6} radius={3} />
-              </View>
-            );
-          })}
-        </View>
-        <View style={[styles.skeletonCard, { marginBottom: 32 }]}>
-          <SkeletonBlock width="45%" height={13} style={{ marginBottom: 20 }} />
-          <SkeletonBlock height={20} style={{ marginBottom: 8 }} />
-          <SkeletonBlock width="55%" height={13} style={{ marginBottom: 28 }} />
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <SkeletonBlock height={48} radius={12} style={{ flex: 1 }} />
-            <SkeletonBlock height={48} radius={12} style={{ flex: 1 }} />
+        <View style={styles.skeletonHero}>
+          <SkeletonBlock width="40%" height={13} style={{ marginBottom: 10 }} />
+          <SkeletonBlock width="55%" height={30} style={{ marginBottom: 14 }} />
+          <SkeletonBlock width="70%" height={13} style={{ marginBottom: 20 }} />
+          <SkeletonBlock height={6} radius={3} style={{ marginBottom: 16 }} />
+          <View style={styles.skeletonStatsRow}>
+            {[0,1,2].map(i => <SkeletonBlock key={i} height={52} radius={8} style={{ flex: 1 }} />)}
           </View>
+        </View>
+        <View style={styles.skeletonSection}>
+          <SkeletonBlock width="35%" height={11} style={{ marginBottom: 14 }} />
+          <SkeletonBlock height={88} radius={12} style={{ marginBottom: 12 }} />
+        </View>
+        <View style={styles.skeletonSection}>
+          <SkeletonBlock width="30%" height={11} style={{ marginBottom: 14 }} />
+          {[0,1,2].map(i => (
+            <View key={i} style={{ flexDirection: 'row', gap: 12, marginBottom: 14, alignItems: 'center' }}>
+              <SkeletonBlock width={10} height={10} radius={5} />
+              <SkeletonBlock height={13} style={{ flex: 1 }} />
+            </View>
+          ))}
         </View>
       </Animated.View>
     );
@@ -389,16 +410,12 @@ export default function CollectorHomeScreen() {
     return (
       <View style={styles.stateCard}>
         <View style={styles.errorIconWrap}>
-          <MaterialIcons name="wifi-off" size={32} color="#BA1A1A" />
+          <MaterialIcons name="wifi-off" size={28} color="#DC2626" />
         </View>
         <Text style={styles.stateTitle}>Failed to load route</Text>
         <Text style={styles.stateSub}>Check your connection and try again.</Text>
-        <TouchableOpacity
-          style={styles.retryBtn}
-          onPress={fetchRouteData}
-          activeOpacity={0.8}
-        >
-          <MaterialIcons name="refresh" size={18} color="#FFFFFF" />
+        <TouchableOpacity style={styles.retryBtn} onPress={fetchRouteData} activeOpacity={0.8}>
+          <MaterialIcons name="refresh" size={16} color="#FFFFFF" />
           <Text style={styles.retryBtnText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -409,16 +426,12 @@ export default function CollectorHomeScreen() {
     return (
       <View style={styles.stateCard}>
         <View style={styles.emptyIconWrap}>
-          <MaterialIcons name="local-shipping" size={40} color="#BECABE" />
+          <MaterialIcons name="local-shipping" size={36} color="#9CA3AF" />
         </View>
-        <Text style={[styles.stateTitle, { color: "#6F7A70" }]}>No route assigned yet</Text>
-        <Text style={styles.stateSub}>Check back later or contact dispatch for your assignment.</Text>
-        <TouchableOpacity
-          style={[styles.retryBtn, { backgroundColor: "#6F7A70" }]}
-          onPress={fetchRouteData}
-          activeOpacity={0.8}
-        >
-          <MaterialIcons name="refresh" size={18} color="#FFFFFF" />
+        <Text style={[styles.stateTitle, { color: "#374151" }]}>No route assigned yet</Text>
+        <Text style={styles.stateSub}>Check back later or contact dispatch.</Text>
+        <TouchableOpacity style={[styles.retryBtn, { backgroundColor: "#6B7280" }]} onPress={fetchRouteData} activeOpacity={0.8}>
+          <MaterialIcons name="refresh" size={16} color="#FFFFFF" />
           <Text style={styles.retryBtnText}>Refresh</Text>
         </TouchableOpacity>
       </View>
@@ -429,46 +442,45 @@ export default function CollectorHomeScreen() {
     return (
       <View style={styles.stateCard}>
         <View style={styles.successIconWrap}>
-          <MaterialIcons name="check-circle" size={48} color="#006A3B" />
+          <MaterialIcons name="check-circle" size={40} color="#006A3B" />
         </View>
         <Text style={[styles.stateTitle, { color: "#006A3B" }]}>All stops cleared!</Text>
         <Text style={styles.stateSub}>
-          Great work today, {TRUCK_ID}. You collected {totalWeight}kg total.
+          Great work, {driverName.split(" ")[0]}. You collected {totalWeight}kg today.
         </Text>
       </View>
     );
   };
 
-  // ─── Main Return ───────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
+      <NetworkBanner />
 
-      {/* Fixed Header */}
+      {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Image
-            source={require('../../assets/logo.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
           <View style={styles.collectorBadge}>
             <Text style={styles.collectorBadgeText}>Collector</Text>
           </View>
         </View>
+        <View style={styles.headerCenter}>
+          <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
+        </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={fetchRouteData}>
-            <MaterialIcons name="refresh" size={22} color="#1B1C1C" />
+          <TouchableOpacity style={styles.headerBtn} onPress={fetchRouteData} activeOpacity={0.7}>
+            <MaterialIcons name="refresh" size={20} color="#374151" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.headerIconBtn}
+            style={styles.headerBtn}
             activeOpacity={0.7}
             onPress={() => { clearUnread(); navigation.navigate('Alerts'); }}
           >
             <MaterialIcons
               name={unreadCount > 0 ? "notifications" : "notifications-none"}
-              size={24}
-              color={unreadCount > 0 ? "#006A3B" : "#1B1C1C"}
+              size={22}
+              color={unreadCount > 0 ? "#006A3B" : "#374151"}
             />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
@@ -479,203 +491,117 @@ export default function CollectorHomeScreen() {
         </View>
       </View>
 
-      {/* Truck Status Bar */}
-      <View style={styles.truckStatusBar}>
-        <View style={styles.statusLeft}>
-          <View style={styles.truckIdBadge}>
-            <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.capacityContainer}>
-          <View style={styles.capacityLabelRow}>
-            <Text style={styles.capacityLabel}>Bin Capacity</Text>
-            <Text style={[styles.capacityValue, truckCapacity > 85 && { color: '#EF4444' }]}>
-              {truckCapacity}%
-            </Text>
-          </View>
-          <View style={styles.capacityBarBG}>
-            <View style={[
-              styles.capacityBarFill, 
-              { width: `${truckCapacity}%` },
-              truckCapacity > 85 && { backgroundColor: '#EF4444' }
-            ]} />
-          </View>
-        </View>
-      </View>
-
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
       >
-        {/* Greeting Section */}
-        <View style={styles.welcomeCard}>
-          <View style={styles.welcomeInfo}>
-            <Text style={styles.greeting}>Good Morning,</Text>
-            <Text style={styles.driverName}>{driverName.split(" ")[0]}!</Text>
-            <Text style={styles.greetingSub}>
-              {routeAssigned ? `Active Route: ${routeName}` : "Waiting for route assignment."}
-            </Text>
-            <View style={styles.driverRow}>
-              <View style={styles.driverChip}>
-                <MaterialIcons name="badge" size={14} color="#FFFFFF" />
-                <Text style={styles.driverChipText}>{TRUCK_ID}</Text>
-              </View>
-              {routeAssigned ? (
-                <View style={styles.driverChip}>
-                  <MaterialIcons name="route" size={14} color="#FFFFFF" />
-                  <Text style={styles.driverChipText}>{routeName}</Text>
-                </View>
-              ) : (
-                <View style={[styles.driverChip, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
-                  <MaterialIcons name="schedule" size={14} color="#FFFFFF" />
-                  <Text style={styles.driverChipText}>Unassigned</Text>
-                </View>
-              )}
+        {/* ── Hero (no card — inline native text) ── */}
+        <View style={styles.hero}>
+          <View style={styles.heroTop}>
+            <View>
+              <Text style={styles.heroGreeting}>Good morning,</Text>
+              <Text style={styles.heroName}>{driverName.split(" ")[0]}!</Text>
             </View>
+            {isOfflineRoute && (
+              <View style={styles.offlinePill}>
+                <MaterialIcons name="cloud-off" size={11} color="#92400E" />
+                <Text style={styles.offlinePillText}>Cached</Text>
+              </View>
+            )}
           </View>
-          <View style={styles.welcomeIconBox}>
-            <MaterialIcons name="eco" size={80} color="rgba(255,255,255,0.15)" />
-          </View>
+          <Text style={styles.heroRoute}>
+            {routeAssigned ? `Route: ${routeName}` : 'Waiting for route assignment'}
+          </Text>
+
+          {!isLoading && !hasError && routeAssigned && stops.length > 0 && (
+            <View style={styles.heroMeta}>
+              <View style={styles.progressRow}>
+                <Text style={styles.progressLabel}>{completedCount} of {stops.length} stops done</Text>
+                <Text style={styles.progressPct}>{progressPct}%</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+              </View>
+              <View style={styles.statsStrip}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{completedCount}/{stops.length}</Text>
+                  <Text style={styles.statLabel}>Stops</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{totalWeight > 0 ? `${totalWeight}kg` : '—'}</Text>
+                  <Text style={styles.statLabel}>Collected</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={[styles.statValue, truckCapacity > 85 && { color: '#DC2626' }]}>
+                    {truckCapacity}%
+                  </Text>
+                  <Text style={styles.statLabel}>Bin Load</Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* ─── PERFORMANCE ANALYTICS ─────────────────────────────────────── */}
-        {!isLoading && !hasError && routeAssigned && stops.length > 0 ? (
+        {/* ── Loading ── */}
+        {isLoading ? renderSkeleton() : null}
+
+        {/* ── Error ── */}
+        {!isLoading && hasError ? renderError() : null}
+
+        {/* ── Unassigned ── */}
+        {!isLoading && !hasError && !routeAssigned ? renderUnassigned() : null}
+
+        {/* ── All Done ── */}
+        {!isLoading && !hasError && routeAssigned && stops.length > 0 && !currentStop
+          ? renderAllDone() : null}
+
+        {/* ── Current Stop ── */}
+        {!isLoading && !hasError && routeAssigned && currentStop ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Performance Analytics</Text>
-
-            <View style={styles.statsRow}>
-              <StatsCard
-                icon="local-shipping"
-                value={completedCount + "/" + stops.length}
-                label="Stops Completed"
-                progress={progressPct}
-                color="#006A3B"
-              />
-              <StatsCard
-                icon="schedule"
-                value={currentStop ? currentStop.time : "—"}
-                label={currentStop ? currentStop.name : stops.length > 0 ? "All done" : "No stops"}
-                sublabel={currentStop ? "Scheduled" : undefined}
-                color="#006E1C"
-              />
+            <Text style={styles.sectionLabel}>Current Stop</Text>
+            <View style={styles.surface}>
+              <Animated.View ref={actionRef} style={{ transform: [{ scale: successScale }] }}>
+                <PickupActionCard
+                  location={currentStop.name}
+                  binCount={currentStop.bins || 3}
+                  status={pickupStatus}
+                  navigationActive={navActive}
+                  onMarkCleaned={handleMarkCleaned}
+                  onReportIssue={handleReportIssue}
+                />
+              </Animated.View>
             </View>
-
-            {/* Today's Summary */}
-            <View style={[styles.card, { marginBottom: 16 }]}>
-              <View style={styles.analyticsHeader}>
-                <MaterialIcons name="today" size={18} color="#006A3B" />
-                <Text style={styles.analyticsTitle}>Today's Summary</Text>
-              </View>
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{completedCount}</Text>
-                  <Text style={styles.summaryLabel}>Stops Done</Text>
-                </View>
-                <View style={styles.summaryDivider} />
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{totalWeight > 0 ? totalWeight + "kg" : "—"}</Text>
-                  <Text style={styles.summaryLabel}>Collected</Text>
-                </View>
-                <View style={styles.summaryDivider} />
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{progressPct}%</Text>
-                  <Text style={styles.summaryLabel}>Complete</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Waste Breakdown (computed from real stops) */}
-            {wasteBreakdown.length > 0 ? (
-              <View style={[styles.card, { marginBottom: 16 }]}>
-                <View style={styles.analyticsHeader}>
-                  <MaterialIcons name="pie-chart" size={18} color="#006A3B" />
-                  <Text style={styles.analyticsTitle}>Route Waste Breakdown</Text>
-                </View>
-                {wasteBreakdown.map(function (item, i) {
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.breakdownItem, i < wasteBreakdown.length - 1 && { marginBottom: 14 }]}
-                    >
-                      <View style={styles.breakdownRow}>
-                        <View style={styles.breakdownLabelRow}>
-                          <View style={[styles.breakdownDot, { backgroundColor: item.color }]} />
-                          <Text style={styles.breakdownType}>{item.type}</Text>
-                        </View>
-                        <Text style={styles.breakdownWeight}>{item.weight}</Text>
-                      </View>
-                      <View style={styles.breakdownBar}>
-                        <View style={[styles.breakdownFill, { width: item.percent + "%", backgroundColor: item.color }]} />
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
           </View>
         ) : null}
 
-        {/* Loading State */}
-        {isLoading ? renderSkeleton() : null}
-
-        {/* Error State */}
-        {!isLoading && hasError ? renderError() : null}
-
-        {/* Unassigned State */}
-        {!isLoading && !hasError && !routeAssigned ? renderUnassigned() : null}
-
-        {/* All Done State */}
-        {!isLoading && !hasError && routeAssigned && stops.length > 0 && !currentStop
-          ? renderAllDone()
-          : null}
-
-        {/* Current Pickup Action Card */}
-        {!isLoading && !hasError && routeAssigned && currentStop ? (
-          <Animated.View
-            ref={actionRef}
-            style={[styles.section, { transform: [{ scale: successScale }] }]}
-          >
-            <Text style={styles.sectionTitle}>Current Pickup</Text>
-            <PickupActionCard
-              location={currentStop.name}
-              binCount={currentStop.bins || 3}
-              status={pickupStatus}
-              navigationActive={navActive}
-              onMarkCleaned={handleMarkCleaned}
-              onReportIssue={handleReportIssue}
-            />
-          </Animated.View>
-        ) : null}
-
-        {/* Assigned Route Section */}
+        {/* ── Assigned Route ── */}
         {!isLoading && !hasError && routeAssigned && stops.length > 0 ? (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Assigned Route</Text>
+              <Text style={styles.sectionLabel}>Assigned Route</Text>
               <View style={styles.routeNameBadge}>
-                <MaterialIcons name="route" size={13} color="#006A3B" />
+                <MaterialIcons name="route" size={11} color="#006A3B" />
                 <Text style={styles.routeNameBadgeText}>{routeName}</Text>
               </View>
             </View>
-            <View style={styles.card}>
+            <View style={styles.surface}>
               <RouteTimelineCollector stops={stops} />
             </View>
           </View>
         ) : null}
 
-        {/* Collection Log (from completed stops) */}
+        {/* ── Collection Log ── */}
         {!isLoading && !hasError && routeAssigned ? (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Today's Collection Log</Text>
-              {totalWeight > 0 ? (
-                <Text style={styles.logTotal}>{totalWeight}kg total</Text>
-              ) : null}
+              <Text style={styles.sectionLabel}>Today's Log</Text>
+              {totalWeight > 0 ? <Text style={styles.logTotal}>{totalWeight}kg total</Text> : null}
             </View>
-            <View style={styles.card}>
+            <View style={styles.surface}>
               {completedStops.length > 0 ? (
                 completedStops.map(function (item, i) {
                   return (
@@ -699,11 +625,11 @@ export default function CollectorHomeScreen() {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* Cleaned Success Overlay */}
+      {/* ── Cleaned overlay ── */}
       {showCleanedConfetti ? (
         <Animated.View style={[styles.cleanedOverlay, { opacity: cleanedOpacity }]}>
           <View style={styles.cleanedCard}>
-            <MaterialIcons name="check-circle" size={56} color="#006A3B" />
+            <MaterialIcons name="check-circle" size={52} color="#006A3B" />
             <Text style={styles.cleanedTitle}>Area Cleaned!</Text>
             <Text style={styles.cleanedSub}>System updated successfully</Text>
           </View>
@@ -815,398 +741,252 @@ export default function CollectorHomeScreen() {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
+  safeArea: { flex: 1, backgroundColor: '#F2F2F7' },
 
+  // ── Header ─────────────────────────────────────────────────────────────────
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-  },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  headerLogo: { width: 90, height: 36 },
-  truckStatusBar: {
-    height: 70,
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
     backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0EDED',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
   },
-  statusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  truckIdBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'flex-end' },
+  headerLogo: { width: 72, height: 26 },
+  collectorBadge: {
+    backgroundColor: '#ECFDF5',
     borderRadius: 6,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
   },
-  truckIdText: {
-    fontSize: 10,
+  collectorBadgeText: {
+    fontSize: 9,
     fontWeight: '800',
-    color: '#64748B',
+    color: '#059669',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  capacityContainer: {
-    width: 140,
+  truckIdText: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.3 },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  capacityLabelRow: {
+  notifBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#006A3B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  notifBadgeText: { fontSize: 8, fontWeight: '800', color: '#FFFFFF' },
+
+  scrollContainer: { paddingTop: 0 },
+
+  // ── Hero ────────────────────────────────────────────────────────────────────
+  hero: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  heroTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
+    marginBottom: 2,
+  },
+  heroGreeting: { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
+  heroName: { fontSize: 26, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 32 },
+  heroRoute: { fontSize: 13, color: '#6B7280', fontWeight: '500', marginTop: 6, marginBottom: 0 },
+
+  heroMeta: { marginTop: 16 },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 6,
   },
-  capacityLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#6F7A70',
-    textTransform: 'uppercase',
+  progressLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
+  progressPct: { fontSize: 12, fontWeight: '700', color: '#006A3B' },
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 14,
   },
-  capacityValue: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#006A3B',
-  },
-  capacityBarBG: {
-    height: 8,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 4,
+  progressFill: { height: '100%', backgroundColor: '#006A3B', borderRadius: 2 },
+  statsStrip: {
+    flexDirection: 'row',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
     overflow: 'hidden',
   },
-  capacityBarFill: {
-    height: '100%',
-    backgroundColor: '#006A3B',
-    borderRadius: 4,
+  statItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  statValue: { fontSize: 17, fontWeight: '800', color: '#111827', letterSpacing: -0.3 },
+  statLabel: {
+    fontSize: 9,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: 2,
+    fontWeight: '600',
   },
-  collectorBadge: {
-    backgroundColor: "#ECFDF5",
-    borderRadius: 8,
+  statDivider: { width: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginVertical: 8 },
+
+  offlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 9999,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: "#D1FAE5",
+    borderColor: '#FDE68A',
   },
-  collectorBadgeText: {
+  offlinePillText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
+
+  // ── Sections ────────────────────────────────────────────────────────────────
+  section: { marginBottom: 0 },
+  sectionLabel: {
     fontSize: 11,
-    fontWeight: "800",
-    color: "#059669",
-    textTransform: "uppercase",
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
     letterSpacing: 0.8,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
-  headerIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "#F8FAFC",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-    position: "relative",
-  },
-  notifBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#006A3B",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 3,
-  },
-  notifBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "#F1F5F9",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-
-  scrollContainer: { paddingHorizontal: 16, paddingTop: 24 },
-
-  welcomeCard: {
-    backgroundColor: "#006A3B",
-    borderRadius: 28,
-    padding: 24,
-    marginBottom: 28,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    overflow: "hidden",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  welcomeInfo: { flex: 1, zIndex: 2 },
-  greeting: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.7)",
-    marginBottom: 2,
-  },
-  driverName: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: -0.5,
-    marginBottom: 8,
-  },
-  greetingSub: { 
-    fontSize: 14, 
-    color: "rgba(255,255,255,0.85)", 
-    lineHeight: 20, 
-    marginBottom: 20,
-    fontWeight: "500",
-  },
-  welcomeIconBox: {
-    position: "absolute",
-    right: -10,
-    bottom: -20,
-    zIndex: 1,
-  },
-  driverRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  driverChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 9999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  driverChipText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
-
-  section: { marginBottom: 32 },
   sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  surface: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     marginBottom: 16,
-    zIndex: 10,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#1B1C1C",
-    lineHeight: 22,
-    marginBottom: 16,
-    letterSpacing: -0.5,
-  },
-
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-  },
-  skeletonCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 32,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  statsRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-
-  analyticsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-  analyticsTitle: { fontSize: 16, fontWeight: "700", color: "#1B1C1C", flex: 1 },
-
-  summaryGrid: { flexDirection: "row", alignItems: "center" },
-  summaryItem: { flex: 1, alignItems: "center" },
-  summaryValue: { fontSize: 22, fontWeight: "800", color: "#006A3B", marginBottom: 2 },
-  summaryLabel: {
-    fontSize: 10,
-    color: "#64748B",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    fontWeight: "700",
-  },
-  summaryDivider: { width: 1, height: 36, backgroundColor: "#F0EDED" },
-
-  breakdownItem: {},
-  breakdownRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  breakdownLabelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  breakdownDot: { width: 10, height: 10, borderRadius: 5 },
-  breakdownType: { fontSize: 14, fontWeight: "500", color: "#1B1C1C" },
-  breakdownWeight: { fontSize: 14, fontWeight: "700", color: "#1B1C1C" },
-  breakdownBar: { height: 6, backgroundColor: "#F6F3F2", borderRadius: 3, overflow: "hidden" },
-  breakdownFill: { height: "100%", borderRadius: 3 },
-
   routeNameBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#E4EEE9",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#C8DDD4",
+    borderColor: '#D1FAE5',
   },
-  routeNameBadgeText: { fontSize: 12, fontWeight: "600", color: "#006A3B" },
+  routeNameBadgeText: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
 
+  logTotal: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
+  logEmpty: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 20 },
+
+  // ── State cards ─────────────────────────────────────────────────────────────
   stateCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 40,
-    alignItems: "center",
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
+    padding: 36,
+    alignItems: 'center',
     gap: 8,
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: "#F0EDED",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    marginBottom: 16,
   },
-  stateTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#006A3B",
-    lineHeight: 22,
-    textAlign: "center",
-    marginTop: 4,
-  },
-  stateSub: { fontSize: 13, color: "#6F7A70", lineHeight: 18, textAlign: "center" },
+  stateTitle: { fontSize: 16, fontWeight: '700', color: '#111827', textAlign: 'center', marginTop: 4 },
+  stateSub: { fontSize: 13, color: '#9CA3AF', lineHeight: 19, textAlign: 'center' },
   errorIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FDE9E9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 4,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
   },
   emptyIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#F6F3F2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 4,
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
   },
   successIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#E4EEE9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 4,
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
   },
   retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-    backgroundColor: "#006A3B",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8,
+    backgroundColor: '#006A3B',
+    paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10,
   },
-  retryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
+  retryBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 
-  logTotal: { fontSize: 13, fontWeight: "600", color: "#006A3B" },
-  logEmpty: { fontSize: 13, color: "#6F7A70", textAlign: "center", paddingVertical: 12 },
+  // ── Skeleton ─────────────────────────────────────────────────────────────────
+  skeletonHero: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  skeletonStatsRow: { flexDirection: 'row', gap: 10 },
+  skeletonSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
 
+  // ── Cleaned overlay ──────────────────────────────────────────────────────────
   cleanedOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 100,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center', alignItems: 'center', zIndex: 100,
   },
   cleanedCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 40,
-    alignItems: "center",
-    gap: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 40,
-    elevation: 20,
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 32,
+    alignItems: 'center', gap: 8, marginHorizontal: 40,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1, shadowRadius: 20, elevation: 12,
   },
-  cleanedTitle: { fontSize: 22, fontWeight: "700", color: "#006A3B", marginTop: 8 },
-  cleanedSub: { fontSize: 14, color: "#6F7A70" },
+  cleanedTitle: { fontSize: 18, fontWeight: '800', color: '#006A3B', marginTop: 8 },
+  cleanedSub: { fontSize: 13, color: '#6B7280' },
 
   fab: {
-    position: "absolute",
+    position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#006A3B",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#006A3B",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#006A3B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#006A3B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
     elevation: 8,
     zIndex: 50,
   },
@@ -1334,5 +1114,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  bottomSpacer: { height: 40 },
+  bottomSpacer: { height: 100 },
 });
