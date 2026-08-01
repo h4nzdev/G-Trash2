@@ -9,6 +9,7 @@ import RouteBuilder from './pages/RouteBuilder';
 import BarangayPerformance from './pages/BarangayPerformance';
 import ReportsManagement from './pages/ReportsManagement';
 import HeatmapAnalytics from './pages/HeatmapAnalytics';
+import WasteAnalytics from './pages/WasteAnalytics';
 import CollectionHistory from './pages/CollectionHistory';
 import Settings from './pages/Settings';
 import ScheduleRoute from './pages/ScheduleRoute';
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="barangays" element={<ChdGuard><BarangayPerformance /></ChdGuard>} />
             <Route path="reports" element={<ReportsManagement />} />
             <Route path="heatmap" element={<HeatmapAnalytics />} />
+            <Route path="waste-analytics" element={<WasteAnalytics />} />
             <Route path="history" element={<CollectionHistory />} />
             <Route path="settings" element={<ChdGuard><Settings /></ChdGuard>} />
             <Route path="schedule" element={<ChdGuard><ScheduleRoute /></ChdGuard>} />

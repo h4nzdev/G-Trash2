@@ -18,6 +18,7 @@ import {
   Activity,
   Shield,
   Gift,
+  PieChart,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -47,6 +48,7 @@ const navGroups = [
       { path: "/barangays", icon: Trophy, label: "Barangay Rankings" },
       { path: "/reports", icon: FileWarning, label: "Reports", chdLabel: "Reports (View Only)" },
       { path: "/heatmap", icon: MapPin, label: "Heatmap Analytics" },
+      { path: "/waste-analytics", icon: PieChart, label: "Waste Intelligence" },
       { path: "/history", icon: History, label: "Collection History" },
       { path: "/rewards", icon: Gift, label: "Rewards" },
     ]
