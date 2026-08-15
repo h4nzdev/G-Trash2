@@ -26,14 +26,46 @@ function isInsidePolygon(point, polygon) {
   return inside;
 }
 
-// Numbered marker for each waypoint
-function makeWaypointIcon(n, isFirst, isLast) {
-  const bg = isFirst ? '#059669' : isLast ? '#DC2626' : '#2563EB';
+// Numbered marker for each waypoint with states: 'completed' | 'current' | 'upcoming'
+function makeWaypointIcon(n, status) {
+  let html = '';
+  if (status === 'completed') {
+    html = `<div style="position: relative; width: 32px; height: 32px;">
+      <div style="width: 32px; height: 32px; background: #10B981; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; color: white;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+    </div>`;
+  } else if (status === 'current') {
+    html = `
+      <div style="position: relative; width: 32px; height: 32px;">
+        <div style="position: absolute; width: 100%; height: 100%; background: #3B82F6; border-radius: 50%; opacity: 0.4; transform: scale(1.5); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="position: relative; width: 32px; height: 32px; background: #3B82F6; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: white;">${n}</div>
+      </div>
+      <style>@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }</style>
+    `;
+  } else {
+    // upcoming
+    html = `<div style="position: relative; width: 28px; height: 28px;">
+      <div style="width: 28px; height: 28px; background: white; border: 3px solid #94A3B8; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #64748B;">${n}</div>
+    </div>`;
+  }
+  
   return L.divIcon({
-    html: `<div style="background:${bg};color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.28);">${n}</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    html,
+    iconSize: status === 'upcoming' ? [28, 28] : [32, 32],
+    iconAnchor: status === 'upcoming' ? [14, 14] : [16, 16],
     className: '',
+  });
+}
+
+function makeTruckIcon(truckId) {
+  return L.divIcon({
+    html: `<div style="background: white; border: 2px solid #1E293B; border-radius: 20px; padding: 4px 10px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); white-space: nowrap; font-weight: 700; font-size: 12px; color: #1E293B;">
+      <span style="font-size: 14px;">🚛</span> ${truckId || 'Truck'}
+    </div>`,
+    className: '',
+    iconSize: [120, 32],
+    iconAnchor: [60, 16],
   });
 }
 
@@ -63,7 +95,8 @@ async function fetchORSRoute(waypoints) {
       { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' } },
     );
     const coords = res.data.features?.[0]?.geometry?.coordinates;
-    return coords ? coords.map(c => [c[1], c[0]]) : null;
+    const distance = res.data.features?.[0]?.properties?.summary?.distance;
+    return coords ? { coords: coords.map(c => [c[1], c[0]]), distance } : null;
   } catch {
     return null;
   }
@@ -201,6 +234,7 @@ export default function RouteBuilder() {
   const { official } = useAuth();
   const [waypoints, setWaypoints] = useState([]);
   const [routeCoords, setRouteCoords] = useState([]);
+  const [routeDistance, setRouteDistance] = useState(0);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeName, setRouteName] = useState('');
   const [assignedTruck, setAssignedTruck] = useState('');
@@ -289,12 +323,18 @@ export default function RouteBuilder() {
 
   // Re-calculate ORS driving route whenever waypoints change
   useEffect(() => {
-    if (waypoints.length < 2) { setRouteCoords([]); return; }
+    if (waypoints.length < 2) { setRouteCoords([]); setRouteDistance(0); return; }
     let cancelled = false;
     setRouteLoading(true);
-    fetchORSRoute(waypoints).then(coords => {
+    fetchORSRoute(waypoints).then(data => {
       if (cancelled) return;
-      setRouteCoords(coords || []);
+      if (data) {
+        setRouteCoords(data.coords);
+        setRouteDistance(data.distance);
+      } else {
+        setRouteCoords([]);
+        setRouteDistance(0);
+      }
       setRouteLoading(false);
     });
     return () => { cancelled = true; };
@@ -348,6 +388,7 @@ export default function RouteBuilder() {
   const clearAll = () => {
     setWaypoints([]);
     setRouteCoords([]);
+    setRouteDistance(0);
   };
 
   const handleSave = async () => {
@@ -477,11 +518,14 @@ export default function RouteBuilder() {
               key={boundary.length}
               positions={boundary}
               pathOptions={{
-                color: '#DC2626',
-                fillColor: '#DC2626',
-                fillOpacity: 0.05,
-                weight: 2.5,
-                dashArray: '8, 6',
+                color: '#64748B',
+                weight: 1.5,
+                opacity: 0.35,
+                fillColor: '#3B82F6',
+                fillOpacity: 0.03,
+                dashArray: '8, 8',
+                lineCap: 'round',
+                lineJoin: 'round'
               }}
             />
           )}
@@ -489,13 +533,24 @@ export default function RouteBuilder() {
           <MapClickHandler onClick={handleMapClick} />
 
            {/* Waypoint markers */}
-          {waypoints.map((wp, i) => (
+          {waypoints.map((wp, i) => {
+            const status = i === 0 ? 'current' : 'upcoming';
+            return (
+              <Marker
+                key={i}
+                position={[wp.lat, wp.lng]}
+                icon={makeWaypointIcon(i + 1, status)}
+              />
+            );
+          })}
+
+          {/* Truck Marker */}
+          {assignedTruck && waypoints.length > 0 && (
             <Marker
-              key={i}
-              position={[wp.lat, wp.lng]}
-              icon={makeWaypointIcon(i + 1, i === 0, i === n - 1)}
+              position={[waypoints[0].lat, waypoints[0].lng]}
+              icon={makeTruckIcon(assignedTruck)}
             />
-          ))}
+          )}
 
           {/* Search Result Marker */}
           {searchMarker && (
@@ -524,70 +579,139 @@ export default function RouteBuilder() {
 
           {/* ORS driving route polyline */}
           {routeCoords.length > 0 && (
-            <Polyline
-              positions={routeCoords}
-              color="#059669"
-              weight={5}
-              opacity={0.82}
-            />
+            <>
+              {/* Outer Corridor Glow */}
+              <Polyline
+                positions={routeCoords}
+                pathOptions={{
+                  color: '#2563EB',
+                  weight: 12,
+                  opacity: 0.12,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
+              {/* Main Route Path */}
+              <Polyline
+                positions={routeCoords}
+                pathOptions={{
+                  color: '#2563EB',
+                  weight: 5,
+                  opacity: 0.95,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
+            </>
           )}
         </MapContainer>
 
-        {/* Map legend */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-3 pointer-events-none">
+        {/* Map notifications */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400] flex flex-col items-center gap-3 pointer-events-none">
           {waypoints.length === 0 && (
-            <div className="bg-slate-900/80 backdrop-blur-sm text-white text-sm rounded-xl px-5 py-3 flex items-center gap-2">
+            <div className="bg-slate-900/80 backdrop-blur-sm text-white text-sm rounded-xl px-5 py-3 flex items-center gap-2 shadow-lg">
               <MapPin className="w-4 h-4 flex-shrink-0" />
               Click anywhere on the map to place stops
             </div>
           )}
-          <div className="bg-white/90 backdrop-blur-sm border border-slate-200 shadow-md rounded-xl px-4 py-2.5 flex items-center gap-4 text-xs font-semibold text-slate-600">
-            {showCityBoundary && (
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-6 border-t-2 border-dashed border-blue-500" />
-                Cebu City
-              </span>
-            )}
-            {boundary && (
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-6 border-t-2 border-dashed border-red-500" />
-                {official?.barangay || 'Jurisdiction'}
-              </span>
-            )}
-            {routeCoords.length > 0 && (
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block w-6 border-t-2 border-emerald-600" style={{ borderWidth: 3 }} />
-                Route
-              </span>
-            )}
+        </div>
+
+        {/* Legend */}
+        <div className="absolute bottom-8 left-4 z-[400] bg-white/95 backdrop-blur-md border border-slate-100 shadow-xl rounded-xl p-4 w-52 pointer-events-none text-xs">
+          <h4 className="font-bold text-slate-800 mb-3 tracking-wider text-[10px] uppercase">Legend</h4>
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-4 rounded-full bg-emerald-500 border-2 border-white shadow-sm flex items-center justify-center"><CheckCircle className="w-2.5 h-2.5 text-white" /></div>
+              <span className="text-slate-600 font-medium">Completed Stop</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-sm ring-2 ring-blue-200"></div>
+              <span className="text-slate-600 font-medium">Current Stop</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-4 rounded-full bg-white border-2 border-slate-400 shadow-sm"></div>
+              <span className="text-slate-600 font-medium">Upcoming Stop</span>
+            </div>
+            <div className="h-px bg-slate-100 my-2"></div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-1.5 bg-emerald-500 rounded-full"></div>
+              <span className="text-slate-600 font-medium">Completed Route</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-1.5 bg-blue-500 rounded-full"></div>
+              <span className="text-slate-600 font-medium">Active Route</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-1.5 bg-slate-300 rounded-full"></div>
+              <span className="text-slate-600 font-medium">Upcoming Route</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 border-t-2 border-dashed border-slate-400"></div>
+              <span className="text-slate-600 font-medium">Barangay Boundary</span>
+            </div>
           </div>
         </div>
 
-        {/* Map Style Toggle + City Boundary Toggle */}
-        <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
-          <button
-            onClick={() => setIsSatellite(!isSatellite)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
-              isSatellite
-                ? 'bg-emerald-600 text-white border border-emerald-500'
-                : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            {isSatellite ? 'Satellite' : 'Standard'}
-          </button>
+        {/* Map Overlays Top Right */}
+        <div className="absolute top-4 right-4 z-[500] flex flex-col items-end gap-3 pointer-events-none">
+          <div className="flex flex-col gap-2 pointer-events-auto">
+            <button
+              onClick={() => setIsSatellite(!isSatellite)}
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
+                isSatellite
+                  ? 'bg-emerald-600 text-white border border-emerald-500'
+                  : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              {isSatellite ? 'Satellite' : 'Standard'}
+            </button>
 
-          <button
-            onClick={() => setShowCityBoundary(v => !v)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
-              showCityBoundary
-                ? 'bg-blue-600 text-white border border-blue-500'
-                : 'bg-white/90 text-slate-500 border border-slate-200 hover:bg-white'
-            }`}
-          >
-            <Route className="w-4 h-4" />
-            City Outline
-          </button>
+            <button
+              onClick={() => setShowCityBoundary(v => !v)}
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
+                showCityBoundary
+                  ? 'bg-blue-600 text-white border border-blue-500'
+                  : 'bg-white/90 text-slate-500 border border-slate-200 hover:bg-white'
+              }`}
+            >
+              <Route className="w-4 h-4" />
+              City Outline
+            </button>
+          </div>
+
+          {/* Route Info Overlay */}
+          <div className="bg-white/95 backdrop-blur-md border border-slate-100 shadow-xl rounded-2xl p-5 w-64 mt-2 text-sm pointer-events-auto">
+            <h3 className="font-bold text-slate-900 mb-1 truncate text-base">
+              {routeName || 'Untitled Route'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">{official?.barangay || 'Unknown'} Collection</p>
+            
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-slate-500 text-xs font-medium">Truck</span>
+                <span className="text-slate-900 font-bold text-xs bg-slate-100 px-2 py-0.5 rounded-md">
+                  {assignedTruck || 'Unassigned'}
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-slate-500 text-xs font-medium">Driver</span>
+                <span className="text-slate-800 font-semibold text-xs text-right">
+                  {assignedTruck ? fleet.find(f => f.truckId === assignedTruck)?.driverName || 'Unknown' : '-'}
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-slate-500 text-xs font-medium">Stops</span>
+                <span className="text-slate-800 font-semibold text-xs">{waypoints.length}</span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-slate-500 text-xs font-medium">Est. Distance</span>
+                <span className="text-blue-600 font-bold text-xs">
+                  {routeDistance > 0 ? (routeDistance / 1000).toFixed(2) + ' km' : '-'}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Address Search Bar */}
