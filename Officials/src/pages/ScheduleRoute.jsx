@@ -198,21 +198,21 @@ export default function ScheduleRoute() {
                   <button
                     key={ymd}
                     onClick={() => setSelectedDate(ymd)}
-                    className={`relative flex flex-col items-center justify-center rounded-xl py-2.5 min-h-[52px] transition-all text-sm font-medium border
+                    className={`relative flex flex-col items-center justify-center rounded-2xl py-2.5 min-h-[56px] transition-all duration-200 text-sm font-medium border-2
                       ${isSelected
-                        ? 'bg-emerald-700 text-white border-emerald-700 shadow-md'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-500 shadow-sm'
                         : isToday
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
-                          : 'text-slate-700 border-transparent hover:bg-slate-50'
+                          ? 'bg-blue-50 text-blue-800 border-blue-200 hover:border-blue-300 font-bold'
+                          : 'bg-white text-slate-700 border-transparent hover:border-slate-200 hover:bg-slate-50'
                       }`}
                   >
                     {day}
                     {hasSched && (
-                      <div className="flex gap-0.5 mt-1">
+                      <div className="flex gap-1 mt-1">
                         {Array.from({ length: Math.min(count, 3) }).map((_, i) => (
-                          <span key={i} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white/70' : 'bg-emerald-500'}`} />
+                          <span key={i} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-600' : 'bg-emerald-400'}`} />
                         ))}
-                        {count > 3 && <span className={`text-[9px] font-bold ${isSelected ? 'text-white/80' : 'text-emerald-600'}`}>+{count - 3}</span>}
+                        {count > 3 && <span className={`text-[9px] font-bold ${isSelected ? 'text-emerald-700' : 'text-emerald-500'}`}>+{count - 3}</span>}
                       </div>
                     )}
                   </button>
@@ -224,10 +224,13 @@ export default function ScheduleRoute() {
           {/* Legend */}
           <div className="flex items-center gap-5 mt-4 pt-4 border-t border-slate-100">
             <div className="flex items-center gap-2 text-xs text-slate-500">
-              <div className="w-3 h-3 rounded-full bg-emerald-500" /> Has schedule
+              <div className="w-3 h-3 rounded-full bg-emerald-400" /> Has schedule
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-500">
-              <div className="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-300" /> Today
+              <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-200" /> Today
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-500" /> Selected
             </div>
           </div>
         </div>
@@ -254,46 +257,62 @@ export default function ScheduleRoute() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto space-y-2">
+          <div className="flex-1 overflow-y-auto space-y-3">
             {daySchedules.length === 0 && !scheduleError ? (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <Calendar className="w-8 h-8 text-slate-200 mb-2" />
-                <p className="text-sm font-semibold text-slate-400">No schedules</p>
-                <p className="text-xs text-slate-300 mt-0.5">Click + Schedule to add one</p>
+              <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm border border-slate-100">
+                  <Calendar className="w-5 h-5 text-emerald-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-600">No scheduled routes</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Assign a truck to a route for this date to get started.</p>
               </div>
             ) : daySchedules.length === 0 ? null : (
               daySchedules.map(s => (
-                <div key={s._id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Truck className="w-3.5 h-3.5 text-emerald-700 flex-shrink-0" />
-                        <span className="text-xs font-bold text-emerald-800 font-mono">{s.truckId}</span>
+                <div key={s._id} className="group relative p-4 bg-white hover:bg-slate-50 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0 flex flex-col gap-2">
+                      {/* Top row: Time & Truck Badge */}
+                      <div className="flex items-center gap-2">
+                        {s.startTime ? (
+                          <div className="flex items-center gap-1.5 bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="text-xs font-bold">{s.startTime}</span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-md border border-slate-100">Any Time</span>
+                        )}
+                        <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-100 px-2.5 py-1 rounded-md">
+                          <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-xs font-bold tracking-wide">{s.truckId}</span>
+                        </div>
                       </div>
-                      {s.driverName && (
-                        <p className="text-xs text-slate-600 font-medium truncate">{s.driverName}</p>
-                      )}
-                      {s.routeName ? (
-                        <div className="flex items-center gap-1 mt-1">
-                          <Route className="w-3 h-3 text-slate-400" />
-                          <span className="text-xs text-slate-500 truncate">{s.routeName}</span>
+                      
+                      {/* Driver & Route Info */}
+                      <div>
+                        {s.driverName && (
+                          <p className="text-sm font-bold text-slate-800 truncate mb-0.5">{s.driverName}</p>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <Route className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                          <span className="text-xs text-slate-600 font-medium truncate">{s.routeName || <span className="italic text-slate-400">No route assigned</span>}</span>
                         </div>
-                      ) : (
-                        <span className="text-xs text-slate-300 italic">No route assigned</span>
+                      </div>
+
+                      {/* Notes */}
+                      {s.notes && (
+                        <p className="text-xs text-slate-500 italic bg-amber-50/50 border border-amber-100/50 px-2.5 py-1.5 rounded-lg border-l-2 border-l-amber-300 mt-1">
+                          "{s.notes}"
+                        </p>
                       )}
-                      {s.startTime && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          <span className="text-xs text-slate-400">{s.startTime}</span>
-                        </div>
-                      )}
-                      {s.notes && <p className="text-xs text-slate-400 mt-1 italic">"{s.notes}"</p>}
                     </div>
+
+                    {/* Delete button (reveals on hover on desktop, always visible on mobile) */}
                     <button
                       onClick={() => handleDelete(s._id)}
-                      className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                      className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 md:opacity-0 md:group-hover:opacity-100"
+                      title="Delete Schedule"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -312,15 +331,20 @@ export default function ScheduleRoute() {
 
       {/* ── Add Schedule Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-base font-bold text-slate-800">Add Schedule</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{formatDisplayDate(selectedDate)}</p>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 leading-tight">Add Schedule</h3>
+                  <p className="text-xs font-medium text-emerald-600">{formatDisplayDate(selectedDate)}</p>
+                </div>
               </div>
-              <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowModal(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -328,86 +352,95 @@ export default function ScheduleRoute() {
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">{error}</div>
             )}
 
-            <form onSubmit={handleAddSchedule} className="space-y-4">
+            <form onSubmit={handleAddSchedule} className="space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Truck / Driver *</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck / Driver *</label>
                 {fleetError ? (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
                     Could not load fleet. Make sure the backend is running and you are logged in.
                   </div>
                 ) : (
-                  <select
-                    value={selTruck}
-                    onChange={e => setSelTruck(e.target.value)}
-                    required
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
-                  >
-                    <option value="">— Select truck —</option>
-                    {fleet.map(t => (
-                      <option key={t.truckId} value={t.truckId}>
-                        {t.truckId} — {t.driverName}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <Truck className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <select
+                      value={selTruck}
+                      onChange={e => setSelTruck(e.target.value)}
+                      required
+                      className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
+                    >
+                      <option value="">— Select truck —</option>
+                      {fleet.map(t => (
+                        <option key={t.truckId} value={t.truckId}>
+                          {t.truckId} — {t.driverName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Route *</label>
-                <select
-                  value={selRoute}
-                  onChange={e => setSelRoute(e.target.value)}
-                  required
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
-                >
-                  <option value="">— Select a route —</option>
-                  {routes.map(r => (
-                    <option key={r._id} value={r._id}>
-                      {r.name}{r.truckId ? ` (${r.truckId})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Route *</label>
+                <div className="relative">
+                  <Route className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <select
+                    value={selRoute}
+                    onChange={e => setSelRoute(e.target.value)}
+                    required
+                    className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
+                  >
+                    <option value="">— Select a route —</option>
+                    {routes.map(r => (
+                      <option key={r._id} value={r._id}>
+                        {r.name}{r.truckId ? ` (${r.truckId})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Start Time (optional)</label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-700"
-                />
-                <p className="text-xs text-slate-400 mt-1">Required when assigning multiple routes to the same truck on the same day.</p>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                <div className="relative">
+                  <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={e => setStartTime(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">Recommended when assigning multiple routes to the same truck on a single day.</p>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Notes (optional)</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Notes <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   placeholder="e.g. Early shift, holiday route..."
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 text-slate-800 placeholder-slate-400"
+                  rows={2}
+                  className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 placeholder-slate-400 shadow-sm transition-all resize-none"
                 />
               </div>
 
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting || !selTruck}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-xl transition-colors"
+                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg shadow-emerald-600/20 transition-all"
                 >
                   {submitting ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    <Clock className="w-4 h-4" />
+                    <Plus className="w-4 h-4" />
                   )}
                   Save Schedule
                 </button>
