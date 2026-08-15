@@ -3964,25 +3964,25 @@ io.on("connection", (socket) => {
   });
 
   // GarbageTruck app sends live GPS position
-  socket.on(“truck:location”, async (data, ack) => {
+  socket.on("truck:location", async (data, ack) => {
     const { truckId, lat, lng, heading = 0, speed = 0 } = data;
     socketTruckMap.set(socket.id, truckId);
     if (!truckId || lat == null || lng == null) {
-      if (typeof ack === “function”)
-        ack({ ok: false, error: “Missing fields” });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Missing fields" });
       return;
     }
     // Join a named room so we can emit back to this specific truck
-    socket.join(“truck:” + truckId);
+    socket.join("truck:" + truckId);
     try {
       const truck = await Truck.findOneAndUpdate(
         { truckId },
-        { lat, lng, heading, speed, status: “online”, updatedAt: new Date() },
+        { lat, lng, heading, speed, status: "online", updatedAt: new Date() },
         { upsert: true, new: true },
       );
-      if (typeof ack === “function”) ack({ ok: true, truckId, lat, lng });
+      if (typeof ack === "function") ack({ ok: true, truckId, lat, lng });
       // Broadcast to Resident app + Officials dashboard â€” same io instance, no relay
-      socket.broadcast.emit(“truck:location:update”, {
+      socket.broadcast.emit("truck:location:update", {
         truckId,
         lat,
         lng,
@@ -3992,7 +3992,7 @@ io.on("connection", (socket) => {
       });
       checkTruckProximity(truckId).catch(() => {});
     } catch (err) {
-      if (typeof ack === “function”) ack({ ok: false, error: err.message });
+      if (typeof ack === "function") ack({ ok: false, error: err.message });
     }
   });
 
@@ -4792,6 +4792,87 @@ app.get("/api/survey/results", optionalAuth, async (req, res) => {
     }
 
     res.json({ totalResponses: total, results, byContext });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Waste Analytics Endpoints ---
+app.get("/api/analytics/report-trends", optionalAuth, async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const trends = await Report.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { 
+        $group: { 
+          _id: { 
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            category: "$category"
+          }, 
+          count: { $sum: 1 } 
+        } 
+      },
+      { $sort: { "_id.date": 1 } }
+    ]);
+
+    const formatted = {};
+    trends.forEach(t => {
+      const date = t._id.date;
+      const cat = t._id.category || "Other";
+      if (!formatted[date]) formatted[date] = { date };
+      formatted[date][cat] = t.count;
+    });
+
+    res.json(Object.values(formatted));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/analytics/hotspots", optionalAuth, async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const reportHotspots = await Report.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { $group: { _id: { location: "$location", barangay: "$barangay" }, reportCount: { $sum: 1 } } },
+      { $sort: { reportCount: -1 } },
+      { $limit: 15 }
+    ]);
+
+    const formatted = reportHotspots.map(h => ({
+      location: h._id.location || "Unknown",
+      barangay: h._id.barangay || "Unknown",
+      reportCount: h.reportCount
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/analytics/collection-stats", optionalAuth, async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const stats = await CollectionLog.aggregate([
+      { $match: { completedAt: { $gte: thirtyDaysAgo } } },
+      { 
+        $group: { 
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$completedAt" } },
+          stopsCleared: { $sum: 1 },
+          binsCleared: { $sum: "$bins" }
+        } 
+      },
+      { $sort: { "_id": 1 } }
+    ]);
+
+    const formatted = stats.map(s => ({
+      date: s._id,
+      stopsCleared: s.stopsCleared,
+      binsCleared: s.binsCleared
+    }));
+
+    res.json(formatted);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

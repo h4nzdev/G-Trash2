@@ -91,32 +91,34 @@ export default function CollectorHomeScreen() {
   const [truckCapacity, setTruckCapacity] = useState(0);
   const [navActive, setNavActive] = useState(false);
   const [aiMessages, setAiMessages] = useState([]);
-  const [aiInput, setAiInput] = useState('');
+  const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const chatScrollRef = useRef(null);
 
   // Re-fetch route data every time the Home tab comes into focus (covers tab switches + notification taps)
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem('@truck_nav_active').then((val) => {
-        setNavActive(val === 'true');
-      }).catch(() => {});
+      AsyncStorage.getItem("@truck_nav_active")
+        .then((val) => {
+          setNavActive(val === "true");
+        })
+        .catch(() => {});
       // Always refresh on focus — catches notification taps and tab switches
       fetchRouteData();
       // Clear the schedule refresh flag set by notification handlers
-      AsyncStorage.removeItem('@schedule_refresh_needed').catch(() => {});
-    }, [fetchRouteData])
+      AsyncStorage.removeItem("@schedule_refresh_needed").catch(() => {});
+    }, [fetchRouteData]),
   );
 
   // Socket: re-fetch when an official assigns a new schedule or route to this truck.
   // networkChangeKey bumps whenever the interface switches (WiFi → cellular or back),
   // which tears down the stale socket and opens a fresh one immediately.
   useEffect(() => {
-    const socket = io(API_URL, { transports: ['websocket', 'polling'] });
-    socket.on('schedule:changed', ({ truckId }) => {
+    const socket = io(API_URL, { transports: ["websocket", "polling"] });
+    socket.on("schedule:changed", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchRouteData();
     });
-    socket.on('route:assigned', ({ truckId }) => {
+    socket.on("route:assigned", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchRouteData();
     });
     return () => socket.disconnect();
@@ -128,7 +130,9 @@ export default function CollectorHomeScreen() {
     const currentWeight = stops
       .filter((s) => s.status === "completed")
       .reduce((sum, s) => sum + parseInt(s.weight || "0", 10), 0);
-    setTruckCapacity(Math.min(Math.round((currentWeight / maxWeight) * 100), 100));
+    setTruckCapacity(
+      Math.min(Math.round((currentWeight / maxWeight) * 100), 100),
+    );
   }, [stops]);
 
   const scrollRef = useRef(null);
@@ -137,18 +141,21 @@ export default function CollectorHomeScreen() {
   const successScale = useRef(new Animated.Value(1)).current;
   const cleanedOpacity = useRef(new Animated.Value(0)).current;
 
-  const applyRoute = useCallback((route, fromCache = false) => {
-    if (route?.waypoints?.length >= 1) {
-      setStops(waypointsToStops(route.waypoints));
-      setRouteName(route.name || "");
-      setRouteAssigned(true);
-      if (!fromCache) saveRouteCache(TRUCK_ID, route);
-    } else {
-      setRouteAssigned(false);
-      setStops([]);
-    }
-    setIsLoading(false);
-  }, [TRUCK_ID]);
+  const applyRoute = useCallback(
+    (route, fromCache = false) => {
+      if (route?.waypoints?.length >= 1) {
+        setStops(waypointsToStops(route.waypoints));
+        setRouteName(route.name || "");
+        setRouteAssigned(true);
+        if (!fromCache) saveRouteCache(TRUCK_ID, route);
+      } else {
+        setRouteAssigned(false);
+        setStops([]);
+      }
+      setIsLoading(false);
+    },
+    [TRUCK_ID],
+  );
 
   // Last-resort fallback: load today's cached route when all network calls fail.
   const tryOfflineCache = useCallback(async () => {
@@ -169,8 +176,11 @@ export default function CollectorHomeScreen() {
     xhr.timeout = 8000;
     xhr.onload = () => {
       if (xhr.status === 200) {
-        try { applyRoute(JSON.parse(xhr.responseText)); }
-        catch (_) { tryOfflineCache(); }
+        try {
+          applyRoute(JSON.parse(xhr.responseText));
+        } catch (_) {
+          tryOfflineCache();
+        }
       } else if (xhr.status === 404) {
         setRouteAssigned(false);
         setStops([]);
@@ -185,22 +195,28 @@ export default function CollectorHomeScreen() {
   }, [TRUCK_ID, applyRoute, tryOfflineCache]);
 
   // Fetch a route by its ID
-  const fetchRouteById = useCallback((routeId) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", `${API_URL}/api/routes/${routeId}`);
-    xhr.timeout = 8000;
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        try { applyRoute(JSON.parse(xhr.responseText)); }
-        catch (_) { fetchRouteDirect(); }
-      } else {
-        fetchRouteDirect();
-      }
-    };
-    xhr.onerror = fetchRouteDirect;
-    xhr.ontimeout = fetchRouteDirect;
-    xhr.send();
-  }, [applyRoute, fetchRouteDirect]);
+  const fetchRouteById = useCallback(
+    (routeId) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", `${API_URL}/api/routes/${routeId}`);
+      xhr.timeout = 8000;
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            applyRoute(JSON.parse(xhr.responseText));
+          } catch (_) {
+            fetchRouteDirect();
+          }
+        } else {
+          fetchRouteDirect();
+        }
+      };
+      xhr.onerror = fetchRouteDirect;
+      xhr.ontimeout = fetchRouteDirect;
+      xhr.send();
+    },
+    [applyRoute, fetchRouteDirect],
+  );
 
   const fetchRouteData = useCallback(() => {
     setIsLoading(true);
@@ -213,7 +229,10 @@ export default function CollectorHomeScreen() {
 
     // Step 1: check today's schedule for this truck (Officials create schedules, not direct route assignments)
     const xhr = new XMLHttpRequest();
-    xhr.open("GET", `${API_URL}/api/schedules/truck/${TRUCK_ID}/today?date=${today}`);
+    xhr.open(
+      "GET",
+      `${API_URL}/api/schedules/truck/${TRUCK_ID}/today?date=${today}`,
+    );
     xhr.timeout = 8000;
     xhr.onload = () => {
       if (xhr.status === 200) {
@@ -235,19 +254,34 @@ export default function CollectorHomeScreen() {
     xhr.send();
   }, [TRUCK_ID, fetchRouteById, fetchRouteDirect]);
 
-  useEffect(() => { fetchRouteData(); }, [fetchRouteData]);
+  useEffect(() => {
+    fetchRouteData();
+  }, [fetchRouteData]);
 
   useEffect(
     function () {
-      if (!isLoading) { pulseAnim.setValue(1); return; }
+      if (!isLoading) {
+        pulseAnim.setValue(1);
+        return;
+      }
       var loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.3, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 700,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 700,
+            useNativeDriver: true,
+          }),
         ]),
       );
       loop.start();
-      return function () { loop.stop(); };
+      return function () {
+        loop.stop();
+      };
     },
     [isLoading],
   );
@@ -257,41 +291,92 @@ export default function CollectorHomeScreen() {
       if (showCleanedConfetti) {
         cleanedOpacity.setValue(0);
         Animated.sequence([
-          Animated.timing(cleanedOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(cleanedOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
           Animated.delay(1800),
-          Animated.timing(cleanedOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-        ]).start(function () { setShowCleanedConfetti(false); });
+          Animated.timing(cleanedOpacity, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start(function () {
+          setShowCleanedConfetti(false);
+        });
       }
     },
     [showCleanedConfetti],
   );
 
-  var currentStopIndex = stops.findIndex(function (s) { return s.status === "in-progress"; });
+  var currentStopIndex = stops.findIndex(function (s) {
+    return s.status === "in-progress";
+  });
   var currentStop = stops[currentStopIndex];
-  var completedCount = stops.filter(function (s) { return s.status === "completed"; }).length;
-  var progressPct = stops.length > 0 ? Math.round((completedCount / stops.length) * 100) : 0;
+  var completedCount = stops.filter(function (s) {
+    return s.status === "completed";
+  }).length;
+  var progressPct =
+    stops.length > 0 ? Math.round((completedCount / stops.length) * 100) : 0;
   var totalWeight = stops
-    .filter(function (s) { return s.status === "completed"; })
-    .reduce(function (sum, s) { return sum + parseInt(s.weight || "0", 10); }, 0);
+    .filter(function (s) {
+      return s.status === "completed";
+    })
+    .reduce(function (sum, s) {
+      return sum + parseInt(s.weight || "0", 10);
+    }, 0);
 
   // Collection log derived from completed stops
-  var completedStops = stops.filter(function (s) { return s.status === "completed"; });
+  var completedStops = stops.filter(function (s) {
+    return s.status === "completed";
+  });
 
   // Waste breakdown computed from stops
-  var typeColors = { General: "#006A3B", Recyclables: "#268451", Mixed: "#7ED99E" };
-  var wasteBreakdown = ["General", "Recyclables", "Mixed"].map(function (type) {
-    var typeStops = stops.filter(function (s) { return s.type === type; });
-    var doneWeight = typeStops
-      .filter(function (s) { return s.status === "completed"; })
-      .reduce(function (sum, s) { return sum + parseInt(s.weight || "0", 10); }, 0);
-    var percent = stops.length > 0 ? Math.round((typeStops.length / stops.length) * 100) : 0;
-    return { type: type + " Waste", percent, weight: doneWeight + "kg", color: typeColors[type] };
-  }).filter(function (item) { return item.percent > 0; });
+  var typeColors = {
+    General: "#006A3B",
+    Recyclables: "#268451",
+    Mixed: "#7ED99E",
+  };
+  var wasteBreakdown = ["General", "Recyclables", "Mixed"]
+    .map(function (type) {
+      var typeStops = stops.filter(function (s) {
+        return s.type === type;
+      });
+      var doneWeight = typeStops
+        .filter(function (s) {
+          return s.status === "completed";
+        })
+        .reduce(function (sum, s) {
+          return sum + parseInt(s.weight || "0", 10);
+        }, 0);
+      var percent =
+        stops.length > 0
+          ? Math.round((typeStops.length / stops.length) * 100)
+          : 0;
+      return {
+        type: type + " Waste",
+        percent,
+        weight: doneWeight + "kg",
+        color: typeColors[type],
+      };
+    })
+    .filter(function (item) {
+      return item.percent > 0;
+    });
 
   var handleMarkCleaned = function () {
     Animated.sequence([
-      Animated.timing(successScale, { toValue: 1.03, duration: 120, useNativeDriver: true }),
-      Animated.timing(successScale, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(successScale, {
+        toValue: 1.03,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+      Animated.timing(successScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
     ]).start();
     setPickupStatus("cleaned");
     setShowCleanedConfetti(true);
@@ -323,7 +408,7 @@ export default function CollectorHomeScreen() {
   };
 
   const openAiModal = () => {
-    const greeting = `Hi ${driverName.split(" ")[0]}! I'm EcoAssist AI. You're on route "${routeName || 'Unassigned'}" with ${completedCount} of ${stops.length} stops done. How can I help you today?`;
+    const greeting = `Hi ${driverName.split(" ")[0]}! I'm EcoAssist AI. You're on route "${routeName || "Unassigned"}" with ${completedCount} of ${stops.length} stops done. How can I help you today?`;
     setAiMessages([{ role: "assistant", content: greeting }]);
     setAiInput("");
     setShowAiAssistant(true);
@@ -337,7 +422,10 @@ export default function CollectorHomeScreen() {
     setAiMessages(updated);
     setAiInput("");
     setAiLoading(true);
-    setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(
+      () => chatScrollRef.current?.scrollToEnd({ animated: true }),
+      100,
+    );
     try {
       const res = await fetch(`${API_URL}/api/ai/chat`, {
         method: "POST",
@@ -356,13 +444,23 @@ export default function CollectorHomeScreen() {
         }),
       });
       const data = await res.json();
-      const reply = data.reply || "Sorry, I couldn't get a response. Try again.";
+      const reply =
+        data.reply || "Sorry, I couldn't get a response. Try again.";
       setAiMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch {
-      setAiMessages((prev) => [...prev, { role: "assistant", content: "Connection error. Check your internet and try again." }]);
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Connection error. Check your internet and try again.",
+        },
+      ]);
     } finally {
       setAiLoading(false);
-      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(
+        () => chatScrollRef.current?.scrollToEnd({ animated: true }),
+        100,
+      );
     }
   };
 
@@ -370,7 +468,9 @@ export default function CollectorHomeScreen() {
     if (actionRef.current && scrollRef.current) {
       actionRef.current.measureLayout(
         scrollRef.current,
-        function (_x, y) { scrollRef.current.scrollTo({ y: y - 100, animated: true }); },
+        function (_x, y) {
+          scrollRef.current.scrollTo({ y: y - 100, animated: true });
+        },
         function () {},
       );
     }
@@ -386,7 +486,14 @@ export default function CollectorHomeScreen() {
           <SkeletonBlock width="70%" height={13} style={{ marginBottom: 20 }} />
           <SkeletonBlock height={6} radius={3} style={{ marginBottom: 16 }} />
           <View style={styles.skeletonStatsRow}>
-            {[0,1,2].map(i => <SkeletonBlock key={i} height={52} radius={8} style={{ flex: 1 }} />)}
+            {[0, 1, 2].map((i) => (
+              <SkeletonBlock
+                key={i}
+                height={52}
+                radius={8}
+                style={{ flex: 1 }}
+              />
+            ))}
           </View>
         </View>
         <View style={styles.skeletonSection}>
@@ -395,8 +502,16 @@ export default function CollectorHomeScreen() {
         </View>
         <View style={styles.skeletonSection}>
           <SkeletonBlock width="30%" height={11} style={{ marginBottom: 14 }} />
-          {[0,1,2].map(i => (
-            <View key={i} style={{ flexDirection: 'row', gap: 12, marginBottom: 14, alignItems: 'center' }}>
+          {[0, 1, 2].map((i) => (
+            <View
+              key={i}
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginBottom: 14,
+                alignItems: "center",
+              }}
+            >
               <SkeletonBlock width={10} height={10} radius={5} />
               <SkeletonBlock height={13} style={{ flex: 1 }} />
             </View>
@@ -413,8 +528,14 @@ export default function CollectorHomeScreen() {
           <MaterialIcons name="wifi-off" size={28} color="#DC2626" />
         </View>
         <Text style={styles.stateTitle}>Failed to load route</Text>
-        <Text style={styles.stateSub}>Check your connection and try again.</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={fetchRouteData} activeOpacity={0.8}>
+        <Text style={styles.stateSub}>
+          Check your connection and try again.
+        </Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={fetchRouteData}
+          activeOpacity={0.8}
+        >
           <MaterialIcons name="refresh" size={16} color="#FFFFFF" />
           <Text style={styles.retryBtnText}>Retry</Text>
         </TouchableOpacity>
@@ -428,9 +549,17 @@ export default function CollectorHomeScreen() {
         <View style={styles.emptyIconWrap}>
           <MaterialIcons name="local-shipping" size={36} color="#9CA3AF" />
         </View>
-        <Text style={[styles.stateTitle, { color: "#374151" }]}>No route assigned yet</Text>
-        <Text style={styles.stateSub}>Check back later or contact dispatch.</Text>
-        <TouchableOpacity style={[styles.retryBtn, { backgroundColor: "#6B7280" }]} onPress={fetchRouteData} activeOpacity={0.8}>
+        <Text style={[styles.stateTitle, { color: "#374151" }]}>
+          No route assigned yet
+        </Text>
+        <Text style={styles.stateSub}>
+          Check back later or contact dispatch.
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: "#6B7280" }]}
+          onPress={fetchRouteData}
+          activeOpacity={0.8}
+        >
           <MaterialIcons name="refresh" size={16} color="#FFFFFF" />
           <Text style={styles.retryBtnText}>Refresh</Text>
         </TouchableOpacity>
@@ -444,9 +573,12 @@ export default function CollectorHomeScreen() {
         <View style={styles.successIconWrap}>
           <MaterialIcons name="check-circle" size={40} color="#006A3B" />
         </View>
-        <Text style={[styles.stateTitle, { color: "#006A3B" }]}>All stops cleared!</Text>
+        <Text style={[styles.stateTitle, { color: "#006A3B" }]}>
+          All stops cleared!
+        </Text>
         <Text style={styles.stateSub}>
-          Great work, {driverName.split(" ")[0]}. You collected {totalWeight}kg today.
+          Great work, {driverName.split(" ")[0]}. You collected {totalWeight}kg
+          today.
         </Text>
       </View>
     );
@@ -460,7 +592,11 @@ export default function CollectorHomeScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Image
+            source={require("../../assets/logo.png")}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
           <View style={styles.collectorBadge}>
             <Text style={styles.collectorBadgeText}>Collector</Text>
           </View>
@@ -469,13 +605,20 @@ export default function CollectorHomeScreen() {
           <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerBtn} onPress={fetchRouteData} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={fetchRouteData}
+            activeOpacity={0.7}
+          >
             <MaterialIcons name="refresh" size={20} color="#374151" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerBtn}
             activeOpacity={0.7}
-            onPress={() => { clearUnread(); navigation.navigate('Alerts'); }}
+            onPress={() => {
+              clearUnread();
+              navigation.navigate("Alerts");
+            }}
           >
             <MaterialIcons
               name={unreadCount > 0 ? "notifications" : "notifications-none"}
@@ -484,7 +627,9 @@ export default function CollectorHomeScreen() {
             />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                <Text style={styles.notifBadgeText}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
@@ -512,31 +657,46 @@ export default function CollectorHomeScreen() {
             )}
           </View>
           <Text style={styles.heroRoute}>
-            {routeAssigned ? `Route: ${routeName}` : 'Waiting for route assignment'}
+            {routeAssigned
+              ? `Route: ${routeName}`
+              : "Waiting for route assignment"}
           </Text>
 
           {!isLoading && !hasError && routeAssigned && stops.length > 0 && (
             <View style={styles.heroMeta}>
               <View style={styles.progressRow}>
-                <Text style={styles.progressLabel}>{completedCount} of {stops.length} stops done</Text>
+                <Text style={styles.progressLabel}>
+                  {completedCount} of {stops.length} stops done
+                </Text>
                 <Text style={styles.progressPct}>{progressPct}%</Text>
               </View>
               <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+                <View
+                  style={[styles.progressFill, { width: `${progressPct}%` }]}
+                />
               </View>
               <View style={styles.statsStrip}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{completedCount}/{stops.length}</Text>
+                  <Text style={styles.statValue}>
+                    {completedCount}/{stops.length}
+                  </Text>
                   <Text style={styles.statLabel}>Stops</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{totalWeight > 0 ? `${totalWeight}kg` : '—'}</Text>
+                  <Text style={styles.statValue}>
+                    {totalWeight > 0 ? `${totalWeight}kg` : "—"}
+                  </Text>
                   <Text style={styles.statLabel}>Collected</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
-                  <Text style={[styles.statValue, truckCapacity > 85 && { color: '#DC2626' }]}>
+                  <Text
+                    style={[
+                      styles.statValue,
+                      truckCapacity > 85 && { color: "#DC2626" },
+                    ]}
+                  >
                     {truckCapacity}%
                   </Text>
                   <Text style={styles.statLabel}>Bin Load</Text>
@@ -556,15 +716,23 @@ export default function CollectorHomeScreen() {
         {!isLoading && !hasError && !routeAssigned ? renderUnassigned() : null}
 
         {/* ── All Done ── */}
-        {!isLoading && !hasError && routeAssigned && stops.length > 0 && !currentStop
-          ? renderAllDone() : null}
+        {!isLoading &&
+        !hasError &&
+        routeAssigned &&
+        stops.length > 0 &&
+        !currentStop
+          ? renderAllDone()
+          : null}
 
         {/* ── Current Stop ── */}
         {!isLoading && !hasError && routeAssigned && currentStop ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Current Stop</Text>
             <View style={styles.surface}>
-              <Animated.View ref={actionRef} style={{ transform: [{ scale: successScale }] }}>
+              <Animated.View
+                ref={actionRef}
+                style={{ transform: [{ scale: successScale }] }}
+              >
                 <PickupActionCard
                   location={currentStop.name}
                   binCount={currentStop.bins || 3}
@@ -599,7 +767,9 @@ export default function CollectorHomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionLabel}>Today's Log</Text>
-              {totalWeight > 0 ? <Text style={styles.logTotal}>{totalWeight}kg total</Text> : null}
+              {totalWeight > 0 ? (
+                <Text style={styles.logTotal}>{totalWeight}kg total</Text>
+              ) : null}
             </View>
             <View style={styles.surface}>
               {completedStops.length > 0 ? (
@@ -627,7 +797,9 @@ export default function CollectorHomeScreen() {
 
       {/* ── Cleaned overlay ── */}
       {showCleanedConfetti ? (
-        <Animated.View style={[styles.cleanedOverlay, { opacity: cleanedOpacity }]}>
+        <Animated.View
+          style={[styles.cleanedOverlay, { opacity: cleanedOpacity }]}
+        >
           <View style={styles.cleanedCard}>
             <MaterialIcons name="check-circle" size={52} color="#006A3B" />
             <Text style={styles.cleanedTitle}>Area Cleaned!</Text>
@@ -650,7 +822,10 @@ export default function CollectorHomeScreen() {
           keyboardVerticalOffset={0}
         >
           <View style={styles.aiModalOverlay}>
-            <TouchableOpacity style={styles.aiModalCloseArea} onPress={() => setShowAiAssistant(false)} />
+            <TouchableOpacity
+              style={styles.aiModalCloseArea}
+              onPress={() => setShowAiAssistant(false)}
+            />
             <View style={styles.aiModalContent}>
               {/* Header */}
               <View style={styles.aiHeader}>
@@ -659,9 +834,14 @@ export default function CollectorHomeScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.aiTitle}>EcoAssist AI</Text>
-                  <Text style={styles.aiSubtitle}>Powered by Groq · llama-3.1-8b</Text>
+                  <Text style={styles.aiSubtitle}>
+                    Powered by Groq · llama-3.1-8b
+                  </Text>
                 </View>
-                <TouchableOpacity style={styles.aiCloseBtn} onPress={() => setShowAiAssistant(false)}>
+                <TouchableOpacity
+                  style={styles.aiCloseBtn}
+                  onPress={() => setShowAiAssistant(false)}
+                >
                   <MaterialIcons name="close" size={24} color="#6F7A70" />
                 </TouchableOpacity>
               </View>
@@ -672,32 +852,60 @@ export default function CollectorHomeScreen() {
                 style={styles.aiChatScroll}
                 contentContainerStyle={styles.aiChatContent}
                 showsVerticalScrollIndicator={false}
-                onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
+                onContentSizeChange={() =>
+                  chatScrollRef.current?.scrollToEnd({ animated: true })
+                }
               >
                 {aiMessages.map((msg, i) => (
                   <View
                     key={i}
                     style={[
                       styles.aiBubble,
-                      msg.role === "user" ? styles.aiBubbleUser : styles.aiBubbleAI,
+                      msg.role === "user"
+                        ? styles.aiBubbleUser
+                        : styles.aiBubbleAI,
                     ]}
                   >
-                    <Text style={[styles.aiBubbleText, msg.role === "user" && styles.aiBubbleTextUser]}>
+                    <Text
+                      style={[
+                        styles.aiBubbleText,
+                        msg.role === "user" && styles.aiBubbleTextUser,
+                      ]}
+                    >
                       {msg.content}
                     </Text>
                   </View>
                 ))}
                 {aiLoading && (
-                  <View style={[styles.aiBubble, styles.aiBubbleAI, { paddingVertical: 14 }]}>
+                  <View
+                    style={[
+                      styles.aiBubble,
+                      styles.aiBubbleAI,
+                      { paddingVertical: 14 },
+                    ]}
+                  >
                     <ActivityIndicator size="small" color="#006A3B" />
                   </View>
                 )}
               </ScrollView>
 
               {/* Suggestion chips */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.aiChipsRow} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
-                {["What's my next stop?", "Any tips for this area?", "How much have I collected?"].map((chip) => (
-                  <TouchableOpacity key={chip} style={styles.aiChip} onPress={() => setAiInput(chip)}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.aiChipsRow}
+                contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+              >
+                {[
+                  "What's my next stop?",
+                  "Any tips for this area?",
+                  "How much have I collected?",
+                ].map((chip) => (
+                  <TouchableOpacity
+                    key={chip}
+                    style={styles.aiChip}
+                    onPress={() => setAiInput(chip)}
+                  >
                     <Text style={styles.aiChipText}>{chip}</Text>
                   </TouchableOpacity>
                 ))}
@@ -717,7 +925,10 @@ export default function CollectorHomeScreen() {
                   editable={!aiLoading}
                 />
                 <TouchableOpacity
-                  style={[styles.aiSendBtn, (!aiInput.trim() || aiLoading) && { opacity: 0.4 }]}
+                  style={[
+                    styles.aiSendBtn,
+                    (!aiInput.trim() || aiLoading) && { opacity: 0.4 },
+                  ]}
                   onPress={sendAiMessage}
                   activeOpacity={0.8}
                 >
@@ -731,7 +942,11 @@ export default function CollectorHomeScreen() {
 
       {/* AI Assistant FAB */}
       {!isLoading && !hasError && currentStop ? (
-        <TouchableOpacity style={styles.fab} onPress={openAiModal} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={openAiModal}
+          activeOpacity={0.85}
+        >
           <MaterialIcons name="psychology" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
@@ -741,249 +956,339 @@ export default function CollectorHomeScreen() {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F2F2F7' },
+  safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
 
   // ── Header ─────────────────────────────────────────────────────────────────
   header: {
     height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'flex-end' },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    // Removed flex: 1 so it wraps its own content width
+  },
+  headerCenter: {
+    flex: 1, // Takes up all remaining space between left and right
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    // Removed flex: 1 so it wraps its own content width
+  },
   headerLogo: { width: 72, height: 26 },
   collectorBadge: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: "#ECFDF5",
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderWidth: 1,
-    borderColor: '#D1FAE5',
+    borderColor: "#D1FAE5",
   },
   collectorBadgeText: {
     fontSize: 9,
-    fontWeight: '800',
-    color: '#059669',
-    textTransform: 'uppercase',
+    fontWeight: "800",
+    color: "#059669",
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  truckIdText: { fontSize: 12, fontWeight: '700', color: '#6B7280', letterSpacing: 0.3 },
+  truckIdText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+    letterSpacing: 0.3,
+    textAlign: "center", // Ensures it is centered in the available space
+  },
   headerBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   notifBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 7,
     right: 7,
     minWidth: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#006A3B',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 2,
   },
-  notifBadgeText: { fontSize: 8, fontWeight: '800', color: '#FFFFFF' },
-
-  scrollContainer: { paddingTop: 0 },
+  notifBadgeText: { fontSize: 8, fontWeight: "800", color: "#FFFFFF" },
 
   // ── Hero ────────────────────────────────────────────────────────────────────
   hero: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
     marginBottom: 16,
   },
   heroTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 2,
   },
-  heroGreeting: { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
-  heroName: { fontSize: 26, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 32 },
-  heroRoute: { fontSize: 13, color: '#6B7280', fontWeight: '500', marginTop: 6, marginBottom: 0 },
+  heroGreeting: { fontSize: 13, color: "#9CA3AF", fontWeight: "500" },
+  heroName: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#111827",
+    letterSpacing: -0.5,
+    lineHeight: 32,
+  },
+  heroRoute: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "500",
+    marginTop: 6,
+    marginBottom: 0,
+  },
 
   heroMeta: { marginTop: 16 },
   progressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 6,
   },
-  progressLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
-  progressPct: { fontSize: 12, fontWeight: '700', color: '#006A3B' },
+  progressLabel: { fontSize: 12, color: "#9CA3AF", fontWeight: "500" },
+  progressPct: { fontSize: 12, fontWeight: "700", color: "#006A3B" },
   progressTrack: {
     height: 4,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: "#E5E7EB",
     borderRadius: 2,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 14,
   },
-  progressFill: { height: '100%', backgroundColor: '#006A3B', borderRadius: 2 },
+  progressFill: { height: "100%", backgroundColor: "#006A3B", borderRadius: 2 },
   statsStrip: {
-    flexDirection: 'row',
-    backgroundColor: '#F9FAFB',
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
+    borderColor: "#E5E7EB",
+    overflow: "hidden",
   },
-  statItem: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  statValue: { fontSize: 17, fontWeight: '800', color: '#111827', letterSpacing: -0.3 },
+  statItem: { flex: 1, paddingVertical: 10, alignItems: "center" },
+  statValue: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111827",
+    letterSpacing: -0.3,
+  },
   statLabel: {
     fontSize: 9,
-    color: '#9CA3AF',
-    textTransform: 'uppercase',
+    color: "#9CA3AF",
+    textTransform: "uppercase",
     letterSpacing: 0.6,
     marginTop: 2,
-    fontWeight: '600',
+    fontWeight: "600",
   },
-  statDivider: { width: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginVertical: 8 },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: "#E5E7EB",
+    marginVertical: 8,
+  },
 
   offlinePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     borderRadius: 9999,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: "#FDE68A",
   },
-  offlinePillText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
+  offlinePillText: { fontSize: 10, fontWeight: "700", color: "#92400E" },
 
   // ── Sections ────────────────────────────────────────────────────────────────
   section: { marginBottom: 0 },
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#9CA3AF',
-    textTransform: 'uppercase',
+    fontWeight: "700",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
     letterSpacing: 0.8,
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
   },
   sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
   },
   surface: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
     paddingHorizontal: 16,
     paddingVertical: 16,
     marginBottom: 16,
   },
   routeNameBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: "#ECFDF5",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#D1FAE5',
+    borderColor: "#D1FAE5",
   },
-  routeNameBadgeText: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
+  routeNameBadgeText: { fontSize: 11, fontWeight: "700", color: "#006A3B" },
 
-  logTotal: { fontSize: 11, fontWeight: '700', color: '#006A3B' },
-  logEmpty: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 20 },
+  logTotal: { fontSize: 11, fontWeight: "700", color: "#006A3B" },
+  logEmpty: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: "center",
+    paddingVertical: 20,
+  },
 
   // ── State cards ─────────────────────────────────────────────────────────────
   stateCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
     padding: 36,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 8,
     marginBottom: 16,
   },
-  stateTitle: { fontSize: 16, fontWeight: '700', color: '#111827', textAlign: 'center', marginTop: 4 },
-  stateSub: { fontSize: 13, color: '#9CA3AF', lineHeight: 19, textAlign: 'center' },
+  stateTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  stateSub: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    lineHeight: 19,
+    textAlign: "center",
+  },
   errorIconWrap: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: '#FEE2E2',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
   },
   emptyIconWrap: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
   },
   successIconWrap: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: '#ECFDF5',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
   },
   retryBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8,
-    backgroundColor: '#006A3B',
-    paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    backgroundColor: "#006A3B",
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
   },
-  retryBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  retryBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
 
   // ── Skeleton ─────────────────────────────────────────────────────────────────
   skeletonHero: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 20,
     paddingVertical: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
     marginBottom: 16,
   },
-  skeletonStatsRow: { flexDirection: 'row', gap: 10 },
+  skeletonStatsRow: { flexDirection: "row", gap: 10 },
   skeletonSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
 
   // ── Cleaned overlay ──────────────────────────────────────────────────────────
   cleanedOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center', alignItems: 'center', zIndex: 100,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
   },
   cleanedCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 32,
-    alignItems: 'center', gap: 8, marginHorizontal: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1, shadowRadius: 20, elevation: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 32,
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 40,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 12,
   },
-  cleanedTitle: { fontSize: 18, fontWeight: '800', color: '#006A3B', marginTop: 8 },
-  cleanedSub: { fontSize: 13, color: '#6B7280' },
+  cleanedTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#006A3B",
+    marginTop: 8,
+  },
+  cleanedSub: { fontSize: 13, color: "#6B7280" },
 
   fab: {
-    position: 'absolute',
+    position: "absolute",
     right: 20,
     bottom: 20,
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#006A3B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#006A3B',
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#006A3B",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
@@ -993,47 +1298,47 @@ const styles = StyleSheet.create({
 
   aiModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
   },
   aiModalCloseArea: {
     flex: 1,
   },
   aiModalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingTop: 12,
     paddingBottom: 24,
-    maxHeight: '85%',
-    minHeight: '60%',
+    maxHeight: "85%",
+    minHeight: "60%",
   },
   aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0EDED',
+    borderBottomColor: "#F0EDED",
     gap: 12,
   },
   aiIconCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#E4EEE9',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#E4EEE9",
+    justifyContent: "center",
+    alignItems: "center",
   },
   aiTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1B1C1C',
+    fontWeight: "700",
+    color: "#1B1C1C",
   },
   aiSubtitle: {
     fontSize: 11,
-    color: '#6F7A70',
-    fontWeight: '500',
+    color: "#6F7A70",
+    fontWeight: "500",
   },
   aiCloseBtn: {
     padding: 4,
@@ -1047,71 +1352,71 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   aiBubble: {
-    maxWidth: '82%',
+    maxWidth: "82%",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
   },
   aiBubbleAI: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F1F5F1',
+    alignSelf: "flex-start",
+    backgroundColor: "#F1F5F1",
     borderBottomLeftRadius: 4,
   },
   aiBubbleUser: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#006A3B',
+    alignSelf: "flex-end",
+    backgroundColor: "#006A3B",
     borderBottomRightRadius: 4,
   },
   aiBubbleText: {
     fontSize: 14,
-    color: '#1B1C1C',
+    color: "#1B1C1C",
     lineHeight: 20,
   },
   aiBubbleTextUser: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   aiChipsRow: {
     maxHeight: 44,
     marginVertical: 8,
   },
   aiChip: {
-    backgroundColor: '#F1F5F1',
+    backgroundColor: "#F1F5F1",
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#D4EAD9',
+    borderColor: "#D4EAD9",
   },
   aiChipText: {
     fontSize: 12,
-    color: '#006A3B',
-    fontWeight: '600',
+    color: "#006A3B",
+    fontWeight: "600",
   },
   aiInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     gap: 10,
     paddingTop: 4,
   },
   aiTextInput: {
     flex: 1,
-    backgroundColor: '#F8FAF8',
+    backgroundColor: "#F8FAF8",
     borderRadius: 24,
     paddingHorizontal: 18,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#1B1C1C',
+    color: "#1B1C1C",
     borderWidth: 1,
-    borderColor: '#E8EDE8',
+    borderColor: "#E8EDE8",
   },
   aiSendBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#006A3B',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   bottomSpacer: { height: 100 },
