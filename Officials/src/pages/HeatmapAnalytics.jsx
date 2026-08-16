@@ -4,7 +4,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend as RechartsLegend } from 'recharts';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -523,229 +524,209 @@ export default function HeatmapAnalytics() {
     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700 uppercase"><Zap className="w-2.5 h-2.5" />IoT + Reports</span>;
   };
 
+  const pieData = [
+    { name: 'Critical', value: criticalCt, color: '#ef4444' },
+    { name: 'Moderate', value: moderateCt, color: '#f59e0b' },
+    { name: 'Clean', value: cleanCt, color: '#10b981' },
+  ].filter(d => d.value > 0);
+
+  const barData = zones
+    .filter(z => z.sensorId && z.ammonia)
+    .slice(0, 5)
+    .map(z => ({
+      name: z.sensorId,
+      NH3: parseAmmoniaPpm(z.ammonia),
+      CH4: parseFloat(String(z.methane).replace(/[^0-9.]/g, '')) || 0
+    }));
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Garbage Areas & Heatmap</h1>
-          <p className="text-xs text-slate-500">Mark collection hotspots and monitor environmental impact — <span className="text-emerald-600 font-medium">auto-updated by IoT sensors</span></p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Health Risk View toggle — available to CHD and officials */}
-          <button
-            onClick={() => setHealthRiskView(!healthRiskView)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${healthRiskView ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-          >
-            <Heart className="w-4 h-4" />
-            Health Risk View
-          </button>
-
-          <button
-            onClick={() => setShowCityBoundary(!showCityBoundary)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${showCityBoundary ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="5 3"/></svg>
-            City Outline
-          </button>
-
-          <button
-            onClick={fetchZonesAndBoundary}
-            className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          {!isChd && (
-            <button
-              onClick={() => {
-                setIsAdding(!isAdding);
-                setNewArea(null);
-              }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all ${
-                isAdding
-                  ? 'bg-red-50 text-red-600 border border-red-200'
-                  : 'bg-emerald-700 text-white hover:bg-emerald-800'
-              }`}
-            >
-              {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {isAdding ? 'Cancel' : 'Mark Garbage Area'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* IoT Sensor Registration Panel */}
-      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
-        <button
-          onClick={() => setShowSensorForm(!showSensorForm)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-blue-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Cpu className="w-4 h-4 text-blue-600" />
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden">
+      
+      {/* Left Sidebar - Analytics (30%) */}
+      <div className="w-full lg:w-[400px] xl:w-[450px] flex-shrink-0 bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto z-10 shadow-lg">
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 sticky top-0 bg-white/90 backdrop-blur z-20">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">Heatmap Analytics</h1>
+            <div className="flex gap-2">
+              <button
+                onClick={fetchZonesAndBoundary}
+                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                title="Refresh Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-            <div className="text-left">
-              <p className="text-sm font-bold text-slate-800">IoT Sensor Zones</p>
-              <p className="text-xs text-slate-500">
-                {sensorZones.length} registered sensor{sensorZones.length !== 1 ? 's' : ''} — zones auto-update when sensor sends data
+          </div>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">
+            Live environmental risk monitoring powered by <span className="text-blue-600 font-bold"><Zap className="w-3 h-3 inline-block -mt-0.5" /> IoT Sensors</span> and resident reports.
+          </p>
+          
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => setHealthRiskView(!healthRiskView)}
+              className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${healthRiskView ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+            >
+              <Heart className="w-3.5 h-3.5" /> {healthRiskView ? 'Health View Active' : 'Health Risk View'}
+            </button>
+            <button
+              onClick={() => setShowSensorForm(true)}
+              className="flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-all"
+            >
+              <Cpu className="w-3.5 h-3.5" /> Manage Sensors
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-6">
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`p-4 rounded-2xl border ${healthRiskView ? 'bg-red-50/50 border-red-100' : criticalCt > 0 ? 'bg-red-50/50 border-red-100 ring-1 ring-red-500/20' : 'bg-slate-50 border-slate-100'}`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className={`w-2 h-2 rounded-full ${criticalCt > 0 || healthRiskView ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Critical</span>
+              </div>
+              <p className={`text-2xl font-black ${criticalCt > 0 || healthRiskView ? 'text-red-600' : 'text-slate-700'}`}>
+                {healthRiskView ? zones.filter(z => parseAmmoniaPpm(z.ammonia) > 100).length : criticalCt}
+              </p>
+            </div>
+            <div className={`p-4 rounded-2xl border ${healthRiskView ? 'bg-orange-50/50 border-orange-100' : 'bg-slate-50 border-slate-100'}`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-2 h-2 rounded-full bg-orange-500" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{healthRiskView ? 'High Risk' : 'Moderate'}</span>
+              </div>
+              <p className="text-2xl font-black text-slate-700">
+                {healthRiskView 
+                  ? zones.filter(z => parseAmmoniaPpm(z.ammonia) > 50 && parseAmmoniaPpm(z.ammonia) <= 100).length 
+                  : moderateCt}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {sensorZones.map(z => (
-              <span key={z.sensorId} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                z.status === 'clean' ? 'bg-emerald-100 text-emerald-700' :
-                z.status === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${z.status === 'clean' ? 'bg-emerald-500' : z.status === 'critical' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                {z.sensorId}
-              </span>
-            ))}
-            <span className="text-xs font-bold text-blue-600">{showSensorForm ? '▲ Hide' : '▼ Register Sensor'}</span>
-          </div>
-        </button>
 
-        {showSensorForm && (
-          <form onSubmit={handleRegisterSensor} className="border-t border-blue-100 px-5 py-4 space-y-3">
-            <p className="text-xs text-slate-500">
-              Enter the sensor ID exactly as sent by the ESP32, then pick its physical location on the map.
-              After registering, every sensor reading will auto-update the heatmap circle in real time.
-            </p>
-            {sensorMsg && (
-              <div className={`px-3 py-2 rounded-lg text-xs font-medium ${sensorMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                {sensorMsg.text}
+          {/* Donut Chart: Zone Status Distribution */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-emerald-500" /> Zone Distribution
+              </h3>
+            </div>
+            {pieData.length > 0 ? (
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius={55}
+                      outerRadius={75}
+                      paddingAngle={5}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                      itemStyle={{ fontWeight: 'bold' }}
+                    />
+                    <RechartsLegend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-[220px] flex items-center justify-center">
+                <p className="text-xs text-slate-400 font-medium">No zones mapped yet.</p>
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
-              {/* Sensor ID */}
-              <input
-                required
-                placeholder="Sensor ID (e.g. IR-SENSOR-001)"
-                value={sensorForm.sensorId}
-                onChange={e => setSensorForm(f => ({ ...f, sensorId: e.target.value }))}
-                className="flex-1 min-w-[180px] px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
-              />
-              {/* Barangay */}
-              <input
-                placeholder="Barangay (optional)"
-                value={sensorForm.barangay}
-                onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
-                className="flex-1 min-w-[140px] px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50"
-              />
-            </div>
+          </div>
 
-            {/* Map picker row */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowMapPicker(true)}
-                className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-blue-300 text-blue-600 text-xs font-bold rounded-xl hover:bg-blue-50 transition-colors"
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                {sensorForm.lat ? 'Change Location' : 'Pick Location on Map'}
-              </button>
-              {sensorForm.lat && (
-                <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0" />
-                  <div className="min-w-0">
-                    {sensorForm.location && <p className="text-xs font-semibold text-slate-700 truncate">{sensorForm.location}</p>}
-                    <p className="text-[10px] text-slate-500 font-mono">{parseFloat(sensorForm.lat).toFixed(6)}, {parseFloat(sensorForm.lng).toFixed(6)}</p>
-                  </div>
-                </div>
-              )}
+          {/* Bar Chart: Top Polluted IoT Zones */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-blue-500" /> Top IoT Pollutants
+              </h3>
             </div>
+            {barData.length > 0 ? (
+              <div className="h-[200px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                      labelStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}
+                    />
+                    <RechartsLegend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                    <Bar dataKey="NH3" name="Ammonia (ppm)" fill="#f97316" radius={[4, 4, 0, 0]} barSize={12} />
+                    <Bar dataKey="CH4" name="Methane (%)" fill="#dc2626" radius={[4, 4, 0, 0]} barSize={12} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-[200px] flex flex-col items-center justify-center text-center">
+                <Radio className="w-8 h-8 text-slate-200 mb-2" />
+                <p className="text-xs text-slate-400 font-medium">No live IoT data available.</p>
+              </div>
+            )}
+          </div>
 
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={sensorSaving || !sensorForm.lat}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                {sensorSaving ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-3 h-3" />}
-                {sensorSaving ? 'Registering...' : 'Register Sensor'}
-              </button>
+          {/* Legend Details */}
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Map Legend</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-emerald-400/40" />
+                <span className="text-xs text-slate-600 font-medium">IoT Sensor Zone (Auto-updates)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 border-t-2 border-blue-600 border-dashed inline-block" />
+                <span className="text-xs text-slate-600 font-medium">City Boundary</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 border-t-2 border-emerald-600 border-dashed inline-block" />
+                <span className="text-xs text-slate-600 font-medium">Barangay Jurisdiction</span>
+              </div>
             </div>
-          </form>
-        )}
+          </div>
+        </div>
       </div>
 
-      {/* Stats row */}
-      {healthRiskView ? (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl border border-red-200 ring-1 ring-red-100 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center font-bold text-red-600">
-              {zones.filter(z => parseAmmoniaPpm(z.ammonia) > 100).length}
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Risk</p>
-              <p className="text-xs text-slate-600">NH₃ &gt; 100 ppm</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-orange-200 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center font-bold text-orange-600">
-              {zones.filter(z => { const p = parseAmmoniaPpm(z.ammonia); return p > 50 && p <= 100; }).length}
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">High Risk</p>
-              <p className="text-xs text-slate-600">NH₃ 50–100 ppm</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-amber-200 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center font-bold text-amber-600">
-              {zones.filter(z => { const p = parseAmmoniaPpm(z.ammonia); return p >= 25 && p <= 50; }).length}
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Moderate</p>
-              <p className="text-xs text-slate-600">NH₃ 25–50 ppm</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-emerald-200 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center font-bold text-emerald-600">
-              {zones.filter(z => parseAmmoniaPpm(z.ammonia) < 25).length}
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Safe Zones</p>
-              <p className="text-xs text-slate-600">NH₃ &lt; 25 ppm</p>
-            </div>
+      {/* Right Side - Massive Map (70%) */}
+      <div className="flex-1 relative h-full bg-slate-200">
+        
+        {/* Map Overlays & Controls */}
+        <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-3 pointer-events-none">
+          <div className="flex gap-2 pointer-events-auto">
+            <button
+              onClick={() => setShowCityBoundary(!showCityBoundary)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="5 3"/></svg>
+              {showCityBoundary ? 'City Outline On' : 'City Outline Off'}
+            </button>
+            {!isChd && (
+              <button
+                onClick={() => {
+                  setIsAdding(!isAdding);
+                  setNewArea(null);
+                }}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${
+                  isAdding
+                    ? 'bg-red-600 text-white'
+                    : 'bg-emerald-700 text-white hover:bg-emerald-800'
+                }`}
+              >
+                {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                {isAdding ? 'Cancel Hotspot' : 'Mark Hotspot'}
+              </button>
+            )}
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${criticalCt > 0 ? 'border-red-200 ring-1 ring-red-100' : 'border-slate-100'}`}>
-            <div className={`w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold ${criticalCt > 0 ? 'animate-pulse' : ''}`}>{criticalCt}</div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Critical Areas</p>
-              <p className="text-xs text-slate-600">Immediate attention needed</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 font-bold">{moderateCt}</div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Moderate Areas</p>
-              <p className="text-xs text-slate-600">Scheduled collection active</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 font-bold">{cleanCt}</div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Clean Zones</p>
-              <p className="text-xs text-slate-600">Successfully maintained</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600 font-bold">{totalReports}</div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Reports</p>
-              <p className="text-xs text-slate-600">{bothSourced} zones with IoT + Reports</p>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Map */}
-      <div className="relative h-[600px] bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden ring-1 ring-slate-200">
         {isAdding && !newArea && !outOfBoundsError && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-emerald-950 text-white px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
             <MapPin className="w-4 h-4 animate-bounce text-emerald-400" />
@@ -755,7 +736,7 @@ export default function HeatmapAnalytics() {
 
         {/* Floating save card — appears immediately after placing a pin */}
         {newArea && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-2xl shadow-2xl border border-slate-200 px-5 py-4 flex items-center gap-4 min-w-[280px]">
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/50 px-5 py-4 flex items-center gap-4 min-w-[320px] animate-in slide-in-from-bottom-8">
             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
               <MapPin className="w-5 h-5 text-emerald-600" />
             </div>
@@ -791,8 +772,8 @@ export default function HeatmapAnalytics() {
           </div>
         )}
 
-        {/* Toast notification stack — top-right of map, max 4, each auto-dismisses */}
-        <div className="absolute top-4 right-4 z-[1001] flex flex-col gap-2 max-w-xs w-full pointer-events-none">
+        {/* Toast notification stack */}
+        <div className="absolute bottom-6 right-6 z-[1001] flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
           {toasts.map((t) => {
             const bg =
               t.type === 'cleaned' ? '#059669'
@@ -873,21 +854,26 @@ export default function HeatmapAnalytics() {
 
           <MapClickHandler onMapClick={handleMapClick} />
 
+          {/* Render Heatmap Circles */}
           {zones.map((zone) => {
             const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
             const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
             const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
             const isIotZone = !!zone.sensorId;
+            
+            // Dynamic radius and pulsing for visual emphasis
+            const radius = zone.status === 'critical' ? 250 : zone.status === 'moderate' ? 160 : 90;
+            
             return (
             <Circle
               key={zone._id}
               center={[zone.lat, zone.lng]}
-              radius={zone.status === 'critical' ? 200 : zone.status === 'moderate' ? 130 : 70}
+              radius={radius}
               pathOptions={{
                 fillColor: circleColor,
-                fillOpacity: zone.status === 'critical' ? 0.5 : 0.35,
+                fillOpacity: zone.status === 'critical' ? 0.6 : 0.4,
                 color: isIotZone ? '#2563eb' : circleColor,
-                weight: isIotZone ? 3 : (zone.status === 'critical' ? 3 : 2),
+                weight: isIotZone ? 4 : (zone.status === 'critical' ? 3 : 2),
                 opacity: 0.9,
               }}
               eventHandlers={{ click: () => setSelectedZone(zone) }}
@@ -1000,7 +986,7 @@ export default function HeatmapAnalytics() {
           {newArea && (
             <Circle
               center={[newArea.lat, newArea.lng]}
-              radius={130}
+              radius={160}
               pathOptions={{ fillColor: '#059669', fillOpacity: 0.6, color: '#fff', weight: 2 }}
             >
               <Popup>
@@ -1020,74 +1006,108 @@ export default function HeatmapAnalytics() {
         </MapContainer>
       </div>
 
-      {/* Legend */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
-        {healthRiskView ? (
-          <>
-            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1.5">
-              <Heart className="w-3 h-3" /> Health Risk View — Ammonia (NH₃) Levels
-            </p>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              {[
-                { color: 'bg-emerald-500', label: 'Safe — NH₃ < 25 ppm' },
-                { color: 'bg-amber-500', label: 'Moderate — NH₃ 25–50 ppm' },
-                { color: 'bg-orange-500', label: 'High Risk — NH₃ 50–100 ppm' },
-                { color: 'bg-red-500', label: 'Critical — NH₃ > 100 ppm' },
-              ].map((l) => (
-                <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                  <span className={`w-3 h-3 rounded-full opacity-80 ${l.color}`} />
-                  {l.label}
-                </span>
-              ))}
+      {/* Sensor Registration Modal */}
+      {showSensorForm && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <Cpu className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 leading-tight">Register IoT Sensor</h2>
+                  <p className="text-xs text-slate-500">{sensorZones.length} active sensors</p>
+                </div>
+              </div>
+              <button onClick={() => setShowSensorForm(false)} className="p-2 hover:bg-white/80 rounded-xl text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          </>
-        ) : (
-          <>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legend — Composite Scoring</p>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              {[
-                { color: 'bg-red-500', label: 'Critical — IoT hazardous + 5+ reports' },
-                { color: 'bg-amber-500', label: 'Moderate — Elevated readings or 2+ reports' },
-                { color: 'bg-emerald-500', label: 'Clean — Safe levels, no reports' },
-              ].map((l) => (
-                <span key={l.label} className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                  <span className={`w-3 h-3 rounded-full opacity-60 ${l.color}`} />
-                  {l.label}
-                </span>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
-              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                <span className="w-6 border-t-2 border-blue-600 border-dashed inline-block" />
-                Cebu City boundary
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                <span className="w-6 border-t-2 border-emerald-600 border-dashed inline-block" />
-                Barangay jurisdiction
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Sources</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700"><Zap className="w-2.5 h-2.5" /> IoT Sensor Only</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700"><AlertTriangle className="w-2.5 h-2.5" /> Resident Reports Only</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700"><Zap className="w-2.5 h-2.5" /> IoT + Reports Combined</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IoT Zones</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                <span className="w-4 h-4 rounded-full border-2 border-blue-600 bg-emerald-200 inline-block" />
-                Blue border = live IoT sensor zone (auto-updates)
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                <Cpu className="w-3.5 h-3.5 text-blue-600" />
-                Register sensors in the panel above
-              </span>
-            </div>
-          </>
-        )}
-      </div>
+            
+            <div className="p-6">
+              <form onSubmit={handleRegisterSensor} className="space-y-4">
+                <p className="text-xs text-slate-500 font-medium leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
+                  Enter the sensor ID exactly as sent by the ESP32 hardware, then pick its physical location on the map.
+                  The heatmap circle will auto-update based on real-time gas readings.
+                </p>
+                
+                {sensorMsg && (
+                  <div className={`px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 ${sensorMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                    {sensorMsg.type === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                    {sensorMsg.text}
+                  </div>
+                )}
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Sensor ID *</label>
+                    <input
+                      required
+                      placeholder="e.g. IR-SENSOR-001"
+                      value={sensorForm.sensorId}
+                      onChange={e => setSensorForm(f => ({ ...f, sensorId: e.target.value }))}
+                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white shadow-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Barangay (Optional)</label>
+                    <input
+                      placeholder="e.g. Lahug"
+                      value={sensorForm.barangay}
+                      onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
+                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white shadow-sm"
+                    />
+                  </div>
+                </div>
 
-      {/* CSS for flash animation */}
+                <div className="pt-2">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Sensor Location *</label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowMapPicker(true)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-blue-300 text-blue-600 text-sm font-bold rounded-xl hover:bg-blue-50 transition-colors"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      {sensorForm.lat ? 'Change Location' : 'Pick on Map'}
+                    </button>
+                    {sensorForm.lat && (
+                      <div className="flex-[1.5] flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0 animate-pulse" />
+                        <div className="min-w-0">
+                          {sensorForm.location && <p className="text-xs font-bold text-slate-700 truncate">{sensorForm.location}</p>}
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">{parseFloat(sensorForm.lat).toFixed(5)}, {parseFloat(sensorForm.lng).toFixed(5)}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowSensorForm(false)}
+                    className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={sensorSaving || !sensorForm.lat || !sensorForm.sensorId}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-lg shadow-blue-600/20 transition-all"
+                  >
+                    {sensorSaving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-4 h-4" />}
+                    {sensorSaving ? 'Registering...' : 'Register Sensor'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSS for animations */}
       <style>{`
         @keyframes fadeInDown {
           from { transform: translate(-50%, -20px); opacity: 0; }
