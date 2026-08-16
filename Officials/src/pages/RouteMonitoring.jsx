@@ -1,87 +1,225 @@
-import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Tooltip } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { io } from 'socket.io-client';
-import axios from 'axios';
-import { RefreshCw, Truck, MapPin, Navigation, UserPlus, X, Check, CheckCircle, AlertCircle, AlertTriangle, Phone, Layers } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import API from '../config';
-import truckIconUrl from '../../assets/truck-icon.png';
+// ============================================================
+// === 1. IMPORTS & DEPENDENCIES ==============================
+// ============================================================
+import { useState, useEffect, useRef } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Polyline,
+  Tooltip,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { io } from "socket.io-client";
+import axios from "axios";
+import {
+  RefreshCw,
+  Truck,
+  MapPin,
+  Navigation,
+  UserPlus,
+  X,
+  Check,
+  CheckCircle,
+  AlertCircle,
+  AlertTriangle,
+  Phone,
+  Layers,
+  Clock,
+  User,
+  CreditCard,
+  ChevronDown,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import API from "../config";
+
+// === CUSTOM IMPORTED ASSETS (SVG ICONS) ===
+import trash from "../assets/svg/trash.svg";
+import gtruck from "../assets/svg/garbage-truck.svg";
+
 const CEBU_CENTER = [10.3157, 123.8854];
 
-function makeTruckIcon(status) {
-  const isOnline = status === 'online';
+// ============================================================
+// === 2. MAP ICON MAKERS ======================================
+// ============================================================
+
+/**
+ * Creates a dynamic, rotating Truck Icon using the imported SVG.
+ * - Rotates based on the map heading (offset by -90 degrees to align North).
+ * - Pulse effect appears when the truck status is 'online'.
+ */
+function makeTruckIcon(status, heading = 0) {
+  const isOnline = status === "online";
+  // Fix: Offset by -90 degrees to align the SVG's "East" facing default with Map's "North" (0 degrees).
+  const adjustedHeading = (heading || 0) - 90;
+
   return L.divIcon({
-    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;${isOnline ? '' : 'opacity:0.55;'}">
-      <div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 3px 12px rgba(0,0,0,0.22);border:2.5px solid ${isOnline ? '#059669' : '#94a3b8'};${isOnline ? '' : 'filter:grayscale(100%);'}">
-        <img src="${truckIconUrl}" style="width:38px;height:38px;object-fit:contain;display:block;" />
+    html: `
+      <div class="relative flex flex-col items-center w-10 h-10 justify-end">
+        <!-- Pulsing Background Ring for Online Status -->
+        ${
+          isOnline
+            ? `
+          <div class="absolute inset-0 rounded-full bg-emerald-500/20 animate-pulse-truck shadow-[0_0_0_0_rgba(5,150,105,0.7)]"></div>
+        `
+            : ""
+        }
+        
+        <!-- Truck SVG Wrapper -->
+        <div style="transform-origin: center center; transform: rotate(${adjustedHeading}deg);" class="relative w-8 h-8 flex items-center justify-center drop-shadow-md transition-transform duration-200">
+          <img src="${gtruck}" style="width:100%; height:100%; object-fit:contain; display:block;" alt="Garbage Truck" />
+          <!-- Shadow below truck for depth -->
+          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-black/15 rounded-full blur-[1px]"></div>
+        </div>
       </div>
-    </div>`,
-    iconSize: [46, 50],
-    iconAnchor: [23, 50],
-    className: '',
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    className: "",
   });
 }
 
-function makeStopIcon(n, isFirst, isLast) {
-  const bg = isFirst ? '#059669' : isLast ? '#DC2626' : '#64748b';
+/**
+ * Creates a sharp, teardrop location pin for the Overflowing Bin.
+ * - Points exactly downwards onto the map coordinates.
+ * - Includes a pulsing "Area" ring and an urgency score badge.
+ */
+function makeBinIcon(score) {
+  const isHighUrgency = score >= 5;
+  const color = isHighUrgency ? "#dc2626" : "#eab308"; // Red (High) or Amber (Normal)
+
   return L.divIcon({
-    html: `<div style="background:${bg};color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.25);">${n}</div>`,
+    html: `
+      <div class="relative flex flex-col items-center w-10 h-12 justify-end">
+        <!-- Glowing Area Pulse Ring -->
+        <div class="absolute top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-${isHighUrgency ? "red" : "amber"}-500/20 animate-pulse-area pointer-events-none"></div>
+        
+        <!-- Teardrop Pin Body -->
+        <div class="w-7 h-7 rounded-[50%_50%_50%_0] -rotate-45 border-2 border-white shadow-lg flex items-center justify-center transition-colors relative z-10" style="background:${color};">
+           <!-- Trash SVG Icon (Rotated back upright inside the tilted pin) -->
+           <div class="rotate-45 flex items-center justify-center w-4 h-4">
+             <img src="${trash}" style="width:100%; height:100%; object-fit:contain; display:block;" alt="Trash" />
+           </div>
+        </div>
+        
+        <!-- Sharp Triangle Tip to make it point directly down -->
+        <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] -mt-[1px] filter drop-shadow-sm z-10" style="border-top-color:${color};"></div>
+
+        <!-- Score Badge (Only appears if high urgency) -->
+        ${
+          isHighUrgency
+            ? `
+          <div class="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full text-[9px] font-bold flex items-center justify-center border-[1.5px] border-white shadow-sm z-20 animate-pop-in">
+            ${score}
+          </div>
+        `
+            : ""
+        }
+        
+        <!-- Pin Drop Shadow -->
+        <div class="absolute -bottom-0 w-6 h-1 bg-black/20 rounded-full blur-[1px]"></div>
+      </div>
+    `,
+    iconSize: [40, 48],
+    iconAnchor: [20, 48], // Anchors exactly at the very bottom tip
+    className: "",
+  });
+}
+
+/**
+ * Creates numbered circle markers for waypoints (stops).
+ */
+function makeStopIcon(n, isFirst, isLast, isCompleted, isCurrent) {
+  const bg = isCompleted
+    ? "#10b981"
+    : isCurrent
+      ? "#3b82f6"
+      : isFirst
+        ? "#10b981"
+        : isLast
+          ? "#dc2626"
+          : "#cbd5e1";
+  return L.divIcon({
+    html: `
+      <div class="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] text-white shadow-md transition-colors border-2 border-white" style="background:${bg};">
+        ${isCompleted ? "✓" : n}
+      </div>
+    `,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
-    className: '',
+    className: "",
   });
 }
 
-// ── Detail Modals ──────────────────────────────────────────
+// ============================================================
+// === 3. MODALS ===============================================
+// ============================================================
+
+// ── Report Details Modal ──
 function ReportModal({ report, onClose }) {
   const score = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = score >= 5;
-
   return (
     <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isHighUrgency ? 'bg-red-100' : 'bg-amber-100'}`}>
-              <AlertTriangle className={`w-4 h-4 ${isHighUrgency ? 'text-red-600' : 'text-amber-600'}`} />
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${isHighUrgency ? "bg-red-100" : "bg-amber-100"}`}
+            >
+              <AlertTriangle
+                className={`w-4 h-4 ${isHighUrgency ? "text-red-600" : "text-amber-600"}`}
+              />
             </div>
-            <h3 className="text-base font-bold text-slate-900">Overflowing Bin</h3>
+            <h3 className="text-base font-bold text-slate-900">
+              Overflowing Bin
+            </h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
-
         <div className="p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Community Urgency</span>
-            <span className={`px-2 py-1 rounded-full text-xs font-bold ${isHighUrgency ? 'bg-red-600 text-white animate-pulse' : 'bg-amber-100 text-amber-700'}`}>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Community Urgency
+            </span>
+            <span
+              className={`px-2 py-1 rounded-full text-xs font-bold ${isHighUrgency ? "bg-red-600 text-white animate-pulse" : "bg-amber-100 text-amber-700"}`}
+            >
               Score: {score}
             </span>
           </div>
-
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-sm font-semibold text-slate-800 mb-1">{report.description}</p>
+            <p className="text-sm font-semibold text-slate-800 mb-1">
+              {report.description}
+            </p>
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <MapPin className="w-3.5 h-3.5" />
               <span>{report.location || report.barangay}</span>
             </div>
           </div>
-
           {report.reportImage && (
-            <img src={report.reportImage} className="w-full h-40 object-cover rounded-xl border border-slate-100" alt="Evidence" />
+            <img
+              src={report.reportImage}
+              className="w-full h-40 object-cover rounded-xl border border-slate-100"
+              alt="Evidence"
+            />
           )}
-
           <div className="flex items-center justify-between text-[10px] text-slate-400">
             <span>Reported by {report.reportedBy}</span>
             <span>{new Date(report.createdAt).toLocaleString()}</span>
           </div>
         </div>
-
         <div className="px-5 pb-5">
-          <button onClick={onClose} className="w-full py-2.5 text-sm font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 text-sm font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors"
+          >
             Close
           </button>
         </div>
@@ -90,54 +228,29 @@ function ReportModal({ report, onClose }) {
   );
 }
 
-function makeBinIcon(score) {
-  const isHighUrgency = score >= 5;
-  const color = isHighUrgency ? '#EF4444' : '#F59E0B';
-  return L.divIcon({
-    html: `<div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-      <!-- Pin Body -->
-      <div style="background:#fff;padding:3px;border-radius:14px;box-shadow:0 4px 15px rgba(0,0,0,0.25);border:1px solid #e2e8f0;${isHighUrgency ? 'animation:pulse-red 2s infinite;' : ''}">
-        <div style="background:${color};width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 -3px 0 rgba(0,0,0,0.15);">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/>
-          </svg>
-        </div>
-      </div>
-      <!-- Pin Tip -->
-      <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #fff;margin-top:-2px;filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));"></div>
-      
-      ${isHighUrgency ? `
-        <div style="position:absolute;top:-8px;right:-8px;background:#EF4444;color:#fff;width:20px;height:20px;border-radius:10px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-center;border:2px solid #fff;box-shadow:0 3px 6px rgba(0,0,0,0.2);z-index:2;">
-          ${score}
-        </div>
-      ` : ''}
-    </div>`,
-    iconSize: [40, 50],
-    iconAnchor: [20, 50],
-    className: '',
-  });
-}
-
-// ── Assign Truck Modal ─────────────────────────────────────
+// ── Assign Truck Modal ──
 function AssignModal({ route, fleet, onClose, onSave }) {
-  const current = fleet.find(f => f.truckId === route.truckId);
-  const [selectedTruckId, setSelectedTruckId] = useState(route.truckId || '');
+  const current = fleet.find((f) => f.truckId === route.truckId);
+  const [selectedTruckId, setSelectedTruckId] = useState(route.truckId || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSave = async () => {
-    if (!selectedTruckId) { setError('Select a truck to assign.'); return; }
-    const fleetEntry = fleet.find(f => f.truckId === selectedTruckId);
+    if (!selectedTruckId) {
+      setError("Select a truck to assign.");
+      return;
+    }
+    const fleetEntry = fleet.find((f) => f.truckId === selectedTruckId);
     setSaving(true);
-    setError('');
+    setError("");
     try {
       const { data } = await axios.patch(`${API}/api/routes/${route._id}`, {
         truckId: selectedTruckId,
-        driverName: fleetEntry?.driverName || '',
+        driverName: fleetEntry?.driverName || "",
       });
       onSave(data);
     } catch {
-      setError('Failed to assign. Try again.');
+      setError("Failed to assign. Try again.");
     } finally {
       setSaving(false);
     }
@@ -148,11 +261,11 @@ function AssignModal({ route, fleet, onClose, onSave }) {
     try {
       const { data } = await axios.patch(`${API}/api/routes/${route._id}`, {
         truckId: null,
-        driverName: '',
+        driverName: "",
       });
       onSave(data);
     } catch {
-      setError('Failed to unassign. Try again.');
+      setError("Failed to unassign. Try again.");
     } finally {
       setSaving(false);
     }
@@ -161,87 +274,102 @@ function AssignModal({ route, fleet, onClose, onSave }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-        {/* Header */}
         <div className="flex items-start justify-between p-5 border-b border-slate-100">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Assign Truck Driver</h3>
-            <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[220px]">{route.name}</p>
+            <h3 className="text-base font-bold text-slate-900">
+              Assign Truck Driver
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[220px]">
+              {route.name}
+            </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Body */}
         <div className="p-5 space-y-4">
-          {/* Route info */}
           <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Navigation className="w-4 h-4 text-emerald-700" />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-500">Route</p>
-              <p className="text-sm font-bold text-slate-800 truncate">{route.name}</p>
+              <p className="text-sm font-bold text-slate-800 truncate">
+                {route.name}
+              </p>
               <p className="text-xs text-slate-400">{route.totalStops} stops</p>
             </div>
           </div>
-
-          {/* Current assignment */}
           {current && (
             <div className="flex items-center gap-2 text-xs text-slate-500 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-              Currently assigned to <span className="font-bold text-slate-700">{current.truckId} · {current.driverName}</span>
+              Currently assigned to{" "}
+              <span className="font-bold text-slate-700">
+                {current.truckId} · {current.driverName}
+              </span>
             </div>
           )}
-
-          {/* Truck selector */}
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Truck / Driver</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Select Truck / Driver
+            </label>
             <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
               {fleet.length === 0 && (
-                <p className="text-xs text-slate-400 italic py-2">No trucks available.</p>
+                <p className="text-xs text-slate-400 italic py-2">
+                  No trucks available.
+                </p>
               )}
-              {fleet.map(f => {
-                const isShared = f.type === 'shared';
+              {fleet.map((f) => {
+                const isShared = f.type === "shared";
                 const isSelected = selectedTruckId === f.truckId;
                 return (
                   <button
                     key={f.truckId}
                     type="button"
                     onClick={() => setSelectedTruckId(f.truckId)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                      isSelected
-                        ? 'border-emerald-500 bg-emerald-50'
-                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
-                    }`}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${isSelected ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"}`}
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isShared ? 'bg-blue-100' : 'bg-emerald-100'}`}>
-                      <Truck className={`w-4 h-4 ${isShared ? 'text-blue-600' : 'text-emerald-700'}`} />
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isShared ? "bg-emerald-100" : "bg-emerald-100"}`}
+                    >
+                      <Truck
+                        className={`w-4 h-4 ${isShared ? "text-emerald-600" : "text-emerald-700"}`}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-slate-800">{f.truckId}</span>
+                        <span className="text-sm font-bold text-slate-800">
+                          {f.truckId}
+                        </span>
                         {isShared && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">Shared</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600">
+                            Shared
+                          </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate">{f.driverName}{f.route ? ` · ${f.route}` : ''}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {f.driverName}
+                        {f.route ? ` · ${f.route}` : ""}
+                      </p>
                     </div>
-                    {isSelected && <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
+                    {isSelected && (
+                      <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    )}
                   </button>
                 );
               })}
             </div>
           </div>
-
           {error && (
             <p className="text-xs text-red-600 flex items-center gap-1.5">
-              <AlertCircle className="w-3.5 h-3.5" />{error}
+              <AlertCircle className="w-3.5 h-3.5" />
+              {error}
             </p>
           )}
         </div>
-
-        {/* Footer */}
         <div className="px-5 pb-5 flex gap-2">
           {route.truckId && (
             <button
@@ -252,7 +380,10 @@ function AssignModal({ route, fleet, onClose, onSave }) {
               Unassign
             </button>
           )}
-          <button onClick={onClose} className="flex-1 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+          >
             Cancel
           </button>
           <button
@@ -260,11 +391,12 @@ function AssignModal({ route, fleet, onClose, onSave }) {
             disabled={saving || !selectedTruckId}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-xl transition-colors"
           >
-            {saving
-              ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : <Check className="w-4 h-4" />
-            }
-            {saving ? 'Saving…' : 'Assign'}
+            {saving ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            {saving ? "Saving…" : "Assign"}
           </button>
         </div>
       </div>
@@ -272,8 +404,11 @@ function AssignModal({ route, fleet, onClose, onSave }) {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────
+// ============================================================
+// === 4. MAIN ROUTE MONITORING COMPONENT ======================
+// ============================================================
 export default function RouteMonitoring() {
+  // ── State Management ──
   const { official } = useAuth();
   const [routes, setRoutes] = useState([]);
   const [trucks, setTrucks] = useState({});
@@ -281,13 +416,14 @@ export default function RouteMonitoring() {
   const [reports, setReports] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
-  const [assignTarget, setAssignTarget] = useState(null); // route to assign
+  const [assignTarget, setAssignTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deviationAlerts, setDeviationAlerts] = useState([]);
   const [isSatellite, setIsSatellite] = useState(false);
   const [showReports, setShowReports] = useState(true);
   const socketRef = useRef(null);
 
+  // ── API Data Fetching ──
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -299,134 +435,173 @@ export default function RouteMonitoring() {
       ]);
       setRoutes(routesRes.data);
       const truckMap = {};
-      trucksRes.data.forEach(t => { truckMap[t.truckId] = t; });
+      trucksRes.data.forEach((t) => {
+        truckMap[t.truckId] = t;
+      });
       setTrucks(truckMap);
       setFleet(fleetRes.data);
-      setReports(reportsRes.data.filter(r => r.status !== 'resolved'));
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+      setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
+    } catch {
+      /* silent */
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // ── WebSocket & Socket Listeners ──
   useEffect(() => {
     fetchData();
-
-    const socket = io(API, { transports: ['websocket', 'polling'] });
+    const socket = io(API, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
-    socket.on('truck:location:update', data => {
-      setTrucks(prev => ({ ...prev, [data.truckId]: { ...prev[data.truckId], ...data, updatedAt: new Date() } }));
+    socket.on("truck:location:update", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: {
+          ...prev[data.truckId],
+          ...data,
+          updatedAt: new Date(),
+        },
+      }));
     });
-    socket.on('truck:status', data => {
-      setTrucks(prev => ({ ...prev, [data.truckId]: { ...prev[data.truckId], status: data.status } }));
+    socket.on("truck:status", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: { ...prev[data.truckId], status: data.status },
+      }));
     });
-    socket.on('route:updated', updated => {
-      setRoutes(prev => prev.map(r => r._id === updated._id ? updated : r));
+    socket.on("route:updated", (updated) => {
+      setRoutes((prev) =>
+        prev.map((r) => (r._id === updated._id ? updated : r)),
+      );
     });
-    socket.on('report:new', newReport => {
-      if (newReport.category === 'Overflowing Bin') {
-        setReports(prev => [newReport, ...prev]);
-      }
+    socket.on("report:new", (newReport) => {
+      if (newReport.category === "Overflowing Bin")
+        setReports((prev) => [newReport, ...prev]);
     });
-    socket.on('report:updated', updated => {
-      if (updated.status === 'resolved') {
-        setReports(prev => prev.filter(r => r._id !== updated._id));
-      } else {
-        setReports(prev => prev.map(r => r._id === updated._id ? updated : r));
-      }
+    socket.on("report:updated", (updated) => {
+      if (updated.status === "resolved")
+        setReports((prev) => prev.filter((r) => r._id !== updated._id));
+      else
+        setReports((prev) =>
+          prev.map((r) => (r._id === updated._id ? updated : r)),
+        );
     });
-    socket.on('truck:off-route', data => {
-      setDeviationAlerts(prev => {
-        if (prev.some(a => a.truckId === data.truckId && a.type === 'off-route')) return prev;
-        return [{ ...data, id: Date.now(), ts: new Date(), type: 'off-route' }, ...prev].slice(0, 5);
+    socket.on("truck:off-route", (data) => {
+      setDeviationAlerts((prev) => {
+        if (
+          prev.some((a) => a.truckId === data.truckId && a.type === "off-route")
+        )
+          return prev;
+        return [
+          { ...data, id: Date.now(), ts: new Date(), type: "off-route" },
+          ...prev,
+        ].slice(0, 5);
       });
     });
-    socket.on('truck:contact-dispatch', data => {
-      setDeviationAlerts(prev => {
-        if (prev.some(a => a.truckId === data.truckId && a.type === 'contact')) return prev;
-        return [{ ...data, id: Date.now(), ts: new Date(), type: 'contact' }, ...prev].slice(0, 5);
+    socket.on("truck:contact-dispatch", (data) => {
+      setDeviationAlerts((prev) => {
+        if (
+          prev.some((a) => a.truckId === data.truckId && a.type === "contact")
+        )
+          return prev;
+        return [
+          { ...data, id: Date.now(), ts: new Date(), type: "contact" },
+          ...prev,
+        ].slice(0, 5);
       });
     });
-
     return () => socket.disconnect();
   }, []);
 
+  // ── Handlers ──
   const handleAssignSave = (updatedRoute) => {
-    setRoutes(prev => prev.map(r => r._id === updatedRoute._id ? updatedRoute : r));
+    setRoutes((prev) =>
+      prev.map((r) => (r._id === updatedRoute._id ? updatedRoute : r)),
+    );
     if (selectedRoute?._id === updatedRoute._id) setSelectedRoute(updatedRoute);
     setAssignTarget(null);
   };
 
-  // All routes with a polyline (can be on map)
-  const mappableRoutes = routes.filter(r => r.routeCoords?.length > 0);
-  const onlineCt = Object.values(trucks).filter(t => t.status === 'online').length;
-  const assignedCt = routes.filter(r => r.truckId).length;
+  // ── Computed Variables ──
+  const mappableRoutes = routes.filter((r) => r.routeCoords?.length > 0);
+  const onlineCt = Object.values(trucks).filter(
+    (t) => t.status === "online",
+  ).length;
+  const assignedCt = routes.filter((r) => r.truckId).length;
+
+  // ── Active Route Logic ──
+  const activeRoute = selectedRoute || (routes.length > 0 ? routes[0] : null);
+  const activeTruck = activeRoute ? trucks[activeRoute.truckId] : null;
+  const activeFleet = activeRoute
+    ? fleet.find((f) => f.truckId === activeRoute.truckId)
+    : null;
+
+  // Determines progress. Defaults to 0 if unassigned.
+  const completedStops = activeRoute?.currentStopIndex || 0;
+  const totalStops = activeRoute?.waypoints?.length || 0;
+  const progress =
+    activeRoute && activeRoute.truckId && totalStops > 0
+      ? Math.round((completedStops / totalStops) * 100)
+      : 0;
+
+  // ── Inline CSS Animations ──
+  const animationStyles = `
+    @keyframes pulse-truck { 0% { transform: scale(0.95); opacity: 0.7; } 100% { transform: scale(1.4); opacity: 0; } }
+    @keyframes pulse-area { 0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } 50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.5; } 100% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } }
+    @keyframes pop-in { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+    .animate-pulse-truck { animation: pulse-truck 1.8s ease-out infinite; }
+    .animate-pulse-area { animation: pulse-area 2s ease-in-out infinite; }
+    .animate-pop-in { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  `;
 
   return (
-    <div className="flex flex-col h-full">
-      <style>{`
-        @keyframes pulse-red {
-          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
-          70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-        }
-      `}</style>
-      {/* Top bar */}
-      <div className="px-6 pt-6 pb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-sm">
-          <span className="font-bold text-slate-700">Route Monitoring</span>
-          {official?.barangay !== 'All' && (
-            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-200">
-              Brgy. {official?.barangay}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />{onlineCt} Online
-          </span>
-          <span className="flex items-center gap-1.5 text-slate-500 font-medium">
-            <Navigation className="w-3.5 h-3.5" /> {assignedCt}/{routes.length} Assigned
-          </span>
-          <button onClick={fetchData} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-xs">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col h-screen bg-[#f0f4f8] overflow-hidden relative">
+      <style>{animationStyles}</style>
 
-      {/* Deviation / dispatch alerts */}
+      {/* ── Deviation Alerts (Floating Overlay) ── */}
       {deviationAlerts.length > 0 && (
-        <div className="px-6 pb-2 space-y-2">
-          {deviationAlerts.map(alert => {
-            const isContact = alert.type === 'contact';
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[999] w-full max-w-2xl space-y-2">
+          {deviationAlerts.map((alert) => {
+            const isContact = alert.type === "contact";
             return (
               <div
                 key={alert.id}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
-                  isContact
-                    ? 'bg-blue-50 border-blue-200'
-                    : 'bg-amber-50 border-amber-200'
-                }`}
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 border shadow-lg bg-white/95 backdrop-blur-sm ${isContact ? "border-emerald-200" : "border-amber-200"}`}
               >
-                {isContact
-                  ? <Phone className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                  : <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                }
+                {isContact ? (
+                  <Phone className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                )}
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-bold ${isContact ? 'text-blue-800' : 'text-amber-800'}`}>
-                    {isContact ? 'Dispatch Request' : 'Off Route Alert'} — {alert.truckId}
+                  <p
+                    className={`text-sm font-bold ${isContact ? "text-emerald-800" : "text-amber-800"}`}
+                  >
+                    {isContact ? "Dispatch Request" : "Off Route Alert"} —{" "}
+                    {alert.truckId}
                   </p>
-                  <p className={`text-xs ${isContact ? 'text-blue-600' : 'text-amber-600'}`}>
+                  <p
+                    className={`text-xs ${isContact ? "text-emerald-600" : "text-amber-600"}`}
+                  >
                     {alert.driverName && `${alert.driverName} · `}
                     {isContact
                       ? alert.message
-                      : `~${alert.distanceM}m from assigned route`
-                    }
-                    {' · '}{new Date(alert.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      : `~${alert.distanceM}m from assigned route`}
+                    {" · "}
+                    {new Date(alert.ts).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </p>
                 </div>
                 <button
-                  onClick={() => setDeviationAlerts(prev => prev.filter(a => a.id !== alert.id))}
-                  className={`flex-shrink-0 ${isContact ? 'text-blue-400 hover:text-blue-600' : 'text-amber-400 hover:text-amber-600'}`}
+                  onClick={() =>
+                    setDeviationAlerts((prev) =>
+                      prev.filter((a) => a.id !== alert.id),
+                    )
+                  }
+                  className={`flex-shrink-0 ${isContact ? "text-emerald-400 hover:text-emerald-600" : "text-amber-400 hover:text-amber-600"}`}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -436,239 +611,444 @@ export default function RouteMonitoring() {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 px-6 pb-6 flex flex-col gap-4 min-h-0">
-
-        {/* Map */}
-        <div className="flex-1 min-h-[600px] bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden relative">
-          {loading ? (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Loading map data…</p>
-              </div>
-            </div>
-          ) : (
-            <>
-            <MapContainer center={CEBU_CENTER} zoom={13} className="w-full h-full" zoomControl>
-              <TileLayer
-                key={isSatellite ? 'satellite' : 'street'}
-                url={isSatellite
-                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                  : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-                }
-                attribution=""
-              />
-
-              {mappableRoutes.map(route => {
-                const isSelected = selectedRoute?._id === route._id;
-                const hasDriver = !!route.truckId;
-                const validCoords = (route.routeCoords || []).filter(
-                  ([lat, lng]) => lat != null && lng != null && !isNaN(lat) && !isNaN(lng)
-                );
-                if (validCoords.length === 0) return null;
-                return (
-                  <span key={route._id}>
-                    <Polyline
-                      positions={validCoords}
-                      color={isSelected ? '#059669' : hasDriver ? '#3b82f6' : '#94a3b8'}
-                      weight={isSelected ? 5 : 3}
-                      opacity={isSelected ? 0.9 : 0.55}
-                      eventHandlers={{ click: () => setSelectedRoute(isSelected ? null : route) }}
-                    />
-                    {isSelected && route.waypoints
-                      .filter(wp => wp.lat != null && wp.lng != null && !isNaN(wp.lat) && !isNaN(wp.lng))
-                      .map((wp, i) => (
-                        <Marker
-                          key={i}
-                          position={[wp.lat, wp.lng]}
-                          icon={makeStopIcon(i + 1, i === 0, i === route.waypoints.length - 1)}
-                        >
-                          <Tooltip permanent={false} direction="top" offset={[0, -14]}>{wp.name}</Tooltip>
-                        </Marker>
-                      ))}
-                  </span>
-                );
-              })}
-
-              {Object.values(trucks)
-                .filter(t => t.lat != null && t.lng != null && !isNaN(t.lat) && !isNaN(t.lng))
-                .map(truck => (
-                  <Marker key={truck.truckId} position={[truck.lat, truck.lng]} icon={makeTruckIcon(truck.status)}>
-                    <Tooltip direction="top" offset={[0, -18]}><span className="font-bold">{truck.truckId}</span></Tooltip>
-                  </Marker>
-                ))}
-
-              {showReports && reports
-                .filter(r => r.lat != null && r.lng != null && !isNaN(r.lat) && !isNaN(r.lng))
-                .map(r => (
-                  <Marker
-                    key={r._id}
-                    position={[r.lat, r.lng]}
-                    icon={makeBinIcon((r.upvotes?.length || 0) - (r.downvotes?.length || 0))}
-                    eventHandlers={{ click: () => setSelectedReport(r) }}
-                  >
-                    <Tooltip direction="top" offset={[0, -16]}>
-                      <span className="font-bold">Overflowing Bin</span>
-                    </Tooltip>
-                  </Marker>
-                ))}
-            </MapContainer>
-
-            {/* Map Controls — floats over map top-right */}
-            <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2">
-              <button
-                onClick={() => setIsSatellite(prev => !prev)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
-                  isSatellite
-                    ? 'bg-emerald-700 text-white border-emerald-700'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                {isSatellite ? 'Street View' : 'Satellite'}
-              </button>
-              
-              <button
-                onClick={() => setShowReports(prev => !prev)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold shadow-md border transition-all ${
-                  showReports
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                {showReports ? 'Hide Reports' : 'Show Reports'}
-              </button>
-            </div>
-            </>
-          )}
-        </div>
-
-        {/* Map legend */}
-        <div className="flex items-center gap-4 px-1 -mt-1 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5"><span className="w-6 h-1 bg-emerald-500 rounded" /> Selected</span>
-          <span className="flex items-center gap-1.5"><span className="w-6 h-1 bg-blue-400 rounded" /> Assigned</span>
-          <span className="flex items-center gap-1.5"><span className="w-6 h-1 bg-slate-300 rounded" /> Unassigned</span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-amber-600 rounded-sm" /> Overflowing Bin
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-red-600 rounded-sm" /> High Urgency
-          </span>
-        </div>
-
-        {/* Bottom Panel */}
-        <div className="flex gap-4 h-[180px]">
-          {/* Route cards */}
-          <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-2 mb-3 flex-shrink-0">
-              <Navigation className="w-4 h-4 text-slate-500" />
-              <span className="text-sm font-bold text-slate-800">All Routes ({routes.length})</span>
-            </div>
-
-            {routes.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-center">
+      {/* ── Main Page Layout (Sidebar + Map) ── */}
+      <div className="flex flex-1 overflow-hidden gap-0 p-4 pb-0">
+        {/* === LEFT SIDEBAR ================================= */}
+        <div className="w-[340px] flex-shrink-0 bg-white rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-slate-200 flex flex-col overflow-hidden mr-4 pb-4">
+          {/* 1. Truck Header */}
+          <div className="p-5 border-b border-slate-100 pb-4">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                  <Truck className="w-5 h-5 text-emerald-600" />
+                </div>
                 <div>
-                  <MapPin className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">No routes created yet</p>
-                  <p className="text-xs text-slate-300 mt-0.5">Use Route Builder to create routes</p>
+                  <h2 className="text-[17px] font-bold text-slate-900 leading-tight">
+                    {activeRoute
+                      ? activeRoute.truckId || "Unassigned"
+                      : "No Route Selected"}
+                  </h2>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span
+                      className={`w-2 h-2 rounded-full ${activeTruck?.status === "online" ? "bg-emerald-500" : "bg-slate-400"}`}
+                    ></span>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {activeTruck?.status === "online"
+                        ? "Collecting"
+                        : activeTruck?.status || "Offline"}
+                    </span>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* 2. Progress Bar */}
+            <div className="mb-4">
+              <div className="flex items-end justify-between mb-1">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Route Progress
+                </span>
+                <span className="text-2xl font-bold text-emerald-600 leading-none">
+                  {progress}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                <div
+                  className="h-full bg-emerald-600 rounded-full transition-all duration-700"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5">
+                Stops Completed:{" "}
+                {activeRoute?.truckId
+                  ? `${completedStops} / ${totalStops}`
+                  : "—"}
+              </p>
+            </div>
+
+            {/* 3. Truck Details Grid */}
+            <div className="mt-4 space-y-2.5">
+              <div className="flex items-center gap-3">
+                <CreditCard className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                  <span className="text-xs font-medium text-slate-500">
+                    Plate No.
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    ABC-1234
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                  <span className="text-xs font-medium text-slate-500">
+                    Driver
+                  </span>
+                  <span className="text-xs font-bold text-slate-800 truncate max-w-[150px]">
+                    {activeFleet?.driverName || activeRoute?.driverName || "—"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                  <span className="text-xs font-medium text-slate-500">
+                    Barangay
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    {official?.barangay || "N/A"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Clock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                  <span className="text-xs font-medium text-slate-500">
+                    Est. Finish
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    2:30 PM
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Route Stops List */}
+          <div className="flex-1 overflow-y-auto px-5 pt-3 pb-1">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Route Stops ({totalStops})
+              </h3>
+              {selectedRoute && (
+                <button
+                  onClick={() => setSelectedRoute(null)}
+                  className="text-slate-300 hover:text-slate-500 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {!activeRoute ? (
+              <div className="flex flex-col items-center justify-center h-32 text-center">
+                <MapPin className="w-8 h-8 text-slate-200 mb-2" />
+                <p className="text-sm text-slate-400">
+                  Click a route on the map
+                </p>
+              </div>
             ) : (
-              <div className="flex gap-3 overflow-x-auto pb-2 flex-1">
-                {routes.map(route => {
-                  const truck = trucks[route.truckId];
-                  const fleetEntry = fleet.find(f => f.truckId === route.truckId);
-                  const isSelected = selectedRoute?._id === route._id;
-                  const isAssigned = !!route.truckId;
+              <div className="space-y-0.5 pb-2">
+                {activeRoute.waypoints.map((wp, i) => {
+                  const isAssigned = !!activeRoute.truckId;
+                  const isCompleted = isAssigned && i < completedStops;
+                  const isCurrent = isAssigned && i === completedStops;
+                  const isUpcoming = !isAssigned || i > completedStops;
 
                   return (
                     <div
-                      key={route._id}
-                      onClick={() => setSelectedRoute(isSelected ? null : route)}
-                      className={`flex-shrink-0 w-56 rounded-xl border p-3 cursor-pointer transition-all flex flex-col ${
-                        isSelected
-                          ? 'border-emerald-400 bg-emerald-50 shadow-sm'
-                          : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
-                      }`}
+                      key={i}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isCurrent ? "bg-emerald-50/80 border-l-4 border-emerald-600 pl-2" : "border-l-4 border-transparent pl-2.5"}`}
                     >
-                      <div className="flex items-start justify-between gap-1 mb-1.5">
-                        <p className="text-sm font-bold text-slate-800 truncate leading-tight">{route.name}</p>
-                        {isAssigned
-                          ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Active</span>
-                          : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">Free</span>
-                        }
+                      {/* Dot / Check */}
+                      <div className="flex-shrink-0">
+                        {isCompleted && (
+                          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] text-white shadow-sm">
+                            <Check className="w-3 h-3" />
+                          </div>
+                        )}
+                        {isCurrent && (
+                          <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] text-white font-bold shadow-sm">
+                            {i + 1}
+                          </div>
+                        )}
+                        {isUpcoming && (
+                          <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center text-[10px] text-slate-400 font-medium bg-white shadow-sm">
+                            {i + 1}
+                          </div>
+                        )}
                       </div>
 
-                      {isAssigned ? (
-                        <div className="mb-2">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${
-                              truck?.status === 'online' ? 'bg-emerald-100 text-emerald-700'
-                              : truck?.status === 'offline' ? 'bg-slate-100 text-slate-500'
-                              : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {truck?.status || 'offline'}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-mono">{route.truckId}</span>
-                          </div>
-                          <p className="text-xs text-slate-500 truncate">
-                            {fleetEntry?.driverName || route.driverName || '—'}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic mb-2">No driver assigned</p>
-                      )}
-
-                      <div className="flex items-center justify-between mt-auto pt-2">
-                        <p className="text-xs text-slate-400 flex items-center gap-0.5">
-                          <MapPin className="w-3 h-3 flex-shrink-0" />{route.totalStops} stops
-                        </p>
-                        <button
-                          onClick={e => { e.stopPropagation(); setAssignTarget(route); }}
-                          className="flex items-center justify-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex-shrink-0 min-w-[72px]"
+                      {/* Text */}
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <p
+                          className={`text-[13px] font-medium truncate ${isCurrent ? "text-emerald-700" : isCompleted ? "text-slate-500" : "text-slate-700"}`}
                         >
-                          <UserPlus className="w-3 h-3 flex-shrink-0" />
-                          {isAssigned ? 'Reassign' : 'Assign'}
-                        </button>
+                          {i + 1}. {wp.name}
+                        </p>
+                        {isCurrent && (
+                          <span className="text-[10px] font-bold text-emerald-600">
+                            CURRENT
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Time */}
+                      <div className="text-[10px] text-slate-400 font-medium flex-shrink-0">
+                        {isCompleted ? "8:05 AM" : isCurrent ? "" : "Upcoming"}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
 
-          {/* Stop list for selected route */}
-          {selectedRoute && (
-            <div className="w-60 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 overflow-y-auto flex-shrink-0">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Stops</p>
-                <button onClick={() => setSelectedRoute(null)} className="text-slate-300 hover:text-slate-500">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <p className="text-sm font-bold text-slate-800 mb-3 leading-snug">{selectedRoute.name}</p>
-              <div className="space-y-2">
-                {selectedRoute.waypoints.map((wp, i) => (
-                  <div key={i} className="flex items-center gap-2.5">
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                      style={{ background: i === 0 ? '#059669' : i === selectedRoute.waypoints.length - 1 ? '#DC2626' : '#64748b' }}
-                    >
-                      {i + 1}
-                    </div>
-                    <p className="text-xs text-slate-700 truncate">{wp.name}</p>
-                  </div>
-                ))}
+            <div className="mt-1 text-[9px] text-slate-400 italic border-t border-slate-100 pt-2 pb-4">
+              * Times are estimates only
+            </div>
+          </div>
+        </div>
+
+        {/* === RIGHT MAP AREA ================================= */}
+        <div className="flex-1 bg-white rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-slate-200 overflow-hidden relative flex flex-col">
+          {/* ── Top Navigation Bar ── */}
+          <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white z-20">
+            <div className="flex items-center gap-4">
+              <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-slate-50 cursor-pointer">
+                <span className="text-sm font-medium text-slate-700">
+                  Barangay: {official?.barangay || "All"}
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
               </div>
             </div>
-          )}
+
+            <div className="flex items-center gap-3">
+              <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-slate-50 cursor-pointer">
+                <Truck className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-700">
+                  All Trucks
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </div>
+              <button
+                onClick={fetchData}
+                className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* ── Map Container ── */}
+          <div className="flex-1 relative bg-slate-100">
+            {loading ? (
+              <div className="w-full h-full flex items-center justify-center bg-white">
+                <div className="text-center">
+                  <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">Loading map data…</p>
+                </div>
+              </div>
+            ) : (
+              <MapContainer
+                center={CEBU_CENTER}
+                zoom={13}
+                className="w-full h-full"
+                zoomControl={false}
+              >
+                <TileLayer
+                  key={isSatellite ? "satellite" : "street"}
+                  url={
+                    isSatellite
+                      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                  }
+                  attribution=""
+                />
+
+                {/* Route Polylines */}
+                {mappableRoutes.map((route) => {
+                  const isSelected = selectedRoute?._id === route._id;
+                  const hasDriver = !!route.truckId;
+                  const validCoords = (route.routeCoords || []).filter(
+                    ([lat, lng]) =>
+                      lat != null && lng != null && !isNaN(lat) && !isNaN(lng),
+                  );
+                  if (validCoords.length === 0) return null;
+                  return (
+                    <span key={route._id}>
+                      <Polyline
+                        positions={validCoords}
+                        color={
+                          isSelected
+                            ? "#059669"
+                            : hasDriver
+                              ? "#3b82f6"
+                              : "#94a3b8"
+                        }
+                        weight={isSelected ? 4 : 3}
+                        opacity={isSelected ? 0.9 : 0.7}
+                        eventHandlers={{
+                          click: () =>
+                            setSelectedRoute(isSelected ? null : route),
+                        }}
+                      />
+                      {/* Selected Route Waypoints */}
+                      {isSelected &&
+                        route.waypoints
+                          .filter(
+                            (wp) =>
+                              wp.lat != null &&
+                              wp.lng != null &&
+                              !isNaN(wp.lat) &&
+                              !isNaN(wp.lng),
+                          )
+                          .map((wp, i) => {
+                            const isComp = i < completedStops;
+                            const isCurr = i === completedStops;
+                            return (
+                              <Marker
+                                key={i}
+                                position={[wp.lat, wp.lng]}
+                                icon={makeStopIcon(
+                                  i + 1,
+                                  i === 0,
+                                  i === route.waypoints.length - 1,
+                                  isComp,
+                                  isCurr,
+                                )}
+                              >
+                                <Tooltip
+                                  permanent={false}
+                                  direction="top"
+                                  offset={[0, -14]}
+                                >
+                                  {wp.name}
+                                </Tooltip>
+                              </Marker>
+                            );
+                          })}
+                    </span>
+                  );
+                })}
+
+                {/* Truck Markers */}
+                {Object.values(trucks)
+                  .filter(
+                    (t) =>
+                      t.lat != null &&
+                      t.lng != null &&
+                      !isNaN(t.lat) &&
+                      !isNaN(t.lng),
+                  )
+                  .map((truck) => (
+                    <Marker
+                      key={truck.truckId}
+                      position={[truck.lat, truck.lng]}
+                      icon={makeTruckIcon(truck.status, truck.heading || 0)}
+                    >
+                      <Tooltip direction="top" offset={[0, -20]}>
+                        <span className="font-bold text-sm">
+                          {truck.truckId}
+                        </span>
+                      </Tooltip>
+                    </Marker>
+                  ))}
+
+                {/* Overflowing Bin Markers */}
+                {showReports &&
+                  reports
+                    .filter(
+                      (r) =>
+                        r.lat != null &&
+                        r.lng != null &&
+                        !isNaN(r.lat) &&
+                        !isNaN(r.lng),
+                    )
+                    .map((r) => (
+                      <Marker
+                        key={r._id}
+                        position={[r.lat, r.lng]}
+                        icon={makeBinIcon(
+                          (r.upvotes?.length || 0) - (r.downvotes?.length || 0),
+                        )}
+                        eventHandlers={{ click: () => setSelectedReport(r) }}
+                      >
+                        <Tooltip direction="top" offset={[0, -20]}>
+                          <span className="font-bold text-sm">
+                            Overflowing Bin
+                          </span>
+                        </Tooltip>
+                      </Marker>
+                    ))}
+              </MapContainer>
+            )}
+
+            {/* ── MAP OVERLAYS ── */}
+
+            {/* Top Right Controls */}
+            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+              <button
+                onClick={() => setIsSatellite((prev) => !prev)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold shadow-md bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                <Layers className="w-3.5 h-3.5" />{" "}
+                {isSatellite ? "Street" : "Satellite"}
+              </button>
+              <button
+                onClick={() => setShowReports((prev) => !prev)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold shadow-md bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />{" "}
+                {showReports ? "Hide" : "Show"}
+              </button>
+            </div>
+
+            {/* LEGEND BOX (Positioned below controls to avoid overlap) */}
+            <div className="absolute top-36 right-4 z-[1000] bg-white p-4 rounded-xl shadow-md border border-slate-200 min-w-[140px]">
+              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">
+                Legend
+              </h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck
+                  (Current)
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-4 h-1 bg-emerald-500 rounded-full"></div>{" "}
+                  Completed Route
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-4 h-1 bg-emerald-500 rounded-full"></div>{" "}
+                  Active Route
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-4 h-1 bg-slate-300 rounded-full"></div>{" "}
+                  Upcoming Route
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm"></div>{" "}
+                  Completed Stop
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-3.5 h-3.5 bg-emerald-600 rounded-full border border-white shadow-sm"></div>{" "}
+                  Current Stop
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
+                  <div className="w-3.5 h-3.5 bg-white border border-slate-300 rounded-full shadow-sm"></div>{" "}
+                  Upcoming Stop
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 pt-2 border-t border-slate-100 mt-2">
+                  <div className="w-3.5 h-3.5 border border-dashed border-emerald-400 rounded-full bg-emerald-50/50"></div>{" "}
+                  Barangay Boundary
+                </div>
+              </div>
+            </div>
+
+            {/* Map Zoom Controls */}
+            <div className="absolute bottom-6 left-6 z-[1000] flex flex-col bg-white rounded-lg shadow-md border border-slate-200 overflow-hidden">
+              <button className="p-2.5 hover:bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-sm transition-colors">
+                +
+              </button>
+              <button className="p-2.5 hover:bg-slate-50 text-slate-600 font-bold text-sm transition-colors">
+                −
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Assign modal */}
+      {/* ── Floating Modals ── */}
       {assignTarget && (
         <AssignModal
           route={assignTarget}
@@ -677,12 +1057,10 @@ export default function RouteMonitoring() {
           onSave={handleAssignSave}
         />
       )}
-
-      {/* Report modal */}
       {selectedReport && (
-        <ReportModal 
-          report={selectedReport} 
-          onClose={() => setSelectedReport(null)} 
+        <ReportModal
+          report={selectedReport}
+          onClose={() => setSelectedReport(null)}
         />
       )}
     </div>

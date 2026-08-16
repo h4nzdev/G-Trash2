@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X, MessageSquare, Users } from 'lucide-react';
+import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X, MessageSquare, Users, CheckCircle, Navigation, Lightbulb, Eye } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend,
+  PieChart, Pie, Legend, LineChart, Line,
 } from 'recharts';
 import { io } from 'socket.io-client';
 import StatCard from '../components/dashboard/StatCard';
@@ -18,9 +18,33 @@ const BarTooltip = ({ active, payload, label }) => {
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-3 py-2">
       <p className="text-xs font-bold text-slate-700">{label}</p>
-      <p className="text-xs text-emerald-600 font-semibold">{payload[0].value.toLocaleString()} kg</p>
+      {payload.map((entry, index) => (
+        <p key={index} className="text-xs font-semibold" style={{ color: entry.color }}>
+          {entry.name}: {entry.value.toLocaleString()} {entry.name === 'Waste' ? 'kg' : ''}
+        </p>
+      ))}
     </div>
   );
+};
+
+const MOCK_COLLECTION_DATA = {
+  today: [
+    { name: '6 AM', Waste: 1200 }, { name: '9 AM', Waste: 2100 }, { name: '12 PM', Waste: 3400 },
+    { name: '3 PM', Waste: 1800 }, { name: '6 PM', Waste: 2600 }
+  ],
+  week: [
+    { name: 'Mon', Waste: 14500 }, { name: 'Tue', Waste: 16200 }, { name: 'Wed', Waste: 13800 },
+    { name: 'Thu', Waste: 15100 }, { name: 'Fri', Waste: 17300 }, { name: 'Sat', Waste: 12400 },
+    { name: 'Sun', Waste: 11200 }
+  ],
+  month: [
+    { name: 'Week 1', Waste: 98000 }, { name: 'Week 2', Waste: 102000 },
+    { name: 'Week 3', Waste: 95000 }, { name: 'Week 4', Waste: 110000 }
+  ],
+  year: [
+    { name: 'Jan', Waste: 420000 }, { name: 'Feb', Waste: 390000 }, { name: 'Mar', Waste: 450000 },
+    { name: 'Apr', Waste: 410000 }, { name: 'May', Waste: 460000 }, { name: 'Jun', Waste: 430000 }
+  ]
 };
 
 function timeAgo(dateStr) {
@@ -393,6 +417,7 @@ export default function OfficialsDashboard() {
   const [surveyData, setSurveyData] = useState(null);
   const [surveyPeriod, setSurveyPeriod] = useState('all');
   const [surveyContext, setSurveyContext] = useState('all');
+  const [collectionFilter, setCollectionFilter] = useState('week');
 
   useEffect(() => {
     if (location.state?.chdAccessDenied) {
@@ -510,6 +535,17 @@ export default function OfficialsDashboard() {
 
   const aqColor = { Good: 'green', Moderate: 'amber', Unhealthy: 'red', Hazardous: 'red' };
 
+  // Generate top 5 polluted barangays for grouped bar chart
+  const pollutionByArea = latestReadings
+    .map(r => ({
+      name: r.barangay || r.location || 'Unknown',
+      NH3: r.ammonia || 0,
+      CH4: r.methane || 0,
+      score: (r.ammonia || 0) + (r.methane * 10 || 0) // weight CH4 heavier for sorting
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
   return (
     <div className="p-6 space-y-6">
       {/* Date Header */}
@@ -536,108 +572,204 @@ export default function OfficialsDashboard() {
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          icon={Radio}
-          title="IoT Sensors Active"
-          value={iotSummary.totalSensors}
-          subtitle={`${iotSummary.recentReadings} readings in last hour`}
-          color="blue"
-        />
-        <StatCard
           icon={Truck}
           title="Active Trucks"
           value={`${stats.activeTrucks}/${stats.totalFleet}`}
-          subtitle="On route"
-          color="green"
+          subtitle="On route today"
+          color="blue"
         />
         <StatCard
-          icon={AlertTriangle}
-          title="Active IoT Alerts"
-          value={iotSummary.activeAlerts}
-          subtitle={`${iotSummary.criticalAlerts} critical`}
-          color={iotSummary.criticalAlerts > 0 ? 'red' : 'amber'}
+          icon={Radio}
+          title="IoT Sensors Integrated"
+          value={iotSummary.totalSensors}
+          subtitle={`${iotSummary.recentReadings} readings in last hour`}
+          color="emerald"
         />
         <StatCard
-          icon={Wind}
-          title="Air Quality"
-          value={worstAQ}
-          subtitle={latestReadings.length > 0 ? `Across ${latestReadings.length} sensor${latestReadings.length > 1 ? 's' : ''}` : 'No sensor data yet'}
-          color={aqColor[worstAQ] || 'green'}
+          icon={CheckCircle}
+          title="Barangays Collected"
+          value="12 / 80"
+          subtitle="Estimated 15% completion"
+          color="emerald"
         />
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-4 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Lightbulb className="w-16 h-16 text-amber-500" />
+          </div>
+          <div className="relative z-10 flex flex-col h-full justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                  <Navigation className="w-4 h-4 text-amber-600" />
+                </div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Route Recommendation</h3>
+              </div>
+              <p className="text-base font-bold text-amber-600 leading-tight">Priority: Lahug</p>
+            </div>
+            <p className="text-xs font-medium text-slate-600 mt-2 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-100/50">
+              Bin levels at 95% in sector 4.
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Live Sensor Readings Strip */}
-      {latestReadings.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {latestReadings.map((r) => {
-            const aqStyles = {
-              Good: 'border-emerald-200 bg-emerald-50/50',
-              Moderate: 'border-amber-200 bg-amber-50/50',
-              Unhealthy: 'border-red-200 bg-red-50/50',
-              Hazardous: 'border-red-300 bg-red-100/60',
-            };
-            const aqDot = {
-              Good: 'bg-emerald-500',
-              Moderate: 'bg-amber-500',
-              Unhealthy: 'bg-red-500',
-              Hazardous: 'bg-red-600 animate-pulse',
-            };
-            return (
-              <div
-                key={r.sensorId}
-                className={`rounded-xl border p-3.5 transition-all hover:shadow-md ${aqStyles[r.airQuality] || 'border-slate-200 bg-white'}`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Radio className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-xs font-bold text-slate-800">{r.sensorId}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${aqDot[r.airQuality]}`} />
-                    <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                      r.airQuality === 'Good' ? 'text-emerald-700' :
-                      r.airQuality === 'Moderate' ? 'text-amber-700' : 'text-red-700'
-                    }`}>{r.airQuality}</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-500 mb-2 truncate">📍 {r.location || 'Unknown Location'}</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="text-center">
-                    <p className="text-[10px] text-slate-400 font-medium">NH₃</p>
-                    <p className={`text-sm font-bold ${r.ammonia >= 25 ? 'text-red-600' : 'text-slate-800'}`}>{r.ammonia}<span className="text-[9px] text-slate-400 ml-0.5">ppm</span></p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-slate-400 font-medium">CH₄</p>
-                    <p className={`text-sm font-bold ${r.methane >= 1.5 ? 'text-red-600' : 'text-slate-800'}`}>{r.methane}<span className="text-[9px] text-slate-400 ml-0.5">%</span></p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-slate-400 font-medium">Bin</p>
-                    <p className={`text-sm font-bold ${r.binLevel >= 70 ? 'text-amber-600' : 'text-slate-800'}`}>{r.binLevel}<span className="text-[9px] text-slate-400 ml-0.5">%</span></p>
-                  </div>
-                </div>
-                {(r.temperature > 0 || r.humidity > 0) && (
-                  <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-200/60">
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <Thermometer className="w-3 h-3" /> {r.temperature}°C
-                    </span>
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <Droplets className="w-3 h-3" /> {r.humidity}%
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Charts Row */}
+      {/* Core Analytics: Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pollution Trends — LIVE from IoT */}
+        {/* Collection History Line Graph */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-500" /> Waste Collected
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Total volume collected across all routes</p>
+            </div>
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              {['today', 'week', 'month', 'year'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setCollectionFilter(filter)}
+                  className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded-md transition-all ${
+                    collectionFilter === filter ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={MOCK_COLLECTION_DATA[collectionFilter]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000}k`} />
+                <Tooltip content={<BarTooltip />} />
+                <Line type="monotone" dataKey="Waste" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pollution by Area Grouped Bar Chart */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                Pollution Trends
+                <Wind className="w-4 h-4 text-emerald-500" /> Pollution by Area
+                <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Top 5 barangays with highest gas levels</p>
+            </div>
+          </div>
+          {pollutionByArea.length > 0 ? (
+            <div className="h-[260px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={pollutionByArea} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<BarTooltip />} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 600, color: '#475569' }} />
+                  <Bar dataKey="NH3" name="Ammonia (ppm)" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="CH4" name="Methane (%)" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-[260px] flex flex-col items-center justify-center text-slate-400">
+              <Gauge className="w-10 h-10 mb-3 text-slate-300" />
+              <p className="text-sm font-medium">No pollution data available</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actionable Data: Detailed IoT Alerts Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500" /> Active IoT Alerts
+              {iotAlerts.length > 0 && (
+                <span className="text-[10px] font-medium bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                  {iotAlerts.filter(a => !a.acknowledged).length} Requires Action
+                </span>
+              )}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">Real-time alerts requiring official response</p>
+          </div>
+          <button className="text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors">
+            View All Alerts
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          {formattedAlerts.length > 0 ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50/50 border-b border-slate-100">
+                  <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Severity</th>
+                  <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Sensor ID / Location</th>
+                  <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Issue Details</th>
+                  <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Time</th>
+                  <th className="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {formattedAlerts.map((alert) => (
+                  <tr key={alert.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                        alert.severity === 'critical' ? 'bg-red-100 text-red-700 border border-red-200' :
+                        alert.severity === 'moderate' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                        'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}>
+                        {alert.severity === 'critical' && <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />}
+                        {alert.severity}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-slate-800">IR-SENSOR-0{alert.id % 9 + 1}</span>
+                        <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" /> {alert.location}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 min-w-[250px]">
+                      <p className="text-xs font-medium text-slate-700 leading-snug">{alert.message}</p>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-[11px] font-medium text-slate-500">{alert.time}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <button className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 bg-white border border-slate-200 shadow-sm hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all opacity-0 group-hover:opacity-100">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="py-12 text-center text-slate-400 bg-slate-50/30">
+              <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-600">No active alerts</p>
+              <p className="text-xs mt-1">Systems are operating within normal parameters.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+
+      {/* Bottom Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pollution Trends Line Chart (moved to secondary data) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                Pollution Trends Over Time
                 {pollutionData.length > 0 && (
                   <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
@@ -662,87 +794,6 @@ export default function OfficialsDashboard() {
           )}
         </div>
 
-        {/* Points by Barangay */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Points by Barangay</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Top 5 barangays by leaderboard score</p>
-            </div>
-          </div>
-          {rankings.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={rankings.slice(0, 5).map(r => ({ name: r.barangay, value: r.points || 0 }))}
-                layout="vertical"
-                margin={{ top: 0, right: 20, left: 10, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} axisLine={false} tickLine={false} width={80} />
-                <Tooltip content={<BarTooltip />} />
-                <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                  {rankings.slice(0, 5).map((_, index) => (
-                    <Cell
-                      key={index}
-                      fill={index === 0 ? '#065f46' : index === 1 ? '#047857' : index === 2 ? '#059669' : index === 3 ? '#10b981' : '#34d399'}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex flex-col items-center justify-center text-slate-400">
-              <TrendingUp className="w-10 h-10 mb-3 text-slate-300" />
-              <p className="text-sm font-medium">No leaderboard data yet</p>
-              <p className="text-xs mt-1">Scores accumulate as residents confirm pickups</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Survey Results */}
-      <SurveyResultsCard
-        data={surveyData}
-        period={surveyPeriod}
-        context={surveyContext}
-        onPeriodChange={(p) => { setSurveyPeriod(p); fetchSurvey(p, surveyContext); }}
-        onContextChange={(c) => { setSurveyContext(c); fetchSurvey(surveyPeriod, c); }}
-      />
-
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* IoT Alerts — LIVE */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                IoT Sensor Alerts
-                {iotAlerts.length > 0 && (
-                  <span className="text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
-                    {iotAlerts.filter(a => !a.acknowledged).length} active
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {iotAlerts.length > 0 ? 'Real-time pollution and threshold events' : 'Alerts from IoT sensors will appear here'}
-              </p>
-            </div>
-            <button className="text-xs font-medium text-emerald-700 hover:text-emerald-800 flex items-center gap-1">
-              View all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          {formattedAlerts.length > 0 ? (
-            <RecentAlerts alerts={formattedAlerts} />
-          ) : (
-            <div className="py-8 text-center text-slate-400">
-              <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-              <p className="text-sm font-medium">No alerts yet</p>
-              <p className="text-xs mt-1">Send sensor data with high readings to trigger alerts</p>
-            </div>
-          )}
-        </div>
-
         {/* Top Barangays */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-5">
@@ -761,6 +812,15 @@ export default function OfficialsDashboard() {
           <BarangayRanking data={rankings} />
         </div>
       </div>
+
+      {/* Survey Results */}
+      <SurveyResultsCard
+        data={surveyData}
+        period={surveyPeriod}
+        context={surveyContext}
+        onPeriodChange={(p) => { setSurveyPeriod(p); fetchSurvey(p, surveyContext); }}
+        onContextChange={(c) => { setSurveyContext(c); fetchSurvey(surveyPeriod, c); }}
+      />
     </div>
   );
 }
