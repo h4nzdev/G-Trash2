@@ -36,6 +36,7 @@ export default function ScheduleRoute() {
   const [selTruck, setSelTruck] = useState('');
   const [selRoute, setSelRoute] = useState('');
   const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -94,20 +95,22 @@ export default function ScheduleRoute() {
     setError('');
     try {
       const truck = fleet.find(t => t.truckId === selTruck);
-      const route = routes.find(r => r._id === selRoute);
+      const rObj = routes.find(r => r._id === selRoute);
       await axios.post(`${API}/api/schedules`, {
         date: selectedDate,
         truckId: selTruck,
         driverName: truck?.driverName || '',
-        routeId: selRoute || '',
-        routeName: route?.name || '',
+        routeId: rObj._id,
+        routeName: rObj.name,
         startTime,
+        endTime,
         notes,
       });
       setShowModal(false);
       setSelTruck('');
       setSelRoute('');
       setStartTime('');
+      setEndTime('');
       setNotes('');
       await fetchAll();
     } catch (e) {
@@ -129,6 +132,7 @@ export default function ScheduleRoute() {
     setSelTruck('');
     setSelRoute('');
     setStartTime('');
+    setEndTime('');
     setNotes('');
     setError('');
     setShowModal(true);
@@ -276,15 +280,24 @@ export default function ScheduleRoute() {
                         {s.startTime ? (
                           <div className="flex items-center gap-1.5 bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
                             <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="text-xs font-bold">{s.startTime}</span>
+                            <span className="text-xs font-bold">{s.startTime}{s.endTime ? ` - ${s.endTime}` : ''}</span>
                           </div>
                         ) : (
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-md border border-slate-100">Any Time</span>
                         )}
                         <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-100 px-2.5 py-1 rounded-md">
                           <Truck className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-xs font-bold tracking-wide">{s.truckId}</span>
+                          <span className="text-xs font-bold truncate max-w-[120px]">{s.driverName || 'No Driver'}</span>
                         </div>
+                        {s.status === 'completed' && (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider">Completed</span>
+                        )}
+                        {s.status === 'missed' && (
+                          <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded-md uppercase tracking-wider">Missed</span>
+                        )}
+                        {s.status === 'pending' && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded-md uppercase tracking-wider">Pending</span>
+                        )}
                       </div>
                       
                       {/* Driver & Route Info */}
@@ -400,17 +413,33 @@ export default function ScheduleRoute() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
-                <div className="relative">
-                  <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={e => setStartTime(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                    <div className="relative">
+                      <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        type="time"
+                        value={startTime}
+                        onChange={e => setStartTime(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">End Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                    <div className="relative">
+                      <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        type="time"
+                        value={endTime}
+                        onChange={e => setEndTime(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">Recommended when assigning multiple routes to the same truck on a single day.</p>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">Recommended when assigning multiple routes to the same truck. Missing the end time will auto-generate an alert.</p>
               </div>
 
               <div>

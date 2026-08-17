@@ -20,31 +20,11 @@ const BarTooltip = ({ active, payload, label }) => {
       <p className="text-xs font-bold text-slate-700">{label}</p>
       {payload.map((entry, index) => (
         <p key={index} className="text-xs font-semibold" style={{ color: entry.color }}>
-          {entry.name}: {entry.value.toLocaleString()} {entry.name === 'Waste' ? 'kg' : ''}
+          {entry.name}: {entry.value.toLocaleString()} {entry.name === 'Bins' ? 'bins' : ''}
         </p>
       ))}
     </div>
   );
-};
-
-const MOCK_COLLECTION_DATA = {
-  today: [
-    { name: '6 AM', Waste: 1200 }, { name: '9 AM', Waste: 2100 }, { name: '12 PM', Waste: 3400 },
-    { name: '3 PM', Waste: 1800 }, { name: '6 PM', Waste: 2600 }
-  ],
-  week: [
-    { name: 'Mon', Waste: 14500 }, { name: 'Tue', Waste: 16200 }, { name: 'Wed', Waste: 13800 },
-    { name: 'Thu', Waste: 15100 }, { name: 'Fri', Waste: 17300 }, { name: 'Sat', Waste: 12400 },
-    { name: 'Sun', Waste: 11200 }
-  ],
-  month: [
-    { name: 'Week 1', Waste: 98000 }, { name: 'Week 2', Waste: 102000 },
-    { name: 'Week 3', Waste: 95000 }, { name: 'Week 4', Waste: 110000 }
-  ],
-  year: [
-    { name: 'Jan', Waste: 420000 }, { name: 'Feb', Waste: 390000 }, { name: 'Mar', Waste: 450000 },
-    { name: 'Apr', Waste: 410000 }, { name: 'May', Waste: 460000 }, { name: 'Jun', Waste: 430000 }
-  ]
 };
 
 function timeAgo(dateStr) {
@@ -418,6 +398,7 @@ export default function OfficialsDashboard() {
   const [surveyPeriod, setSurveyPeriod] = useState('all');
   const [surveyContext, setSurveyContext] = useState('all');
   const [collectionFilter, setCollectionFilter] = useState('week');
+  const [collectionStats, setCollectionStats] = useState([]);
 
   useEffect(() => {
     if (location.state?.chdAccessDenied) {
@@ -440,7 +421,7 @@ export default function OfficialsDashboard() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes] = await Promise.all([
+      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes, collectionRes] = await Promise.all([
         fetch(`${API}/api/iot/summary`).then(r => r.json()),
         fetch(`${API}/api/iot/trends?hours=168`).then(r => r.json()),
         fetch(`${API}/api/iot/alerts?limit=10`).then(r => r.json()),
@@ -449,6 +430,7 @@ export default function OfficialsDashboard() {
           headers: { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` }
         }).then(r => r.ok ? r.json() : { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 }),
         fetch(`${API}/api/leaderboard`).then(r => r.json()).catch(() => []),
+        fetch(`${API}/api/analytics/collection-stats`).then(r => r.ok ? r.json() : []),
       ]);
       setIotSummary(summaryRes);
       setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);
@@ -456,6 +438,7 @@ export default function OfficialsDashboard() {
       setLatestReadings(Array.isArray(latestRes) ? latestRes : []);
       setStats(statsRes);
       setRankings(Array.isArray(rankingsRes) ? rankingsRes : []);
+      setCollectionStats(Array.isArray(collectionRes) ? collectionRes : []);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
@@ -491,6 +474,20 @@ export default function OfficialsDashboard() {
 
     socket.on('report:new', () => {
       setStats(prev => ({ ...prev, totalReports: prev.totalReports + 1, pendingReports: prev.pendingReports + 1 }));
+    });
+
+    socket.on('truck:status', () => {
+      fetch(`${API}/api/stats`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` }
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        if (data) setStats(data);
+      });
+    });
+
+    socket.on('collection:new', () => {
+      fetch(`${API}/api/analytics/collection-stats`).then(r => r.ok ? r.json() : []).then(data => {
+        if (Array.isArray(data)) setCollectionStats(data);
+      });
     });
 
     return () => socket.disconnect();
@@ -534,6 +531,33 @@ export default function OfficialsDashboard() {
   }, 'Good');
 
   const aqColor = { Good: 'green', Moderate: 'amber', Unhealthy: 'red', Hazardous: 'red' };
+
+  const getFilteredCollectionData = () => {
+    if (!collectionStats.length) return [];
+    
+    let filtered = collectionStats;
+    if (collectionFilter === 'week') {
+      filtered = collectionStats.slice(-7);
+    } else if (collectionFilter === 'month') {
+      filtered = collectionStats.slice(-30);
+    } else if (collectionFilter === 'year') {
+      const byMonth = {};
+      collectionStats.forEach(d => {
+        const month = d.date.substring(0, 7);
+        byMonth[month] = (byMonth[month] || 0) + d.binsCleared;
+      });
+      return Object.entries(byMonth).map(([m, val]) => ({ name: m, Bins: val }));
+    } else if (collectionFilter === 'today') {
+      const today = new Date().toISOString().substring(0,10);
+      const todayData = collectionStats.find(d => d.date === today);
+      return [{ name: today, Bins: todayData ? todayData.binsCleared : 0 }];
+    }
+    
+    return filtered.map(d => ({
+      name: d.date.substring(5), // MM-DD
+      Bins: d.binsCleared
+    }));
+  };
 
   // Generate top 5 polluted barangays for grouped bar chart
   const pollutionByArea = latestReadings
@@ -638,17 +662,31 @@ export default function OfficialsDashboard() {
               ))}
             </div>
           </div>
-          <div className="h-[260px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={MOCK_COLLECTION_DATA[collectionFilter]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000}k`} />
-                <Tooltip content={<BarTooltip />} />
-                <Line type="monotone" dataKey="Waste" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {(() => {
+            const chartData = getFilteredCollectionData();
+            if (chartData.length === 0) {
+              return (
+                <div className="h-[260px] flex flex-col items-center justify-center text-slate-400">
+                  <TrendingUp className="w-10 h-10 mb-3 text-slate-300" />
+                  <p className="text-sm font-medium">No collection data available</p>
+                  <p className="text-xs mt-1">No waste collections recorded for this period</p>
+                </div>
+              );
+            }
+            return (
+              <div className="h-[260px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<BarTooltip />} />
+                    <Line type="monotone" dataKey="Bins" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Pollution by Area Grouped Bar Chart */}

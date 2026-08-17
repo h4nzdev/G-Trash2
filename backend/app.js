@@ -82,6 +82,7 @@ mongoose
     console.log("OK: MongoDB connected ->", MONGO_URI);
     loadBoundaries();
     startSLAChecker();
+    startScheduleMonitor();
     startRewardExpirer();
     startMonthlyReset();
   })
@@ -187,6 +188,8 @@ const scheduleSchema = new mongoose.Schema({
   routeId: { type: String, default: "" },
   routeName: { type: String, default: "" },
   startTime: { type: String, default: "" }, // HH:MM for ordering
+  endTime: { type: String, default: "" }, // Optional HH:MM
+  status: { type: String, enum: ["pending", "completed", "missed"], default: "pending" },
   notes: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
@@ -501,6 +504,52 @@ async function startRewardExpirer() {
   };
   await expire();
   setInterval(expire, 60 * 60 * 1000);
+}
+
+async function startScheduleMonitor() {
+  const check = async () => {
+    try {
+      const now = new Date();
+      const pendingSchedules = await Schedule.find({ status: "pending" });
+      
+      for (const s of pendingSchedules) {
+        if (!s.date || !s.startTime) continue;
+        
+        let targetTimeStr = s.endTime || s.startTime;
+        let [hours, minutes] = targetTimeStr.split(":").map(Number);
+        
+        if (!s.endTime) {
+          hours += 2; // 2 hour grace period if no endTime
+        }
+
+        const scheduleDate = new Date(`${s.date}T00:00:00`);
+        scheduleDate.setHours(hours, minutes, 0, 0);
+
+        if (now > scheduleDate) {
+          await Schedule.findByIdAndUpdate(s._id, { status: "missed" });
+          
+          const report = await Report.create({
+            title: `Missed Route: ${s.routeName || "Unknown"}`,
+            category: "System Alert",
+            description: `Truck ${s.truckId} (${s.driverName || "Unknown Driver"}) failed to complete the scheduled route on time. Scheduled for ${s.date} at ${s.startTime}.`,
+            priority: "High",
+            status: "pending",
+            assignedTruck: s.truckId,
+            assignedDriver: s.driverName,
+            reportedBy: "System",
+          });
+
+          console.log(`[ScheduleMonitor] Schedule ${s._id} missed. Report ${report._id}`);
+          io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
+          io.emit("report:new", report);
+        }
+      }
+    } catch (err) {
+      console.error("[ScheduleMonitor] Error:", err.message);
+    }
+  };
+  await check();
+  setInterval(check, 5 * 60 * 1000);
 }
 
 async function startSLAChecker() {
@@ -3192,6 +3241,27 @@ app.delete("/api/schedules/:id", authMiddleware, async (req, res) => {
         date: schedule.date,
       });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/schedules/:id/complete", async (req, res) => {
+  try {
+    const schedule = await Schedule.findByIdAndUpdate(
+      req.params.id,
+      { status: "completed" },
+      { new: true }
+    );
+    if (schedule) {
+      io.emit("schedule:changed", {
+        truckId: schedule.truckId,
+        date: schedule.date,
+      });
+      res.json(schedule);
+    } else {
+      res.status(404).json({ error: "Schedule not found" });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

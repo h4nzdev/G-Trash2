@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import colors from '../constants/colors';
+import colors, { softShadow } from '../constants/colors';
 
 export default function LoginScreen() {
   const [truckId, setTruckId] = useState('');
@@ -116,30 +116,31 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   form: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 32,
     paddingTop: 40,
     paddingBottom: 60,
     flex: 1,
+    ...softShadow,
   },
   welcomeText: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1B1C1C',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   instructionText: {
     fontSize: 16,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 32,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderRadius: 16,
     marginBottom: 16,
     paddingHorizontal: 16,
     height: 56,
@@ -150,7 +151,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#1B1C1C',
+    color: colors.textPrimary,
   },
   eyeIcon: {
     padding: 8,
@@ -170,17 +171,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.primaryGreen,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    ...softShadow,
   },
   loginButtonDisabled: {
     opacity: 0.7,
   },
   loginButtonText: {
-    color: '#FFFFFF',
+    color: colors.surface,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -190,7 +187,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   footerText: {
-    color: '#6B7280',
+    color: colors.textSecondary,
     fontSize: 15,
     fontStyle: 'italic',
   },

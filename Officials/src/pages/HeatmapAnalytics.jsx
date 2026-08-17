@@ -5,8 +5,9 @@ import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend as RechartsLegend } from 'recharts';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2 } from 'lucide-react';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE } from '../utils/mapBoundary';
 import API from '../config';
 
 const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981' };
@@ -30,49 +31,7 @@ function healthRiskLabel(ammoniaPpm) {
   return 'Safe';
 }
 
-const CEBU_CITY_OUTLINE = [
-  // North border with Consolacion, west coast start
-  [10.3565, 123.8808], [10.3592, 123.8842], [10.3610, 123.8882], [10.3620, 123.8925],
-  [10.3624, 123.8972], [10.3618, 123.9018], [10.3600, 123.9065], [10.3568, 123.9112],
-  // NE — eastern mountain ridge
-  [10.3525, 123.9158], [10.3475, 123.9200], [10.3420, 123.9235], [10.3362, 123.9262],
-  [10.3302, 123.9278], [10.3242, 123.9284], [10.3182, 123.9278], [10.3124, 123.9260],
-  [10.3068, 123.9234], [10.3015, 123.9202], [10.2965, 123.9165], [10.2918, 123.9124],
-  [10.2874, 123.9080], [10.2834, 123.9032], [10.2798, 123.8982], [10.2766, 123.8928],
-  // SE — southern boundary with Talisay
-  [10.2740, 123.8868], [10.2720, 123.8805], [10.2708, 123.8740], [10.2703, 123.8675],
-  [10.2706, 123.8612], [10.2718, 123.8555],
-  // SW corner
-  [10.2738, 123.8508], [10.2770, 123.8472], [10.2806, 123.8452], [10.2844, 123.8445],
-  [10.2878, 123.8452], [10.2908, 123.8465], [10.2936, 123.8480],
-  // West coast — reclamation area near-straight run
-  [10.2965, 123.8488], [10.2995, 123.8493], [10.3025, 123.8496], [10.3055, 123.8500],
-  [10.3085, 123.8506], [10.3115, 123.8515], [10.3145, 123.8528], [10.3172, 123.8545],
-  // North Reclamation Area / port zone
-  [10.3196, 123.8558], [10.3220, 123.8568], [10.3246, 123.8573], [10.3272, 123.8576],
-  [10.3300, 123.8580], [10.3328, 123.8588], [10.3358, 123.8600], [10.3388, 123.8616],
-  [10.3415, 123.8636], [10.3440, 123.8660], [10.3464, 123.8686], [10.3487, 123.8714],
-  [10.3508, 123.8742], [10.3526, 123.8770], [10.3544, 123.8792], [10.3558, 123.8802],
-  [10.3565, 123.8808],
-];
-
-async function fetchCebuCityBoundary() {
-  try {
-    const query = `[out:json][timeout:15];relation["name"="Cebu City"]["admin_level"~"^[67]$"];out geom;`;
-    const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const rel = data.elements?.[0];
-    if (!rel?.members) return null;
-    const outer = rel.members.filter(m => m.type === 'way' && m.role === 'outer');
-    const coords = outer
-      .flatMap(m => (m.geometry || []).map(pt => [pt.lat, pt.lon]))
-      .filter(([lat, lon]) => lat != null && lon != null && !isNaN(lat) && !isNaN(lon));
-    return coords.length > 3 ? coords : null;
-  } catch {
-    return null;
-  }
-}
+// Cebu City outline and fetch function are now imported from mapBoundary.js
 
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
 function isPointInPolygon(point, vs) {
@@ -252,7 +211,7 @@ function MapPickerModal({ open, onClose, onConfirm }) {
         {/* Map */}
         <div style={{ height: '360px', position: 'relative' }}>
           <MapContainer
-            center={[10.3157, 123.8854]}
+            center={CEBU_CENTER}
             zoom={13}
             style={{ width: '100%', height: '100%' }}
             zoomControl={true}
@@ -507,6 +466,19 @@ export default function HeatmapAnalytics() {
       setSelectedZone(null);
     } catch (err) {
       alert('Failed to delete');
+    }
+  };
+
+  const handleDeleteSensor = async (id, sensorId) => {
+    if (!window.confirm(`Delete sensor ${sensorId}?`)) return;
+    try {
+      await axios.delete(`${API}/api/garbage-areas/${id}`);
+      setSensorZones(sensorZones.filter(z => z._id !== id));
+      setZones(zones.filter(z => z._id !== id));
+      setSensorMsg({ type: 'ok', text: `Sensor ${sensorId} deleted successfully.` });
+      setTimeout(() => setSensorMsg(null), 3000);
+    } catch (err) {
+      setSensorMsg({ type: 'err', text: 'Failed to delete sensor' });
     }
   };
 
@@ -781,17 +753,17 @@ export default function HeatmapAnalytics() {
               : t.status === 'moderate' ? '#d97706'
               : '#059669';
             const icon =
-              t.type === 'cleaned' ? '✅'
-              : t.status === 'critical' ? '🔴'
-              : t.status === 'moderate' ? '🟡'
-              : '🟢';
+              t.type === 'cleaned' ? <CheckCircle2 className="w-5 h-5 text-white" />
+              : t.status === 'critical' ? <AlertTriangle className="w-5 h-5 text-white" />
+              : t.status === 'moderate' ? <Info className="w-5 h-5 text-white" />
+              : <CheckCircle2 className="w-5 h-5 text-white" />;
             return (
               <div
                 key={t.id}
                 className="pointer-events-auto"
                 style={{ background: bg, borderRadius: '14px', padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'flex-start', gap: '10px', animation: 'toastIn 0.3s ease-out' }}
               >
-                <span style={{ fontSize: '15px', lineHeight: '20px', flexShrink: 0 }}>{icon}</span>
+                <div style={{ flexShrink: 0, marginTop: '2px' }}>{icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: '12px', fontWeight: '700', color: '#fff', lineHeight: '16px' }}>{t.title}</p>
                   {t.body && <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.85)', lineHeight: '15px', wordBreak: 'break-word' }}>{t.body}</p>}
@@ -808,7 +780,7 @@ export default function HeatmapAnalytics() {
         </div>
 
         <MapContainer
-          center={[10.3157, 123.8854]}
+          center={CEBU_CENTER}
           zoom={14}
           style={{ width: '100%', height: '100%' }}
           className="z-0"
@@ -838,6 +810,7 @@ export default function HeatmapAnalytics() {
             />
           )}
 
+
           {/* Jurisdictional Boundary */}
           {boundary && (
             <Polygon
@@ -862,7 +835,7 @@ export default function HeatmapAnalytics() {
             const isIotZone = !!zone.sensorId;
             
             // Dynamic radius and pulsing for visual emphasis
-            const radius = zone.status === 'critical' ? 250 : zone.status === 'moderate' ? 160 : 90;
+            const radius = zone.status === 'critical' ? 40 : zone.status === 'moderate' ? 25 : 15;
             
             return (
             <Circle
@@ -877,116 +850,14 @@ export default function HeatmapAnalytics() {
                 opacity: 0.9,
               }}
               eventHandlers={{ click: () => setSelectedZone(zone) }}
-            >
-              <Popup>
-                <div className="p-1 min-w-[200px]">
-                  <p className="font-bold text-slate-900 text-sm">{zone.name}</p>
-                  {isIotZone && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', background: '#dbeafe', borderRadius: '12px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#1d4ed8' }}>📡 LIVE IoT — {zone.sensorId}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="w-2 h-2 rounded-full" style={{ background: circleColor }} />
-                    <span className="text-xs capitalize font-semibold" style={{ color: circleColor }}>{riskLabel}</span>
-                    {!healthRiskView && sourceBadge(zone.source || 'iot')}
-                    {healthRiskView && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">❤️ Health View</span>}
-                  </div>
-
-                  {healthRiskView ? (
-                    <div style={{ marginTop: '8px', padding: '8px', background: '#fff5f5', borderRadius: '8px', border: '1px solid #fecaca' }}>
-                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#dc2626', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        🏥 Health Risk Assessment
-                      </p>
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '6px' }}>
-                        <div>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
-                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: circleColor }}>{zone.ammonia || '0 ppm'}</span>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
-                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#334155' }}>{zone.methane || '0 ppm'}</span>
-                        </div>
-                      </div>
-                      <div style={{ padding: '6px', background: circleColor + '22', borderRadius: '6px', marginBottom: '6px' }}>
-                        <p style={{ fontSize: '11px', fontWeight: 'bold', color: circleColor }}>Risk Level: {riskLabel}</p>
-                        <p style={{ fontSize: '10px', color: '#64748b' }}>
-                          {ammoniaPpm > 100 ? 'Immediate health intervention required' :
-                           ammoniaPpm > 50 ? 'High risk — monitor closely' :
-                           ammoniaPpm >= 25 ? 'Moderate — schedule inspection' :
-                           'Safe levels — no action needed'}
-                        </p>
-                      </div>
-                      {zone.barangay && (
-                        <p style={{ fontSize: '10px', color: '#94a3b8' }}>📍 {zone.barangay}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: '8px', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        📊 Composite Score
-                      </p>
-                      {(zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm') ? (
-                        <div style={{ marginBottom: '6px' }}>
-                          <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#3b82f6', marginBottom: '3px' }}>🔬 IoT SENSOR</p>
-                          <div style={{ display: 'flex', gap: '12px' }}>
-                            <div>
-                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>NH₃: </span>
-                              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.ammonia}</span>
-                            </div>
-                            <div>
-                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>CH₄: </span>
-                              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.methane}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
-                        <p style={{ fontSize: '9px', fontWeight: 'bold', color: '#f97316', marginBottom: '3px' }}>📋 RESIDENT REPORTS</p>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Count: </span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>{zone.reportCount || 0}</span>
-                          </div>
-                          {zone.lastReportAt && (
-                            <div>
-                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>Last: </span>
-                              <span style={{ fontSize: '11px', fontWeight: '600', color: '#334155' }}>{timeAgo(zone.lastReportAt)}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {!healthRiskView && zone.barangay && (
-                    <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>📍 {zone.barangay}</p>
-                  )}
-                  <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                    Updated {timeAgo(zone.updatedAt || zone.createdAt)}
-                  </p>
-                  {!isChd && (
-                    <button
-                      onClick={() => handleDeleteArea(zone._id)}
-                      style={{
-                        marginTop: '10px', display: 'flex', alignItems: 'center', gap: '4px',
-                        fontSize: '10px', fontWeight: 'bold', color: '#dc2626', cursor: 'pointer',
-                        background: 'none', border: 'none', padding: 0
-                      }}
-                    >
-                      <Trash2 className="w-3 h-3" /> DELETE AREA
-                    </button>
-                  )}
-                </div>
-              </Popup>
-            </Circle>
+            />
             );
           })}
 
           {newArea && (
             <Circle
               center={[newArea.lat, newArea.lng]}
-              radius={160}
+              radius={25}
               pathOptions={{ fillColor: '#059669', fillOpacity: 0.6, color: '#fff', weight: 2 }}
             >
               <Popup>
@@ -1102,6 +973,31 @@ export default function HeatmapAnalytics() {
                   </button>
                 </div>
               </form>
+
+              {/* Active Sensors List */}
+              {sensorZones.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Active Sensors</h3>
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
+                    {sensorZones.map(zone => (
+                      <div key={zone._id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{zone.sensorId}</p>
+                          <p className="text-[10px] text-slate-500">{zone.location}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSensor(zone._id, zone.sensorId)}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete Sensor"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1118,6 +1014,147 @@ export default function HeatmapAnalytics() {
           to   { transform: translateX(0);    opacity: 1; }
         }
       `}</style>
+
+      {/* Zone Details Modal */}
+      {selectedZone && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            {(() => {
+              const zone = selectedZone;
+              const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
+              const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
+              const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
+              const isIotZone = !!zone.sensorId;
+              return (
+                <>
+                  <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between" style={{ backgroundColor: `${circleColor}10` }}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: circleColor }}>
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900 leading-tight">{zone.name}</h2>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3" /> {zone.barangay || 'Unknown location'}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedZone(null)} className="p-2 hover:bg-white/60 rounded-xl text-slate-400 transition-colors">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-6 space-y-6">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold capitalize text-white" style={{ backgroundColor: circleColor }}>
+                        {riskLabel}
+                      </span>
+                      {isIotZone && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-bold uppercase tracking-wider border border-blue-200">
+                          <Radio className="w-4 h-4" /> LIVE IoT: {zone.sensorId}
+                        </span>
+                      )}
+                      {!healthRiskView && sourceBadge(zone.source || 'iot')}
+                      {healthRiskView && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-bold border border-red-200">
+                          <Heart className="w-4 h-4" /> Health View
+                        </span>
+                      )}
+                    </div>
+
+                    {healthRiskView ? (
+                      <div className="p-5 bg-red-50/50 rounded-2xl border border-red-100">
+                        <p className="text-xs font-bold text-red-600 flex items-center gap-2 mb-4 uppercase tracking-widest">
+                          <Activity className="w-4 h-4" /> Health Risk Assessment
+                        </p>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm">
+                            <span className="text-xs font-medium text-slate-500 uppercase">Ammonia (NH₃)</span>
+                            <p className="text-2xl font-black mt-1" style={{ color: circleColor }}>{zone.ammonia || '0 ppm'}</p>
+                          </div>
+                          <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm">
+                            <span className="text-xs font-medium text-slate-500 uppercase">Methane (CH₄)</span>
+                            <p className="text-2xl font-black text-slate-700 mt-1">{zone.methane || '0 ppm'}</p>
+                          </div>
+                        </div>
+                        <div className="p-4 rounded-xl border" style={{ backgroundColor: `${circleColor}15`, borderColor: `${circleColor}40` }}>
+                          <p className="text-sm font-bold mb-1" style={{ color: circleColor }}>Risk Level: {riskLabel}</p>
+                          <p className="text-xs text-slate-600 font-medium">
+                            {ammoniaPpm > 100 ? 'Immediate health intervention required. Evacuate or provide protective gear.' :
+                             ammoniaPpm > 50 ? 'High risk. Monitor closely and limit exposure time.' :
+                             ammoniaPpm >= 25 ? 'Moderate risk. Schedule inspection and cleanup soon.' :
+                             'Safe levels. No immediate health action needed.'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-xs font-bold text-slate-500 flex items-center gap-2 mb-4 uppercase tracking-widest">
+                          <BarChart2 className="w-4 h-4" /> Composite Score Details
+                        </p>
+                        
+                        {((zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm')) && (
+                          <div className="mb-5 pb-5 border-b border-slate-200">
+                            <p className="text-[10px] font-bold text-blue-600 flex items-center gap-1.5 mb-3 uppercase tracking-wider">
+                              <Cpu className="w-3 h-3" /> IoT Sensor Readings
+                            </p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase">Ammonia (NH₃)</span>
+                                <p className="text-xl font-black text-slate-700 mt-0.5">{zone.ammonia}</p>
+                              </div>
+                              <div>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase">Methane (CH₄)</span>
+                                <p className="text-xl font-black text-slate-700 mt-0.5">{zone.methane}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div>
+                          <p className="text-[10px] font-bold text-orange-600 flex items-center gap-1.5 mb-3 uppercase tracking-wider">
+                            <FileText className="w-3 h-3" /> Resident Reports
+                          </p>
+                          <div className="grid grid-cols-2 gap-4 items-center">
+                            <div>
+                              <span className="text-[11px] font-bold text-slate-400 uppercase">Total Reports</span>
+                              <p className="text-xl font-black text-slate-700 mt-0.5">{zone.reportCount || 0}</p>
+                            </div>
+                            {zone.lastReportAt && (
+                              <div>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase">Last Reported</span>
+                                <p className="text-sm font-bold text-slate-700 mt-0.5">{timeAgo(zone.lastReportAt)}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                      <p className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" /> Updated {timeAgo(zone.updatedAt || zone.createdAt)}
+                      </p>
+                      
+                      {!isChd && (
+                        <button
+                          onClick={() => {
+                            handleDeleteArea(zone._id);
+                            setSelectedZone(null);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete Area
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Map picker modal for sensor registration */}
       <MapPickerModal

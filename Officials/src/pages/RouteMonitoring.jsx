@@ -7,7 +7,9 @@ import {
   TileLayer,
   Marker,
   Polyline,
+  Polygon,
   Tooltip,
+  Popup,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -35,10 +37,10 @@ import { useAuth } from "../context/AuthContext";
 import API from "../config";
 
 // === CUSTOM IMPORTED ASSETS (SVG ICONS) ===
-import trash from "../assets/svg/trash.svg";
-import gtruck from "../assets/svg/garbage-truck.svg";
+import gtruck from "../assets/svg/garbage-truck.svg?url";
+import trashIcon from "../assets/svg/trash.svg?url";
 
-const CEBU_CENTER = [10.3157, 123.8854];
+import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from "../utils/mapBoundary";
 
 // ============================================================
 // === 2. MAP ICON MAKERS ======================================
@@ -51,8 +53,11 @@ const CEBU_CENTER = [10.3157, 123.8854];
  */
 function makeTruckIcon(status, heading = 0) {
   const isOnline = status === "online";
-  // Fix: Offset by -90 degrees to align the SVG's "East" facing default with Map's "North" (0 degrees).
-  const adjustedHeading = (heading || 0) - 90;
+  
+  // Side-view truck shouldn't rotate based on heading, otherwise it tilts.
+  // Instead, flip horizontally if it's moving West (between 180 and 360 degrees).
+  const isMovingWest = heading > 180 && heading < 360;
+  const flipStyle = isMovingWest ? 'transform: scaleX(-1);' : '';
 
   return L.divIcon({
     html: `
@@ -67,7 +72,7 @@ function makeTruckIcon(status, heading = 0) {
         }
         
         <!-- Truck SVG Wrapper -->
-        <div style="transform-origin: center center; transform: rotate(${adjustedHeading}deg);" class="relative w-8 h-8 flex items-center justify-center drop-shadow-md transition-transform duration-200">
+        <div style="${flipStyle}" class="relative w-8 h-8 flex items-center justify-center drop-shadow-md transition-transform duration-200">
           <img src="${gtruck}" style="width:100%; height:100%; object-fit:contain; display:block;" alt="Garbage Truck" />
           <!-- Shadow below truck for depth -->
           <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-black/15 rounded-full blur-[1px]"></div>
@@ -97,25 +102,19 @@ function makeBinIcon(score) {
         
         <!-- Teardrop Pin Body -->
         <div class="w-7 h-7 rounded-[50%_50%_50%_0] -rotate-45 border-2 border-white shadow-lg flex items-center justify-center transition-colors relative z-10" style="background:${color};">
-           <!-- Trash SVG Icon (Rotated back upright inside the tilted pin) -->
-           <div class="rotate-45 flex items-center justify-center w-4 h-4">
-             <img src="${trash}" style="width:100%; height:100%; object-fit:contain; display:block;" alt="Trash" />
+           <!-- Trash Icon (Rotated back upright inside the tilted pin) -->
+           <div class="rotate-45 flex items-center justify-center w-5 h-5 text-white -mt-1 -ml-1">
+             <img src="${trashIcon}" class="w-3.5 h-3.5 brightness-0 invert" alt="trash" />
            </div>
         </div>
         
         <!-- Sharp Triangle Tip to make it point directly down -->
         <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] -mt-[1px] filter drop-shadow-sm z-10" style="border-top-color:${color};"></div>
 
-        <!-- Score Badge (Only appears if high urgency) -->
-        ${
-          isHighUrgency
-            ? `
-          <div class="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full text-[9px] font-bold flex items-center justify-center border-[1.5px] border-white shadow-sm z-20 animate-pop-in">
-            ${score}
-          </div>
-        `
-            : ""
-        }
+        <!-- Score Badge (Always shown) -->
+        <div class="absolute -top-1 -right-1 w-5 h-5 ${isHighUrgency ? 'bg-red-600' : 'bg-amber-500'} text-white rounded-full text-[9px] font-bold flex items-center justify-center border-[1.5px] border-white shadow-sm z-20 animate-pop-in">
+          ${score}
+        </div>
         
         <!-- Pin Drop Shadow -->
         <div class="absolute -bottom-0 w-6 h-1 bg-black/20 rounded-full blur-[1px]"></div>
@@ -155,6 +154,42 @@ function makeStopIcon(n, isFirst, isLast, isCompleted, isCurrent) {
 // ============================================================
 // === 3. MODALS ===============================================
 // ============================================================
+
+// ── Address Popup (Dynamic Reverse Geocoding) ──
+function AddressPopup({ wp }) {
+  const [address, setAddress] = useState(wp.address || wp.name);
+  const [loading, setLoading] = useState(!wp.address && wp.name.startsWith("Stop"));
+
+  useEffect(() => {
+    let isMounted = true;
+    if (loading) {
+      axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${wp.lat}&lon=${wp.lng}&zoom=18&addressdetails=1`)
+        .then(res => {
+          if (isMounted) {
+            setAddress(res.data.display_name || "Unknown Address");
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) {
+            setAddress("Address unavailable");
+            setLoading(false);
+          }
+        });
+    }
+    return () => { isMounted = false; };
+  }, [wp, loading]);
+
+  return (
+    <div className="p-1 min-w-[140px] max-w-[220px] text-center">
+      {loading ? (
+        <span className="text-xs text-slate-500 animate-pulse">Fetching address...</span>
+      ) : (
+        <span className="text-xs font-semibold text-slate-800 leading-tight block">{address}</span>
+      )}
+    </div>
+  );
+}
 
 // ── Report Details Modal ──
 function ReportModal({ report, onClose }) {
@@ -422,6 +457,13 @@ export default function RouteMonitoring() {
   const [isSatellite, setIsSatellite] = useState(false);
   const [showReports, setShowReports] = useState(true);
   const socketRef = useRef(null);
+
+  const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
+  useEffect(() => {
+    fetchCebuCityBoundary().then(coords => {
+      if (coords) setCebuCityBoundary(coords);
+    });
+  }, []);
 
   // ── API Data Fetching ──
   const fetchData = async () => {
@@ -856,6 +898,7 @@ export default function RouteMonitoring() {
                   attribution=""
                 />
 
+
                 {/* Route Polylines */}
                 {mappableRoutes.map((route) => {
                   const isSelected = selectedRoute?._id === route._id;
@@ -883,9 +926,8 @@ export default function RouteMonitoring() {
                             setSelectedRoute(isSelected ? null : route),
                         }}
                       />
-                      {/* Selected Route Waypoints */}
-                      {isSelected &&
-                        route.waypoints
+                      {/* Route Waypoints (Always visible) */}
+                      {route.waypoints
                           .filter(
                             (wp) =>
                               wp.lat != null &&
@@ -908,13 +950,9 @@ export default function RouteMonitoring() {
                                   isCurr,
                                 )}
                               >
-                                <Tooltip
-                                  permanent={false}
-                                  direction="top"
-                                  offset={[0, -14]}
-                                >
-                                  {wp.name}
-                                </Tooltip>
+                                <Popup>
+                                  <AddressPopup wp={wp} />
+                                </Popup>
                               </Marker>
                             );
                           })}
