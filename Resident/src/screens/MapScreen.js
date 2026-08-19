@@ -187,9 +187,9 @@ function buildLeafletHTML(truckB64) {
         radiusCircles.forEach(function(c) { map.removeLayer(c); });
         radiusCircles = [];
         [
-          { radius: 350, color: '#E53935' },
-          { radius: 700, color: '#FDD835' },
-          { radius: 1050, color: '#4CAF50' },
+          { radius: 100, color: '#E53935' },
+          { radius: 200, color: '#FDD835' },
+          { radius: 300, color: '#4CAF50' },
         ].forEach(function(l) {
           radiusCircles.push(L.circle([lat, lng], {
             radius: l.radius, color: l.color,
@@ -325,12 +325,17 @@ function buildLeafletHTML(truckB64) {
         if (userPulseCircle) { map.removeLayer(userPulseCircle); }
         userMarker = L.marker([lat, lng], {
           icon: L.divIcon({
-            html: '<div style="position:relative;"><div class="user-marker"></div><div class="user-pulse"></div></div>',
-            iconSize: [18, 18], iconAnchor: [9, 9], className: '',
+            html: '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:32px; height:32px;">' +
+                  '<svg viewBox="0 0 24 24" width="32" height="32" fill="#1A73E8" stroke="#FFFFFF" stroke-width="1.5" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));">' +
+                  '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />' +
+                  '</svg>' +
+                  '<div class="user-pulse" style="left: -14px; top: 2px;"></div>' +
+                  '</div>',
+            iconSize: [32, 32], iconAnchor: [16, 32], className: '',
           })
         }).addTo(map);
         userPulseCircle = L.circle([lat, lng], {
-          radius: 120, color: '#1A73E8', fillColor: '#1A73E8',
+          radius: 25, color: '#1A73E8', fillColor: '#1A73E8',
           fillOpacity: 0.08, weight: 1.5, dashArray: '4 4', interactive: false,
         }).addTo(map);
         drawUserRadius(lat, lng);
@@ -368,7 +373,6 @@ export default function MapScreen() {
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [iotAreas, setIotAreas] = useState([]);
   const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
-  const [showJeepneyView, setShowJeepneyView] = useState(false);
   const [cleanedNotif, setCleanedNotif] = useState(null);
 
   const isExpandedRef = useRef(false);
@@ -757,11 +761,10 @@ export default function MapScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.locationY < 60,
+      onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (evt, gs) =>
         Math.abs(gs.dy) > Math.abs(gs.dx) &&
-        Math.abs(gs.dy) > 15 &&
-        evt.nativeEvent.locationY < 80,
+        Math.abs(gs.dy) > 10,
       onPanResponderRelease: (_, gs) => {
         if (gs.dy < -40 && !isExpandedRef.current) expandSheet();
         else if (gs.dy > 40 && isExpandedRef.current) collapseSheet();
@@ -869,10 +872,16 @@ export default function MapScreen() {
             <MaterialIcons name="crop-free" size={22} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.floatingButton, showJeepneyView && styles.floatingButtonActive]}
-            onPress={() => setShowJeepneyView((v) => !v)}
+            style={[styles.floatingButton, isExpanded && styles.floatingButtonActive]}
+            onPress={() => {
+              if (isExpanded) {
+                collapseSheet();
+              } else {
+                expandSheet();
+              }
+            }}
           >
-            <MaterialIcons name="directions-bus" size={22} color={showJeepneyView ? "#006A3B" : "#1B1C1C"} />
+            <MaterialIcons name="directions-bus" size={22} color={isExpanded ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
         </View>
         <View style={styles.legendOverlay}>
@@ -929,8 +938,8 @@ export default function MapScreen() {
           { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
         ]}
       >
-        <View {...panResponder.panHandlers}>
-          <View style={styles.handleBarContainer}>
+        <View>
+          <View style={styles.handleBarContainer} {...panResponder.panHandlers}>
             <View style={styles.handleBar} />
           </View>
 
@@ -939,7 +948,13 @@ export default function MapScreen() {
             <RouteBoard
               route={activeRoute}
               enrichedStops={enrichedStops}
-              onPress={() => setShowJeepneyView(true)}
+              onPress={() => {
+                if (isExpanded) {
+                  collapseSheet();
+                } else {
+                  expandSheet();
+                }
+              }}
             />
           )}
 
@@ -1067,131 +1082,6 @@ export default function MapScreen() {
         </Animated.View>
       </Animated.View>
 
-      {/* ── Jeepney View full-screen overlay ── */}
-      {showJeepneyView && (
-        <View style={styles.jeepneyOverlay}>
-          {/* Header */}
-          <View style={[styles.jeepneyHeader, { paddingTop: topInset + 14 }]}>
-            <TouchableOpacity
-              onPress={() => setShowJeepneyView(false)}
-              style={styles.jeepneyClose}
-            >
-              <MaterialIcons name="arrow-back" size={22} color="#1F2937" />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.jeepneyTitle}>
-                {activeRoute?.name || "Route View"}
-              </Text>
-              <Text style={styles.jeepneySubtitle}>
-                {liveTruckOnline ? "Live · Truck online" : "Truck offline"}
-                {activeSchedule ? ` · ${activeSchedule.truckId}` : ""}
-              </Text>
-            </View>
-            <View style={[
-              styles.truckStatusDot,
-              { backgroundColor: liveTruckOnline ? "#22C55E" : "#9CA3AF" },
-            ]} />
-          </View>
-
-          {/* RouteBoard — jeepney strip */}
-          <RouteBoard
-            route={activeRoute}
-            enrichedStops={enrichedStops}
-            onPress={() => {}}
-          />
-
-          {/* Progress bar */}
-          {enrichedStops.length > 0 && (() => {
-            const completed = enrichedStops.filter((s) => s.status === 'completed').length;
-            const pct = Math.round((completed / enrichedStops.length) * 100);
-            return (
-              <View style={styles.jeepneyProgress}>
-                <View style={styles.jeepneyProgressBg}>
-                  <View style={[styles.jeepneyProgressFill, { width: `${pct}%` }]} />
-                </View>
-                <Text style={styles.jeepneyProgressLabel}>
-                  {completed} of {enrichedStops.length} stops completed
-                </Text>
-              </View>
-            );
-          })()}
-
-          {/* Detailed stop list */}
-          <ScrollView
-            style={{ flex: 1 }}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.jeepneyList, { paddingBottom: bottomInset + 32 }]}
-          >
-            {enrichedStops.length === 0 ? (
-              <View style={styles.jeepneyEmpty}>
-                <MaterialIcons name="route" size={40} color="#E5E7EB" />
-                <Text style={styles.jeepneyEmptyText}>No stops on this route</Text>
-              </View>
-            ) : (
-              enrichedStops.map((stop, i) => {
-                const isCompleted = stop.status === 'completed';
-                const isCurrent   = stop.status === 'current';
-                const dotColor    = isCompleted ? '#9CA3AF' : isCurrent ? '#EF4444' : '#006A3B';
-                return (
-                  <View key={i} style={styles.jeepneyStopRow}>
-                    {/* Timeline column */}
-                    <View style={styles.jeepneyStopTimeline}>
-                      <View style={[styles.jeepneyStopDot, { backgroundColor: dotColor }]}>
-                        {isCompleted && (
-                          <MaterialIcons name="check" size={10} color="#FFF" />
-                        )}
-                        {isCurrent && (
-                          <MaterialIcons name="local-shipping" size={10} color="#FFF" />
-                        )}
-                      </View>
-                      {i < enrichedStops.length - 1 && (
-                        <View style={[
-                          styles.jeepneyStopLine,
-                          { backgroundColor: isCompleted ? '#E5E7EB' : '#BBF7D0' },
-                        ]} />
-                      )}
-                    </View>
-
-                    {/* Stop content */}
-                    <View style={styles.jeepneyStopContent}>
-                      <View style={styles.jeepneyStopTop}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[
-                            styles.jeepneyStopName,
-                            isCompleted && { color: '#9CA3AF', textDecorationLine: 'line-through' },
-                            isCurrent  && { color: '#EF4444', fontWeight: '800' },
-                          ]}>
-                            {stop.name || `Stop ${i + 1}`}
-                          </Text>
-                          {stop.name ? (
-                            <Text style={styles.jeepneyStopSeq}>Stop {i + 1}</Text>
-                          ) : null}
-                        </View>
-                        <View style={[
-                          styles.jeepneyStopBadge,
-                          { backgroundColor: isCompleted ? '#F3F4F6' : isCurrent ? '#FEF2F2' : '#F0FDF4' },
-                        ]}>
-                          <Text style={[
-                            styles.jeepneyStopBadgeText,
-                            { color: dotColor },
-                          ]}>
-                            {isCurrent ? 'NEXT' : isCompleted ? 'DONE' : `#${i + 1}`}
-                          </Text>
-                        </View>
-                      </View>
-                      {isCurrent && stop.distFromTruck != null && (
-                        <Text style={styles.jeepneyStopTime}>
-                          Truck is {stop.distFromTruck} m away
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -1234,7 +1124,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
-  handleBarContainer: { paddingVertical: 12, alignItems: "center" },
+  handleBarContainer: { paddingVertical: 16, alignItems: "center", width: "100%" },
   handleBar: {
     width: 40,
     height: 4,

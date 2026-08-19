@@ -162,7 +162,7 @@ function RewardModal({ reward, onClose, onSaved, official }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 flex-shrink-0">
@@ -548,7 +548,7 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
     reward.category;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         {/* Status bar */}
         <div

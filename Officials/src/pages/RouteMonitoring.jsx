@@ -196,7 +196,7 @@ function ReportModal({ report, onClose }) {
   const score = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = score >= 5;
   return (
-    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -307,7 +307,7 @@ function AssignModal({ route, fleet, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
         <div className="flex items-start justify-between p-5 border-b border-slate-100">
           <div>

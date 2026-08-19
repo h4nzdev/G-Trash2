@@ -29,22 +29,22 @@ export default function RouteBoard({ route, enrichedStops, onPress }) {
   const { completed, total } = getProgressSummary(stops);
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={onPress}
-      activeOpacity={0.88}
-    >
-      {/* Header row */}
-      <View style={styles.header}>
+    <View style={styles.card}>
+      {/* Header row — tappable */}
+      <TouchableOpacity
+        style={styles.header}
+        onPress={onPress}
+        activeOpacity={0.88}
+      >
         <MaterialIcons name="directions-bus" size={14} color="#006A3B" />
         <Text style={styles.routeName} numberOfLines={1}>{route.name}</Text>
         <View style={styles.progressBadge}>
           <Text style={styles.progressText}>{completed}/{total}</Text>
         </View>
         <MaterialIcons name="chevron-right" size={16} color="#9CA3AF" />
-      </View>
+      </TouchableOpacity>
 
-      {/* Jeepney stop strip */}
+      {/* Jeepney stop strip — horizontally scrollable */}
       {stops.length === 0 ? (
         <Text style={styles.noStops}>No stops defined for this route</Text>
       ) : (
@@ -52,7 +52,6 @@ export default function RouteBoard({ route, enrichedStops, onPress }) {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.stopsRow}
-          scrollEnabled
           nestedScrollEnabled
         >
           {stops.map((stop, i) => {
@@ -101,7 +100,7 @@ export default function RouteBoard({ route, enrichedStops, onPress }) {
           })}
         </ScrollView>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 

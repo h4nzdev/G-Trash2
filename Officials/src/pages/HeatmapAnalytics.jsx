@@ -7,7 +7,7 @@ import { io } from 'socket.io-client';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend as RechartsLegend } from 'recharts';
 import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE } from '../utils/mapBoundary';
+import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from '../utils/mapBoundary';
 import API from '../config';
 
 const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981' };

@@ -1075,7 +1075,7 @@ export default function ScannerScreen() {
       )}
 
       {/* Camera View */}
-      {hasPermission && isFocused ? (
+      {hasPermission ? (
         <View style={styles.cameraContainer}>
           <CameraView
             style={styles.cameraView}

@@ -240,17 +240,21 @@ export default function CalendarScreen() {
         <View style={s.section}>
           <Text style={s.sectionTitle}>Quick Report</Text>
           <Text style={s.sectionSub}>Report an issue in your area</Text>
-          <View style={s.reportGrid}>
+          <View style={s.reportList}>
             {[
-              { key: "overflowing", icon: "delete", color: "#BA1A1A", bg: "#FFDAD6", label: "Overflowing\nBin" },
-              { key: "odor", icon: "air", color: "#EA580C", bg: "#FED7AA", label: "Bad\nOdor" },
-              { key: "missed", icon: "event-busy", color: "#7C3AED", bg: "#EDE9FE", label: "Missed\nPickup" },
+              { key: "overflowing", icon: "delete", color: "#BA1A1A", bg: "#FFDAD6", label: "Overflowing Bin", desc: "Garbage container is full or spilling over" },
+              { key: "odor", icon: "air", color: "#EA580C", bg: "#FED7AA", label: "Bad Odor", desc: "Report strong smell or chemical odor" },
+              { key: "missed", icon: "event-busy", color: "#7C3AED", bg: "#EDE9FE", label: "Missed Pickup", desc: "Truck missed collecting your trash" },
             ].map(r => (
-              <TouchableOpacity key={r.key} style={s.reportCard} onPress={() => handleQuickReport(r.key)} activeOpacity={0.7}>
+              <TouchableOpacity key={r.key} style={s.reportRow} onPress={() => handleQuickReport(r.key)} activeOpacity={0.75}>
                 <View style={[s.reportIcon, { backgroundColor: r.bg }]}>
-                  <MaterialIcons name={r.icon} size={26} color={r.color} />
+                  <MaterialIcons name={r.icon} size={22} color={r.color} />
                 </View>
-                <Text style={s.reportLabel}>{r.label}</Text>
+                <View style={s.reportRowContent}>
+                  <Text style={s.reportRowLabel}>{r.label}</Text>
+                  <Text style={s.reportRowDesc}>{r.desc}</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
               </TouchableOpacity>
             ))}
           </View>
@@ -269,7 +273,7 @@ export default function CalendarScreen() {
           ].map((tip, i) => (
             <View key={i} style={s.remItem}>
               <View style={s.remIcon}>
-                <MaterialIcons name={tip.icon} size={20} color="#3F4941" />
+                <MaterialIcons name={tip.icon} size={20} color="#006A3B" />
               </View>
               <View style={s.remContent}>
                 <Text style={s.remItemTitle}>{tip.title}</Text>
@@ -365,28 +369,58 @@ const s = StyleSheet.create({
   noSchedText: { fontSize: 14, color: "#BECABE" },
 
   // Quick Report
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1B1C1C", lineHeight: 22, marginBottom: 2 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1B1C1C", lineHeight: 24, marginBottom: 2 },
   sectionSub: { fontSize: 13, color: "#6B7280", marginBottom: 14 },
-  reportGrid: { flexDirection: "row", gap: 12 },
-  reportCard: {
-    flex: 1, backgroundColor: "#FFFFFF", borderRadius: 20, paddingVertical: 22, paddingHorizontal: 12,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: "#F0EDED",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
+  reportList: { gap: 10 },
+  reportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#F0EDED",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.02,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  reportIcon: { width: 50, height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginBottom: 10 },
-  reportLabel: { fontSize: 13, color: "#1B1C1C", fontWeight: "600", textAlign: "center", lineHeight: 18 },
+  reportIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  reportRowContent: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  reportRowLabel: {
+    fontSize: 15,
+    color: "#1B1C1C",
+    fontWeight: "700",
+  },
+  reportRowDesc: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
 
   // Reminders / Tips
   remCard: {
-    backgroundColor: "#F6F3F2", borderRadius: 20, padding: 18,
+    backgroundColor: "#F4FDF7", borderRadius: 22, padding: 18,
+    borderWidth: 1, borderColor: "#E8F7EE",
   },
   remHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  remTitle: { fontSize: 13, fontWeight: "700", color: "#3F4941", textTransform: "uppercase", letterSpacing: 1.2 },
+  remTitle: { fontSize: 12, fontWeight: "800", color: "#006A3B", textTransform: "uppercase", letterSpacing: 1.2 },
   remItem: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
-  remIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#E4E2E1", justifyContent: "center", alignItems: "center" },
+  remIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#E6F4EA", justifyContent: "center", alignItems: "center" },
   remContent: { flex: 1 },
-  remItemTitle: { fontSize: 15, fontWeight: "600", color: "#1B1C1C", lineHeight: 20 },
-  remItemText: { fontSize: 13, color: "#6B7280", lineHeight: 18 },
+  remItemTitle: { fontSize: 14, fontWeight: "700", color: "#1B1C1C", lineHeight: 18 },
+  remItemText: { fontSize: 12, color: "#555F56", lineHeight: 16, marginTop: 2 },
 });
