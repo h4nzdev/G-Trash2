@@ -859,10 +859,10 @@ export default function CollectorMapScreen() {
 
     // Real-time updates pushed by the Officials backend through the relay
     socket.on("schedule:changed", ({ truckId }) => {
-      if (truckId === TRUCK_ID) fetchTodaySchedules();
+      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
     });
     socket.on("route:assigned", ({ truckId }) => {
-      if (truckId === TRUCK_ID) fetchTodaySchedules();
+      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
     });
     socket.on("garbage-area:updated", (updated) => {
       setHeatmapZones(prev => {
@@ -919,7 +919,7 @@ export default function CollectorMapScreen() {
 
     // Receive the offline echo back from server (io.emit broadcasts to all, including self)
     socket.on("truck:status", ({ truckId, status }) => {
-      if (truckId === TRUCK_ID && status === "offline") {
+      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase() && status === "offline") {
         // Local state was already set by stopNavigation() — just ensure the map marker is idle
         const pos = lastGpsRef.current;
         if (pos && webViewRef.current) {

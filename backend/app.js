@@ -3194,8 +3194,9 @@ app.get("/api/schedules", optionalAuth, async (req, res) => {
 // POST/DELETE require Officials auth
 app.post("/api/schedules", authMiddleware, async (req, res) => {
   try {
-    const { date, truckId, driverName, routeId, routeName, startTime, notes } =
+    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, notes } =
       req.body;
+    const truckId = rawTruckId?.toUpperCase();
     if (!date || !truckId)
       return res.status(400).json({ error: "date and truckId required" });
     // Prevent exact duplicate (same truck + same route on the same day); allow different routes
