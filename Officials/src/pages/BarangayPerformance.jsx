@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight, Lock } from 'lucide-react';
+import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight, Lock, Activity, History } from 'lucide-react';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import ProgressBar from '../components/shared/ProgressBar';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
@@ -93,7 +94,14 @@ function TopResidentsPanel({ barangay, onClose }) {
             <h2 className="text-base font-bold text-slate-900">Top Residents</h2>
             <p className="text-xs text-slate-500">Brgy. {barangay}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setHistoryModal(barangay)}
+              className="flex items-center gap-1.5 px-2 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors"
+              title="View Points History"
+            >
+              <History className="w-4 h-4" /> History
+            </button>
             <select
               value={period}
               onChange={e => setPeriod(e.target.value)}
@@ -201,6 +209,62 @@ export default function BarangayPerformance() {
   const [sortKey, setSortKey] = useState('points');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
+  const [historyModal, setHistoryModal] = useState(null);
+
+  const PointsHistoryModal = ({ barangay, onClose }) => {
+    const [history, setHistory] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(true);
+
+    useEffect(() => {
+      fetch(`${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}`)
+        .then(r => r.json())
+        .then(d => { setHistory(d); setLoadingHistory(false); })
+        .catch(() => setLoadingHistory(false));
+    }, [barangay]);
+
+    return (
+      <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
+        <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right-8" onClick={e => e.stopPropagation()}>
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <History className="w-5 h-5 text-emerald-600" />
+                {barangay} Points History
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">Recent point activities and score updates</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl text-slate-400">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+            {loadingHistory ? (
+              <p className="text-sm text-slate-500 text-center py-10">Loading history...</p>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-10">No recent points history.</p>
+            ) : (
+              <div className="space-y-4">
+                {history.map((h, i) => (
+                  <div key={i} className="flex items-start gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                    <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${h.points > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                      {h.points > 0 ? '+' : ''}{h.points}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{h.description}</p>
+                      <p className="text-xs text-slate-400 mt-1 flex justify-between items-center w-full gap-4">
+                        <span className="uppercase tracking-wider font-bold">{h.category}</span>
+                        <span>{new Date(h.createdAt).toLocaleString()}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const fetchRankings = useCallback(async () => {
     setLoading(true);
@@ -253,6 +317,28 @@ export default function BarangayPerformance() {
     if (score >= 10) return 'text-slate-700';
     if (score < 0) return 'text-red-500';
     return 'text-slate-500';
+  };
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-4 rounded-xl shadow-2xl text-white min-w-[220px]">
+          <p className="font-bold text-base mb-1">{label} <span className="text-slate-400 font-normal text-xs ml-1">(Click point to view residents)</span></p>
+          <div className="flex items-end gap-2 mb-3 pb-3 border-b border-slate-700">
+            <span className="text-3xl font-black text-emerald-400">{data.points}</span>
+            <span className="text-xs text-slate-400 mb-1">Total Pts</span>
+          </div>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between items-center"><span className="text-slate-400 flex items-center gap-1.5"><ThumbsUp className="w-3 h-3 text-blue-400" /> Reports:</span> <span className="font-semibold text-blue-400">{data.reportScore || 0}</span></div>
+            <div className="flex justify-between items-center"><span className="text-slate-400 flex items-center gap-1.5"><Wifi className="w-3 h-3 text-teal-400" /> IoT / Air Quality:</span> <span className="font-semibold text-teal-400">{data.iotScore || 0}</span></div>
+            <div className="flex justify-between items-center"><span className="text-slate-400 flex items-center gap-1.5"><Trash2 className="w-3 h-3 text-emerald-400" /> Collections:</span> <span className="font-semibold text-emerald-400">{data.collectionScore || 0}</span></div>
+            <div className="flex justify-between items-center"><span className="text-slate-400 flex items-center gap-1.5"><Clock className="w-3 h-3 text-orange-400" /> Response Time:</span> <span className="font-semibold text-orange-400">{data.responseScore || 0}</span></div>
+          </div>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -343,107 +429,55 @@ export default function BarangayPerformance() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    {[
-                      { key: null,             label: 'Rank' },
-                      { key: 'barangay',       label: 'Barangay' },
-                      { key: 'reportScore',    label: 'Reports', Icon: ThumbsUp,  iconColor: 'text-blue-500' },
-                      { key: 'iotScore',       label: 'IoT',     Icon: Wifi,      iconColor: 'text-teal-500' },
-                      { key: 'collectionScore',label: 'Collect', Icon: Trash2,    iconColor: 'text-emerald-600' },
-                      { key: 'responseScore',  label: 'Response',Icon: Clock,     iconColor: 'text-orange-500' },
-                      { key: 'points',         label: 'Total Pts' },
-                    ].map(({ key, label, Icon, iconColor }) => (
-                      <th
-                        key={label}
-                        onClick={key ? () => handleSort(key) : undefined}
-                        className={`px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider select-none ${key ? 'cursor-pointer hover:text-slate-700' : ''}`}
-                      >
-                        <span className="flex items-center gap-1">
-                          {Icon && <Icon className={`w-3 h-3 ${iconColor}`} />}
-                          {label}
-                          {key && <SortIcon k={key} />}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {paged.map((b) => {
-                    const originalRank = sorted.findIndex(r => r._id === b._id);
-                    const barWidth = Math.round(((b.points || 0) / maxPts) * 100);
-                    const canViewResidents = official?.barangay === 'All' || official?.barangay === b.barangay;
-                    return (
-                      <tr
-                        key={b._id || b.barangay}
-                        onClick={() => canViewResidents ? setDrillDown(b.barangay) : setRestrictedAlert(b.barangay)}
-                        className={`transition-colors ${rankBorder[originalRank] || 'border-l-4 border-transparent'} ${canViewResidents ? 'hover:bg-emerald-50 cursor-pointer' : 'hover:bg-slate-50 cursor-not-allowed opacity-80'}`}
-                      >
-                        <td className="px-4 py-4">
-                          <span className="text-sm font-bold text-slate-600">
-                            {rankBadge[originalRank] || `#${originalRank + 1}`}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
-                            {b.barangay || '—'}
-                            {canViewResidents
-                              ? <Users className="w-3.5 h-3.5 text-slate-300" />
-                              : <span className="text-[10px] text-slate-400 font-normal">(restricted)</span>
-                            }
-                          </p>
-                          <p className="text-xs text-slate-400">{b.pickupCount ?? 0} pickups · {b.reportVoteCount ?? 0} votes</p>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`text-sm ${scoreColorMap(b.reportScore)}`}>{b.reportScore ?? 0}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`text-sm ${scoreColorMap(b.iotScore)}`}>{b.iotScore ?? 0}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`text-sm ${scoreColorMap(b.collectionScore)}`}>{b.collectionScore ?? 0}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`text-sm ${scoreColorMap(b.responseScore)}`}>{b.responseScore ?? 0}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-emerald-700 w-10">{b.points ?? 0}</span>
-                            <div className="w-16">
-                              <ProgressBar value={barWidth} max={100} color="emerald" />
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="p-6 h-[450px] w-full relative">
+              {/* Ambient background glow */}
+              <div className="absolute inset-0 bg-gradient-to-b from-emerald-50/50 to-transparent pointer-events-none" />
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart 
+                  data={sorted} 
+                  margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+                  onClick={(data) => {
+                    if (data && data.activePayload && data.activePayload.length) {
+                      const b = data.activePayload[0].payload;
+                      const canViewResidents = official?.barangay === 'All' || official?.barangay === b.barangay;
+                      if (canViewResidents) setDrillDown(b.barangay);
+                      else setRestrictedAlert(b.barangay);
+                    }
+                  }}
+                  className="cursor-pointer"
+                  barCategoryGap="25%"
+                >
+                  <CartesianGrid stroke="#cbd5e1" strokeDasharray="none" />
+                  <XAxis 
+                    dataKey="barangay" 
+                    axisLine={{ stroke: '#334155', strokeWidth: 2 }} 
+                    tickLine={{ stroke: '#334155' }} 
+                    tick={{ fontSize: 13, fill: '#334155', fontWeight: 600 }} 
+                    dy={10} 
+                  />
+                  <YAxis 
+                    axisLine={{ stroke: '#334155', strokeWidth: 2 }} 
+                    tickLine={{ stroke: '#334155' }} 
+                    tick={{ fontSize: 13, fill: '#334155', fontWeight: 600 }} 
+                    dx={-10} 
+                  />
+                  <RechartsTooltip 
+                    content={<CustomTooltip />} 
+                    cursor={{ fill: '#f1f5f9', opacity: 0.6 }} 
+                  />
+                  <Bar 
+                    dataKey="points" 
+                    animationDuration={1000}
+                    animationEasing="ease-out"
+                  >
+                    {sorted.map((entry, index) => {
+                      const colors = ['#84cc16', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#06b6d4', '#f97316'];
+                      return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke="#1e293b" strokeWidth={1} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-                <p className="text-xs text-slate-500">
-                  Showing {page * ROWS_PER_PAGE + 1}–{Math.min((page + 1) * ROWS_PER_PAGE, rankings.length)} of {rankings.length}
-                </p>
-                <div className="flex gap-1">
-                  {Array.from({ length: totalPages }).map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setPage(i)}
-                      className={`w-8 h-8 text-xs rounded-lg font-semibold transition-colors ${
-                        page === i ? 'bg-emerald-700 text-white' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -476,6 +510,10 @@ export default function BarangayPerformance() {
             </button>
           </div>
         </div>
+      )}
+
+      {historyModal && (
+        <PointsHistoryModal barangay={historyModal} onClose={() => setHistoryModal(null)} />
       )}
     </div>
   );

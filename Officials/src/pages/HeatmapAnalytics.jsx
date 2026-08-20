@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Circle, Popup, useMapEvents, Polygon, Polyline, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, CircleMarker, Popup, useMapEvents, Polygon, Polyline, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -10,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from '../utils/mapBoundary';
 import API from '../config';
 
-const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981' };
+const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981', inactive: '#94a3b8' };
 
 function parseAmmoniaPpm(ammoniaStr) {
   if (!ammoniaStr) return 0;
@@ -34,6 +35,29 @@ function healthRiskLabel(ammoniaPpm) {
 // Cebu City outline and fetch function are now imported from mapBoundary.js
 
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
+
+function HeatmapLayer({ data, options }) {
+  const map = useMap();
+  const heatLayerRef = useRef(null);
+
+  useEffect(() => {
+    if (!map) return;
+    if (heatLayerRef.current) {
+      map.removeLayer(heatLayerRef.current);
+    }
+    if (data && data.length > 0) {
+      heatLayerRef.current = L.heatLayer(data, options).addTo(map);
+    }
+    return () => {
+      if (heatLayerRef.current && map) {
+        map.removeLayer(heatLayerRef.current);
+      }
+    };
+  }, [map, data, options]);
+
+  return null;
+}
+
 function isPointInPolygon(point, vs) {
   const x = point.lat, y = point.lng;
   let inside = false;
@@ -323,6 +347,16 @@ export default function HeatmapAnalytics() {
     }
   };
 
+  
+  const toggleSensorActive = async (zone, isActive) => {
+    try {
+      await axios.put(`${API}/api/garbage-areas/${zone._id}/toggle-active`, { isActive });
+      fetchZonesAndBoundary();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleRegisterSensor = async (e) => {
     e.preventDefault();
     const { sensorId, location, barangay, lat, lng } = sensorForm;
@@ -537,7 +571,7 @@ export default function HeatmapAnalytics() {
           <div className="flex gap-2 mt-4">
             <button
               onClick={() => setHealthRiskView(!healthRiskView)}
-              className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${healthRiskView ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+              className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${healthRiskView ? 'bg-red-600 text-slate-900 border-red-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
             >
               <Heart className="w-3.5 h-3.5" /> {healthRiskView ? 'Health View Active' : 'Health Risk View'}
             </button>
@@ -610,7 +644,7 @@ export default function HeatmapAnalytics() {
               </div>
             ) : (
               <div className="h-[220px] flex items-center justify-center">
-                <p className="text-xs text-slate-400 font-medium">No zones mapped yet.</p>
+                <p className="text-xs text-slate-500 font-medium">No zones mapped yet.</p>
               </div>
             )}
           </div>
@@ -640,15 +674,15 @@ export default function HeatmapAnalytics() {
               </div>
             ) : (
               <div className="h-[200px] flex flex-col items-center justify-center text-center">
-                <Radio className="w-8 h-8 text-slate-200 mb-2" />
-                <p className="text-xs text-slate-400 font-medium">No live IoT data available.</p>
+                <Radio className="w-8 h-8 text-slate-700 mb-2" />
+                <p className="text-xs text-slate-500 font-medium">No live IoT data available.</p>
               </div>
             )}
           </div>
 
           {/* Legend Details */}
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Map Legend</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Map Legend</p>
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-emerald-400/40" />
@@ -675,7 +709,7 @@ export default function HeatmapAnalytics() {
           <div className="flex gap-2 pointer-events-auto">
             <button
               onClick={() => setShowCityBoundary(!showCityBoundary)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? 'bg-blue-600 text-slate-900' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="5 3"/></svg>
               {showCityBoundary ? 'City Outline On' : 'City Outline Off'}
@@ -688,8 +722,8 @@ export default function HeatmapAnalytics() {
                 }}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${
                   isAdding
-                    ? 'bg-red-600 text-white'
-                    : 'bg-emerald-700 text-white hover:bg-emerald-800'
+                    ? 'bg-red-600 text-slate-900'
+                    : 'bg-emerald-700 text-slate-900 hover:bg-emerald-800'
                 }`}
               >
                 {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -700,7 +734,7 @@ export default function HeatmapAnalytics() {
         </div>
 
         {isAdding && !newArea && !outOfBoundsError && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-emerald-950 text-white px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-emerald-950 text-slate-900 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
             <MapPin className="w-4 h-4 animate-bounce text-emerald-400" />
             Click inside {official?.barangay || 'your barangay'} to mark a hotspot
           </div>
@@ -708,7 +742,7 @@ export default function HeatmapAnalytics() {
 
         {/* Floating save card — appears immediately after placing a pin */}
         {newArea && (
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/50 px-5 py-4 flex items-center gap-4 min-w-[320px] animate-in slide-in-from-bottom-8">
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-100 px-5 py-4 flex items-center gap-4 min-w-[320px] animate-in slide-in-from-bottom-8">
             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
               <MapPin className="w-5 h-5 text-emerald-600" />
             </div>
@@ -719,7 +753,7 @@ export default function HeatmapAnalytics() {
             <button
               disabled={saving}
               onClick={handleSaveArea}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white text-sm font-bold rounded-xl hover:bg-emerald-800 disabled:opacity-50 transition-colors shrink-0"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-slate-900 text-sm font-bold rounded-xl hover:bg-emerald-800 disabled:opacity-50 transition-colors shrink-0"
             >
               {saving ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -730,7 +764,7 @@ export default function HeatmapAnalytics() {
             </button>
             <button
               onClick={() => { setNewArea(null); }}
-              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400"
+              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
             >
               <X className="w-4 h-4" />
             </button>
@@ -738,7 +772,7 @@ export default function HeatmapAnalytics() {
         )}
 
         {outOfBoundsError && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-white px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 animate-bounce border border-red-400">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-slate-900 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 animate-bounce border border-red-400">
             <ShieldAlert className="w-5 h-5" />
             OUT OF JURISDICTION: You can only mark areas inside {official?.barangay}!
           </div>
@@ -753,10 +787,10 @@ export default function HeatmapAnalytics() {
               : t.status === 'moderate' ? '#d97706'
               : '#059669';
             const icon =
-              t.type === 'cleaned' ? <CheckCircle2 className="w-5 h-5 text-white" />
-              : t.status === 'critical' ? <AlertTriangle className="w-5 h-5 text-white" />
-              : t.status === 'moderate' ? <Info className="w-5 h-5 text-white" />
-              : <CheckCircle2 className="w-5 h-5 text-white" />;
+              t.type === 'cleaned' ? <CheckCircle2 className="w-5 h-5 text-slate-900" />
+              : t.status === 'critical' ? <AlertTriangle className="w-5 h-5 text-slate-900" />
+              : t.status === 'moderate' ? <Info className="w-5 h-5 text-slate-900" />
+              : <CheckCircle2 className="w-5 h-5 text-slate-900" />;
             return (
               <div
                 key={t.id}
@@ -779,6 +813,17 @@ export default function HeatmapAnalytics() {
           })}
         </div>
 
+        {/* No IoT Data Overlay */}
+        {zones.filter(z => z.sensorId).length === 0 && (
+          <div className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none">
+            <div className="bg-white/90 backdrop-blur-md px-6 py-4 rounded-2xl shadow-xl border border-slate-200 flex flex-col items-center gap-2 max-w-sm text-center">
+              <Radio className="w-8 h-8 text-slate-400 mb-1" />
+              <h3 className="text-sm font-bold text-slate-900">No IoT Sensor Activity</h3>
+              <p className="text-xs text-slate-500 font-medium">There are currently no active IoT sensors broadcasting air quality data on the heatmap.</p>
+            </div>
+          </div>
+        )}
+
         <MapContainer
           center={CEBU_CENTER}
           zoom={14}
@@ -786,6 +831,10 @@ export default function HeatmapAnalytics() {
           className="z-0"
         >
           {/* Base Layer: Esri World Topo */}
+          
+          
+          
+
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
             attribution="&copy; Esri"
@@ -816,10 +865,7 @@ export default function HeatmapAnalytics() {
             <Polygon
               positions={boundary}
               pathOptions={{
-                color: '#059669',
-                weight: 3,
-                fillColor: '#059669',
-                fillOpacity: 0.05,
+                color: '#059669', weight: 3, fillColor: '#059669', fillOpacity: 0.05,
                 dashArray: '10, 10'
               }}
             />
@@ -827,38 +873,132 @@ export default function HeatmapAnalytics() {
 
           <MapClickHandler onMapClick={handleMapClick} />
 
-          {/* Render Heatmap Circles */}
-          {zones.map((zone) => {
+          {/* Render Density Heatmap using IoT Data ONLY */}
+          <HeatmapLayer 
+            data={zones.filter(z => z.sensorId).map(z => {
+              const ammoniaPpm = parseAmmoniaPpm(z.ammonia);
+              // Intensity scales based on ammonia ppm. Normalize around 100ppm being very intense (1.0).
+              let intensity = 0.2; // base intensity
+              if (ammoniaPpm > 100) intensity = 1.0;
+              else if (ammoniaPpm > 50) intensity = 0.7;
+              else if (ammoniaPpm > 10) intensity = 0.4;
+              return [z.lat, z.lng, intensity];
+            })}
+            options={{
+              radius: 40,
+              blur: 35,
+              maxZoom: 15,
+              max: 1.0,
+              gradient: {
+                0.2: '#10b981', // Clean
+                0.5: '#f59e0b', // Moderate
+                1.0: '#ef4444'  // Critical
+              }
+            }}
+          />
+
+          {/* Visible markers for clicking the IoT sensors */}
+          {zones.filter(z => z.sensorId).map(zone => {
             const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
-            const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
             const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
-            const isIotZone = !!zone.sensorId;
-            
-            // Dynamic radius and pulsing for visual emphasis
-            const radius = zone.status === 'critical' ? 40 : zone.status === 'moderate' ? 25 : 15;
+            const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
             
             return (
-            <Circle
-              key={zone._id}
-              center={[zone.lat, zone.lng]}
-              radius={radius}
-              pathOptions={{
-                fillColor: circleColor,
-                fillOpacity: zone.status === 'critical' ? 0.6 : 0.4,
-                color: isIotZone ? '#2563eb' : circleColor,
-                weight: isIotZone ? 4 : (zone.status === 'critical' ? 3 : 2),
-                opacity: 0.9,
-              }}
-              eventHandlers={{ click: () => setSelectedZone(zone) }}
-            />
+              <Marker
+                key={zone._id}
+                position={[zone.lat, zone.lng]}
+                icon={L.divIcon({
+                  className: 'bg-transparent',
+                  html: `
+                    <div style="
+                      width: 28px; 
+                      height: 28px; 
+                      background: white; 
+                      border: 2px solid #2563EB; 
+                      border-radius: 50%; 
+                      display: flex; 
+                      align-items: center; 
+                      justify-content: center;
+                      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                      cursor: pointer;
+                    ">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+                    </div>
+                  `,
+                  iconSize: [28, 28],
+                  iconAnchor: [14, 14]
+                })}
+              >
+                <Popup className="custom-popup" minWidth={320}>
+                  <div className="p-1">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 shadow-sm" style={{ backgroundColor: circleColor }}>
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-base font-bold text-slate-900 leading-tight">{zone.name}</h3>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3" /> {zone.barangay || 'Unknown location'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-2 mb-5">
+                      
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize text-slate-900" style={{ backgroundColor: circleColor }}>
+                        {riskLabel}
+                      </span>
+                      <label className="flex items-center gap-2 cursor-pointer ml-auto">
+                        <span className="text-xs font-bold text-slate-500 uppercase">Active</span>
+                        <div className="relative inline-block w-8 h-4">
+                          <input 
+                            type="checkbox" 
+                            className="peer sr-only" 
+                            checked={zone.isActive} 
+                            onChange={(e) => toggleSensorActive(zone, e.target.checked)} 
+                          />
+                          <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-300 transition-colors"></div>
+                          <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform"></div>
+                        </div>
+                      </label>
+
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider border border-blue-200">
+                        <Radio className="w-3.5 h-3.5" /> LIVE IOT: {zone.sensorId}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-4">
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                        <BarChart2 className="w-3.5 h-3.5" /> Sensor Readings
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Ammonia (NH₃)</span>
+                          <span className="text-lg font-black text-slate-800">{zone.ammonia || '0 ppm'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Methane (CH₄)</span>
+                          <span className="text-lg font-black text-slate-800">{zone.methane || '0 ppm'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                        <Clock className="w-3 h-3" /> Updated {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
             );
           })}
 
           {newArea && (
-            <Circle
+            <CircleMarker
               center={[newArea.lat, newArea.lng]}
-              radius={25}
-              pathOptions={{ fillColor: '#059669', fillOpacity: 0.6, color: '#fff', weight: 2 }}
+              radius={20}
+              pathOptions={{ fillColor: '#059669', fillOpacity: 0.8, color: '#fff', weight: 3 }}
             >
               <Popup>
                 <div className="p-2 text-center">
@@ -866,20 +1006,20 @@ export default function HeatmapAnalytics() {
                   <button
                     disabled={saving}
                     onClick={handleSaveArea}
-                    className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-emerald-700 text-white text-[10px] font-bold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-emerald-700 text-slate-900 text-[10px] font-bold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
                   >
                     {saving ? 'SAVING...' : <><Save className="w-3 h-3" /> SAVE AREA</>}
                   </button>
                 </div>
               </Popup>
-            </Circle>
+            </CircleMarker>
           )}
         </MapContainer>
       </div>
 
       {/* Sensor Registration Modal */}
       {showSensorForm && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-white/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
               <div className="flex items-center gap-3">
@@ -891,7 +1031,7 @@ export default function HeatmapAnalytics() {
                   <p className="text-xs text-slate-500">{sensorZones.length} active sensors</p>
                 </div>
               </div>
-              <button onClick={() => setShowSensorForm(false)} className="p-2 hover:bg-white/80 rounded-xl text-slate-400">
+              <button onClick={() => setShowSensorForm(false)} className="p-2 hover:bg-white/80 rounded-xl text-slate-500">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -966,7 +1106,7 @@ export default function HeatmapAnalytics() {
                   <button
                     type="submit"
                     disabled={sensorSaving || !sensorForm.lat || !sensorForm.sensorId}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-lg shadow-blue-600/20 transition-all"
+                    className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-slate-900 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-lg shadow-blue-600/20 transition-all"
                   >
                     {sensorSaving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-4 h-4" />}
                     {sensorSaving ? 'Registering...' : 'Register Sensor'}
@@ -1017,7 +1157,7 @@ export default function HeatmapAnalytics() {
 
       {/* Zone Details Modal */}
       {selectedZone && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
             {(() => {
               const zone = selectedZone;
@@ -1029,7 +1169,7 @@ export default function HeatmapAnalytics() {
                 <>
                   <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between" style={{ backgroundColor: `${circleColor}10` }}>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: circleColor }}>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900" style={{ backgroundColor: circleColor }}>
                         <MapPin className="w-5 h-5" />
                       </div>
                       <div>
@@ -1039,14 +1179,14 @@ export default function HeatmapAnalytics() {
                         </p>
                       </div>
                     </div>
-                    <button onClick={() => setSelectedZone(null)} className="p-2 hover:bg-white/60 rounded-xl text-slate-400 transition-colors">
+                    <button onClick={() => setSelectedZone(null)} className="p-2 hover:bg-white/60 rounded-xl text-slate-500 transition-colors">
                       <X className="w-5 h-5" />
                     </button>
                   </div>
                   
                   <div className="p-6 space-y-6">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold capitalize text-white" style={{ backgroundColor: circleColor }}>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold capitalize text-slate-900" style={{ backgroundColor: circleColor }}>
                         {riskLabel}
                       </span>
                       {isIotZone && (
@@ -1100,11 +1240,11 @@ export default function HeatmapAnalytics() {
                             </p>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <span className="text-[11px] font-bold text-slate-400 uppercase">Ammonia (NH₃)</span>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">Ammonia (NH₃)</span>
                                 <p className="text-xl font-black text-slate-700 mt-0.5">{zone.ammonia}</p>
                               </div>
                               <div>
-                                <span className="text-[11px] font-bold text-slate-400 uppercase">Methane (CH₄)</span>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">Methane (CH₄)</span>
                                 <p className="text-xl font-black text-slate-700 mt-0.5">{zone.methane}</p>
                               </div>
                             </div>
@@ -1117,12 +1257,12 @@ export default function HeatmapAnalytics() {
                           </p>
                           <div className="grid grid-cols-2 gap-4 items-center">
                             <div>
-                              <span className="text-[11px] font-bold text-slate-400 uppercase">Total Reports</span>
+                              <span className="text-[11px] font-bold text-slate-500 uppercase">Total Reports</span>
                               <p className="text-xl font-black text-slate-700 mt-0.5">{zone.reportCount || 0}</p>
                             </div>
                             {zone.lastReportAt && (
                               <div>
-                                <span className="text-[11px] font-bold text-slate-400 uppercase">Last Reported</span>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">Last Reported</span>
                                 <p className="text-sm font-bold text-slate-700 mt-0.5">{timeAgo(zone.lastReportAt)}</p>
                               </div>
                             )}
@@ -1132,7 +1272,7 @@ export default function HeatmapAnalytics() {
                     )}
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                      <p className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                      <p className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" /> Updated {timeAgo(zone.updatedAt || zone.createdAt)}
                       </p>
                       

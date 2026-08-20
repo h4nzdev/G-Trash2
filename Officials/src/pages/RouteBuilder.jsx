@@ -295,11 +295,26 @@ export default function RouteBuilder() {
     if (brgy && currentBoundary?.length > 0) {
       if (!isInsidePolygon([latlng.lat, latlng.lng], currentBoundary)) {
         setToast({ msg: `Outside ${brgy} jurisdiction!`, type: 'error' });
+        setTimeout(() => setToast(null), 3500);
         return;
       }
     }
     
-    const n = waypointsRef.current.length + 1;
+    const existingWps = waypointsRef.current;
+    
+    // Prevent duplicate stops (within 30 meters of any existing stop)
+    const isDuplicate = existingWps.some(wp => {
+      const dist = latlng.distanceTo(L.latLng(wp.lat, wp.lng));
+      return dist < 30; // 30 meters threshold
+    });
+
+    if (isDuplicate) {
+      setToast({ msg: 'Stop is too close to an existing stop!', type: 'error' });
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
+
+    const n = existingWps.length + 1;
     let address = 'Fetching address...';
     
     // Add temporary waypoint with loading state

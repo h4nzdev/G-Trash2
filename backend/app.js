@@ -201,8 +201,9 @@ const garbageAreaSchema = new mongoose.Schema({
   lng: { type: Number, required: true },
   status: {
     type: String,
-    enum: ["critical", "moderate", "clean"],
-    default: "moderate",
+    enum: ["critical", "moderate", "clean", "inactive"],
+    default: "inactive",
+  isActive: { type: Boolean, default: false },
   },
   ammonia: { type: String, default: "0 ppm" },
   methane: { type: String, default: "0 ppm" },
@@ -430,6 +431,15 @@ const barangayScoreSchema = new mongoose.Schema({
 });
 const BarangayScore = mongoose.model("BarangayScore", barangayScoreSchema);
 
+const barangayPointHistorySchema = new mongoose.Schema({
+  barangay: { type: String, required: true, index: true },
+  points: { type: Number, required: true },
+  category: { type: String, default: "points" },
+  description: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const BarangayPointHistory = mongoose.model("BarangayPointHistory", barangayPointHistorySchema);
+
 const announcementSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -572,7 +582,7 @@ async function startSLAChecker() {
             },
           },
         });
-        if (r.barangay) await addBarangayScore(r.barangay, -10, "reportScore");
+        if (r.barangay) await addBarangayScore(r.barangay, -10, "reportScore", null, "SLA escalated (report unresolved over 48h)");
         io.emit("report:updated", { ...r.toObject(), escalated: true });
         io.emit("report:escalated", {
           reportId: r._id,
@@ -718,17 +728,42 @@ async function checkTruckProximity(truckId) {
 // Award points to a barangay — upserts the score document.
 // scoreCategory: one of reportScore | iotScore | collectionScore | responseScore
 // countField: optional legacy count-only field (pickupCount, reportVoteCount, areaQualityPts) — only incremented when points > 0
-async function addBarangayScore(barangay, points, scoreCategory, countField) {
+async function addBarangayScore(barangay, points, scoreCategory, countField, description = '') {
   if (!barangay || points == null) return;
   const incOps = { points };
   if (scoreCategory) incOps[scoreCategory] = points;
   if (countField && points > 0) incOps[countField] = 1;
+  
+  // Log history
+  if (description) {
+    await BarangayPointHistory.create({
+      barangay,
+      points,
+      category: scoreCategory || 'points',
+      description
+    });
+  }
+
   return BarangayScore.findOneAndUpdate(
     { barangay },
     { $inc: incOps, $set: { updatedAt: new Date() } },
     { upsert: true, new: true },
   );
 }
+
+app.get("/api/barangay-points-history", async (req, res) => {
+  const { barangay } = req.query;
+  try {
+    const filter = barangay && barangay !== 'All' ? { barangay } : {};
+    const history = await BarangayPointHistory.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Award points to an individual resident and emit real-time update
 const STAT_MAP = {
@@ -1382,7 +1417,7 @@ app.post("/api/reports/:id/vote", async (req, res) => {
     await report.save();
     // +1 pt to barangay for every vote cast (community engagement)
     if (report.barangay) {
-      addBarangayScore(report.barangay, 1, "reportScore", "reportVoteCount").catch(() => {});
+      addBarangayScore(report.barangay, 1, "reportScore", "reportVoteCount", "Resident upvoted a report").catch(() => {});
     }
     // +1 pt to report author for receiving an upvote
     if (type === "up" && report.userId && String(report.userId) !== String(userId)) {
@@ -1810,11 +1845,7 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
                   ? 5
                   : 0;
           if (responsePts > 0) {
-            addBarangayScore(
-              existing.barangay,
-              responsePts,
-              "responseScore",
-            ).catch(() => {});
+            addBarangayScore(existing.barangay, responsePts, "responseScore", null, `Fast response time (${hoursElapsed.toFixed(1)}h)`).catch(() => {});
           }
         }
       }
@@ -1993,11 +2024,11 @@ app.post("/api/reports/:id/verify", async (req, res) => {
       setOps.escalated = true;
       pushEntry.status = "reopened";
       if (report.barangay)
-        await addBarangayScore(report.barangay, -15, "reportScore");
+        await addBarangayScore(report.barangay, -15, "reportScore", null, "Resident disputed resolution");
     } else {
       // Confirmed fixed — award points to barangay and resident
       if (report.barangay)
-        await addBarangayScore(report.barangay, 20, "reportScore");
+        await addBarangayScore(report.barangay, 20, "reportScore", null, "Resident confirmed resolution");
       if (userId)
         awardResidentPoints(userId, 15, 'verify_resolution', 'Verified a reported issue was resolved', report._id).catch(() => {});
     }
@@ -2730,7 +2761,7 @@ app.post("/api/pickup/:id/verify", async (req, res) => {
 
     if (confirmed) {
       if (run.barangay)
-        await addBarangayScore(run.barangay, 10, "collectionScore");
+        await addBarangayScore(run.barangay, 10, "collectionScore", null, "Resident confirmed pickup");
     } else {
       const missed = await Report.create({
         title: "Missed Pickup",
@@ -2747,7 +2778,7 @@ app.post("/api/pickup/:id/verify", async (req, res) => {
       });
       io.emit("report:new", missed);
       if (run.barangay)
-        await addBarangayScore(run.barangay, -5, "collectionScore");
+        await addBarangayScore(run.barangay, -5, "collectionScore", null, "Resident disputed pickup");
     }
     io.emit("pickup:verified", { pickupId: run._id, userId, confirmed });
     res.json({ ok: true, confirmed });
@@ -2794,7 +2825,7 @@ app.post("/api/bin/pickedup", async (req, res) => {
       { barangay, status: "pickedup", truckId: truckId || "" },
       { upsert: true, new: true },
     );
-    await addBarangayScore(barangay, 1, "collectionScore", "pickupCount");
+    await addBarangayScore(barangay, 1, "collectionScore", "pickupCount", "Pickup logged");
     awardResidentPoints(residentId, 1, 'bin_pickedup', 'Marked trash as picked up').catch(() => {});
     const counts = await getBinCounts(barangay, date);
     io.emit("bin:status:update", { barangay, date, ...counts });
@@ -3106,6 +3137,25 @@ app.post("/api/garbage-areas", async (req, res) => {
     await area.save();
     console.log(`[Heatmap] New area added: ${area.name}`);
     res.json(area);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.put('/api/garbage-areas/:id/toggle-active', async (req, res) => {
+  try {
+    const zone = await GarbageArea.findById(req.params.id);
+    if (!zone) return res.status(404).json({ error: 'Not found' });
+    zone.isActive = req.body.isActive;
+    zone.status = zone.isActive ? 'clean' : 'inactive';
+    if (!zone.isActive) {
+       zone.ammonia = '0 ppm';
+       zone.methane = '0 ppm';
+    }
+    await zone.save();
+    io.emit('zones_update');
+    res.json(zone);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4782,7 +4832,7 @@ app.post("/api/cleanup", async (req, res) => {
     }
 
     if (barangay) {
-      await addBarangayScore(barangay, 5, "collectionScore", "pickupCount").catch(() => {});
+      await addBarangayScore(barangay, 5, "collectionScore", "pickupCount", "Pickup logged from device").catch(() => {});
     }
 
     global._io?.emit("cleanup:new", post);
