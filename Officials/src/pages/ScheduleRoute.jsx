@@ -49,7 +49,7 @@ export default function ScheduleRoute() {
   const [barangayList, setBarangayList] = useState([]);
   const [sitioList, setSitioList] = useState([]);
   const [selectedBarangay, setSelectedBarangay] = useState('');
-  const [selectedSitio, setSelectedSitio] = useState('');
+  const [selectedSitios, setSelectedSitios] = useState([]);
 
   // Add Sitio inline form states
   const [showAddSitioForm, setShowAddSitioForm] = useState(false);
@@ -152,30 +152,37 @@ export default function ScheduleRoute() {
 
   const handleAddSchedule = async (e) => {
     e.preventDefault();
-    if (!selTruck || !selectedBarangay || !selectedSitio) return;
+    if (!selTruck || !selectedBarangay || selectedSitios.length === 0) return;
     setSubmitting(true);
     setError('');
     try {
       const truck = fleet.find(t => t.truckId === selTruck);
-      await axios.post(`${API}/api/schedules`, {
-        date: selectedDate,
-        truckId: selTruck,
-        driverName: truck?.driverName || '',
-        barangay: selectedBarangay,
-        sitio: selectedSitio,
-        startTime,
-        endTime,
-        notes,
-      });
+      
+      // Concurrently create schedule documents for each selected sitio
+      const promises = selectedSitios.map(sitio => 
+        axios.post(`${API}/api/schedules`, {
+          date: selectedDate,
+          truckId: selTruck,
+          driverName: truck?.driverName || '',
+          barangay: selectedBarangay,
+          sitio,
+          startTime,
+          endTime,
+          notes,
+        })
+      );
+      
+      await Promise.all(promises);
+
       setShowModal(false);
       setSelTruck('');
       setStartTime('');
       setEndTime('');
       setNotes('');
-      setSelectedSitio('');
+      setSelectedSitios([]);
       await fetchAll();
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to save schedule');
+      setError(e?.response?.data?.error || 'Failed to save schedules. One of the sitios may already be scheduled.');
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +252,7 @@ export default function ScheduleRoute() {
       });
       // Append to the list and select it
       setSitioList(prev => [...prev, response.data].sort((a, b) => a.name.localeCompare(b.name)));
-      setSelectedSitio(response.data.name);
+      setSelectedSitios(prev => [...prev, response.data.name]);
       
       // Reset form
       setNewSitioName('');
@@ -275,7 +282,7 @@ export default function ScheduleRoute() {
     setNewSitioLat(center.lat);
     setNewSitioLng(center.lng);
     
-    setSelectedSitio('');
+    setSelectedSitios([]);
     setShowAddSitioForm(false);
     setNewSitioName('');
     setSitioError('');
@@ -526,7 +533,7 @@ export default function ScheduleRoute() {
                       value={selectedBarangay}
                       onChange={e => {
                         setSelectedBarangay(e.target.value);
-                        setSelectedSitio('');
+                        setSelectedSitios([]);
                       }}
                       required
                       className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
@@ -544,7 +551,7 @@ export default function ScheduleRoute() {
                 {!showAddSitioForm ? (
                   <>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Sitio / Sub-area *</label>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Sitios / Sub-areas *</label>
                       {selectedBarangay && (
                         <button
                           type="button"
@@ -558,20 +565,34 @@ export default function ScheduleRoute() {
                         </button>
                       )}
                     </div>
-                    <div className="relative">
-                      <Route className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                      <select
-                        value={selectedSitio}
-                        onChange={e => setSelectedSitio(e.target.value)}
-                        disabled={!selectedBarangay}
-                        required
-                        className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
-                      >
-                        <option value="">— Select Sitio —</option>
-                        {sitioList.map(s => (
-                          <option key={s._id} value={s.name}>{s.name}</option>
-                        ))}
-                      </select>
+                    
+                    <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                      {!selectedBarangay ? (
+                        <p className="text-xs text-slate-400 italic text-center py-2">Select a barangay to view sitios.</p>
+                      ) : sitioList.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic text-center py-2">No sitios verified under this barangay.</p>
+                      ) : (
+                        sitioList.map(s => {
+                          const isChecked = selectedSitios.includes(s.name);
+                          return (
+                            <label key={s._id} className="flex items-center gap-2.5 py-1 px-1 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (isChecked) {
+                                    setSelectedSitios(prev => prev.filter(name => name !== s.name));
+                                  } else {
+                                    setSelectedSitios(prev => [...prev, s.name]);
+                                  }
+                                }}
+                                className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
+                              />
+                              <span className="text-sm font-medium text-slate-700">{s.name}</span>
+                            </label>
+                          );
+                        })
+                      )}
                     </div>
                   </>
                 ) : (
