@@ -138,6 +138,15 @@ function buildLeafletHTML(truckB64) {
       window.setMapStyle = setTileLayer;
 
       var CEBU_OUTLINE = [[10.3565,123.8808],[10.3592,123.8842],[10.3610,123.8882],[10.3620,123.8925],[10.3624,123.8972],[10.3618,123.9018],[10.3600,123.9065],[10.3568,123.9112],[10.3525,123.9158],[10.3475,123.9200],[10.3420,123.9235],[10.3362,123.9262],[10.3302,123.9278],[10.3242,123.9284],[10.3182,123.9278],[10.3124,123.9260],[10.3068,123.9234],[10.3015,123.9202],[10.2965,123.9165],[10.2918,123.9124],[10.2874,123.9080],[10.2834,123.9032],[10.2798,123.8982],[10.2766,123.8928],[10.2740,123.8868],[10.2720,123.8805],[10.2708,123.8740],[10.2703,123.8675],[10.2706,123.8612],[10.2718,123.8555],[10.2738,123.8508],[10.2770,123.8472],[10.2806,123.8452],[10.2844,123.8445],[10.2878,123.8452],[10.2908,123.8465],[10.2936,123.8480],[10.2965,123.8488],[10.2995,123.8493],[10.3025,123.8496],[10.3055,123.8500],[10.3085,123.8506],[10.3115,123.8515],[10.3145,123.8528],[10.3172,123.8545],[10.3196,123.8558],[10.3220,123.8568],[10.3246,123.8573],[10.3272,123.8576],[10.3300,123.8580],[10.3328,123.8588],[10.3358,123.8600],[10.3388,123.8616],[10.3415,123.8636],[10.3440,123.8660],[10.3464,123.8686],[10.3487,123.8714],[10.3508,123.8742],[10.3526,123.8770],[10.3544,123.8792],[10.3558,123.8802],[10.3565,123.8808]];
+      var sensorIcon = L.divIcon({
+        html: '<div style="display:flex;align-items:center;justify-content:center;background:#0F172A;width:24px;height:24px;border-radius:50%;border:2px solid #38BDF8;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' +
+              '<span style="font-size:11px;line-height:24px;">📡</span>' +
+              '</div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        className: ''
+      });
+
       // IoT air quality heatmap circles — barangay-filtered
       var heatmapCircles = {};
       window.updateHeatmapArea = function(area) {
@@ -145,6 +154,9 @@ function buildLeafletHTML(truckB64) {
         var color = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#FDD835' : '#4CAF50';
         var fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.15;
         if (heatmapCircles[id]) { map.removeLayer(heatmapCircles[id]); }
+        
+        var group = L.layerGroup();
+        
         var r = 180 + Math.round((area.intensity || 0.5) * 120);
         var circle = L.circle([area.lat, area.lng], {
           radius: r, color: color, fillColor: color,
@@ -159,8 +171,24 @@ function buildLeafletHTML(truckB64) {
           'CH₄: ' + (area.methane || 'N/A') +
           '</div></div>'
         );
-        circle.addTo(map);
-        heatmapCircles[id] = circle;
+        circle.addTo(group);
+
+        var sensorMarker = L.marker([area.lat, area.lng], { icon: sensorIcon });
+        sensorMarker.bindPopup(
+          '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
+          '<b style="font-size:12px;">📡 IoT Waste Sensor</b><br/>' +
+          '<span style="font-size:10px;color:#64748B;">Zone: ' + (area.name || 'Sensor') + '</span><br/>' +
+          '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
+          (area.status === 'critical' ? '🔴 Critical' : area.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
+          '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
+          'NH₃: ' + (area.ammonia || 'N/A') + ' ppm<br/>' +
+          'CH₄: ' + (area.methane || 'N/A') + ' ppm' +
+          '</div></div>'
+        );
+        sensorMarker.addTo(group);
+
+        group.addTo(map);
+        heatmapCircles[id] = group;
       };
       window.clearHeatmapAreas = function() {
         Object.keys(heatmapCircles).forEach(function(id) {

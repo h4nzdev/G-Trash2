@@ -297,9 +297,15 @@ function buildLeafletHTML(truckB64) {
         heatmapLayers = [];
       };
 
-      // Each zone: { id, lat, lng, status, intensity }
-      // Uses L.circle (meter-based radius) so size is geographically correct
-      // and does NOT change with CSS transforms — only scales with real zoom.
+      var sensorIcon = L.divIcon({
+        html: '<div style="display:flex;align-items:center;justify-content:center;background:#0F172A;width:24px;height:24px;border-radius:50%;border:2px solid #38BDF8;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' +
+              '<span style="font-size:11px;line-height:24px;">📡</span>' +
+              '</div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        className: ''
+      });
+
       window.updateHeatmapZones = function(zonesJson) {
         window.clearHeatmapZones();
         var zones;
@@ -312,7 +318,6 @@ function buildLeafletHTML(truckB64) {
           var fillOpacity = zone.status === 'critical' ? 0.38
                           : zone.status === 'moderate'  ? 0.28
                           : 0.2;
-          // radius in METERS — intensity (0–1) scales coverage from 80 m to 450 m
           var radius = Math.max(80, Math.min(450, (zone.intensity || 0.5) * 450));
           var circle = L.circle([zone.lat, zone.lng], {
             radius: radius,
@@ -328,6 +333,19 @@ function buildLeafletHTML(truckB64) {
           });
           circle.addTo(map);
           heatmapLayers.push(circle);
+
+          // Add a marker showing the physical location where the IoT sensor is integrated
+          var sensorMarker = L.marker([zone.lat, zone.lng], { icon: sensorIcon });
+          sensorMarker.bindPopup(
+            '<div style="font-family:sans-serif;min-width:130px;padding:2px;">' +
+            '<b style="font-size:12px;color:#0F172A;">📡 IoT Waste Sensor</b><br>' +
+            '<span style="font-size:10px;color:#64748B;">Zone: ' + (zone.name || zone.id) + '</span><br>' +
+            '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
+            (zone.status === 'critical' ? '🔴 Critical' : zone.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
+            '</div>'
+          );
+          sensorMarker.addTo(map);
+          heatmapLayers.push(sensorMarker);
         });
       };
 
