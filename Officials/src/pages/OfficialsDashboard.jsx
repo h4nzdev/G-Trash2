@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Scale, Truck, AlertTriangle, TrendingUp, Calendar, ChevronRight, Radio, Wind, Thermometer, Droplets, Gauge, RefreshCw, Heart, ShieldAlert, Activity, MapPin, X, MessageSquare, Users, CheckCircle, Navigation, Lightbulb, Eye } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -380,6 +380,7 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
 export default function OfficialsDashboard() {
   const { official } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const socketRef = useRef(null);
   const isChd = official?.role === 'chd';
 
@@ -739,7 +740,7 @@ export default function OfficialsDashboard() {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">Real-time alerts requiring official response</p>
           </div>
-          <button className="text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => navigate('/alerts')} className="text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors">
             View All Alerts
           </button>
         </div>

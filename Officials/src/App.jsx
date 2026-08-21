@@ -5,15 +5,14 @@ import LoginPage from './pages/LoginPage';
 import OfficialsDashboard from './pages/OfficialsDashboard';
 import RouteMonitoring from './pages/RouteMonitoring';
 import FleetManagement from './pages/FleetManagement';
-import RouteBuilder from './pages/RouteBuilder';
 import BarangayPerformance from './pages/BarangayPerformance';
 import ReportsManagement from './pages/ReportsManagement';
 import HeatmapAnalytics from './pages/HeatmapAnalytics';
 import WasteAnalytics from './pages/WasteAnalytics';
 import CollectionHistory from './pages/CollectionHistory';
 import Settings from './pages/Settings';
+import AlertsManagement from './pages/AlertsManagement';
 import ScheduleRoute from './pages/ScheduleRoute';
-import RouteManager from './pages/RouteManager';
 import DriverAnalytics from './pages/DriverAnalytics';
 import RewardsManagement from './pages/RewardsManagement';
 import DriverView from './pages/DriverView';
@@ -52,15 +51,15 @@ export default function App() {
             <Route path="dashboard" element={<OfficialsDashboard />} />
             <Route path="routes" element={<ChdGuard><RouteMonitoring /></ChdGuard>} />
             <Route path="fleet" element={<ChdGuard><FleetManagement /></ChdGuard>} />
-            <Route path="route-builder" element={<ChdGuard><RouteBuilder /></ChdGuard>} />
             <Route path="barangays" element={<ChdGuard><BarangayPerformance /></ChdGuard>} />
             <Route path="reports" element={<ReportsManagement />} />
             <Route path="heatmap" element={<HeatmapAnalytics />} />
             <Route path="waste-analytics" element={<WasteAnalytics />} />
             <Route path="history" element={<CollectionHistory />} />
+            <Route path="alerts" element={<AlertsManagement />} />
             <Route path="settings" element={<ChdGuard><Settings /></ChdGuard>} />
             <Route path="schedule" element={<ChdGuard><ScheduleRoute /></ChdGuard>} />
-            <Route path="route-manager" element={<ChdGuard><RouteManager /></ChdGuard>} />
+
             <Route path="fleet/:truckId" element={<ChdGuard><DriverAnalytics /></ChdGuard>} />
             <Route path="rewards" element={<ChdGuard><RewardsManagement /></ChdGuard>} />
           </Route>

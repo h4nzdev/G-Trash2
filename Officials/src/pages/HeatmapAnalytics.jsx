@@ -298,6 +298,7 @@ export default function HeatmapAnalytics() {
   const [sensorSaving, setSensorSaving] = useState(false);
   const [sensorMsg, setSensorMsg] = useState(null);
   const [sensorZones, setSensorZones] = useState([]);
+  const [unregisteredSensors, setUnregisteredSensors] = useState([]);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const socketRef = useRef(null);
   const toastTimers = useRef({});
@@ -330,13 +331,15 @@ export default function HeatmapAnalytics() {
   const fetchZonesAndBoundary = async () => {
     setLoading(true);
     try {
-      const [zonesRes, boundaryRes, sensorRes] = await Promise.all([
+      const [zonesRes, boundaryRes, sensorRes, unregRes] = await Promise.all([
         axios.get(`${API}/api/garbage-areas`),
         official?.barangay ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`) : Promise.resolve({ data: { boundary: [] } }),
         axios.get(`${API}/api/sensor-zones`),
+        axios.get(`${API}/api/unregistered-sensors`),
       ]);
       setZones(zonesRes.data);
       setSensorZones(sensorRes.data);
+      if (unregRes) setUnregisteredSensors(unregRes.data);
       if (boundaryRes.data.boundary?.length > 0) {
         setBoundary(boundaryRes.data.boundary);
       }

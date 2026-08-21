@@ -32,6 +32,7 @@ import {
   User,
   CreditCard,
   ChevronDown,
+  Route as RouteIcon
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
@@ -657,6 +658,20 @@ export default function RouteMonitoring() {
       <div className="flex flex-1 overflow-hidden gap-0 p-4 pb-0">
         {/* === LEFT SIDEBAR ================================= */}
         <div className="w-[340px] flex-shrink-0 bg-white rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-slate-200 flex flex-col overflow-hidden mr-4 pb-4">
+          
+          {/* Quick Actions (Replaces original Route Builder tab) */}
+          <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quick Actions</span>
+            <button
+              onClick={() => window.location.href = '/route-builder'}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+              title="Open Manual Route Builder"
+            >
+              <RouteIcon className="w-3 h-3" />
+              Route Builder
+            </button>
+          </div>
+
           {/* 1. Truck Header */}
           <div className="p-5 border-b border-slate-100 pb-4">
             <div className="flex items-start justify-between mb-4">
@@ -884,7 +899,7 @@ export default function RouteMonitoring() {
             ) : (
               <MapContainer
                 center={CEBU_CENTER}
-                zoom={13}
+                zoom={14}
                 className="w-full h-full"
                 zoomControl={false}
               >

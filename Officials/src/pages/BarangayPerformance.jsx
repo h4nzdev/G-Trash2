@@ -63,7 +63,7 @@ const PERIOD_OPTIONS = [
   { value: 'all',   label: 'All Time' },
 ];
 
-function TopResidentsPanel({ barangay, onClose }) {
+function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
   const { official } = useAuth();
   const [residents, setResidents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +86,8 @@ function TopResidentsPanel({ barangay, onClose }) {
   const sortField = period === 'month' ? 'monthlyPoints' : 'totalPoints';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/30" onClick={onClose}>
-      <div className="h-full w-full max-w-md bg-white shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <div className="h-full w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-8" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
@@ -96,7 +96,7 @@ function TopResidentsPanel({ barangay, onClose }) {
           </div>
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => setHistoryModal(barangay)}
+              onClick={() => onOpenHistory(barangay)}
               className="flex items-center gap-1.5 px-2 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors"
               title="View Points History"
             >
@@ -162,31 +162,49 @@ function TopResidentsPanel({ barangay, onClose }) {
 
                   {/* Expanded detail */}
                   {selected?.residentId === r.residentId && (
-                    <div className="mt-3 ml-11 p-3 bg-slate-50 rounded-xl space-y-2 text-xs" onClick={e => e.stopPropagation()}>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { icon: Star, label: 'Total Pts', val: r.totalPoints },
-                          { icon: Star, label: 'Monthly Pts', val: r.monthlyPoints },
-                          { icon: ScanLine, label: 'Scans', val: r.stats?.correctScans ?? 0 },
-                          { icon: FileText, label: 'Reports', val: r.stats?.reportsSubmitted ?? 0 },
-                          { icon: CheckCircle, label: 'Verified', val: r.stats?.resolutionsVerified ?? 0 },
-                          { icon: ThumbsUp, label: 'Upvoted', val: r.stats?.reportsUpvoted ?? 0 },
-                        ].map(({ icon: Icon, label, val }) => (
-                          <div key={label} className="bg-white rounded-lg p-2 text-center">
-                            <Icon className="w-3.5 h-3.5 text-emerald-600 mx-auto mb-1" />
-                            <p className="font-bold text-slate-900 text-sm">{val}</p>
-                            <p className="text-slate-400 text-[10px]">{label}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-4 text-left cursor-default" onClick={e => e.stopPropagation()}>
+                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex gap-4">
+                        <div className="flex-1">
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Resident Profile</h4>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-slate-400"/> Total Lifetime Points</span>
+                              <span className="font-bold text-slate-900">{r.totalPoints} pts</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-slate-400"/> Monthly Points</span>
+                              <span className="font-bold text-slate-900">{r.monthlyPoints} pts</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200">
+                              <span className="text-slate-500 flex items-center gap-1.5"><ScanLine className="w-3.5 h-3.5 text-blue-500"/> Valid Smart Bin Scans</span>
+                              <span className="font-bold text-slate-900">{r.stats?.correctScans ?? 0}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-orange-500"/> Reports Submitted</span>
+                              <span className="font-bold text-slate-900">{r.stats?.reportsSubmitted ?? 0}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1.5"><ThumbsUp className="w-3.5 h-3.5 text-emerald-500"/> Helpful Upvotes Received</span>
+                              <span className="font-bold text-slate-900">{r.stats?.reportsUpvoted ?? 0}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-500"/> Official Resolutions Verified</span>
+                              <span className="font-bold text-slate-900">{r.stats?.resolutionsVerified ?? 0}</span>
+                            </div>
                           </div>
-                        ))}
+                        </div>
                       </div>
+                      
                       {official?.barangay === 'All' || official?.barangay === barangay ? (
-                        <a
-                          href={`/rewards?prefill=${encodeURIComponent(JSON.stringify({ recipientId: r.residentId, recipientName: r.name, barangay }))}`}
-                          className="flex items-center justify-center gap-2 w-full mt-2 py-2 text-xs font-bold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <Award className="w-3.5 h-3.5" /> Create Reward for {r.name.split(' ')[0]}
-                        </a>
+                        <div className="flex gap-2">
+                          <a
+                            href={`/rewards?prefill=${encodeURIComponent(JSON.stringify({ recipientId: r.residentId, recipientName: r.name, barangay }))}`}
+                            className="flex items-center justify-center gap-2 flex-1 py-2.5 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <Award className="w-4 h-4" /> Issue Reward
+                          </a>
+                        </div>
                       ) : null}
                     </div>
                   )}
@@ -200,18 +218,7 @@ function TopResidentsPanel({ barangay, onClose }) {
   );
 }
 
-export default function BarangayPerformance() {
-  const { official } = useAuth();
-  const [rankings, setRankings] = useState([]);
-  const [drillDown, setDrillDown] = useState(null);
-  const [restrictedAlert, setRestrictedAlert] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState('points');
-  const [sortDir, setSortDir] = useState('desc');
-  const [page, setPage] = useState(0);
-  const [historyModal, setHistoryModal] = useState(null);
-
-  const PointsHistoryModal = ({ barangay, onClose }) => {
+const PointsHistoryModal = ({ barangay, onClose }) => {
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
 
@@ -266,6 +273,19 @@ export default function BarangayPerformance() {
     );
   };
 
+export default function BarangayPerformance() {
+  const { official } = useAuth();
+  const [rankings, setRankings] = useState([]);
+  const [drillDown, setDrillDown] = useState(null);
+  const [restrictedAlert, setRestrictedAlert] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState('points');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(0);
+  const [historyModal, setHistoryModal] = useState(null);
+
+  
+
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
@@ -302,7 +322,7 @@ export default function BarangayPerformance() {
   const totalPages = Math.ceil(sorted.length / ROWS_PER_PAGE);
   const maxPts = Math.max(...rankings.map(r => r.points || 0), 1);
 
-  const SortIcon = ({ k }) => (
+  const renderSortIcon = (k) => (
     <span className="inline-flex flex-col ml-1">
       <ChevronUp className={`w-2.5 h-2.5 -mb-0.5 ${sortKey === k && sortDir === 'asc' ? 'text-emerald-600' : 'text-slate-300'}`} />
       <ChevronDown className={`w-2.5 h-2.5 ${sortKey === k && sortDir === 'desc' ? 'text-emerald-600' : 'text-slate-300'}`} />
@@ -397,7 +417,50 @@ export default function BarangayPerformance() {
         </div>
       </div>
 
+      
+      {/* Current Barangay Highlight Card */}
+      {(() => {
+        if (!official?.barangay || official.barangay === 'All') return null;
+        const myRankIdx = sorted.findIndex(r => r.barangay === official.barangay);
+        if (myRankIdx === -1) return null;
+        const myData = sorted[myRankIdx];
+        
+        return (
+          <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-2xl p-6 text-white shadow-lg border border-blue-400/50 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+            
+            <div className="flex items-center gap-5 relative z-10">
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-inner">
+                <Trophy className="w-8 h-8 text-yellow-300 drop-shadow-md" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-black tracking-tight">{myData.barangay}</h3>
+                <p className="text-blue-100 font-medium text-sm flex items-center gap-1.5 mt-0.5">
+                  Your Barangay's Current Standing
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-8 relative z-10">
+              <div className="text-center md:text-right">
+                <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1">Current Rank</p>
+                <div className="flex items-baseline gap-1 justify-center md:justify-end">
+                  <span className="text-3xl font-black">#{myRankIdx + 1}</span>
+                  <span className="text-blue-200 font-medium text-sm">of {sorted.length}</span>
+                </div>
+              </div>
+              <div className="w-px h-12 bg-blue-400/50 hidden md:block"></div>
+              <div className="text-center md:text-right">
+                <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1">Total Points</p>
+                <span className="text-3xl font-black text-yellow-300 drop-shadow-sm">{myData.points ?? 0}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Table */}
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
@@ -428,62 +491,125 @@ export default function BarangayPerformance() {
             <p className="text-xs mt-1">Scores accumulate as reports are resolved, trucks complete pickups, and IoT sensors report readings</p>
           </div>
         ) : (
-          <>
-            <div className="p-6 h-[450px] w-full relative">
-              {/* Ambient background glow */}
-              <div className="absolute inset-0 bg-gradient-to-b from-emerald-50/50 to-transparent pointer-events-none" />
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
-                  data={sorted} 
-                  margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
-                  onClick={(data) => {
-                    if (data && data.activePayload && data.activePayload.length) {
-                      const b = data.activePayload[0].payload;
-                      const canViewResidents = official?.barangay === 'All' || official?.barangay === b.barangay;
-                      if (canViewResidents) setDrillDown(b.barangay);
-                      else setRestrictedAlert(b.barangay);
-                    }
-                  }}
-                  className="cursor-pointer"
-                  barCategoryGap="25%"
-                >
-                  <CartesianGrid stroke="#cbd5e1" strokeDasharray="none" />
-                  <XAxis 
-                    dataKey="barangay" 
-                    axisLine={{ stroke: '#334155', strokeWidth: 2 }} 
-                    tickLine={{ stroke: '#334155' }} 
-                    tick={{ fontSize: 13, fill: '#334155', fontWeight: 600 }} 
-                    dy={10} 
-                  />
-                  <YAxis 
-                    axisLine={{ stroke: '#334155', strokeWidth: 2 }} 
-                    tickLine={{ stroke: '#334155' }} 
-                    tick={{ fontSize: 13, fill: '#334155', fontWeight: 600 }} 
-                    dx={-10} 
-                  />
-                  <RechartsTooltip 
-                    content={<CustomTooltip />} 
-                    cursor={{ fill: '#f1f5f9', opacity: 0.6 }} 
-                  />
-                  <Bar 
-                    dataKey="points" 
-                    animationDuration={1000}
-                    animationEasing="ease-out"
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 w-20 text-center">Rank</th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('barangay')}>
+                    Barangay {renderSortIcon('barangay')}
+                  </th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors text-right" onClick={() => handleSort('points')}>
+                    Total Pts {renderSortIcon('points')}
+                  </th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors text-right" onClick={() => handleSort('reportScore')}>
+                    Reports {renderSortIcon('reportScore')}
+                  </th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors text-right" onClick={() => handleSort('iotScore')}>
+                    IoT {renderSortIcon('iotScore')}
+                  </th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors text-right" onClick={() => handleSort('collectionScore')}>
+                    Collections {renderSortIcon('collectionScore')}
+                  </th>
+                  <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors text-right" onClick={() => handleSort('responseScore')}>
+                    Response {renderSortIcon('responseScore')}
+                  </th>
+                  <th className="px-6 py-4 text-right">
+                    Insights
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paged.map((row, i) => {
+                  const actualRank = page * ROWS_PER_PAGE + i;
+                  const isTop3 = actualRank < 3 && sortKey === 'points' && sortDir === 'desc';
+                  return (
+                    <tr 
+                      key={row.barangay} 
+                      className={`hover:bg-slate-50 transition-colors ${isTop3 ? 'bg-amber-50/30' : ''}`}
+                    >
+                      <td className={`px-6 py-4 text-center ${isTop3 ? rankBorder[actualRank] : ''}`}>
+                        {isTop3 ? (
+                          <span className="text-xl" title={`Rank ${actualRank + 1}`}>{rankBadge[actualRank]}</span>
+                        ) : (
+                          <span className="text-sm font-bold text-slate-400">#{actualRank + 1}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-bold text-slate-900">{row.barangay}</span>
+                        {official?.barangay === row.barangay && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 uppercase tracking-wider">You</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`text-base ${scoreColorMap(row.points)}`}>{row.points ?? 0}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm text-slate-600 font-medium">{row.reportScore ?? 0}</td>
+                      <td className="px-6 py-4 text-right text-sm text-slate-600 font-medium">{row.iotScore ?? 0}</td>
+                      <td className="px-6 py-4 text-right text-sm text-slate-600 font-medium">{row.collectionScore ?? 0}</td>
+                      <td className="px-6 py-4 text-right text-sm text-slate-600 font-medium">{row.responseScore ?? 0}</td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setHistoryModal(row.barangay); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                            title="View Points History"
+                          >
+                            <History className="w-3.5 h-3.5" /> Log
+                          </button>
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation();
+                              const canView = official?.barangay === 'All' || official?.barangay === row.barangay;
+                              if (canView) setDrillDown(row.barangay);
+                              else setRestrictedAlert(row.barangay);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                            title="View Participating Residents"
+                          >
+                            <Users className="w-3.5 h-3.5" /> Residents
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+                <span className="text-xs text-slate-500 font-medium">
+                  Showing {page * ROWS_PER_PAGE + 1} to {Math.min((page + 1) * ROWS_PER_PAGE, sorted.length)} of {sorted.length} entries
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={page === 0}
+                    onClick={() => setPage(p => p - 1)}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {sorted.map((entry, index) => {
-                      const colors = ['#84cc16', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#06b6d4', '#f97316'];
-                      return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke="#1e293b" strokeWidth={1} />;
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </>
+                    <ChevronUp className="w-4 h-4 -rotate-90" />
+                  </button>
+                  <span className="text-sm font-bold text-slate-700 min-w-[32px] text-center">{page + 1}</span>
+                  <button
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage(p => p + 1)}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronDown className="w-4 h-4 -rotate-90" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
         )}
       </div>
 
       {drillDown && (
-        <TopResidentsPanel barangay={drillDown} onClose={() => setDrillDown(null)} />
+        <TopResidentsPanel barangay={drillDown} onClose={() => setDrillDown(null)} onOpenHistory={setHistoryModal} />
       )}
 
       {/* Restricted access modal */}

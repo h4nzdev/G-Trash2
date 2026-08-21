@@ -78,14 +78,9 @@ export default function RouteManager() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <div className="w-10 h-10 bg-emerald-800 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-900/20">
-              <Route className="w-5 h-5 text-emerald-100" />
-            </div>
-            Route Management
-          </h1>
-          <p className="text-slate-500 text-xs mt-1 font-medium ml-12">
-            Organize and oversee your collection network
+          <h2 className="text-lg font-bold text-slate-800">Saved Custom Routes</h2>
+          <p className="text-slate-500 text-xs mt-0.5 font-medium">
+            Manage or edit the custom collection routes you've built.
           </p>
         </div>
         <button

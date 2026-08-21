@@ -28,13 +28,10 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { io } from "socket.io-client";
 import { useRoute } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import HeatmapLegend from "../components/HeatmapLegend";
-import RouteBoard from "../components/RouteBoard";
 import API_URL from "../config";
 import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
-import { computeStopStatuses } from "../utils/routeProgress";
 
 const TRACKING_SERVER = API_URL;
 
@@ -283,38 +280,35 @@ function buildLeafletHTML(truckB64) {
         });
       };
 
-      // Resident route stop markers — numbered pins
+      // Resident route stop markers — verified sitios
       var residentStopMarkers = [];
       window.clearResidentStops = function() {
         residentStopMarkers.forEach(function(m) { map.removeLayer(m); });
         residentStopMarkers = [];
       };
-      window.addResidentStops = function(stops) {
+      window.addResidentStops = function(stopsJson) {
         window.clearResidentStops();
-        stops.forEach(function(s, i) {
-          var num = i + 1;
+        var arr = JSON.parse(stopsJson);
+        arr.forEach(function(s) {
           var status = s.status || 'upcoming';
-          var bg    = status === 'completed' ? '#9CA3AF' : status === 'current' ? '#EF4444' : '#006A3B';
-          var inner = status === 'completed'
-            ? '✓'
-            : status === 'current'
-              ? '🚛'
-              : num;
+          var bg = status === 'completed' ? '#006E1C' : status === 'in-progress' ? '#F59E0B' : '#9CA3AF';
+          var inner = status === 'completed' ? '✓' : status === 'in-progress' ? '🚛' : '●';
           var icon = L.divIcon({
-            html: '<div style="background:' + bg + ';color:#fff;width:28px;height:28px;border-radius:50%;' +
-                  'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;' +
-                  'border:2.5px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.3);">' + inner + '</div>',
-            iconSize: [28, 28], iconAnchor: [14, 14], className: '',
+            html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
+                  '<div style="background:' + bg + ';color:#fff;width:24px;height:24px;border-radius:50%;' +
+                  'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;' +
+                  'border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">' + inner + '</div>' +
+                  '<span style="position:absolute;top:-18px;background:rgba(255,255,255,0.95);color:#1B1C1C;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;border:1px solid #ccc;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + s.name + '</span>' +
+                  '</div>',
+            iconSize: [24, 24], iconAnchor: [12, 12], className: '',
           });
           var m = L.marker([s.lat, s.lng], { icon: icon });
-          if (s.name) {
-            m.bindPopup(
-              '<div style="font-family:sans-serif;min-width:120px;">' +
-              '<b style="font-size:11px;">Stop ' + num + ' · ' + status + '</b><br>' +
-              '<span style="font-size:10px;color:#555;">' + s.name + '</span>' +
-              '</div>'
-            );
-          }
+          m.bindPopup(
+            '<div style="font-family:sans-serif;min-width:100px;">' +
+            '<b style="font-size:11px;">Sitio ' + s.name + '</b><br>' +
+            '<span style="font-size:10px;color:#555;">Status: ' + (status === 'completed' ? 'Cleaned' : status === 'in-progress' ? 'Scheduled Today' : 'Not Scheduled') + '</span>' +
+            '</div>'
+          );
           m.addTo(map);
           residentStopMarkers.push(m);
         });
@@ -360,12 +354,8 @@ export default function MapScreen() {
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
-  const [routes, setRoutes] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [routePayload, setRoutePayload] = useState([]);
   const [liveTruckOnline, setLiveTruckOnline] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [mapStyle, setMapStyle] = useState("topographic");
@@ -374,6 +364,10 @@ export default function MapScreen() {
   const [iotAreas, setIotAreas] = useState([]);
   const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
   const [cleanedNotif, setCleanedNotif] = useState(null);
+  const [truckBarangay, setTruckBarangay] = useState(null);
+
+  const [sitioList, setSitioList] = useState([]);
+  const [todaySchedules, setTodaySchedules] = useState([]);
 
   const isExpandedRef = useRef(false);
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
@@ -381,8 +375,6 @@ export default function MapScreen() {
   const socketRef = useRef(null);
   const liveTruckPos = useRef(null);
   const webViewReady = useRef(false);
-  const routePayloadRef = useRef([]);
-  const selectedRouteIdRef = useRef(null);
   const isFollowingRef = useRef(!!focusTruck);
   const initialTrucks = useRef([]);
   const iotAreasRef = useRef([]);
@@ -390,38 +382,8 @@ export default function MapScreen() {
   useEffect(() => {
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
-  useEffect(() => {
-    routePayloadRef.current = routePayload;
-  }, [routePayload]);
-  useEffect(() => {
-    selectedRouteIdRef.current = selectedRouteId;
-  }, [selectedRouteId]);
 
-  const activeRoute = useMemo(
-    () => routes.find((r) => r._id === selectedRouteId) || null,
-    [routes, selectedRouteId],
-  );
-  const activeSchedule = useMemo(
-    () =>
-      schedules.find(
-        (s) =>
-          activeRoute &&
-          (s.routeId === activeRoute._id || s.truckId === activeRoute.truckId),
-      ) ||
-      schedules[0] ||
-      null,
-    [schedules, activeRoute],
-  );
-  // Enriched stops with live truck proximity status
-  const enrichedStops = useMemo(
-    () =>
-      computeStopStatuses(
-        activeRoute?.waypoints || [],
-        truckPosState?.lat ?? null,
-        truckPosState?.lng ?? null,
-      ),
-    [activeRoute, truckPosState],
-  );
+
 
   const aqStatus = useMemo(() => {
     if (!iotAreas.length) return null;
@@ -435,51 +397,18 @@ export default function MapScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [routesRes, schedRes, trucksRes] = await Promise.allSettled([
-          fetch(`${TRACKING_SERVER}/api/routes`).then((r) => r.json()),
-          fetch(`${TRACKING_SERVER}/api/schedules/today`).then((r) => r.json()),
-          fetch(`${TRACKING_SERVER}/api/trucks`).then((r) => r.json()),
-        ]);
-        if (
-          routesRes.status === "fulfilled" &&
-          Array.isArray(routesRes.value)
-        ) {
-          setRoutes(routesRes.value);
-          // Auto-select saved route preference
-          try {
-            const saved = await AsyncStorage.getItem("@route_preference");
-            if (saved) {
-              const pref = JSON.parse(saved);
-              if (pref?.id && routesRes.value.some((r) => r._id === pref.id)) {
-                setSelectedRouteId(pref.id);
-              }
-            }
-          } catch (_) {}
-        }
-        if (
-          schedRes.status === "fulfilled" &&
-          Array.isArray(schedRes.value?.schedules)
-        ) {
-          setSchedules(schedRes.value.schedules);
-        }
-        if (
-          trucksRes.status === "fulfilled" &&
-          Array.isArray(trucksRes.value)
-        ) {
-          const online = trucksRes.value.filter((t) => t.status === "online");
+        const trucksRes = await fetch(`${TRACKING_SERVER}/api/trucks`).then(r => r.json());
+        if (Array.isArray(trucksRes)) {
+          const online = trucksRes.filter(t => t.status === 'online');
           initialTrucks.current = online;
           if (online.length > 0) {
             const active = online[0];
-            liveTruckPos.current = {
-              lat: active.lat,
-              lng: active.lng,
-              truckId: active.truckId,
-            };
+            liveTruckPos.current = { lat: active.lat, lng: active.lng, truckId: active.truckId };
             setLiveTruckOnline(true);
           }
         }
       } catch (e) {
-        console.warn("MapScreen fetch error:", e);
+        console.warn('MapScreen fetch error:', e);
       } finally {
         setDataLoading(false);
       }
@@ -500,6 +429,29 @@ export default function MapScreen() {
       .catch(() => {});
   }, [userBarangay]);
 
+  // Fetch verified sitios and today's schedules for resident's barangay
+  const fetchSitiosAndSchedules = useCallback(() => {
+    if (!userBarangay) return;
+    
+    const fetchSitios = fetch(`${API_URL}/api/sitios?barangay=${encodeURIComponent(userBarangay)}`).then(r => r.json());
+    
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const fetchSchedules = fetch(`${API_URL}/api/schedules?date=${today}`).then(r => r.json());
+
+    Promise.all([fetchSitios, fetchSchedules])
+      .then(([sitios, schedules]) => {
+        if (Array.isArray(sitios)) setSitioList(sitios);
+        const scheds = Array.isArray(schedules) ? schedules : (schedules.schedules || []);
+        setTodaySchedules(scheds);
+      })
+      .catch(() => {});
+  }, [userBarangay]);
+
+  useEffect(() => {
+    fetchSitiosAndSchedules();
+  }, [fetchSitiosAndSchedules]);
+
   // Inject heatmap circles whenever iotAreas changes and WebView is ready
   useEffect(() => {
     if (!webViewReady.current || !iotAreas.length) return;
@@ -511,56 +463,31 @@ export default function MapScreen() {
     });
   }, [iotAreas]);
 
-  useEffect(() => {
-    if (routes.length === 0) return;
-    const payload = routes
-      .map((r, i) => ({
-        id: r._id,
-        name: r.name || r.barangay || `Route ${i + 1}`,
-        coords:
-          r.routeCoords?.length > 1
-            ? r.routeCoords
-            : r.waypoints?.length >= 2
-              ? r.waypoints.map((wp) => [wp.lat, wp.lng])
-              : null,
-        color: ROUTE_COLORS[i % ROUTE_COLORS.length],
-      }))
-      .filter((p) => p.coords && p.coords.length > 0);
-
-    setRoutePayload(payload);
-    if (!selectedRouteId && payload.length > 0) {
-      setSelectedRouteId(routes[0]._id);
-    }
-  }, [routes]);
-
-  useEffect(() => {
-    if (!webViewReady.current || routePayload.length === 0) return;
-    webViewRef.current?.injectJavaScript(
-      `window.loadAllRoutes(${JSON.stringify(routePayload)}); true;`,
-    );
-  }, [routePayload]);
-
-  useEffect(() => {
-    if (!webViewReady.current || !selectedRouteId) return;
-    webViewRef.current?.injectJavaScript(
-      `window.highlightRoute('${selectedRouteId}'); true;`,
-    );
-  }, [selectedRouteId]);
-
-  // Re-inject stop markers with status colours whenever enrichedStops changes
+  // Inject sitio markers into WebView
   useEffect(() => {
     if (!webViewReady.current) return;
-    if (!enrichedStops.length) {
-      webViewRef.current?.injectJavaScript('window.clearResidentStops(); true;');
+    if (sitioList.length === 0) {
+      webViewRef.current?.injectJavaScript(`window.clearResidentStops(); true;`);
       return;
     }
-    const stops = enrichedStops
-      .filter((wp) => wp.lat && wp.lng)
-      .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '', status: wp.status }));
-    webViewRef.current?.injectJavaScript(
-      `window.addResidentStops(${JSON.stringify(stops)}); true;`,
-    );
-  }, [enrichedStops]);
+    const markersPayload = sitioList.map(s => {
+      let status = "upcoming";
+      const sched = todaySchedules?.find(sch => sch.sitio === s.name);
+      if (sched) {
+        status = sched.status === "completed" ? "completed" : "in-progress";
+      }
+      return {
+        lat: s.lat,
+        lng: s.lng,
+        status,
+        name: s.name
+      };
+    });
+    const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
+  }, [sitioList, todaySchedules, webViewReady.current]);
+
+
 
   useEffect(() => {
     const socket = io(TRACKING_SERVER, {
@@ -568,10 +495,13 @@ export default function MapScreen() {
     });
     socketRef.current = socket;
 
-    socket.on("truck:location:update", ({ truckId, lat, lng, heading }) => {
+    socket.on("truck:location:update", ({ truckId, lat, lng, heading, currentBarangay }) => {
       liveTruckPos.current = { lat, lng, truckId, heading };
       setTruckPosState({ lat, lng, truckId });
       setLiveTruckOnline(true);
+      if (currentBarangay) {
+        setTruckBarangay(currentBarangay);
+      }
       if (webViewReady.current) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(
@@ -659,23 +589,16 @@ export default function MapScreen() {
       }
     });
 
+    socket.on("schedule:changed", () => {
+      fetchSitiosAndSchedules();
+    });
+
     return () => socket.disconnect();
-  }, []);
+  }, [fetchSitiosAndSchedules]);
 
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
-    if (routePayloadRef.current.length > 0) {
-      webViewRef.current?.injectJavaScript(
-        `window.loadAllRoutes(${JSON.stringify(routePayloadRef.current)}); true;`,
-      );
-      if (selectedRouteIdRef.current) {
-        setTimeout(() => {
-          webViewRef.current?.injectJavaScript(
-            `window.highlightRoute('${selectedRouteIdRef.current}'); true;`,
-          );
-        }, 150);
-      }
-    }
+    
     // Inject all initial online trucks
     initialTrucks.current.forEach((t) => {
       const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
@@ -697,17 +620,20 @@ export default function MapScreen() {
         `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
       );
     });
-    // Inject stop markers for currently selected route
-    const initRoute = routes.find((r) => r._id === selectedRouteIdRef.current);
-    if (initRoute?.waypoints?.length) {
-      const stops = initRoute.waypoints
-        .filter((wp) => wp.lat && wp.lng)
-        .map((wp) => ({ lat: wp.lat, lng: wp.lng, name: wp.name || '' }));
-      webViewRef.current?.injectJavaScript(
-        `window.addResidentStops(${JSON.stringify(stops)}); true;`,
-      );
+    // Inject initial sitio markers
+    if (sitioList.length > 0) {
+      const markersPayload = sitioList.map(s => {
+        let status = "upcoming";
+        const sched = todaySchedules?.find(sch => sch.sitio === s.name);
+        if (sched) {
+          status = sched.status === "completed" ? "completed" : "in-progress";
+        }
+        return { lat: s.lat, lng: s.lng, status, name: s.name };
+      });
+      const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
     }
-  }, [routes]);
+  }, [sitioList, todaySchedules]);
 
   const handleWebViewMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
@@ -784,6 +710,32 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
+      
+      {/* Barangay Status Banner */}
+      <View style={{
+        backgroundColor: truckBarangay && truckBarangay === userBarangay ? '#006A3B' : liveTruckOnline ? '#F59E0B' : '#6B7280',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        <MaterialIcons
+          name={liveTruckOnline ? 'local-shipping' : 'info-outline'}
+          size={18}
+          color="#FFFFFF"
+        />
+        <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '600', flex: 1 }}>
+          {truckBarangay && truckBarangay === userBarangay
+            ? `🟢 A garbage truck is active in ${userBarangay}!`
+            : liveTruckOnline && truckBarangay
+              ? `Truck active in ${truckBarangay}`
+              : liveTruckOnline
+                ? 'A garbage truck is active nearby'
+                : 'No active trucks in your area'}
+        </Text>
+      </View>
+
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
@@ -943,74 +895,10 @@ export default function MapScreen() {
             <View style={styles.handleBar} />
           </View>
 
-          {/* Jeepney-style route board — always visible in collapsed sheet */}
-          {!dataLoading && (
-            <RouteBoard
-              route={activeRoute}
-              enrichedStops={enrichedStops}
-              onPress={() => {
-                if (isExpanded) {
-                  collapseSheet();
-                } else {
-                  expandSheet();
-                }
-              }}
-            />
-          )}
-
-          {dataLoading ? (
-            <View style={styles.pillsLoading}>
-              <ActivityIndicator size="small" color="#006A3B" />
-              <Text style={styles.pillsLoadingText}>Loading routes…</Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.pillsScroll}
-              contentContainerStyle={styles.pillsContent}
-            >
-              {routePayload.map((rp) => {
-                const isSelected = rp.id === selectedRouteId;
-                return (
-                  <TouchableOpacity
-                    key={rp.id}
-                    style={[
-                      styles.routePill,
-                      isSelected && {
-                        borderColor: rp.color,
-                        backgroundColor: `${rp.color}18`,
-                      },
-                    ]}
-                    onPress={() => setSelectedRouteId(rp.id)}
-                  >
-                    <View
-                      style={[styles.pillDot, { backgroundColor: rp.color }]}
-                    />
-                    <Text
-                      style={[
-                        styles.pillText,
-                        isSelected && { color: rp.color, fontWeight: "700" },
-                      ]}
-                    >
-                      {rp.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          )}
-          <View style={styles.sheetHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.routeTitle}>
-                {activeRoute?.name || "Select a route"}
-              </Text>
-              <Text style={styles.scheduleId}>
-                {activeSchedule
-                  ? `Truck ${activeSchedule.truckId} · ${activeSchedule.driverName}`
-                  : "No active schedule"}
-              </Text>
-            </View>
+          <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: '#1F2937', textAlign: 'center' }}>
+              Track garbage trucks in real-time on the map above.
+            </Text>
           </View>
         </View>
         <Animated.View
@@ -1047,37 +935,7 @@ export default function MapScreen() {
               </View>
             )}
 
-            <View style={styles.timeline}>
-              {enrichedStops.map((stop, index) => (
-                <View key={index} style={styles.timelineStep}>
-                  <View style={styles.timelineIndicator}>
-                    <View style={[
-                      styles.timelineDot,
-                      stop.status === 'completed' && { backgroundColor: '#9CA3AF' },
-                      stop.status === 'current'   && { backgroundColor: '#EF4444' },
-                    ]}>
-                      <View style={styles.timelineDotInner} />
-                    </View>
-                    {index < enrichedStops.length - 1 && (
-                      <View style={styles.timelineLine} />
-                    )}
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={[
-                      styles.timelineStopName,
-                      stop.status === 'completed' && { color: '#9CA3AF', textDecorationLine: 'line-through' },
-                    ]}>
-                      {stop.name || `Stop ${index + 1}`}
-                    </Text>
-                    {stop.status === 'current' && stop.distFromTruck != null && (
-                      <Text style={styles.timelineTime}>
-                        Truck is {stop.distFromTruck} m away
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              ))}
-            </View>
+
           </ScrollView>
         </Animated.View>
       </Animated.View>

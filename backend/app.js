@@ -81,6 +81,7 @@ mongoose
   .then(() => {
     console.log("OK: MongoDB connected ->", MONGO_URI);
     loadBoundaries();
+    seedSitios();
     startSLAChecker();
     startScheduleMonitor();
     startRewardExpirer();
@@ -187,6 +188,8 @@ const scheduleSchema = new mongoose.Schema({
   driverName: { type: String, default: "" },
   routeId: { type: String, default: "" },
   routeName: { type: String, default: "" },
+  barangay: { type: String, default: "" },
+  sitio: { type: String, default: "" },
   startTime: { type: String, default: "" }, // HH:MM for ordering
   endTime: { type: String, default: "" }, // Optional HH:MM
   status: { type: String, enum: ["pending", "completed", "missed"], default: "pending" },
@@ -194,6 +197,16 @@ const scheduleSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 const Schedule = mongoose.model("Schedule", scheduleSchema);
+
+const sitioSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  barangay: { type: String, required: true },
+  lat: { type: Number, required: true },
+  lng: { type: Number, required: true },
+  verified: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+});
+const Sitio = mongoose.model("Sitio", sitioSchema);
 
 const garbageAreaSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -845,6 +858,33 @@ async function loadBoundaries() {
     console.log(`[Backend] Loaded ${docs.length} boundaries into memory`);
   } catch (err) {
     console.error("[Backend] Failed to load boundaries:", err.message);
+  }
+}
+
+async function seedSitios() {
+  try {
+    const count = await Sitio.countDocuments();
+    if (count > 0) return;
+    const defaultSitios = [
+      // Lahug
+      { name: "La Guardia", barangay: "Lahug", lat: 10.3292, lng: 123.9015 },
+      { name: "Sodlon", barangay: "Lahug", lat: 10.3345, lng: 123.8962 },
+      { name: "Peace Valley", barangay: "Lahug", lat: 10.3235, lng: 123.8920 },
+      { name: "Beverly Hills", barangay: "Lahug", lat: 10.3298, lng: 123.8860 },
+      { name: "Plaza Housing", barangay: "Lahug", lat: 10.3421, lng: 123.8995 },
+      { name: "JY Square", barangay: "Lahug", lat: 10.3276, lng: 123.8986 },
+      // Guadalupe
+      { name: "Banawa", barangay: "Guadalupe", lat: 10.3188, lng: 123.8833 },
+      { name: "Kalunasan", barangay: "Guadalupe", lat: 10.3312, lng: 123.8755 },
+      { name: "Sandayong", barangay: "Guadalupe", lat: 10.3222, lng: 123.8872 },
+      // Mabolo
+      { name: "Kasambagan", barangay: "Mabolo", lat: 10.3283, lng: 123.9142 },
+      { name: "Panagdait", barangay: "Mabolo", lat: 10.3248, lng: 123.9189 }
+    ];
+    await Sitio.insertMany(defaultSitios);
+    console.log(`[Backend] Seeded ${defaultSitios.length} default verified sitios`);
+  } catch (err) {
+    console.error("[Backend] Failed to seed sitios:", err.message);
   }
 }
 
@@ -1749,14 +1789,45 @@ app.post("/api/trucks/location", async (req, res) => {
       { lat, lng, heading, speed, status: "online", updatedAt: new Date() },
       { upsert: true, new: true },
     );
+
+    // Detect which barangay the truck is currently inside
+    let currentBarangay = null;
+    for (const [brgy, polygon] of Object.entries(BARANGAY_BOUNDARIES)) {
+      if (isInsidePolygon([lat, lng], polygon)) {
+        currentBarangay = brgy;
+        break;
+      }
+    }
+
     io.emit("truck:location:update", {
       truckId,
       lat,
       lng,
       heading,
       speed,
+      currentBarangay,
       timestamp: new Date().toISOString(),
     });
+
+    // Auto-complete sitio task if truck drives near it (within 100m)
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const activeSchedules = await Schedule.find({ date: today, truckId: truckId.toUpperCase(), status: "pending" });
+    for (const s of activeSchedules) {
+      if (s.sitio) {
+        const sitioDoc = await Sitio.findOne({ name: s.sitio, barangay: s.barangay });
+        if (sitioDoc) {
+          const dist = haversineM(lat, lng, sitioDoc.lat, sitioDoc.lng);
+          if (dist <= 100) {
+            s.status = "completed";
+            await s.save();
+            io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
+            console.log(`[Auto-Complete] Truck ${truckId} came within ${dist.toFixed(1)}m of Sitio ${s.sitio}. Marked completed.`);
+          }
+        }
+      }
+    }
+
     checkTruckProximity(truckId).catch(() => {});
     res.json(truck);
   } catch (err) {
@@ -3242,28 +3313,124 @@ app.get("/api/schedules", optionalAuth, async (req, res) => {
 });
 
 // POST/DELETE require Officials auth
+app.get("/api/barangays", async (req, res) => {
+  try {
+    const axios = require("axios");
+    const response = await axios.get("https://psgc.gitlab.io/api/cities-municipalities/072217000/barangays.json", { timeout: 4000 });
+    if (Array.isArray(response.data)) {
+      const names = response.data.map(b => b.name).sort();
+      return res.json(names);
+    }
+    throw new Error("Invalid response format");
+  } catch (err) {
+    console.warn("[Backend] PSGC API failed or timed out. Using fallback.");
+    const fallbackBarangays = [
+      "Apas", "Banilad", "Basak San Nicolas", "Basak Pardo", "Binasalan",
+      "Buhisan", "Bulacao", "Busay", "Calamba", "Cambinocot", "Capitol Site",
+      "Carreta", "Cogon Pardo", "Cogon Ramos", "Day-as", "Duljo Fatima",
+      "Ermita", "Guadalupe", "Guba", "Inayawan", "Kalubihan", "Kalunasan",
+      "Kamagayan", "Kamputhaw", "Kasambagan", "Kinasang-an Pardo",
+      "Labangon", "Lahug", "Lorega San Miguel", "Lusaran", "Mabini",
+      "Mabolo", "Malubog", "Mambaling", "Pahina San Nicolas", "Pahina Central",
+      "Pardo", "Pari-an", "Pasil", "Pit-os", "Punta Princesa", "Quiot",
+      "Sambag I", "Sambag II", "San Antonio", "San Jose", "San Nicolas Central",
+      "San Roque", "Santa Cruz", "Sawang Calero", "Subandaku", "T. Padilla",
+      "Talamban", "Tejero", "Tinago", "Tisa", "Toong", "Zapatera"
+    ].sort();
+    res.json(fallbackBarangays);
+  }
+});
+
+app.get("/api/sitios", async (req, res) => {
+  const { barangay } = req.query;
+  try {
+    const filter = {};
+    if (barangay) filter.barangay = barangay;
+    const sitios = await Sitio.find(filter).sort({ name: 1 });
+    res.json(sitios);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/sitios", authMiddleware, async (req, res) => {
+  const { name, barangay, lat, lng } = req.body;
+  if (!name || !barangay || lat == null || lng == null) {
+    return res.status(400).json({ error: "name, barangay, lat and lng are required" });
+  }
+  try {
+    // Check duplicate
+    const exists = await Sitio.findOne({ name, barangay });
+    if (exists) {
+      return res.status(400).json({ error: "This sitio is already registered under this barangay" });
+    }
+    const newSitio = await Sitio.create({ name, barangay, lat: Number(lat), lng: Number(lng), verified: true });
+    res.status(201).json(newSitio);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/schedules", authMiddleware, async (req, res) => {
   try {
-    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, notes } =
+    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio } =
       req.body;
     const truckId = rawTruckId?.toUpperCase();
     if (!date || !truckId)
       return res.status(400).json({ error: "date and truckId required" });
-    // Prevent exact duplicate (same truck + same route on the same day); allow different routes
-    if (routeId) {
-      const dup = await Schedule.findOne({ date, truckId, routeId });
-      if (dup)
-        return res.status(409).json({
-          error: "This route is already scheduled for that truck on this date",
-        });
+
+    // Validate that barangay is selected when creating schedule
+    if (!barangay) {
+      return res.status(400).json({ error: "Barangay is required" });
     }
+
+    // Verify truck assignment in Fleet database
+    const fleet = await Fleet.findOne({ truckId });
+    if (fleet) {
+      if (fleet.type === "dedicated" && fleet.barangay && fleet.barangay.toLowerCase() !== barangay.toLowerCase()) {
+        return res.status(400).json({ error: `This truck is assigned exclusively to Barangay ${fleet.barangay}` });
+      }
+      if (fleet.type === "shared" && fleet.serviceBarangays && fleet.serviceBarangays.length > 0) {
+        const allowed = fleet.serviceBarangays.map(b => b.toLowerCase());
+        if (!allowed.includes(barangay.toLowerCase())) {
+          return res.status(400).json({ error: `This truck is not assigned to serve ${barangay}. Allowed: ${fleet.serviceBarangays.join(", ")}` });
+        }
+      }
+    }
+
+    // Verify sitio if provided
+    if (sitio) {
+      const verifiedSitio = await Sitio.findOne({ name: sitio, barangay });
+      if (!verifiedSitio) {
+        return res.status(400).json({ error: `Sitio "${sitio}" is not verified in Barangay ${barangay}` });
+      }
+    }
+
+    const finalRouteName = routeName || (barangay && sitio ? `${barangay} → ${sitio}` : routeName || barangay || '');
+
+    // Prevent exact duplicate (same truck + same route/sitio on the same day)
+    const dupFilter = { date, truckId };
+    if (routeId) dupFilter.routeId = routeId;
+    else if (sitio) dupFilter.sitio = sitio;
+    else dupFilter.routeName = finalRouteName;
+
+    const dup = await Schedule.findOne(dupFilter);
+    if (dup) {
+      return res.status(409).json({
+        error: "This truck is already scheduled for this area on this date",
+      });
+    }
+
     const schedule = await Schedule.create({
       date,
       truckId,
       driverName,
-      routeId,
-      routeName,
+      routeId: routeId || null,
+      routeName: finalRouteName,
+      barangay,
+      sitio: sitio || "",
       startTime: startTime || "",
+      endTime: endTime || "",
       notes,
     });
     io.emit("schedule:changed", { truckId, date });
@@ -3273,8 +3440,8 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
     notifyTruck(
       truckId,
       "New Schedule Assigned",
-      `You have been scheduled for "${routeName || "a route"}" on ${date}${timeLabel}.`,
-      { type: "schedule", scheduleId: schedule._id.toString(), date, routeName },
+      `You have been scheduled for "${finalRouteName || "a route"}" on ${date}${timeLabel}.`,
+      { type: "schedule", scheduleId: schedule._id.toString(), date, routeName: finalRouteName },
     );
 
     res.status(201).json(schedule);

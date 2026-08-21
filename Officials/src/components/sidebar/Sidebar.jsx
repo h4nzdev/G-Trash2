@@ -20,64 +20,68 @@ import {
   Shield,
   Gift,
   PieChart,
+  AlertTriangle,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 
-const CHD_ALLOWED_PATHS = ['/dashboard', '/heatmap', '/reports', '/history'];
+const CHD_ALLOWED_PATHS = ["/dashboard", "/heatmap", "/reports", "/history"];
 
 const navGroups = [
   {
     label: "Overview",
-    items: [
-      { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    ]
+    items: [{ path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" }],
   },
   {
     label: "Operations",
     items: [
-      { path: "/routes", icon: Activity, label: "Route Monitoring" },
+      { path: "/routes", icon: Activity, label: "Fleet Tracking" },
       { path: "/fleet", icon: Truck, label: "Fleet Management" },
-      { path: "/route-builder", icon: Route, label: "Route Builder" },
-      { path: "/route-manager", icon: Shield, label: "Route Manager" },
-      { path: "/schedule", icon: CalendarDays, label: "Schedule Routes" },
-    ]
+      { path: "/schedule", icon: CalendarDays, label: "Schedule Collection" },
+    ],
   },
   {
     label: "Analytics",
     items: [
       { path: "/barangays", icon: Trophy, label: "Barangay Rankings" },
-      { path: "/reports", icon: FileWarning, label: "Reports", chdLabel: "Reports (View Only)" },
+      {
+        path: "/reports",
+        icon: FileWarning,
+        label: "Reports",
+        chdLabel: "Reports (View Only)",
+      },
       { path: "/heatmap", icon: MapPin, label: "Heatmap Analytics" },
-      { path: "/waste-analytics", icon: PieChart, label: "Waste Intelligence" },
       { path: "/history", icon: History, label: "Collection History" },
+      {
+        path: "/alerts",
+        icon: AlertTriangle,
+        label: "IoT Alerts",
+      },
       { path: "/rewards", icon: Gift, label: "Rewards" },
-    ]
+    ],
   },
   {
     label: "System",
-    items: [
-      { path: "/settings", icon: Settings, label: "Settings" },
-    ]
-  }
+    items: [{ path: "/settings", icon: Settings, label: "Settings" }],
+  },
 ];
 
 export default function Sidebar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { official, logout } = useAuth();
-  const isChd = official?.role === 'chd';
+  const isChd = official?.role === "chd";
 
   // Track which groups are expanded
   const [expandedGroups, setExpandedGroups] = useState({
     Overview: true,
     Operations: true,
     Analytics: true,
-    System: true
+    System: true,
   });
 
   const toggleGroup = (label) => {
-    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
+    setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
   const SidebarContent = () => (
@@ -85,7 +89,11 @@ export default function Sidebar() {
       {/* Original Emerald Logo Section */}
       <div className="px-6 py-5 border-b border-slate-100">
         <div className="flex items-center gap-3 mb-3">
-          <img src={logo} alt="G-Trash Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
+          <img
+            src={logo}
+            alt="G-Trash Logo"
+            className="w-10 h-10 object-contain drop-shadow-sm"
+          />
           <span className="text-xl font-extrabold bg-gradient-to-r from-emerald-800 to-emerald-500 bg-clip-text text-transparent tracking-tight">
             G-TRASH
           </span>
@@ -98,56 +106,62 @@ export default function Sidebar() {
       {/* Grouped Navigation with Original Colors */}
       <nav className="flex-1 px-3 mt-4 space-y-4 overflow-y-auto pb-8 scrollbar-hide">
         {navGroups
-          .map(group => ({
+          .map((group) => ({
             ...group,
             items: isChd
-              ? group.items.filter(item => CHD_ALLOWED_PATHS.includes(item.path))
+              ? group.items.filter((item) =>
+                  CHD_ALLOWED_PATHS.includes(item.path),
+                )
               : group.items,
           }))
-          .filter(group => group.items.length > 0)
+          .filter((group) => group.items.length > 0)
           .map((group) => (
-          <div key={group.label} className="space-y-0.5">
-            <button
-              onClick={() => toggleGroup(group.label)}
-              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
-            >
-              {group.label}
-              <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${expandedGroups[group.label] ? '' : '-rotate-90'}`} />
-            </button>
+            <div key={group.label} className="space-y-0.5">
+              <button
+                onClick={() => toggleGroup(group.label)}
+                className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
+              >
+                {group.label}
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform duration-300 ${expandedGroups[group.label] ? "" : "-rotate-90"}`}
+                />
+              </button>
 
-            <div className={`space-y-0.5 overflow-hidden transition-all duration-300 ${expandedGroups[group.label] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-              {group.items.map(({ path, icon: Icon, label, chdLabel }) => {
-                const isActive = location.pathname === path;
-                const displayLabel = isChd && chdLabel ? chdLabel : label;
-                return (
-                  <NavLink
-                    key={path}
-                    to={path}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group ${
-                      isActive
-                        ? "bg-emerald-800 text-emerald-100 font-semibold"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                    }`}
-                  >
-                    <Icon
-                      className={`w-4.5 h-4.5 flex-shrink-0 transition-colors ${
+              <div
+                className={`space-y-0.5 overflow-hidden transition-all duration-300 ${expandedGroups[group.label] ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}
+              >
+                {group.items.map(({ path, icon: Icon, label, chdLabel }) => {
+                  const isActive = location.pathname === path;
+                  const displayLabel = isChd && chdLabel ? chdLabel : label;
+                  return (
+                    <NavLink
+                      key={path}
+                      to={path}
+                      onClick={() => setMobileOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group ${
                         isActive
-                          ? "text-emerald-100"
-                          : "text-slate-400 group-hover:text-slate-600"
+                          ? "bg-emerald-800 text-emerald-100 font-semibold"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                       }`}
-                      size={18}
-                    />
-                    <span className="text-sm">{displayLabel}</span>
-                    {isActive && (
-                      <span className="ml-auto w-1.5 h-1.5 bg-emerald-600 rounded-full" />
-                    )}
-                  </NavLink>
-                );
-              })}
+                    >
+                      <Icon
+                        className={`w-4.5 h-4.5 flex-shrink-0 transition-colors ${
+                          isActive
+                            ? "text-emerald-100"
+                            : "text-slate-400 group-hover:text-slate-600"
+                        }`}
+                        size={18}
+                      />
+                      <span className="text-sm">{displayLabel}</span>
+                      {isActive && (
+                        <span className="ml-auto w-1.5 h-1.5 bg-emerald-600 rounded-full" />
+                      )}
+                    </NavLink>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </nav>
 
       {/* System Status (Original) */}
@@ -158,9 +172,7 @@ export default function Sidebar() {
             System Online
           </span>
         </div>
-        <p className="text-[11px] text-emerald-600">
-          All sensors operational
-        </p>
+        <p className="text-[11px] text-emerald-600">All sensors operational</p>
       </div>
 
       {/* User Profile (Original style) */}
@@ -177,8 +189,8 @@ export default function Sidebar() {
               {official?.role === "chd"
                 ? "City Health Dept."
                 : official?.barangay === "All"
-                ? "Super Admin"
-                : `Brgy. ${official?.barangay}`}
+                  ? "Super Admin"
+                  : `Brgy. ${official?.barangay}`}
             </p>
           </div>
           <button

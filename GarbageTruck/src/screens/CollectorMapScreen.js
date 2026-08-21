@@ -516,210 +516,97 @@ async function fetchORSRoute(waypoints) {
   }
 }
 
-// ── Main Component (identical to yours) ──────────────────
+// ── Main Component ──────────────────────────────────────
 export default function CollectorMapScreen() {
   const { user } = useAuth();
   const { networkChangeKey } = useNetwork();
-  // Helper for distance calculation
-  const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
 
   const TRUCK_ID = user?.truckId ?? 'GT-000';
   const { bottom: bottomInset } = useSafeAreaInsets();
-  const [stops, setStops] = useState([]);
-  const [routeAssigned, setRouteAssigned] = useState(false);
-  const [assignedRouteName, setAssignedRouteName] = useState('');
-  const [assignedRouteBarangay, setAssignedRouteBarangay] = useState('');
   const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
   const [activeScheduleId, setActiveScheduleId] = useState(null);
-  const [isPreferredRoute, setIsPreferredRoute] = useState(false);
-  const [isOfflineRoute, setIsOfflineRoute] = useState(false);
 
-  // Fetch all of today's scheduled routes for this truck
+  // Fetch all of today's schedules for this truck
   const fetchTodaySchedules = useCallback(() => {
-    const today = getTodayYMD();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const truckIdUpper = TRUCK_ID.toUpperCase();
     const url = `${TRACKING_SERVER}/api/schedules/truck/${truckIdUpper}/today?date=${today}`;
-    console.log(`[App] Fetching schedules from: ${url}`);
     
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
     xhr.timeout = 6000;
     xhr.onload = () => {
-      console.log(`[App] Schedule response status: ${xhr.status}`);
       if (xhr.status === 200) {
         try {
           const data = JSON.parse(xhr.responseText);
-          console.log(`[App] Received schedules:`, data);
           const list = Array.isArray(data.schedules)
             ? data.schedules
             : data.schedule
               ? [data.schedule]
               : [];
-          
           setTodaySchedules(list);
-          
-          setActiveScheduleId(prev => {
-            const next = (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null);
-            console.log(`[App] Setting activeScheduleId: ${next} (was: ${prev})`);
-            return next;
-          });
+          setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null));
         } catch (e) {
-          console.error(`[App] Parse error in schedules:`, e);
           setTodaySchedules([]);
-          setRouteAssigned(false);
         }
       } else {
-        console.warn(`[App] Non-200 status for schedules: ${xhr.status}`);
         setTodaySchedules([]);
-        setRouteAssigned(false);
       }
     };
-    xhr.onerror = (e) => { console.error(`[App] XHR Error (Schedules):`, e); setTodaySchedules([]); setRouteAssigned(false); };
-    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Schedules)`); setTodaySchedules([]); setRouteAssigned(false); };
+    xhr.onerror = () => setTodaySchedules([]);
+    xhr.ontimeout = () => setTodaySchedules([]);
     xhr.send();
   }, [TRUCK_ID]);
 
-  useEffect(() => {
-    console.log(`[App] Route Effect Triggered. activeScheduleId: ${activeScheduleId}, hasTodaySchedules: ${!!todaySchedules}`);
-    if (!activeScheduleId || !todaySchedules) {
-      if (todaySchedules && todaySchedules.length === 0) {
-        // No schedule — try preferred route from AsyncStorage
-        AsyncStorage.getItem('@truck_route_preference').then((val) => {
-          if (!val) { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; return; }
-          const pref = JSON.parse(val);
-          if (!pref?.id) { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; return; }
-          console.log(`[App] No schedule — loading preferred route: ${pref.name}`);
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', `${TRACKING_SERVER}/api/routes/${pref.id}`);
-          xhr.timeout = 6000;
-          xhr.onload = () => {
-            if (xhr.status === 200) {
-              try {
-                const route = JSON.parse(xhr.responseText);
-                if (route.waypoints?.length >= 1) {
-                  setStops(waypointsToStops(route.waypoints));
-                  setRouteAssigned(true);
-                  setIsPreferredRoute(true);
-                  setAssignedRouteName(route.name || '');
-                  setAssignedRouteBarangay(route.barangay || '');
-                  routeCoordsRef.current = route.routeCoords?.length > 1
-                    ? route.routeCoords
-                    : route.waypoints.map(wp => [wp.lat, wp.lng]);
-                } else {
-                  setRouteAssigned(false); setStops([]); routeCoordsRef.current = [];
-                }
-              } catch { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; }
-            } else {
-              setRouteAssigned(false); setStops([]); routeCoordsRef.current = [];
-            }
-          };
-          xhr.onerror = () => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
-          xhr.ontimeout = () => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; };
-          xhr.send();
-        }).catch(() => { setRouteAssigned(false); setStops([]); routeCoordsRef.current = []; });
-
-        routeCoordsRef.current = [];
-      }
-      return;
-    }
-    const sched = todaySchedules.find(s => s._id === activeScheduleId);
-    console.log(`[App] Found schedule in list:`, sched);
-    
-    if (!sched?.routeId) {
-      console.warn(`[App] Schedule has no routeId!`);
-      setRouteAssigned(false);
-      setStops([]);
-      routeCoordsRef.current = [];
-      return;
-    }
-    
-    const url = `${TRACKING_SERVER}/api/routes/${sched.routeId}`;
-    console.log(`[App] Fetching route waypoints from: ${url}`);
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url);
-    xhr.timeout = 6000;
-    const applyLiveRoute = (route) => {
-      setStops(waypointsToStops(route.waypoints));
-      setRouteAssigned(true);
-      setIsPreferredRoute(false);
-      setIsOfflineRoute(false);
-      setAssignedRouteName(route.name || '');
-      setAssignedRouteBarangay(route.barangay || '');
-      routeCoordsRef.current = route.routeCoords?.length > 1
-        ? route.routeCoords
-        : route.waypoints.map(wp => [wp.lat, wp.lng]);
-      saveRouteCache(TRUCK_ID, route);
-    };
-
-    const applyCachedRoute = async () => {
-      const cached = await loadRouteCache(TRUCK_ID);
-      if (cached?.waypoints?.length >= 1) {
-        setStops(waypointsToStops(cached.waypoints));
-        setRouteAssigned(true);
-        setIsPreferredRoute(false);
-        setIsOfflineRoute(true);
-        setAssignedRouteName(cached.name || '');
-        setAssignedRouteBarangay(cached.barangay || '');
-        routeCoordsRef.current = cached.routeCoords?.length > 1
-          ? cached.routeCoords
-          : cached.waypoints.map(wp => [wp.lat, wp.lng]);
-      } else {
-        setRouteAssigned(false);
-        setStops([]);
-        routeCoordsRef.current = [];
-      }
-    };
-
-    xhr.onload = () => {
-      console.log(`[App] Route response status: ${xhr.status}`);
-      if (xhr.status === 200) {
-        try {
-          const route = JSON.parse(xhr.responseText);
-          console.log(`[App] Received route data:`, route);
-          if (route.waypoints?.length >= 1) {
-            applyLiveRoute(route);
-            console.log(`[App] Route successfully assigned: ${route.name}`);
-          } else {
-            console.warn(`[App] Route has no waypoints!`);
-            applyCachedRoute();
-          }
-        } catch (e) {
-          console.error(`[App] Parse error in route:`, e);
-          applyCachedRoute();
-        }
-      } else {
-        console.warn(`[App] Non-200 status for route: ${xhr.status}`);
-        applyCachedRoute();
-      }
-    };
-    xhr.onerror = (e) => { console.error(`[App] XHR Error (Route):`, e); applyCachedRoute(); };
-    xhr.ontimeout = () => { console.warn(`[App] XHR Timeout (Route)`); applyCachedRoute(); };
-    xhr.send();
-    return () => xhr.abort();
-  }, [activeScheduleId, todaySchedules]);
-
-  // Initial fetch on mount (updates also come via socket events)
+  // Initial fetch on mount
   useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
 
-  // Re-fetch schedule whenever the Map tab comes into focus (handles tab-switch from Home + notification taps)
+  // Re-fetch schedule when Map tab focused
   useFocusEffect(
     useCallback(() => {
       fetchTodaySchedules();
+      // Synchronize shift status from AsyncStorage
+      AsyncStorage.getItem("@truck_shift_active").then((val) => {
+        const active = val === "true";
+        setNavigationActive(active);
+        navigationActiveRef.current = active;
+      }).catch(() => {});
     }, [fetchTodaySchedules])
   );
 
-  // Fetch today's bin preparation counts whenever barangay is known
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [mapStyle, setMapStyle] = useState('topographic');
+  const [selectedZone, setSelectedZone] = useState(null);
+  const [heatmapZones, setHeatmapZones] = useState([]); // live from /api/garbage-areas
+  const [reports, setReports] = useState([]);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [showTrashBins, setShowTrashBins] = useState(true);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [showCityOutline, setShowCityOutline] = useState(true);
+  const [currentLocation, setCurrentLocation] = useState(null);
+
+  const [navigationActive, setNavigationActive] = useState(false);
+  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
+  const [currentSpeed, setCurrentSpeed] = useState(0);
+  const [binStatus, setBinStatus] = useState({ preparedCount: 0, pickedUpCount: 0 });
+
+  const [sitioList, setSitioList] = useState([]);
+
+  const isExpandedRef = useRef(false);
+  const navigationActiveRef = useRef(false);
+  const lastGpsRef = useRef(null);
+  const shiftStartRef = useRef(null);
+  const zoneCardAnim = useRef(new Animated.Value(0)).current;
+  const socketRef = useRef(null);
+  const webViewRef = useRef(null);
+  const webViewReady = useRef(false);
+
+  const activeSchedule = todaySchedules?.find(s => s._id === activeScheduleId);
+  const assignedRouteBarangay = activeSchedule?.barangay || activeSchedule?.routeName || '';
+
+  // Fetch today's bin preparation counts for assigned area/barangay
   useEffect(() => {
     if (!assignedRouteBarangay) return;
     const xhr = new XMLHttpRequest();
@@ -735,19 +622,49 @@ export default function CollectorMapScreen() {
     };
     xhr.send();
   }, [assignedRouteBarangay]);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [mapStyle, setMapStyle] = useState('topographic');
-  const [showSuccess, setShowSuccess] = useState(null);
-  const [selectedZone, setSelectedZone] = useState(null);
-  const [heatmapZones, setHeatmapZones] = useState([]); // live from /api/garbage-areas
-  const [reports, setReports] = useState([]);
-  const [selectedReport, setSelectedReport] = useState(null);
-  const [showTrashBins, setShowTrashBins] = useState(true);
-  const [isFocusMode, setIsFocusMode] = useState(false);
-  const [showTools, setShowTools] = useState(false);
-  const [showCityOutline, setShowCityOutline] = useState(true);
-  const [currentLocation, setCurrentLocation] = useState(null);
-  const [routeLoading, setRouteLoading] = useState(false);
+
+  // Fetch verified sitios for the assigned barangay
+  useEffect(() => {
+    if (!assignedRouteBarangay) {
+      setSitioList([]);
+      return;
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${TRACKING_SERVER}/api/sitios?barangay=${encodeURIComponent(assignedRouteBarangay)}`);
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          setSitioList(data);
+        } catch (_) {}
+      }
+    };
+    xhr.send();
+  }, [assignedRouteBarangay]);
+
+  // Inject sitio markers into WebView
+  useEffect(() => {
+    if (!webViewReady.current) return;
+    if (sitioList.length === 0) {
+      webViewRef.current?.injectJavaScript(`window.clearStopMarkers(); true;`);
+      return;
+    }
+    const markersPayload = sitioList.map(s => {
+      let status = "upcoming";
+      const sched = todaySchedules?.find(sch => sch.sitio === s.name);
+      if (sched) {
+        status = sched.status === "completed" ? "completed" : "in-progress";
+      }
+      return {
+        lat: s.lat,
+        lng: s.lng,
+        status,
+        name: s.name
+      };
+    });
+    const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    webViewRef.current?.injectJavaScript(`window.addStopMarkers('${markersJson}'); true;`);
+  }, [sitioList, todaySchedules, webViewReady.current]);
 
   // Fetch overflowing bin reports
   const fetchReports = useCallback(() => {
@@ -794,7 +711,7 @@ export default function CollectorMapScreen() {
     return () => clearInterval(interval);
   }, [fetchGarbageAreas]);
 
-  // Inject heatmap zones into WebView whenever zones update
+  // Inject heatmap zones into WebView
   useEffect(() => {
     if (!webViewReady.current || heatmapZones.length === 0) return;
     const json = JSON.stringify(heatmapZones).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -818,63 +735,14 @@ export default function CollectorMapScreen() {
       webViewRef.current?.injectJavaScript(`window.addReportMarkers('${json}'); true;`);
     }
   }, [reports, showTrashBins]);
-  const [navigationActive, setNavigationActive] = useState(false);
-  const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
-  const [currentSpeed, setCurrentSpeed] = useState(0);
-  const [weightModalStop, setWeightModalStop] = useState(null);
-  const [weightInput, setWeightInput] = useState("");
-  const [zoneChange, setZoneChange] = useState(null);
-  const [deviationAlert, setDeviationAlert] = useState(false);
-  const [deviationInfo, setDeviationInfo] = useState(null);
 
-  const [binStatus, setBinStatus] = useState({ preparedCount: 0, pickedUpCount: 0 });
-
-  const isExpandedRef = useRef(false);
-  const navigationActiveRef = useRef(false);
-  const lastGpsRef = useRef(null);
-  const shiftStartRef = useRef(null);
-  const offRouteCountRef = useRef(0);
-  const stopArrivalRef = useRef({});
-  const routeCoordsRef = useRef([]);
-  const successAnim = useRef(new Animated.Value(0)).current;
-  const zoneCardAnim = useRef(new Animated.Value(0)).current;
-  const socketRef = useRef(null);
-  const webViewRef = useRef(null);
-  const webViewReady = useRef(false);
-
-  // ── Real-time location tracking ────────────────────────
+  // Real-time location tracking & socket setup
   useEffect(() => {
     const socket = io(TRACKING_SERVER, { transports: ["polling", "websocket"] });
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      console.log("🔌 Socket connected:", socket.id);
-    });
-    socket.on("disconnect", (reason) => {
-      console.log("🔌 Socket disconnected:", reason);
-    });
-    socket.on("connect_error", (err) => {
-      console.log("🔌 Socket connect_error:", err.message);
-    });
-
-    // Real-time updates pushed by the Officials backend through the relay
     socket.on("schedule:changed", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
-    });
-    socket.on("route:assigned", ({ truckId }) => {
-      if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
-    });
-    socket.on("garbage-area:updated", (updated) => {
-      setHeatmapZones(prev => {
-        const formatted = formatGarbageArea(updated);
-        const idx = prev.findIndex(z => z.id === formatted.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = formatted;
-          return next;
-        }
-        return [...prev, formatted];
-      });
     });
 
     socket.on("bin:status:update", ({ barangay, preparedCount, pickedUpCount }) => {
@@ -884,7 +752,6 @@ export default function CollectorMapScreen() {
     });
 
     socket.on("zone:status:update", (update) => {
-      // Update the heatmap circle color in real-time for any zone change
       const id = String(update.areaId || update.zoneId);
       if (id) {
         setHeatmapZones(prev => {
@@ -905,22 +772,10 @@ export default function CollectorMapScreen() {
           return next;
         });
       }
-
-      // Show zone transition toast for collection events
-      if (update.reason === 'collection_completed') {
-        setZoneChange({
-          name: update.name,
-          previousStatus: update.previousStatus,
-          newStatus: update.newStatus,
-        });
-        setTimeout(() => setZoneChange(null), 4000);
-      }
     });
 
-    // Receive the offline echo back from server (io.emit broadcasts to all, including self)
     socket.on("truck:status", ({ truckId, status }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase() && status === "offline") {
-        // Local state was already set by stopNavigation() — just ensure the map marker is idle
         const pos = lastGpsRef.current;
         if (pos && webViewRef.current) {
           webViewRef.current?.injectJavaScript(
@@ -936,13 +791,13 @@ export default function CollectorMapScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
 
-      // Grab an immediate fix so Start Navigation has a position right away
       try {
         const initial = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
         const { latitude, longitude, heading } = initial.coords;
         lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
+        setCurrentLocation({ lat: latitude, lng: longitude });
       } catch (_) {}
 
       locationSub = await Location.watchPositionAsync(
@@ -957,9 +812,8 @@ export default function CollectorMapScreen() {
           lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
           setCurrentLocation({ lat: latitude, lng: longitude });
 
-          // Only stream while navigating
           if (navigationActiveRef.current) {
-            setCurrentSpeed(Math.round((speed || 0) * 3.6)); // m/s → km/h
+            setCurrentSpeed(Math.round((speed || 0) * 3.6));
             socket.emit("truck:location", {
               truckId: TRUCK_ID,
               lat: latitude,
@@ -971,36 +825,6 @@ export default function CollectorMapScreen() {
             webViewRef.current?.injectJavaScript(
               `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
             );
-
-            // Record arrival time at in-progress stop (once, when within 50 m)
-            setStops((prev) => {
-              const inProgress = prev.find((s) => s.status === 'in-progress');
-              if (inProgress && !stopArrivalRef.current[inProgress.id]) {
-                const d = haversineM(latitude, longitude, inProgress.lat, inProgress.lng);
-                if (d <= 50) stopArrivalRef.current[inProgress.id] = Date.now();
-              }
-              return prev;
-            });
-
-            // Off-route deviation check — requires 3 consecutive updates > 150 m
-            const dist = minDistToPolyline(latitude, longitude, routeCoordsRef.current);
-            if (dist > 150) {
-              offRouteCountRef.current += 1;
-              if (offRouteCountRef.current >= 3) {
-                offRouteCountRef.current = 0;
-                setDeviationInfo({ distance: Math.round(dist) });
-                setDeviationAlert(true);
-                socket.emit('truck:off-route', {
-                  truckId: TRUCK_ID,
-                  lat: latitude,
-                  lng: longitude,
-                  distanceM: Math.round(dist),
-                  driverName: user?.driverName || '',
-                });
-              }
-            } else {
-              offRouteCountRef.current = 0;
-            }
           }
         },
       );
@@ -1018,10 +842,9 @@ export default function CollectorMapScreen() {
       socket.disconnect();
       locationSub?.remove();
     };
-  // networkChangeKey bumps when WiFi → cellular (or back), forcing the socket
-  // to reconnect immediately over the new interface instead of timing out.
-  }, [fetchTodaySchedules, networkChangeKey]);
-  // Shift elapsed timer — updates every 15 s while navigating
+  }, [fetchTodaySchedules, networkChangeKey, assignedRouteBarangay]);
+
+  // Shift timer
   useEffect(() => {
     if (!navigationActive) return;
     const interval = setInterval(() => {
@@ -1036,56 +859,6 @@ export default function CollectorMapScreen() {
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
   const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
-
-  const currentStopIndex = stops.findIndex((s) => s.status === "in-progress");
-  const completedCount = stops.filter((s) => s.status === "completed").length;
-  const remainingCount = stops.length - completedCount;
-  const truckStop = currentStopIndex >= 0 ? stops[currentStopIndex] : null;
-  const progressPercent =
-    stops.length > 0 ? (completedCount / stops.length) * 100 : 0;
-  const totalCollected = stops
-    .filter((s) => s.status === "completed")
-    .reduce((sum, s) => sum + parseInt(s.weight || "0", 10), 0);
-
-  useEffect(() => {
-    if (!routeAssigned || stops.length === 0) {
-      webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${JSON.stringify([])}'); window.clearStopMarkers(); true;`);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setRouteLoading(true);
-      
-      // Filter only upcoming and in-progress stops
-      const activeStops = stops.filter(s => s.status !== 'completed');
-      if (activeStops.length === 0) {
-        setRouteLoading(false);
-        return;
-      }
-
-      let waypoints = activeStops.map((s) => [s.lng, s.lat]);
-      
-      // If navigation is active, prepend the truck's current GPS location
-      if (navigationActive && lastGpsRef.current) {
-        const { lat, lng } = lastGpsRef.current;
-        waypoints = [[lng, lat], ...waypoints];
-      }
-
-      const coords = await fetchORSRoute(waypoints);
-      if (cancelled) return;
-      
-      const finalCoords = coords || [];
-      setRouteLoading(false);
-      webViewRef.current?.injectJavaScript(
-        `window.updateTruckRoute('${JSON.stringify(finalCoords)}'); true;`,
-      );
-      
-      const markersPayload = stops.map((s) => ({ lat: s.lat, lng: s.lng, status: s.status, name: s.name }));
-      const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      webViewRef.current?.injectJavaScript(`window.addStopMarkers('${markersJson}'); true;`);
-    })();
-    return () => { cancelled = true; };
-  }, [stops, routeAssigned, navigationActive]);
 
   const handleWebViewMessage = (event) => {
     const message = event.nativeEvent.data;
@@ -1172,83 +945,16 @@ export default function CollectorMapScreen() {
     }),
   ).current;
 
-  const triggerSuccessAnimation = (stopId) => {
-    setShowSuccess(stopId);
-    successAnim.setValue(0);
-    Animated.sequence([
-      Animated.timing(successAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.delay(1500),
-      Animated.timing(successAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start(() => setShowSuccess(null));
-  };
-
-  const handleMarkCleaned = (stopId) => {
-    setWeightInput("");
-    setWeightModalStop(stopId);
-  };
-
-  const confirmCleanWithWeight = (weight) => {
-    const stopId = weightModalStop;
-    const kg = parseInt(weight, 10) || Math.floor(Math.random() * 40 + 20);
-    const arrivalTs = stopArrivalRef.current[stopId];
-    const dwellSeconds = arrivalTs ? Math.round((Date.now() - arrivalTs) / 1000) : null;
-    const dwellLabel = dwellSeconds != null
-      ? dwellSeconds < 60 ? `${dwellSeconds}s` : `${Math.floor(dwellSeconds / 60)}m ${dwellSeconds % 60}s`
-      : null;
-
-    const stop = stops.find((s) => s.id === stopId);
-    setWeightModalStop(null);
-    setStops((prev) => {
-      const idx = prev.findIndex((s) => s.id === stopId);
-      return prev.map((s, i) => {
-        if (i === idx) return { ...s, status: "completed", weight: `${kg}kg`, dwellLabel };
-        if (i === idx + 1 && s.status === "upcoming") return { ...s, status: "in-progress" };
-        return s;
-      });
-    });
-    triggerSuccessAnimation(stopId);
-
-    // Persist to collection history and trigger zone recalculation
-    fetch(`${TRACKING_SERVER}/api/collections`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        truckId: TRUCK_ID,
-        date: getTodayYMD(),
-        stopName: stop?.name || "",
-        stopAddress: stop?.address || stop?.name || "",
-        wasteType: stop?.type || "General",
-        weight: kg,
-        bins: stop?.bins || 1,
-        routeId: activeScheduleId || "",
-        routeName: assignedRouteName || "",
-        lat: stop?.lat ?? null,
-        lng: stop?.lng ?? null,
-        driverName: TRUCK_ID,
-      }),
-    }).catch(() => {});
-  };
-
   const handleReportIssue = () => {
-    Alert.alert("Report Issue", "What issue are you encountering?", [
-      { text: "Overflowing Bin" },
-      { text: "Hazardous Waste" },
-      { text: "Road Blocked" },
-      { text: "Other" },
-      { text: "Cancel", style: "cancel" },
+    Alert.alert("Report Hazard", "Identify a road hazard at your location:", [
+      { text: "Road Blocked", onPress: () => Alert.alert("Reported", "Road blockage reported to command center.") },
+      { text: "Illegal Parking", onPress: () => Alert.alert("Reported", "Illegal parking reported.") },
+      { text: "Accident", onPress: () => Alert.alert("Reported", "Accident reported.") },
+      { text: "Cancel", style: "cancel" }
     ]);
   };
 
   const startNavigation = () => {
-    AsyncStorage.setItem('@truck_nav_active', 'true').catch(() => {});
     if (todaySchedules !== null && todaySchedules.length === 0) {
       Alert.alert(
         'Not Scheduled Today',
@@ -1257,412 +963,112 @@ export default function CollectorMapScreen() {
       );
       return;
     }
-    console.log("🚛 [startNavigation] button pressed");
+    
+    AsyncStorage.setItem('@truck_nav_active', 'true').catch(() => {});
+    AsyncStorage.setItem('@truck_shift_active', 'true').catch(() => {});
     navigationActiveRef.current = true;
     setNavigationActive(true);
     shiftStartRef.current = Date.now();
     setElapsedDisplay("00:00");
 
     const pos = lastGpsRef.current;
-    const lat = pos?.lat ?? truckStop?.lat ?? 10.325;
-    const lng = pos?.lng ?? truckStop?.lng ?? 123.893;
+    const lat = pos?.lat ?? 10.325;
+    const lng = pos?.lng ?? 123.893;
     const heading = pos?.heading ?? 0;
 
-    console.log(`🚛 [startNavigation] lat=${lat} lng=${lng} heading=${heading}`);
-    console.log(`🚛 [startNavigation] server=${TRACKING_SERVER}`);
-
-    // Zoom to driver position and enable auto-follow
     webViewRef.current?.injectJavaScript(
       `window.startFollow(${lat}, ${lng}, ${heading}); true;`,
     );
 
-    // Upload location to MongoDB via XHR (more reliable than fetch on Android)
-    const url = `${TRACKING_SERVER}/api/trucks/location`;
-    console.log(`🚛 [startNavigation] XHR POST → ${url}`);
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
+    xhr.open("POST", `${TRACKING_SERVER}/api/trucks/location`);
     xhr.setRequestHeader("Content-Type", "application/json");
-    xhr.timeout = 8000;
-    xhr.onload = () => {
-      if (xhr.status < 200 || xhr.status >= 300) {
-        console.warn(`🚛 [startNavigation] upload failed HTTP ${xhr.status}`);
-      }
-    };
-    xhr.onerror = () => console.warn('🚛 [startNavigation] network error');
-    xhr.ontimeout = () => console.warn('🚛 [startNavigation] timeout');
     xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat, lng, heading, speed: 0 }));
+    
+    Alert.alert("Shift Started", "Your GPS location is now being shared. Residents can see your truck on the map.");
   };
-
-  const completeRoute = () => {
-    Alert.alert(
-      'Complete Route',
-      'Mark this entire route as completed? Residents in the area will be notified and asked to confirm pickup.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Complete',
-          onPress: () => {
-            const completedStops = stops
-              .filter(s => s.status === 'completed')
-              .map(s => ({ name: s.name, weight: parseInt(s.weight || '0', 10) }));
-            const totalKg = completedStops.reduce((sum, s) => sum + (s.weight || 0), 0);
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${TRACKING_SERVER}/api/pickup/complete`);
-            xhr.setRequestHeader('Content-Type', 'application/json');
-            xhr.timeout = 10000;
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) {
-                triggerSuccessAnimation('route-done');
-                stopNavigation();
-              } else {
-                Alert.alert('Error', 'Could not submit route completion. Please try again.');
-              }
-            };
-            xhr.onerror = () => Alert.alert('Error', 'Network error. Please try again.');
-            xhr.send(JSON.stringify({
-              truckId: TRUCK_ID,
-              driverName: user?.driverName || '',
-              routeId: activeScheduleId || '',
-              routeName: assignedRouteName || '',
-              barangay: assignedRouteBarangay || '',
-              stops: completedStops,
-              totalWeight: totalKg,
-            }));
-          },
-        },
-      ]
-    );
-  };
-
-  const handleWebViewLoad = useCallback(() => {
-    webViewReady.current = true;
-  }, []);
 
   const stopNavigation = () => {
     AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
+    AsyncStorage.setItem('@truck_shift_active', 'false').catch(() => {});
     const pos = lastGpsRef.current;
     navigationActiveRef.current = false;
     setNavigationActive(false);
     shiftStartRef.current = null;
     setElapsedDisplay("00:00");
     setCurrentSpeed(0);
-    // Broadcast offline so Resident map shows idle truck
+    
     socketRef.current?.emit('truck:offline', { truckId: TRUCK_ID });
-    // Disable auto-follow and show idle gray marker at last known position
+    
     if (pos) {
       webViewRef.current?.injectJavaScript(
         `window.stopFollow(); window.stopNavigation(${pos.lat}, ${pos.lng}); true;`
       );
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${TRACKING_SERVER}/api/trucks/location`);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat: 0, lng: 0, heading: 0, speed: 0 }));
     } else {
       webViewRef.current?.injectJavaScript('window.stopFollow(); window.stopNavigation(); true;');
     }
   };
 
-  const listOpacity = sheetAnim.interpolate({
-    inputRange: [translateCollapsed * 0.5, translateCollapsed],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
-
-  const zoneCardScale = zoneCardAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.9, 1],
-    extrapolate: "clamp",
-  });
-  const zoneCardOpacity = zoneCardAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 0, 1],
-    extrapolate: "clamp",
-  });
+  const handleWebViewLoad = useCallback(() => {
+    webViewReady.current = true;
+  }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" backgroundColor="transparent" translucent />
+    <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+      <StatusBar style="dark" />
       <NetworkBanner />
+
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
           source={{ html: buildLeafletHTML(TRUCK_B64) }}
           style={styles.webView}
-          originWhitelist={["*"]}
+          onMessage={handleWebViewMessage}
+          onLoad={handleWebViewLoad}
           javaScriptEnabled
           domStorageEnabled
+          scalesPageToFit={false}
           scrollEnabled={false}
-          bounces={false}
-          onLoad={handleWebViewLoad}
-          onMessage={handleWebViewMessage}
         />
 
-        {/* Loading modal */}
-        <Modal
-          visible={routeLoading}
-          transparent
-          statusBarTranslucent
-          animationType="fade"
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <ActivityIndicator size="large" color="#006A3B" />
-              <Text style={styles.modalTitle}>Updating Route</Text>
-              <Text style={styles.modalSubtitle}>
-                Recalculating the best path...
-              </Text>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Top info bar — mutually exclusive: not-scheduled > progress card > no-route */}
-        {!isFocusMode && (
-          <>
-            {todaySchedules === null ? (
-              <View style={styles.loadingBanner}>
-                <ActivityIndicator size="small" color="#006A3B" />
-                <Text style={styles.loadingBannerText}>Checking for today's routes...</Text>
-              </View>
-            ) : todaySchedules.length === 0 ? (
-              <View style={styles.notScheduledBanner}>
-                <MaterialIcons name="event-busy" size={15} color="#7F1D1D" />
-                <Text style={styles.notScheduledText}>Not scheduled today — navigation locked</Text>
-              </View>
-            ) : (routeAssigned && !navigationActive) ? (
-              <View style={styles.progressCard}>
-                <View style={styles.progressHeader}>
-                  <MaterialIcons name="route" size={16} color="#006A3B" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.progressTitle} numberOfLines={1}>
-                      {assignedRouteName || 'Route Progress'}
-                    </Text>
-                    {assignedRouteBarangay ? (
-                      <Text style={styles.progressBarangay} numberOfLines={1}>
-                        Serving: {assignedRouteBarangay}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.progressPercent}>
-                    {Math.round(progressPercent)}%
-                  </Text>
-                </View>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[styles.progressFill, { width: `${progressPercent}%` }]}
-                  />
-                </View>
-                <Text style={styles.progressText}>
-                  Collection in progress...
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.noRouteBanner}>
-                <MaterialIcons name="info-outline" size={15} color="#92400E" />
-                <Text style={styles.noRouteBannerText}>No route assigned</Text>
-              </View>
-            )}
-          </>
-        )}
-
-        {/* Floating Actions */}
-        {!isFocusMode ? (
-          <View style={styles.floatingActions}>
-            <TouchableOpacity
-              style={[styles.floatingBtn, showTools && styles.activeFloatingBtn]}
-              onPress={() => setShowTools(!showTools)}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="build" size={20} color={showTools ? "#006A3B" : "#1B1C1C"} />
-            </TouchableOpacity>
-
-            {showTools && (
-              <View style={styles.toolsMenu}>
-                <TouchableOpacity
-                  style={styles.toolItem}
-                  onPress={() => { setShowTrashBins(!showTrashBins); setShowTools(false); }}
-                >
-                  <MaterialIcons name={showTrashBins ? "visibility-off" : "visibility"} size={18} color="#6F7A70" />
-                  <Text style={styles.toolText}>{showTrashBins ? "Hide Bins" : "Show Bins"}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.toolItem}
-                  onPress={() => {
-                    const next = !showCityOutline;
-                    setShowCityOutline(next);
-                    webViewRef.current?.injectJavaScript(`window.toggleCityOutline(${next}); true;`);
-                    setShowTools(false);
-                  }}
-                >
-                  <MaterialIcons name="crop-free" size={18} color={showCityOutline ? "#2563EB" : "#6F7A70"} />
-                  <Text style={styles.toolText}>{showCityOutline ? "Hide City Outline" : "City Outline"}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.toolItem}
-                  onPress={() => { setIsFocusMode(true); setShowTools(false); }}
-                >
-                  <MaterialIcons name="fullscreen" size={18} color="#6F7A70" />
-                  <Text style={styles.toolText}>Focus Mode</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.toolItem, { borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 4 }]}
-                  onPress={() => { 
-                    setShowTools(false);
-                    Alert.alert("Report Hazard", "Identify a road hazard at your location:", [
-                      { text: "Road Blocked", onPress: () => Alert.alert("Reported", "Road blockage reported to command center.") },
-                      { text: "Illegal Parking", onPress: () => Alert.alert("Reported", "Illegal parking reported.") },
-                      { text: "Accident", onPress: () => Alert.alert("Reported", "Accident reported.") },
-                      { text: "Cancel", style: "cancel" }
-                    ]);
-                  }}
-                >
-                  <MaterialIcons name="warning" size={18} color="#EF4444" />
-                  <Text style={[styles.toolText, { color: '#EF4444' }]}>Report Hazard</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.floatingBtn, (mapStyle !== 'voyager') && styles.activeFloatingBtn]}
-              activeOpacity={0.7}
-              onPress={() => {
-                setMapStyle(prev => {
-                  let next;
-                  if (prev === 'topographic') next = 'satellite';
-                  else if (prev === 'satellite') next = 'voyager';
-                  else next = 'topographic';
-                  webViewRef.current?.injectJavaScript(`window.setMapStyle('${next}'); true;`);
-                  return next;
-                });
-              }}
-            >
-              <MaterialIcons
-                name={mapStyle === 'satellite' ? "map" : mapStyle === 'topographic' ? "satellite-alt" : "terrain"}
-                size={22}
-                color={(mapStyle !== 'voyager') ? "#006A3B" : "#1B1C1C"}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.floatingBtn}
-              activeOpacity={0.7}
-              onPress={() => {
-                if (lastGpsRef.current && webViewReady.current) {
-                  webViewRef.current.injectJavaScript(
-                    `window.centerMap(${lastGpsRef.current.lat}, ${lastGpsRef.current.lng}); true;`
-                  );
-                }
-              }}
-            >
-              <MaterialIcons name="gps-fixed" size={22} color="#006A3B" />
-            </TouchableOpacity>
-
-            {navigationActive ? (
-              <TouchableOpacity
-                style={[styles.floatingBtn, styles.activeNavBtn]}
-                onPress={stopNavigation}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.floatingBtn}
-                activeOpacity={0.7}
-                onPress={startNavigation}
-              >
-                <MaterialIcons name="navigation" size={22} color="#1B1C1C" />
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <View style={styles.floatingActions}>
-            <TouchableOpacity
-              style={[styles.floatingBtn, styles.activeNavBtn]}
-              onPress={() => setIsFocusMode(false)}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="fullscreen-exit" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Legend */}
-        {!isFocusMode && (
-          <View style={styles.legendCard}>
-            <Text style={styles.legendTitle}>Air Quality</Text>
-            {Object.entries(STATUS_META).map(([status, meta]) => {
-              const sample = heatmapZones.find(z => z.status === status);
-              return (
-                <TouchableOpacity
-                  key={status}
-                  style={styles.legendRow}
-                  onPress={() => {
-                    if (sample) {
-                      setSelectedZone(sample);
-                      Animated.spring(zoneCardAnim, {
-                        toValue: 1,
-                        useNativeDriver: true,
-                        damping: 20,
-                        stiffness: 150,
-                      }).start();
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.legendDot, { backgroundColor: meta.color }]} />
-                  <Text style={styles.legendText}>{meta.level}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Zone overlay (unchanged) */}
+        {/* Selected Heatmap Zone Detail Card */}
         {selectedZone && (
           <Animated.View
             style={[
-              styles.zoneOverlay,
+              styles.zoneCard,
               {
-                opacity: zoneCardOpacity,
-                transform: [{ scale: zoneCardScale }],
+                opacity: zoneCardAnim,
+                transform: [
+                  {
+                    translateY: zoneCardAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [100, 0],
+                    }),
+                  },
+                ],
               },
             ]}
           >
-            <TouchableOpacity
-              style={styles.zoneBackdrop}
-              onPress={dismissZoneCard}
-              activeOpacity={1}
-            />
-            <View
-              style={[styles.zoneCard, { borderColor: selectedZone.color }]}
-            >
+            <View style={styles.zoneCardInner}>
               <View style={styles.zoneHeader}>
                 <View
                   style={[
-                    styles.zoneStatusDot,
+                    styles.zoneStatusIndicator,
                     { backgroundColor: selectedZone.color },
                   ]}
                 />
-                <Text style={styles.zoneStatusText}>
-                  {selectedZone.status.toUpperCase()}
-                </Text>
-                <TouchableOpacity
-                  style={styles.zoneCloseBtn}
-                  onPress={dismissZoneCard}
-                >
-                  <MaterialIcons name="close" size={20} color="#6F7A70" />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.zoneName}>{selectedZone.name}</Text>
-              <Text style={styles.zoneLevel}>{selectedZone.level}</Text>
-              <View style={styles.zoneMetrics}>
-                <View style={styles.zoneMetric}>
-                  <Text style={styles.zoneMetricValue}>
-                    {selectedZone.ammonia}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.zoneName}>{selectedZone.name}</Text>
+                  <Text style={styles.zoneRisk}>
+                    Air Quality Status: {selectedZone.level}
                   </Text>
-                  <Text style={styles.zoneMetricLabel}>Ammonia</Text>
                 </View>
-                <View style={styles.zoneMetricDivider} />
+              </View>
+              <View style={styles.zoneMetrics}>
                 <View style={styles.zoneMetric}>
                   <Text style={styles.zoneMetricValue}>
                     {selectedZone.methane}
@@ -1672,29 +1078,10 @@ export default function CollectorMapScreen() {
                 <View style={styles.zoneMetricDivider} />
                 <View style={styles.zoneMetric}>
                   <Text style={styles.zoneMetricValue}>
-                    {selectedZone.bins}
+                    {selectedZone.ammonia}
                   </Text>
-                  <Text style={styles.zoneMetricLabel}>Bins</Text>
+                  <Text style={styles.zoneMetricLabel}>Ammonia</Text>
                 </View>
-              </View>
-              <View style={styles.zoneInfoRow}>
-                <MaterialIcons name="access-time" size={14} color="#6F7A70" />
-                <Text style={styles.zoneInfoText}>
-                  Updated: {selectedZone.lastUpdated}
-                </Text>
-              </View>
-              <View style={styles.zoneInfoRow}>
-                <MaterialIcons
-                  name="warning"
-                  size={14}
-                  color={selectedZone.color}
-                />
-                <Text style={styles.zoneInfoText}>
-                  Risk Level:{" "}
-                  <Text style={{ fontWeight: "700" }}>
-                    {selectedZone.riskLevel}
-                  </Text>
-                </Text>
               </View>
               <View style={styles.zoneRecommendation}>
                 <MaterialIcons name="lightbulb" size={16} color="#F59E0B" />
@@ -1736,8 +1123,8 @@ export default function CollectorMapScreen() {
                   onPress={startNavigation}
                   activeOpacity={0.9}
                 >
-                  <Text style={styles.bigStartBtnText}>START</Text>
-                  <MaterialIcons name="navigation" size={24} color="#FFF" />
+                  <Text style={styles.bigStartBtnText}>START SHIFT</Text>
+                  <MaterialIcons name="local-shipping" size={24} color="#FFF" />
                 </TouchableOpacity>
               )}
             </View>
@@ -1748,29 +1135,24 @@ export default function CollectorMapScreen() {
                 <View style={styles.focusGuidanceBanner}>
                   <View style={styles.focusGuidanceTop}>
                     <View style={styles.focusTurnIconBox}>
-                      <MaterialIcons name="navigation" size={32} color="#FFF" style={{ transform: [{ rotate: '45deg' }] }} />
+                      <MaterialIcons name="local-shipping" size={32} color="#FFF" />
                     </View>
                     <View style={styles.focusGuidanceText}>
-                      <Text style={styles.focusDistanceText}>150m</Text>
-                      <Text style={styles.focusStreetText}>Next Stop: {truckStop?.name || 'Assigned Area'}</Text>
+                      <Text style={styles.focusDistanceText}>{currentSpeed} km/h</Text>
+                      <Text style={styles.focusStreetText}>Active in {assignedRouteBarangay || 'Assigned Area'}</Text>
                     </View>
                   </View>
                   <View style={styles.focusGuidanceDivider} />
                   <View style={styles.focusGuidanceBottom}>
                     <View style={styles.focusStatsBox}>
-                      <Text style={styles.focusStatLabel}>ETA</Text>
-                      <Text style={styles.focusStatValue}>3 min</Text>
-                    </View>
-                    <View style={styles.focusStatDivider} />
-                    <View style={styles.focusStatsBox}>
-                      <Text style={styles.focusStatLabel}>DISTANCE</Text>
-                      <Text style={styles.focusStatValue}>0.8 km</Text>
+                      <Text style={styles.focusStatLabel}>DURATION</Text>
+                      <Text style={styles.focusStatValue}>{elapsedDisplay}</Text>
                     </View>
                     <TouchableOpacity 
                       style={styles.focusStopBtn}
                       onPress={stopNavigation}
                     >
-                      <Text style={styles.focusStopBtnText}>EXIT</Text>
+                      <Text style={styles.focusStopBtnText}>EXIT SHIFT</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1778,40 +1160,9 @@ export default function CollectorMapScreen() {
             </View>
           )}
         </View>
-
-        {/* Success toast */}
-        {showSuccess && (
-          <Animated.View
-            style={[
-              styles.successToast,
-              {
-                opacity: successAnim,
-                transform: [
-                  {
-                    translateY: successAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-20, 0],
-                      extrapolate: 'clamp',
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.successText}>Stop completed!</Text>
-              {zoneChange ? (
-                <Text style={styles.successSubText}>
-                  Zone: {zoneChange.previousStatus || '?'} → {zoneChange.newStatus}
-                </Text>
-              ) : null}
-            </View>
-          </Animated.View>
-        )}
       </View>
 
-      {/* Bottom Sheet – exactly as in your code */}
+      {/* Bottom Sheet */}
       {!isFocusMode && (
         <Animated.View
           style={[
@@ -1820,530 +1171,123 @@ export default function CollectorMapScreen() {
           ]}
         >
           <View {...panResponder.panHandlers}>
-          <View style={styles.handleContainer}>
-            <View style={styles.handleBar} />
-          </View>
-          <View style={styles.sheetHeader}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.sheetTitle}>
-                  {routeAssigned ? 'Pickup Locations' : 'No Route Assigned'}
+            <View style={styles.handleContainer}>
+              <View style={styles.handleBar} />
+            </View>
+            <View style={styles.sheetHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.sheetTitle}>
+                    {navigationActive ? 'Shift In Progress' : 'Shift Inactive'}
+                  </Text>
+                </View>
+                <Text style={styles.sheetSub}>
+                  {navigationActive
+                    ? `Streaming GPS location for ${assignedRouteBarangay || 'assigned area'}`
+                    : 'Tap Start Shift to begin sharing location'}
                 </Text>
-                {isPreferredRoute && (
-                  <View style={styles.prefBadge}>
-                    <MaterialIcons name="star" size={10} color="#92400E" />
-                    <Text style={styles.prefBadgeText}>Preferred</Text>
-                  </View>
-                )}
-                {isOfflineRoute && (
-                  <View style={[styles.prefBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                    <MaterialIcons name="cloud-off" size={10} color="#92400E" />
-                    <Text style={styles.prefBadgeText}>Cached</Text>
-                  </View>
-                )}
               </View>
-              <Text style={styles.sheetSub}>
-                {routeAssigned
-                  ? isPreferredRoute
-                    ? `Preferred: ${assignedRouteName}`
-                    : 'Swipe up for details'
-                  : 'Waiting for route assignment'}
-              </Text>
+              <TouchableOpacity
+                style={styles.expandBtn}
+                onPress={() => isExpandedRef.current ? collapseSheet() : expandSheet()}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons
+                  name={isExpanded ? "expand-more" : "expand-less"}
+                  size={20}
+                  color="#6F7A70"
+                />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.expandBtn}
-              onPress={() =>
-                isExpandedRef.current ? collapseSheet() : expandSheet()
-              }
-              activeOpacity={0.7}
-            >
-              <MaterialIcons
-                name={isExpanded ? "expand-more" : "expand-less"}
-                size={20}
-                color="#6F7A70"
-              />
-            </TouchableOpacity>
           </View>
-          {!isExpanded && (
-            <View style={styles.swipeHint}>
-              <MaterialIcons
-                name="keyboard-arrow-up"
-                size={16}
-                color="#BECABE"
-              />
-              <Text style={styles.swipeHintText}>
-                {routeAssigned ? 'Swipe up to see all stops' : 'Swipe up for details'}
-              </Text>
-            </View>
-          )}
 
-          {/* Route switcher — only visible when more than one route is scheduled today */}
-          {todaySchedules && todaySchedules.length > 1 && (
+          <Animated.View style={[styles.stopList, { opacity: listOpacity }]}>
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.routeSwitcherScroll}
-              contentContainerStyle={styles.routeSwitcherContent}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              scrollEnabled={isExpanded}
+              contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
             >
-              {todaySchedules.map(s => {
-                const isActive = s._id === activeScheduleId;
-                return (
-                  <TouchableOpacity
-                    key={s._id}
-                    style={[styles.routeSwitchPill, isActive && styles.routeSwitchPillActive]}
-                    onPress={() => setActiveScheduleId(s._id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.routeSwitchDot, isActive && styles.routeSwitchDotActive]} />
-                    <Text style={[styles.routeSwitchText, isActive && styles.routeSwitchTextActive]} numberOfLines={1}>
-                      {s.routeName || 'Route'}
-                    </Text>
-                    {s.startTime ? (
-                      <Text style={[styles.routeSwitchTime, isActive && styles.routeSwitchTimeActive]}>
-                        {s.startTime}
-                      </Text>
-                    ) : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          )}
-        </View>
-
-        <Animated.View style={[styles.stopList, { opacity: listOpacity }]}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-            scrollEnabled={isExpanded}
-            contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
-          >
-            {!routeAssigned ? (
               <View style={styles.unassignedCard}>
                 <View style={styles.unassignedIconWrap}>
-                  <MaterialIcons name="local-shipping" size={36} color="#6F7A70" />
+                  <MaterialIcons name="local-shipping" size={36} color="#006A3B" />
                 </View>
                 <Text style={styles.unassignedTitle}>
-                  {todaySchedules && todaySchedules.length > 0 ? 'No Route in Schedule' : 'Awaiting Route Assignment'}
+                  {assignedRouteBarangay ? `Assigned Area: ${assignedRouteBarangay}` : 'No Area Assigned Today'}
                 </Text>
                 <Text style={styles.unassignedBody}>
-                  {todaySchedules && todaySchedules.length > 0
-                    ? "You're scheduled today but no route was assigned to your schedule. Ask your supervisor to edit the schedule and select a route."
-                    : "Your truck hasn't been assigned a collection route yet. Please wait for your supervisor to assign you a route, or contact your dispatch office."}
+                  {navigationActive
+                    ? `Your shift is active. You are currently streaming GPS coordinates to residents of ${assignedRouteBarangay || 'your assigned area'}.`
+                    : 'Start your shift to let residents track your vehicle location in real-time.'}
                 </Text>
-                <View style={styles.unassignedHint}>
-                  <MaterialIcons name="map" size={14} color="#006A3B" />
-                  <Text style={styles.unassignedHintText}>
-                    You can still explore the map and check pollution heatmap zones while you wait.
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <>
-            {truckStop && (
-              <View style={styles.actionCard}>
-                <View style={styles.actionCardHeader}>
-                  <View style={styles.actionLocationIcon}>
-                    <MaterialIcons
-                      name="location-on"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                  </View>
-                  <View style={styles.actionInfo}>
-                    <Text style={styles.actionLocation}>{truckStop.name}</Text>
-                    <Text style={styles.actionAddress}>
-                      {truckStop.address}
-                    </Text>
-                  </View>
-                  <View style={styles.inProgressBadge}>
-                    <View style={styles.pulseDot} />
-                    <Text style={styles.inProgressText}>Now</Text>
-                  </View>
-                </View>
-                <View style={styles.actionMeta}>
-                  <View style={styles.actionMetaItem}>
-                    <MaterialIcons
-                      name="delete-outline"
-                      size={14}
-                      color="#6F7A70"
-                    />
-                    <Text style={styles.actionMetaText}>
-                      {truckStop.bins} bins
-                    </Text>
-                  </View>
-                  <View style={styles.actionMetaItem}>
-                    <MaterialIcons name="schedule" size={14} color="#6F7A70" />
-                    <Text style={styles.actionMetaText}>{truckStop.time}</Text>
-                  </View>
-                  <View style={styles.actionMetaItem}>
-                    <MaterialIcons name="category" size={14} color="#6F7A70" />
-                    <Text style={styles.actionMetaText}>{truckStop.type}</Text>
-                  </View>
-                </View>
-                {(binStatus.preparedCount > 0 || binStatus.pickedUpCount > 0) && (
-                  <View style={styles.binStatusRow}>
-                    <MaterialIcons name="people" size={13} color="#006A3B" />
-                    <Text style={styles.binStatusText}>
-                      {binStatus.preparedCount} preparing
-                    </Text>
-                    {binStatus.pickedUpCount > 0 && (
-                      <>
-                        <Text style={styles.binStatusDot}>·</Text>
-                        <MaterialIcons name="check-circle" size={13} color="#065F46" />
-                        <Text style={styles.binStatusText}>{binStatus.pickedUpCount} picked up</Text>
-                      </>
-                    )}
-                  </View>
-                )}
-                 <View style={styles.actionButtons}>
-                   <TouchableOpacity
-                     style={styles.reportBtn}
-                     onPress={handleReportIssue}
-                     activeOpacity={0.8}
-                   >
-                     <MaterialIcons name="warning" size={18} color="#BA1A1A" />
-                     <Text style={styles.reportBtnText} numberOfLines={1}>
-                       Report
-                     </Text>
-                   </TouchableOpacity>
-                 </View>
 
-                 {(() => {
-                   const dist = currentLocation ? getDistanceMeters(currentLocation.lat, currentLocation.lng, truckStop.lat, truckStop.lng) : 999;
-                   const isAtStop = dist <= 50;
-                   const canMark = navigationActive && isAtStop;
-                   return (
-                     <View>
-                       <TouchableOpacity
-                         style={[styles.cleanBtn, !canMark && styles.cleanBtnDisabled]}
-                         onPress={() => canMark && handleMarkCleaned(truckStop.id)}
-                         activeOpacity={canMark ? 0.8 : 1}
-                       >
-                         <MaterialIcons
-                           name={!navigationActive ? "play-arrow" : isAtStop ? "check-circle" : "location-off"}
-                           size={18}
-                           color="#FFFFFF"
-                         />
-                         <Text style={styles.cleanBtnText}>
-                           {!navigationActive ? 'Start Navigation First' : isAtStop ? 'Mark Cleaned' : 'Too Far from Stop'}
-                         </Text>
-                       </TouchableOpacity>
-                       {navigationActive && !isAtStop && (
-                         <Text style={styles.distanceHint}>
-                           Get within 50m to collect ({Math.round(dist)}m away)
-                         </Text>
-                       )}
-                     </View>
-                   );
-                 })()}
-              </View>
-            )}
-
-            <Text style={styles.sectionTitle}>All Stops</Text>
-            {stops.map((stop, index) => (
-              <View key={stop.id} style={styles.stopRow}>
-                <View style={styles.timelineCol}>
-                  <View
-                    style={[
-                      styles.stopDot,
-                      stop.status === "completed" && styles.stopDotCompleted,
-                      stop.status === "in-progress" && styles.stopDotActive,
-                    ]}
-                  >
-                    {stop.status === "completed" ? (
-                      <MaterialIcons name="check" size={14} color="#FFFFFF" />
-                    ) : stop.status === "in-progress" ? (
-                      <MaterialIcons
-                        name="local-shipping"
-                        size={14}
-                        color="#FFFFFF"
-                      />
-                    ) : (
-                      <View style={styles.stopDotInner} />
-                    )}
-                  </View>
-                  {index < stops.length - 1 && (
-                    <View
-                      style={[
-                        styles.timelineLine,
-                        stop.status === "completed" &&
-                          styles.timelineLineCompleted,
-                      ]}
-                    />
-                  )}
-                </View>
-                <View
-                  style={[
-                    styles.stopContent,
-                    stop.status === "in-progress" && styles.stopContentActive,
-                  ]}
-                >
-                  <View style={styles.stopRowHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.stopName,
-                          stop.status === "in-progress" &&
-                            styles.stopNameActive,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {stop.name}
-                      </Text>
-                      <Text style={styles.stopAddress} numberOfLines={1}>
-                        {stop.address}
-                      </Text>
-                    </View>
-                    <Text style={styles.stopTime}>{stop.time}</Text>
-                  </View>
-                  <View style={styles.stopRowFooter}>
-                    <View style={styles.stopTags}>
-                      <View style={styles.tag}>
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={11}
-                          color="#6F7A70"
-                        />
-                        <Text style={styles.tagText}>{stop.bins} bins</Text>
+                {/* Live bin status summary if assigned to area */}
+                {assignedRouteBarangay ? (
+                  <View style={{ width: '100%', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1B1C1C', marginBottom: 10 }}>Barangay Bin Status</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <View>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#F59E0B' }}>{binStatus.preparedCount}</Text>
+                        <Text style={{ fontSize: 11, color: '#6F7A70' }}>Bins Preparing</Text>
                       </View>
-                      {stop.weight && (
-                        <View style={styles.tag}>
-                          <MaterialIcons
-                            name="monitor-weight"
-                            size={11}
-                            color="#6F7A70"
-                          />
-                          <Text style={styles.tagText}>{stop.weight}</Text>
-                        </View>
-                      )}
-                      <View style={styles.tag}>
-                        <MaterialIcons
-                          name="category"
-                          size={11}
-                          color="#6F7A70"
-                        />
-                        <Text style={styles.tagText}>{stop.type}</Text>
+                      <View>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#065F46' }}>{binStatus.pickedUpCount}</Text>
+                        <Text style={{ fontSize: 11, color: '#6F7A70' }}>Bins Cleaned</Text>
                       </View>
                     </View>
-                    {stop.status === "completed" ? (
-                      <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                        <View style={styles.cleanedBadge}>
-                          <MaterialIcons name="check-circle" size={12} color="#006A3B" />
-                          <Text style={styles.cleanedText}>Done</Text>
-                        </View>
-                        {stop.dwellLabel && (
-                          <Text style={styles.dwellText}>⏱ {stop.dwellLabel}</Text>
-                        )}
-                      </View>
-                    ) : stop.status === "in-progress" ? (() => {
-                      const dist = currentLocation
-                        ? getDistanceMeters(currentLocation.lat, currentLocation.lng, stop.lat, stop.lng)
-                        : 999;
-                      const isAtStop = dist <= 50;
-                      const canMark = navigationActive && isAtStop;
-                      return (
-                        <TouchableOpacity
-                          style={[styles.markBtn, !canMark && styles.cleanBtnDisabled]}
-                          onPress={() => canMark && handleMarkCleaned(stop.id)}
-                          activeOpacity={canMark ? 0.8 : 1}
-                        >
-                          <Text style={styles.markBtnText}>
-                            {!navigationActive ? "Not Started" : isAtStop ? "Mark Cleaned" : "Too Far"}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })() : (
-                      <TouchableOpacity
-                        style={styles.navBtn}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="navigation"
-                          size={12}
-                          color="#006A3B"
-                        />
-                        <Text style={styles.navBtnText}>Go</Text>
-                      </TouchableOpacity>
-                    )}
+                  </View>
+                ) : null}
+
+                {/* Shift Details */}
+                <View style={{ width: '100%', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1B1C1C', marginBottom: 10 }}>Shift Details</Text>
+                  <View style={{ gap: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, color: '#6F7A70' }}>Status</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: navigationActive ? '#065F46' : '#DC2626' }}>
+                        {navigationActive ? 'On Duty' : 'Off Duty'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, color: '#6F7A70' }}>Elapsed Time</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#1B1C1C' }}>{elapsedDisplay}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, color: '#6F7A70' }}>Current Speed</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#1B1C1C' }}>{currentSpeed} km/h</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
 
-            <View style={styles.sheetFooter}>
-              <View style={styles.footerStats}>
-                <View style={styles.footerStat}>
-                  <Text style={styles.footerStatValue}>{completedCount}</Text>
-                  <Text style={styles.footerStatLabel}>Completed</Text>
-                </View>
-                <View style={styles.footerDivider} />
-                <View style={styles.footerStat}>
-                  <Text style={styles.footerStatValue}>{remainingCount}</Text>
-                  <Text style={styles.footerStatLabel}>Remaining</Text>
-                </View>
-                <View style={styles.footerDivider} />
-                <View style={styles.footerStat}>
-                  <Text style={styles.footerStatValue}>{totalCollected}kg</Text>
-                  <Text style={styles.footerStatLabel}>Collected</Text>
-                </View>
-              </View>
-              {completedCount === stops.length && stops.length > 0 && (
+                {/* Start / Stop Toggle inside Bottom Sheet */}
                 <TouchableOpacity
-                  style={styles.completeRouteBtn}
-                  onPress={completeRoute}
-                  activeOpacity={0.85}
+                  style={[
+                    styles.deviationBtnPrimary,
+                    navigationActive && { backgroundColor: '#DC2626' }
+                  ]}
+                  onPress={navigationActive ? stopNavigation : startNavigation}
+                  activeOpacity={0.8}
                 >
-                  <MaterialIcons name="check-circle" size={18} color="#fff" />
-                  <Text style={styles.completeRouteBtnText}>Complete Route & Notify Residents</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-              </>
-            )}
-          </ScrollView>
-        </Animated.View>
-      </Animated.View>
-      )}
-
-      {/* Weight entry modal — shown when marking a stop as cleaned */}
-      <Modal
-        visible={!!weightModalStop}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setWeightModalStop(null)}
-      >
-        <TouchableOpacity
-          style={styles.weightOverlay}
-          activeOpacity={1}
-          onPress={() => setWeightModalStop(null)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.weightSheet}>
-            <View style={styles.weightHandle} />
-            <Text style={styles.weightTitle}>Enter Collected Weight</Text>
-            <Text style={styles.weightSub}>
-              {stops.find((s) => s.id === weightModalStop)?.name || "This stop"}
-            </Text>
-            {/* Show nearby zone status before confirming */}
-            {(() => {
-              const stop = stops.find((s) => s.id === weightModalStop);
-              if (!stop?.lat || !stop?.lng) return null;
-              const nearby = heatmapZones.find(z => {
-                const dLat = (z.lat - stop.lat) * 111000;
-                const dLng = (z.lng - stop.lng) * 111000 * Math.cos(stop.lat * Math.PI / 180);
-                return Math.sqrt(dLat * dLat + dLng * dLng) <= 350;
-              });
-              if (!nearby) return null;
-              const statusColors = { critical: '#E53935', moderate: '#FDD835', clean: '#4CAF50' };
-              const statusLabels = { critical: '🔴 Critical', moderate: '🟡 Moderate', clean: '🟢 Clean' };
-              return (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: statusColors[nearby.status] || '#FDD835' }} />
-                  <Text style={{ fontSize: 11, color: '#374151', fontWeight: '600' }}>
-                    Current zone: {statusLabels[nearby.status] || nearby.status}
+                  <MaterialIcons name={navigationActive ? "stop" : "play-arrow"} size={18} color="#FFFFFF" />
+                  <Text style={styles.deviationBtnPrimaryText}>
+                    {navigationActive ? 'End Shift' : 'Start Shift'}
                   </Text>
-                </View>
-              );
-            })()}
-            <View style={styles.weightInputRow}>
-              <TextInput
-                style={styles.weightInput}
-                value={weightInput}
-                onChangeText={setWeightInput}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor="#9CA3AF"
-                maxLength={4}
-                autoFocus
-              />
-              <Text style={styles.weightUnit}>kg</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.weightConfirmBtn}
-              onPress={() => confirmCleanWithWeight(weightInput)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.weightConfirmText}>Confirm Cleaned</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.weightSkipBtn}
-              onPress={() => confirmCleanWithWeight("")}
-            >
-              <Text style={styles.weightSkipText}>Skip — log weight later</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+                </TouchableOpacity>
 
-      {/* Route deviation warning modal */}
-      <Modal
-        visible={deviationAlert}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDeviationAlert(false)}
-      >
-        <View style={styles.deviationBackdrop}>
-          <View style={styles.deviationCard}>
-            <TouchableOpacity
-              style={styles.deviationClose}
-              onPress={() => setDeviationAlert(false)}
-            >
-              <MaterialIcons name="close" size={20} color="#6F7A70" />
-            </TouchableOpacity>
-
-            <View style={styles.deviationIconWrap}>
-              <MaterialIcons name="warning" size={38} color="#F59E0B" />
-            </View>
-            <Text style={styles.deviationTitle}>Off Route Warning</Text>
-            <Text style={styles.deviationBody}>
-              You are approximately{' '}
-              <Text style={{ fontWeight: '700', color: '#BA1A1A' }}>
-                {deviationInfo?.distance}m
-              </Text>{' '}
-              from your assigned route.{'\n'}
-              Please return to your designated collection path.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.deviationBtnPrimary}
-              onPress={() => { setDeviationAlert(false); offRouteCountRef.current = 0; }}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.deviationBtnPrimaryText}>I'm Back on Route</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.deviationBtnSecondary}
-              onPress={() => { setDeviationAlert(false); handleReportIssue(); }}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="report-problem" size={18} color="#B45309" />
-              <Text style={styles.deviationBtnSecondaryText}>Report Issue</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.deviationBtnOutline}
-              onPress={() => {
-                setDeviationAlert(false);
-                socketRef.current?.emit('truck:contact-dispatch', {
-                  truckId: TRUCK_ID,
-                  driverName: user?.driverName || '',
-                  message: 'Driver requesting assistance — off assigned route',
-                });
-                Alert.alert(
-                  'Dispatch Notified',
-                  'Your supervisor has been alerted. Help is on the way.',
-                  [{ text: 'OK' }]
-                );
-              }}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="phone" size={18} color="#006A3B" />
-              <Text style={styles.deviationBtnOutlineText}>Contact Dispatch</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+                {/* Report Hazard button */}
+                <TouchableOpacity
+                  style={[styles.deviationBtnOutline, { marginTop: 8 }]}
+                  onPress={handleReportIssue}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="warning" size={18} color="#006A3B" />
+                  <Text style={styles.deviationBtnOutlineText}>Report Hazard</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* Overflowing Bin Detail Modal */}
       <Modal
@@ -2387,7 +1331,7 @@ export default function CollectorMapScreen() {
             {selectedReport?.reportImage ? (
               <View style={styles.reportImageContainer}>
                 <ActivityIndicator size="small" color="#006A3B" style={styles.imageLoader} />
-                <Animated.Image 
+                <Image 
                   source={{ uri: selectedReport.reportImage }} 
                   style={styles.reportImage} 
                 />
@@ -2412,7 +1356,9 @@ export default function CollectorMapScreen() {
   );
 }
 
-// ── Styles (exactly as in your paste) ────────────────────
+// Keep opacity mapping for scroll sheet transition
+const listOpacity = 1;
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FBF9F8" },
   mapContainer: { flex: 1 },
