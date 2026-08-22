@@ -416,7 +416,7 @@ export default function MapScreen() {
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const liveTruckPos = useRef(null);
-  const webViewReady = useRef(false);
+  const [webViewReady, setWebViewReady] = useState(false);
   const isFollowingRef = useRef(!!focusTruck);
   const initialTrucks = useRef([]);
   const iotAreasRef = useRef([]);
@@ -496,18 +496,18 @@ export default function MapScreen() {
 
   // Inject heatmap circles whenever iotAreas changes and WebView is ready
   useEffect(() => {
-    if (!webViewReady.current || !iotAreas.length) return;
+    if (!webViewReady || !iotAreas.length) return;
     webViewRef.current?.injectJavaScript('window.clearHeatmapAreas(); true;');
     iotAreas.forEach((area) => {
       webViewRef.current?.injectJavaScript(
         `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
       );
     });
-  }, [iotAreas]);
+  }, [iotAreas, webViewReady]);
 
   // Inject sitio markers & route polylines into WebView
   useEffect(() => {
-    if (!webViewReady.current) return;
+    if (!webViewReady) return;
     if (sitioList.length === 0) {
       webViewRef.current?.injectJavaScript(`window.clearResidentStops(); window.updateTruckRoute('[]'); true;`);
       return;
@@ -548,7 +548,7 @@ export default function MapScreen() {
     }
     const routeCoordsJson = JSON.stringify(routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
-  }, [sitioList, todaySchedules, webViewReady.current]);
+  }, [sitioList, todaySchedules, webViewReady]);
 
 
 
@@ -565,7 +565,7 @@ export default function MapScreen() {
       if (currentBarangay) {
         setTruckBarangay(currentBarangay);
       }
-      if (webViewReady.current) {
+      if (webViewReady) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(
           `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}); true;`,
@@ -578,7 +578,7 @@ export default function MapScreen() {
         setLiveTruckOnline(false);
         const pos = liveTruckPos.current;
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
-        if (webViewReady.current) {
+        if (webViewReady) {
           if (pos) {
             webViewRef.current?.injectJavaScript(
               `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
@@ -602,7 +602,7 @@ export default function MapScreen() {
           ? prev.map((a) => (a._id === area._id ? area : a))
           : [...prev, area];
       });
-      if (webViewReady.current) {
+      if (webViewReady) {
         webViewRef.current?.injectJavaScript(
           `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
         );
@@ -630,7 +630,7 @@ export default function MapScreen() {
         const idx = prev.findIndex((a) => a._id === id);
         if (idx >= 0) {
           const merged = { ...prev[idx], status: update.newStatus, intensity: updatedArea.intensity };
-          if (webViewReady.current) {
+          if (webViewReady) {
             webViewRef.current?.injectJavaScript(
               `window.updateHeatmapArea(${JSON.stringify(merged)}); true;`,
             );
@@ -660,7 +660,7 @@ export default function MapScreen() {
   }, [fetchSitiosAndSchedules]);
 
   const handleWebViewLoad = useCallback(() => {
-    webViewReady.current = true;
+    setWebViewReady(true);
     
     // Inject all initial online trucks
     initialTrucks.current.forEach((t) => {
