@@ -683,20 +683,7 @@ export default function MapScreen() {
         `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
       );
     });
-    // Inject initial sitio markers
-    if (sitioList.length > 0) {
-      const markersPayload = sitioList.map(s => {
-        let status = "upcoming";
-        const sched = todaySchedules?.find(sch => sch.sitio === s.name);
-        if (sched) {
-          status = sched.status === "completed" ? "completed" : "in-progress";
-        }
-        return { lat: s.lat, lng: s.lng, status, name: s.name };
-      });
-      const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
-    }
-  }, [sitioList, todaySchedules]);
+  }, []);
 
   const handleWebViewMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
