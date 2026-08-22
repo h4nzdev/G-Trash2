@@ -3468,8 +3468,10 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
     // Call OpenRouteService to obtain actual road driving path coordinates
     let routeCoords = [];
     if (sitioTasks.length >= 2) {
+      console.log(`[ORS Routing] Attempting road routing for ${sitioTasks.length} stops:`, sitioTasks.map(t => t.name).join(' -> '));
       try {
         const coordinates = sitioTasks.map(t => [t.lng, t.lat]);
+        console.log(`[ORS Routing] Sending coordinates:`, JSON.stringify(coordinates));
         const orsRes = await axios.post(
           'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
           { coordinates },
@@ -3484,13 +3486,22 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
         const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
         if (coords && coords.length > 0) {
           routeCoords = coords.map(c => [c[1], c[0]]);
+          console.log(`[ORS Routing] SUCCESS! Received ${routeCoords.length} detailed road path points.`);
+        } else {
+          console.warn(`[ORS Routing] WARNING: Response had no features geometry coordinates.`);
         }
       } catch (err) {
-        console.error("OpenRouteService request failed, falling back to straight lines:", err.message);
+        console.error(`[ORS Routing] ERROR: Request failed:`, err.message);
+        if (err.response) {
+          console.error(`[ORS Routing] Response status:`, err.response.status, `body:`, JSON.stringify(err.response.data));
+        }
       }
+    } else {
+      console.log(`[ORS Routing] Less than 2 stops scheduled. Skipping routing.`);
     }
     if (routeCoords.length === 0) {
       routeCoords = sitioTasks.map(t => [t.lat, t.lng]);
+      console.log(`[ORS Routing] Using straight lines fallback with ${routeCoords.length} points.`);
     }
 
     const schedule = await Schedule.create({
