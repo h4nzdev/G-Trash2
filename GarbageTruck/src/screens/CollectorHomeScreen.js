@@ -170,6 +170,34 @@ export default function CollectorHomeScreen() {
     );
   };
 
+  // Toggle specific sitio task completed inside a sequential schedule
+  const toggleTaskComplete = (scheduleId, sitioName, isCompleted) => {
+    if (isCompleted) return; // No-op if already complete
+    Alert.alert(
+      "Complete Task",
+      `Mark "${sitioName}" collection task as completed?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Mark Completed",
+          onPress: () => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", `${API_URL}/api/schedules/${scheduleId}/complete-task`);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.onload = () => {
+              if (xhr.status === 200) {
+                fetchScheduleData();
+              } else {
+                Alert.alert("Error", "Could not complete task.");
+              }
+            };
+            xhr.send(JSON.stringify({ sitioName }));
+          }
+        }
+      ]
+    );
+  };
+
   // AI Chat
   const openAiModal = () => {
     const areaName = todaySchedules[0]?.routeName || "Unassigned";
@@ -342,42 +370,88 @@ export default function CollectorHomeScreen() {
             <View style={styles.surface}>
               {todaySchedules.length > 0 ? (
                 todaySchedules.map((sched, i) => (
-                  <View key={sched._id || i} style={styles.schedItem}>
-                    <TouchableOpacity
-                      onPress={() => toggleScheduleComplete(sched._id, sched.status)}
-                      activeOpacity={sched.status === "completed" ? 1 : 0.7}
-                      style={{ padding: 4 }}
-                    >
-                      <MaterialIcons
-                        name={sched.status === "completed" ? "check-box" : "check-box-outline-blank"}
-                        size={24}
-                        color={sched.status === "completed" ? "#006A3B" : "#9CA3AF"}
-                      />
-                    </TouchableOpacity>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={[
-                        styles.schedTitle,
-                        sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
+                  <View key={sched._id || i} style={[styles.schedItem, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{ padding: 4 }}>
+                        <MaterialIcons
+                          name="local-shipping"
+                          size={24}
+                          color={sched.status === "completed" ? "#006A3B" : "#9CA3AF"}
+                        />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={[
+                          styles.schedTitle,
+                          sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
+                        ]}>
+                          {sched.routeName || "Collection Duty"}
+                        </Text>
+                        <Text style={styles.schedMeta}>
+                          {sched.startTime ? `${sched.startTime}` : "Time TBD"}
+                          {sched.endTime ? ` — ${sched.endTime}` : ""}
+                        </Text>
+                        {sched.notes ? <Text style={styles.schedNotes}>{sched.notes}</Text> : null}
+                      </View>
+                      <View style={[
+                        styles.schedStatus,
+                        sched.status === "completed" && styles.schedStatusDone,
                       ]}>
-                        {sched.routeName || "Collection Duty"}
-                      </Text>
-                      <Text style={styles.schedMeta}>
-                        {sched.startTime ? `${sched.startTime}` : "Time TBD"}
-                        {sched.endTime ? ` — ${sched.endTime}` : ""}
-                      </Text>
-                      {sched.notes ? <Text style={styles.schedNotes}>{sched.notes}</Text> : null}
+                        <Text style={[
+                          styles.schedStatusText,
+                          sched.status === "completed" && styles.schedStatusTextDone,
+                        ]}>
+                          {sched.status === "completed" ? "Done" : sched.status === "missed" ? "Missed" : "Pending"}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={[
-                      styles.schedStatus,
-                      sched.status === "completed" && styles.schedStatusDone,
-                    ]}>
-                      <Text style={[
-                        styles.schedStatusText,
-                        sched.status === "completed" && styles.schedStatusTextDone,
-                      ]}>
-                        {sched.status === "completed" ? "Done" : sched.status === "missed" ? "Missed" : "Pending"}
-                      </Text>
-                    </View>
+                    
+                    {/* Render Sitio Checklist Tasks */}
+                    {sched.sitioTasks && sched.sitioTasks.length > 0 ? (
+                      <View style={{ marginTop: 8, paddingLeft: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 6 }}>
+                        {sched.sitioTasks.map((task, idx) => (
+                          <View key={task._id || idx} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6 }}>
+                            <TouchableOpacity
+                              onPress={() => toggleTaskComplete(sched._id, task.name, task.completed)}
+                              activeOpacity={task.completed ? 1 : 0.7}
+                              style={{ padding: 4 }}
+                            >
+                              <MaterialIcons
+                                name={task.completed ? "check-box" : "check-box-outline-blank"}
+                                size={22}
+                                color={task.completed ? "#006A3B" : "#9CA3AF"}
+                              />
+                            </TouchableOpacity>
+                            <Text style={[
+                              { fontSize: 13, marginLeft: 6, fontWeight: '500', color: '#374151' },
+                              task.completed && { textDecorationLine: "line-through", color: "#9CA3AF" }
+                            ]}>
+                              {task.name}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : sched.sitio ? (
+                      // Legacy single-sitio schedule manual completion fallback
+                      <View style={{ marginTop: 4, paddingLeft: 12 }}>
+                        <TouchableOpacity
+                          onPress={() => toggleScheduleComplete(sched._id, sched.status)}
+                          activeOpacity={sched.status === "completed" ? 1 : 0.7}
+                          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}
+                        >
+                          <MaterialIcons
+                            name={sched.status === "completed" ? "check-box" : "check-box-outline-blank"}
+                            size={22}
+                            color={sched.status === "completed" ? "#006A3B" : "#9CA3AF"}
+                          />
+                          <Text style={[
+                            { fontSize: 13, marginLeft: 6, fontWeight: '500', color: '#374151' },
+                            sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
+                          ]}>
+                            {sched.sitio}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
                   </View>
                 ))
               ) : (

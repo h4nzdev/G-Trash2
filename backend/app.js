@@ -190,6 +190,15 @@ const scheduleSchema = new mongoose.Schema({
   routeName: { type: String, default: "" },
   barangay: { type: String, default: "" },
   sitio: { type: String, default: "" },
+  sitioTasks: [
+    {
+      name: { type: String, required: true },
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+      completed: { type: Boolean, default: false },
+      completedAt: { type: Date }
+    }
+  ],
   startTime: { type: String, default: "" }, // HH:MM for ordering
   endTime: { type: String, default: "" }, // Optional HH:MM
   status: { type: String, enum: ["pending", "completed", "missed"], default: "pending" },
@@ -1814,7 +1823,30 @@ app.post("/api/trucks/location", async (req, res) => {
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const activeSchedules = await Schedule.find({ date: today, truckId: truckId.toUpperCase(), status: "pending" });
     for (const s of activeSchedules) {
-      if (s.sitio) {
+      let changed = false;
+
+      // Handle new sitioTasks sequence geofencing
+      if (s.sitioTasks && s.sitioTasks.length > 0) {
+        for (const task of s.sitioTasks) {
+          if (task.completed) continue;
+          const dist = haversineM(lat, lng, task.lat, task.lng);
+          if (dist <= 100) {
+            task.completed = true;
+            task.completedAt = now;
+            changed = true;
+            console.log(`[Auto-Complete] Truck ${truckId} came within ${dist.toFixed(1)}m of Sitio Task ${task.name}. Marked task completed.`);
+          }
+        }
+        if (changed) {
+          const allDone = s.sitioTasks.every(t => t.completed);
+          if (allDone) {
+            s.status = "completed";
+          }
+          await s.save();
+          io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
+        }
+      } else if (s.sitio) {
+        // Fallback for legacy single-sitio schedules
         const sitioDoc = await Sitio.findOne({ name: s.sitio, barangay: s.barangay });
         if (sitioDoc) {
           const dist = haversineM(lat, lng, sitioDoc.lat, sitioDoc.lng);
@@ -1822,7 +1854,7 @@ app.post("/api/trucks/location", async (req, res) => {
             s.status = "completed";
             await s.save();
             io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
-            console.log(`[Auto-Complete] Truck ${truckId} came within ${dist.toFixed(1)}m of Sitio ${s.sitio}. Marked completed.`);
+            console.log(`[Auto-Complete] Truck ${truckId} came within ${dist.toFixed(1)}m of Legacy Sitio ${s.sitio}. Marked completed.`);
           }
         }
       }
@@ -3373,7 +3405,7 @@ app.post("/api/sitios", authMiddleware, async (req, res) => {
 
 app.post("/api/schedules", authMiddleware, async (req, res) => {
   try {
-    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio } =
+    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio, sitios: rawSitios } =
       req.body;
     const truckId = rawTruckId?.toUpperCase();
     if (!date || !truckId)
@@ -3382,6 +3414,14 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
     // Validate that barangay is selected when creating schedule
     if (!barangay) {
       return res.status(400).json({ error: "Barangay is required" });
+    }
+
+    // Normalize sitios to an array
+    let sitios = [];
+    if (Array.isArray(rawSitios)) {
+      sitios = rawSitios;
+    } else if (sitio) {
+      sitios = [sitio];
     }
 
     // Verify truck assignment in Fleet database
@@ -3398,26 +3438,28 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       }
     }
 
-    // Verify sitio if provided
-    if (sitio) {
-      const verifiedSitio = await Sitio.findOne({ name: sitio, barangay });
+    // Verify and fetch coordinates for each sitio in sequence
+    const sitioTasks = [];
+    for (const name of sitios) {
+      const verifiedSitio = await Sitio.findOne({ name, barangay });
       if (!verifiedSitio) {
-        return res.status(400).json({ error: `Sitio "${sitio}" is not verified in Barangay ${barangay}` });
+        return res.status(400).json({ error: `Sitio "${name}" is not verified in Barangay ${barangay}` });
       }
+      sitioTasks.push({
+        name: verifiedSitio.name,
+        lat: verifiedSitio.lat,
+        lng: verifiedSitio.lng,
+        completed: false
+      });
     }
 
-    const finalRouteName = routeName || (barangay && sitio ? `${barangay} → ${sitio}` : routeName || barangay || '');
+    const finalRouteName = routeName || (barangay && sitios.length > 0 ? `${barangay} → ${sitios.join(" → ")}` : routeName || barangay || '');
 
-    // Prevent exact duplicate (same truck + same route/sitio on the same day)
-    const dupFilter = { date, truckId };
-    if (routeId) dupFilter.routeId = routeId;
-    else if (sitio) dupFilter.sitio = sitio;
-    else dupFilter.routeName = finalRouteName;
-
-    const dup = await Schedule.findOne(dupFilter);
+    // Prevent exact duplicate (same truck + same route on the same day)
+    const dup = await Schedule.findOne({ date, truckId, routeName: finalRouteName });
     if (dup) {
       return res.status(409).json({
-        error: "This truck is already scheduled for this area on this date",
+        error: "This truck is already scheduled for this sequence route on this date",
       });
     }
 
@@ -3428,7 +3470,8 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       routeId: routeId || null,
       routeName: finalRouteName,
       barangay,
-      sitio: sitio || "",
+      sitio: sitios[0] || "",
+      sitioTasks,
       startTime: startTime || "",
       endTime: endTime || "",
       notes,
@@ -3466,20 +3509,69 @@ app.delete("/api/schedules/:id", authMiddleware, async (req, res) => {
 
 app.post("/api/schedules/:id/complete", async (req, res) => {
   try {
-    const schedule = await Schedule.findByIdAndUpdate(
-      req.params.id,
-      { status: "completed" },
-      { new: true }
-    );
-    if (schedule) {
-      io.emit("schedule:changed", {
-        truckId: schedule.truckId,
-        date: schedule.date,
-      });
-      res.json(schedule);
-    } else {
-      res.status(404).json({ error: "Schedule not found" });
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
     }
+    
+    schedule.status = "completed";
+    if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
+      schedule.sitioTasks.forEach(t => {
+        t.completed = true;
+        if (!t.completedAt) t.completedAt = new Date();
+      });
+    }
+    
+    await schedule.save();
+    
+    io.emit("schedule:changed", {
+      truckId: schedule.truckId,
+      date: schedule.date,
+    });
+    res.json(schedule);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/schedules/:id/complete-task", async (req, res) => {
+  const { sitioName } = req.body;
+  if (!sitioName) return res.status(400).json({ error: "sitioName is required" });
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
+    }
+
+    let matched = false;
+    if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
+      schedule.sitioTasks.forEach(t => {
+        if (t.name.toLowerCase() === sitioName.toLowerCase()) {
+          t.completed = true;
+          if (!t.completedAt) t.completedAt = new Date();
+          matched = true;
+        }
+      });
+    }
+
+    if (!matched) {
+      return res.status(404).json({ error: `Sitio "${sitioName}" not found in this schedule` });
+    }
+
+    // Auto-complete main schedule if all sitio tasks are completed
+    const allDone = schedule.sitioTasks.every(t => t.completed);
+    if (allDone) {
+      schedule.status = "completed";
+    }
+
+    await schedule.save();
+
+    io.emit("schedule:changed", {
+      truckId: schedule.truckId,
+      date: schedule.date,
+    });
+
+    res.json(schedule);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

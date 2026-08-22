@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import API from '../config';
 import RouteManager from './RouteManager';
@@ -158,21 +159,16 @@ export default function ScheduleRoute() {
     try {
       const truck = fleet.find(t => t.truckId === selTruck);
       
-      // Concurrently create schedule documents for each selected sitio
-      const promises = selectedSitios.map(sitio => 
-        axios.post(`${API}/api/schedules`, {
-          date: selectedDate,
-          truckId: selTruck,
-          driverName: truck?.driverName || '',
-          barangay: selectedBarangay,
-          sitio,
-          startTime,
-          endTime,
-          notes,
-        })
-      );
-      
-      await Promise.all(promises);
+      await axios.post(`${API}/api/schedules`, {
+        date: selectedDate,
+        truckId: selTruck,
+        driverName: truck?.driverName || '',
+        barangay: selectedBarangay,
+        sitios: selectedSitios,
+        startTime,
+        endTime,
+        notes,
+      });
 
       setShowModal(false);
       setSelTruck('');
@@ -594,6 +590,61 @@ export default function ScheduleRoute() {
                         })
                       )}
                     </div>
+
+                    {/* Live Route Preview Map */}
+                    {selectedSitios.length > 0 && (
+                      <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
+                        <MapContainer
+                          center={[
+                            sitioList.find(s => s.name === selectedSitios[0])?.lat || getBarangayCenter(selectedBarangay).lat,
+                            sitioList.find(s => s.name === selectedSitios[0])?.lng || getBarangayCenter(selectedBarangay).lng
+                          ]}
+                          zoom={14}
+                          style={{ height: '100%', width: '100%' }}
+                          zoomControl={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            attribution='&copy; OpenStreetMap'
+                          />
+                          {selectedSitios.map((name, index) => {
+                            const s = sitioList.find(s => s.name === name);
+                            if (!s) return null;
+                            return (
+                              <CircleMarker
+                                key={s._id}
+                                center={[s.lat, s.lng]}
+                                pathOptions={{
+                                  color: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
+                                  fillColor: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
+                                  fillOpacity: 0.8
+                                }}
+                                radius={6}
+                              />
+                            );
+                          })}
+                          {selectedSitios.length > 1 && (
+                            <RoutePolyline
+                              positions={selectedSitios
+                                .map(name => {
+                                  const s = sitioList.find(s => s.name === name);
+                                  return s ? [s.lat, s.lng] : null;
+                                })
+                                .filter(Boolean)}
+                            />
+                          )}
+                          <MapController
+                            center={[
+                              sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lat || getBarangayCenter(selectedBarangay).lat,
+                              sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lng || getBarangayCenter(selectedBarangay).lng
+                            ]}
+                          />
+                        </MapContainer>
+                        <div className="absolute bottom-2 right-2 bg-slate-900/70 text-[9px] text-white px-2 py-1 rounded font-mono z-[1000] pointer-events-none">
+                          Route Preview ({selectedSitios.length} stops)
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl animate-in fade-in duration-200">
@@ -816,4 +867,16 @@ function MapController({ center }) {
     }
   }, [center, map]);
   return null;
+}
+
+function RoutePolyline({ positions }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions && positions.length > 1) {
+      const bounds = L.latLngBounds(positions);
+      map.fitBounds(bounds, { padding: [20, 20] });
+    }
+  }, [positions, map]);
+
+  return <Polyline positions={positions} pathOptions={{ color: '#006A3B', weight: 4, opacity: 0.8 }} />;
 }

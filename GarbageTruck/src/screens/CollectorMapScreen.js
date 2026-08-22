@@ -660,18 +660,26 @@ export default function CollectorMapScreen() {
     xhr.send();
   }, [assignedRouteBarangay]);
 
-  // Inject sitio markers into WebView
+  // Inject sitio markers & route polylines into WebView
   useEffect(() => {
     if (!webViewReady.current) return;
     if (sitioList.length === 0) {
-      webViewRef.current?.injectJavaScript(`window.clearStopMarkers(); true;`);
+      webViewRef.current?.injectJavaScript(`window.clearStopMarkers(); window.updateTruckRoute('[]'); true;`);
       return;
     }
     const markersPayload = sitioList.map(s => {
       let status = "upcoming";
-      const sched = todaySchedules?.find(sch => sch.sitio === s.name);
-      if (sched) {
-        status = sched.status === "completed" ? "completed" : "in-progress";
+      for (const sched of todaySchedules || []) {
+        if (sched.sitioTasks && sched.sitioTasks.length > 0) {
+          const task = sched.sitioTasks.find(t => t.name.toLowerCase() === s.name.toLowerCase());
+          if (task) {
+            status = task.completed ? "completed" : "in-progress";
+            break;
+          }
+        } else if (sched.sitio && sched.sitio.toLowerCase() === s.name.toLowerCase()) {
+          status = sched.status === "completed" ? "completed" : "in-progress";
+          break;
+        }
       }
       return {
         lat: s.lat,
@@ -682,6 +690,17 @@ export default function CollectorMapScreen() {
     });
     const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.addStopMarkers('${markersJson}'); true;`);
+
+    // Draw route polyline connecting selected sequential sitios in order
+    let routeCoords = [];
+    for (const sched of todaySchedules || []) {
+      if (sched.sitioTasks && sched.sitioTasks.length > 1) {
+        const coords = sched.sitioTasks.map(t => [t.lat, t.lng]);
+        routeCoords = [...routeCoords, ...coords];
+      }
+    }
+    const routeCoordsJson = JSON.stringify(routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
   }, [sitioList, todaySchedules, webViewReady.current]);
 
   // Fetch overflowing bin reports
