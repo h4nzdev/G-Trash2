@@ -7,7 +7,7 @@ import API from '../config';
 export default function FleetManagement() {
   const navigate = useNavigate();
   const [fleet, setFleet] = useState([]);
-  const [routes, setRoutes] = useState([]);
+  const [barangays, setBarangays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -41,12 +41,12 @@ export default function FleetManagement() {
     setLoading(true);
     setError(null);
     try {
-      const [fleetRes, routesRes] = await Promise.all([
+      const [fleetRes, barangaysRes] = await Promise.all([
         axios.get(`${API}/api/fleet`),
-        axios.get(`${API}/api/routes`),
+        axios.get(`${API}/api/barangays`),
       ]);
       setFleet(fleetRes.data);
-      setRoutes(routesRes.data);
+      setBarangays(barangaysRes.data);
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) {
@@ -74,8 +74,8 @@ export default function FleetManagement() {
     }
   };
 
-  // Unique barangays from existing routes (for shared truck assignment)
-  const routeBarangays = [...new Set(routes.map(r => r.barangay).filter(Boolean))].sort();
+  // List of barangays for shared truck assignment
+  const routeBarangays = [...new Set(barangays)].sort();
 
   const toggleServiceBarangay = (brgy) => {
     setServiceBarangays(prev =>
@@ -171,11 +171,7 @@ export default function FleetManagement() {
           </button>
         </div>
       </div>
-      {routes.length === 0 && !loading && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-          No routes found. Create routes in the Route Builder first, then assign them to trucks.
-        </div>
-      )}
+
 
       {/* Main Table View */}
       {error && (
@@ -431,22 +427,6 @@ export default function FleetManagement() {
                     </div>
 
                     <hr className="border-slate-100 my-2" />
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Assigned Route</label>
-                      <select
-                        value={route}
-                        onChange={(e) => setRoute(e.target.value)}
-                        className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm"
-                      >
-                        <option value="">— Select route —</option>
-                        {routes.map((r) => (
-                          <option key={r._id} value={r.name}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck Type</label>

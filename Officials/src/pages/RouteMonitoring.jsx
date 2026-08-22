@@ -470,13 +470,47 @@ export default function RouteMonitoring() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [routesRes, trucksRes, fleetRes, reportsRes] = await Promise.all([
-        axios.get(`${API}/api/routes`),
+      const [schedulesRes, trucksRes, fleetRes, reportsRes] = await Promise.all([
+        axios.get(`${API}/api/schedules/today`),
         axios.get(`${API}/api/trucks`),
         axios.get(`${API}/api/fleet`),
         axios.get(`${API}/api/reports?category=Overflowing Bin`),
       ]);
-      setRoutes(routesRes.data);
+
+      // Map dynamic scheduled sitio sequences as routes
+      const todayScheds = schedulesRes.data.schedules || [];
+      const mappedRoutes = todayScheds.map(sched => {
+        const coords = (sched.sitioTasks || []).map(t => [t.lat, t.lng]);
+        const waypoints = (sched.sitioTasks || []).map(t => ({
+          name: t.name,
+          lat: t.lat,
+          lng: t.lng,
+          completed: t.completed
+        }));
+        
+        const completedCount = (sched.sitioTasks || []).filter(t => t.completed).length;
+
+        return {
+          _id: sched._id,
+          name: sched.routeName || sched.barangay || "Collection Duty",
+          truckId: sched.truckId,
+          driverName: sched.driverName,
+          notes: sched.notes,
+          barangay: sched.barangay,
+          routeCoords: coords,
+          waypoints: waypoints,
+          currentStopIndex: completedCount,
+          status: sched.status
+        };
+      });
+
+      // Filter routes by LGU official's barangay restriction if set
+      const filteredRoutes = (official?.barangay && official.barangay !== 'All')
+        ? mappedRoutes.filter(r => r.barangay?.toLowerCase() === official.barangay.toLowerCase())
+        : mappedRoutes;
+
+      setRoutes(filteredRoutes);
+
       const truckMap = {};
       trucksRes.data.forEach((t) => {
         truckMap[t.truckId] = t;
@@ -484,8 +518,8 @@ export default function RouteMonitoring() {
       setTrucks(truckMap);
       setFleet(fleetRes.data);
       setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
-    } catch {
-      /* silent */
+    } catch (err) {
+      console.error("Failed to load route monitoring data:", err);
     } finally {
       setLoading(false);
     }
