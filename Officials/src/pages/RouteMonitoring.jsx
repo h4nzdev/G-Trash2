@@ -480,7 +480,9 @@ export default function RouteMonitoring() {
       // Map dynamic scheduled sitio sequences as routes
       const todayScheds = schedulesRes.data.schedules || [];
       const mappedRoutes = todayScheds.map(sched => {
-        const coords = (sched.sitioTasks || []).map(t => [t.lat, t.lng]);
+        const coords = sched.routeCoords && sched.routeCoords.length > 0
+          ? sched.routeCoords
+          : (sched.sitioTasks || []).map(t => [t.lat, t.lng]);
         const waypoints = (sched.sitioTasks || []).map(t => ({
           name: t.name,
           lat: t.lat,

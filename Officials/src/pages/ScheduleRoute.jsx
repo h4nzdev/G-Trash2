@@ -51,6 +51,41 @@ export default function ScheduleRoute() {
   const [sitioList, setSitioList] = useState([]);
   const [selectedBarangay, setSelectedBarangay] = useState('');
   const [selectedSitios, setSelectedSitios] = useState([]);
+  const [previewCoords, setPreviewCoords] = useState([]);
+
+  // Fetch real road route coordinates from OpenRouteService for modal preview
+  useEffect(() => {
+    if (selectedSitios.length < 2) {
+      setPreviewCoords([]);
+      return;
+    }
+    const wps = selectedSitios.map(name => {
+      const s = sitioList.find(s => s.name === name);
+      return s ? { lat: s.lat, lng: s.lng } : null;
+    }).filter(Boolean);
+    
+    if (wps.length < 2) {
+      setPreviewCoords([]);
+      return;
+    }
+
+    const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=';
+    axios.post(
+      'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+      { coordinates: wps.map(w => [w.lng, w.lat]) },
+      { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' } }
+    ).then(res => {
+      const coords = res.data.features?.[0]?.geometry?.coordinates;
+      if (coords && coords.length > 0) {
+        setPreviewCoords(coords.map(c => [c[1], c[0]]));
+      } else {
+        setPreviewCoords(wps.map(w => [w.lat, w.lng]));
+      }
+    }).catch(err => {
+      console.warn("OpenRouteService preview routing failed, using straight lines:", err);
+      setPreviewCoords(wps.map(w => [w.lat, w.lng]));
+    });
+  }, [selectedSitios, sitioList]);
 
   // Add Sitio inline form states
   const [showAddSitioForm, setShowAddSitioForm] = useState(false);
@@ -623,15 +658,8 @@ export default function ScheduleRoute() {
                               />
                             );
                           })}
-                          {selectedSitios.length > 1 && (
-                            <RoutePolyline
-                              positions={selectedSitios
-                                .map(name => {
-                                  const s = sitioList.find(s => s.name === name);
-                                  return s ? [s.lat, s.lng] : null;
-                                })
-                                .filter(Boolean)}
-                            />
+                          {previewCoords.length > 1 && (
+                            <RoutePolyline positions={previewCoords} />
                           )}
                           <MapController
                             center={[
