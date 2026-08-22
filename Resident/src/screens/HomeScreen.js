@@ -868,7 +868,7 @@ export default function HomeScreen({ navigation }) {
                     />
                   ) : firstSchedule ? (
                     <Text style={styles.collectionTime}>
-                      Today · {firstSchedule.routeName || "Scheduled"}
+                      Today {firstSchedule.startTime ? `· ${firstSchedule.startTime}` : "· Scheduled"}
                     </Text>
                   ) : (
                     <Text style={styles.collectionTime}>
@@ -879,9 +879,9 @@ export default function HomeScreen({ navigation }) {
               </View>
 
               <View style={styles.collectionDetails}>
-                <View style={styles.detailRow}>
+                <View style={[styles.detailRow, { flexDirection: "column", alignItems: "flex-start", gap: 4 }]}>
                   <Text style={styles.detailLabel}>Route</Text>
-                  <Text style={styles.detailValue}>
+                  <Text style={[styles.detailValue, { textAlign: "left", width: "100%", marginTop: 2 }]}>
                     {firstSchedule?.routeName || "—"}
                   </Text>
                 </View>
