@@ -539,7 +539,9 @@ export default function MapScreen() {
     // Draw route polyline connecting selected sequential sitios in order
     let routeCoords = [];
     for (const sched of todaySchedules || []) {
-      if (sched.sitioTasks && sched.sitioTasks.length > 1) {
+      if (sched.routeCoords && sched.routeCoords.length > 0) {
+        routeCoords = [...routeCoords, ...sched.routeCoords];
+      } else if (sched.sitioTasks && sched.sitioTasks.length > 1) {
         const coords = sched.sitioTasks.map(t => [t.lat, t.lng]);
         routeCoords = [...routeCoords, ...coords];
       }

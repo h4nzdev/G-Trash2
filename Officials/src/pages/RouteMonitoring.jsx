@@ -554,6 +554,9 @@ export default function RouteMonitoring() {
         prev.map((r) => (r._id === updated._id ? updated : r)),
       );
     });
+    socket.on("schedule:changed", () => {
+      fetchData();
+    });
     socket.on("report:new", (newReport) => {
       if (newReport.category === "Overflowing Bin")
         setReports((prev) => [newReport, ...prev]);

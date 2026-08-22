@@ -199,6 +199,7 @@ const scheduleSchema = new mongoose.Schema({
       completedAt: { type: Date }
     }
   ],
+  routeCoords: { type: [[Number]], default: [] },
   startTime: { type: String, default: "" }, // HH:MM for ordering
   endTime: { type: String, default: "" }, // Optional HH:MM
   status: { type: String, enum: ["pending", "completed", "missed"], default: "pending" },
@@ -3463,6 +3464,34 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       });
     }
 
+    // Call OpenRouteService to obtain actual road driving path coordinates
+    let routeCoords = [];
+    if (sitioTasks.length >= 2) {
+      try {
+        const coordinates = sitioTasks.map(t => [t.lng, t.lat]);
+        const orsRes = await axios.post(
+          'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+          { coordinates },
+          { 
+            headers: { 
+              'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
+              'Content-Type': 'application/json' 
+            },
+            timeout: 5000
+          }
+        );
+        const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+        if (coords && coords.length > 0) {
+          routeCoords = coords.map(c => [c[1], c[0]]);
+        }
+      } catch (err) {
+        console.error("OpenRouteService request failed, falling back to straight lines:", err.message);
+      }
+    }
+    if (routeCoords.length === 0) {
+      routeCoords = sitioTasks.map(t => [t.lat, t.lng]);
+    }
+
     const schedule = await Schedule.create({
       date,
       truckId,
@@ -3472,6 +3501,7 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       barangay,
       sitio: sitios[0] || "",
       sitioTasks,
+      routeCoords,
       startTime: startTime || "",
       endTime: endTime || "",
       notes,
