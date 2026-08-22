@@ -434,6 +434,14 @@ export default function MapScreen() {
     return 'clean';
   }, [iotAreas]);
 
+  const activeSchedule = useMemo(() => {
+    if (liveTruckOnline && liveTruckPos.current?.truckId) {
+      const match = todaySchedules.find(s => s.truckId === liveTruckPos.current.truckId);
+      if (match) return match;
+    }
+    return todaySchedules.find(s => s.barangay?.toLowerCase() === userBarangay.toLowerCase());
+  }, [todaySchedules, liveTruckPos.current, liveTruckOnline, userBarangay]);
+
   useEffect(() => { iotAreasRef.current = iotAreas; }, [iotAreas]);
 
   useEffect(() => {
@@ -945,11 +953,90 @@ export default function MapScreen() {
             <View style={styles.handleBar} />
           </View>
 
-          <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: '#1F2937', textAlign: 'center' }}>
-              Track garbage trucks in real-time on the map above.
-            </Text>
-          </View>
+          {activeSchedule ? (
+            <View style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
+              {/* Header: Status & Stops Left */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: liveTruckOnline ? '#006A3B' : '#F59E0B' }}>
+                    {liveTruckOnline ? 'Driver is on the way' : 'Truck is Offline / Idle'}
+                  </Text>
+                  <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
+                    Route: {activeSchedule.routeName || activeSchedule.barangay}
+                  </Text>
+                </View>
+                {/* Remaining stops pill */}
+                {(() => {
+                  const remaining = activeSchedule.sitioTasks
+                    ? activeSchedule.sitioTasks.filter(t => !t.completed).length
+                    : 0;
+                  return (
+                    <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>
+                        {remaining} stops left
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1, backgroundColor: '#F3F4F6', marginVertical: 8 }} />
+
+              {/* Driver & Truck Info Section */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6 }}>
+                {/* Avatar Icon */}
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <MaterialIcons name="person" size={24} color="#4B5563" />
+                </View>
+
+                {/* Driver Details */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>
+                    {activeSchedule.driverName || "Driver Assigned"}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1, fontWeight: '500' }}>
+                    G-TRASH Driver · 5.0 ⭐
+                  </Text>
+                </View>
+
+                {/* Truck Badge */}
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#111827', letterSpacing: 0.5 }}>
+                    {activeSchedule.truckId}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
+                    Compactor Truck
+                  </Text>
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1, backgroundColor: '#F3F4F6', marginVertical: 8 }} />
+
+              {/* Chat / Call Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4, alignItems: 'center' }}>
+                <View style={{ flex: 1, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 }}>
+                  <MaterialIcons name="chat-bubble-outline" size={16} color="#4B5563" style={{ marginRight: 8 }} />
+                  <Text style={{ fontSize: 12, color: '#9CA3AF', fontWeight: '500' }}>
+                    Chat with your driver...
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => Alert.alert("Contact Driver", "Calling G-TRASH collection hub dispatch...")}
+                  style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }}
+                >
+                  <MaterialIcons name="phone" size={16} color="#006A3B" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280', textAlign: 'center' }}>
+                No active collections scheduled in your area today.
+              </Text>
+            </View>
+          )}
         </View>
         <Animated.View
           style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}
