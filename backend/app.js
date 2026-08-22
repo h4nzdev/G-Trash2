@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const https = require("https");
 const cloudinary = require("cloudinary").v2;
+const axios = require("axios");
 const { wasteClassificationMap, lookupWasteClassification } = require("./config/wasteClassification");
 
 cloudinary.config({
