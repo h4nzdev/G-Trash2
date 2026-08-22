@@ -395,7 +395,7 @@ export default function MapScreen() {
   const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
   const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
 
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [userLocation, setUserLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const [liveTruckOnline, setLiveTruckOnline] = useState(false);
@@ -411,8 +411,8 @@ export default function MapScreen() {
   const [sitioList, setSitioList] = useState([]);
   const [todaySchedules, setTodaySchedules] = useState([]);
 
-  const isExpandedRef = useRef(false);
-  const sheetAnim = useRef(new Animated.Value(translateCollapsed)).current;
+  const isExpandedRef = useRef(true);
+  const sheetAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const liveTruckPos = useRef(null);
@@ -733,26 +733,22 @@ export default function MapScreen() {
   }, [sheetAnim]);
 
   const collapseSheet = useCallback(() => {
-    isExpandedRef.current = false;
-    setIsExpanded(false);
+    // Keep sheet fully expanded
+    isExpandedRef.current = true;
+    setIsExpanded(true);
     Animated.spring(sheetAnim, {
-      toValue: translateCollapsed,
+      toValue: 0,
       useNativeDriver: true,
       damping: 20,
       stiffness: 150,
     }).start();
-  }, [sheetAnim, translateCollapsed]);
+  }, [sheetAnim]);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (evt, gs) =>
-        Math.abs(gs.dy) > Math.abs(gs.dx) &&
-        Math.abs(gs.dy) > 10,
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dy < -40 && !isExpandedRef.current) expandSheet();
-        else if (gs.dy > 40 && isExpandedRef.current) collapseSheet();
-      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: () => false,
+      onPanResponderRelease: () => {},
       onPanResponderTerminationRequest: () => true,
     }),
   ).current;
@@ -949,7 +945,7 @@ export default function MapScreen() {
         ]}
       >
         <View>
-          <View style={styles.handleBarContainer} {...panResponder.panHandlers}>
+          <View style={styles.handleBarContainer}>
             <View style={styles.handleBar} />
           </View>
 

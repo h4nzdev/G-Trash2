@@ -118,6 +118,7 @@ const reportSchema = new mongoose.Schema({
   description: { type: String, required: true },
   location: { type: String, default: "" },
   barangay: { type: String, default: "" },
+  sitio: { type: String, default: "" },
   lat: Number,
   lng: Number,
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident" },
@@ -1258,9 +1259,10 @@ app.delete("/api/residents/:id/notifications", async (req, res) => {
 // --- Community Feed & Voting ---------------------------------
 app.get("/api/reports", async (req, res) => {
   try {
-    const { barangay, userId } = req.query;
+    const { barangay, sitio, userId } = req.query;
     const filter = {};
     if (barangay) filter.barangay = barangay;
+    if (sitio) filter.sitio = sitio;
     if (userId) {
       if (mongoose.Types.ObjectId.isValid(userId)) {
         filter.userId = new mongoose.Types.ObjectId(userId);
@@ -1872,7 +1874,7 @@ app.post("/api/trucks/location", async (req, res) => {
 // --- Reports -------------------------------------------------
 // POST is public (Resident app submits reports)
 app.post("/api/reports", async (req, res) => {
-  const { category, description, location, barangay, lat, lng, reportedBy } =
+  const { category, description, location, barangay, sitio, lat, lng, reportedBy } =
     req.body;
   if (!category || !description) {
     return res
@@ -1887,6 +1889,7 @@ app.post("/api/reports", async (req, res) => {
       description,
       location: location || "",
       barangay: barangay || "",
+      sitio: sitio || "",
       lat,
       lng,
       reportedBy: reportedBy || "Resident",
@@ -1903,6 +1906,12 @@ app.post("/api/reports", async (req, res) => {
 app.get("/api/reports", optionalAuth, async (req, res) => {
   try {
     const filter = barangayFilter(req.official);
+    if (req.query.barangay) {
+      filter.barangay = req.query.barangay;
+    }
+    if (req.query.sitio) {
+      filter.sitio = req.query.sitio;
+    }
     res.json(await Report.find(filter).sort({ createdAt: -1 }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -5295,6 +5304,81 @@ app.get("/api/analytics/collection-stats", optionalAuth, async (req, res) => {
     }));
 
     res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/analytics/sitios", optionalAuth, async (req, res) => {
+  try {
+    const { barangay } = req.query;
+    const filter = {};
+    if (barangay) {
+      filter.barangay = barangay;
+    }
+
+    // Fetch all reports grouped by sitio
+    const reportStats = await Report.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: "$sitio",
+          totalReports: { $sum: 1 },
+          pendingReports: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] }
+          },
+          resolvedReports: {
+            $sum: { $cond: [{ $eq: ["$status", "resolved"] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Fetch all IoT sensor areas
+    const iotAreas = await GarbageArea.find(filter);
+
+    // Merge stats by sitio name
+    const sitioMap = {};
+    
+    // Seed with IoT areas
+    iotAreas.forEach(area => {
+      const key = area.name || "Unknown";
+      sitioMap[key] = {
+        sitio: key,
+        lat: area.lat,
+        lng: area.lng,
+        status: area.status,
+        ammonia: area.ammonia || "0 ppm",
+        methane: area.methane || "0 ppm",
+        bins: area.bins || 0,
+        totalReports: 0,
+        pendingReports: 0,
+        resolvedReports: 0,
+        hasSensor: true
+      };
+    });
+
+    // Merge report stats
+    reportStats.forEach(r => {
+      const key = r._id || "Uncategorized";
+      if (!sitioMap[key]) {
+        sitioMap[key] = {
+          sitio: key,
+          lat: null,
+          lng: null,
+          status: "inactive",
+          ammonia: "N/A",
+          methane: "N/A",
+          bins: 0,
+          hasSensor: false
+        };
+      }
+      sitioMap[key].totalReports = r.totalReports;
+      sitioMap[key].pendingReports = r.pendingReports;
+      sitioMap[key].resolvedReports = r.resolvedReports;
+    });
+
+    res.json(Object.values(sitioMap));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

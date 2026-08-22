@@ -5,7 +5,7 @@ const barangays = ['All Barangays', 'IT Park', 'Lahug', 'Ayala', 'Banilad', 'Tal
 const priorities = ['All Priorities', 'Critical', 'High', 'Medium', 'Low'];
 const sortOptions = ['Newest', 'Oldest', 'Highest Urgency'];
 
-export default function ReportFilter({ filters, onChange }) {
+export default function ReportFilter({ filters, onChange, sitios = [], official }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -51,13 +51,37 @@ export default function ReportFilter({ filters, onChange }) {
         </div>
 
         {/* Barangay */}
-        <select
-          value={filters.barangay}
-          onChange={(e) => onChange({ ...filters, barangay: e.target.value })}
-          className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 cursor-pointer"
-        >
-          {barangays.map((b) => <option key={b}>{b}</option>)}
-        </select>
+        {(() => {
+          const isRestricted = official?.barangay && official.barangay !== 'All';
+          return (
+            <select
+              value={filters.barangay}
+              onChange={(e) => onChange({ ...filters, barangay: e.target.value })}
+              disabled={isRestricted}
+              className={`px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 ${
+                isRestricted ? 'opacity-70 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
+              }`}
+            >
+              {isRestricted ? (
+                <option value={official.barangay}>{official.barangay}</option>
+              ) : (
+                barangays.map((b) => <option key={b}>{b}</option>)
+              )}
+            </select>
+          );
+        })()}
+
+        {/* Sitio */}
+        {sitios.length > 0 && (
+          <select
+            value={filters.sitio || 'All Sitios'}
+            onChange={(e) => onChange({ ...filters, sitio: e.target.value })}
+            className="px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 cursor-pointer"
+          >
+            <option value="All Sitios">All Sitios</option>
+            {sitios.filter(s => s !== "All Sitios").map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
 
         {/* Priority */}
         <select

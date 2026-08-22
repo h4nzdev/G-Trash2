@@ -540,7 +540,7 @@ export default function CollectorMapScreen() {
   const { networkChangeKey } = useNetwork();
 
   const TRUCK_ID = user?.truckId ?? 'GT-000';
-  const { bottom: bottomInset } = useSafeAreaInsets();
+  const { top: topInset, bottom: bottomInset } = useSafeAreaInsets();
   const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
   const [activeScheduleId, setActiveScheduleId] = useState(null);
 
@@ -604,6 +604,12 @@ export default function CollectorMapScreen() {
   const [showTools, setShowTools] = useState(false);
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCategory, setReportCategory] = useState("Overflowing Bin");
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportLocation, setReportLocation] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   const [navigationActive, setNavigationActive] = useState(false);
   const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
@@ -720,6 +726,49 @@ export default function CollectorMapScreen() {
     };
     xhr.send();
   }, []);
+
+  const handleSubmitDriverReport = () => {
+    if (!reportDescription.trim()) {
+      Alert.alert("Error", "Please write a description of the issue.");
+      return;
+    }
+    setSubmittingReport(true);
+
+    const lat = lastGpsRef.current?.lat || 10.3156;
+    const lng = lastGpsRef.current?.lng || 123.8854;
+
+    const payload = {
+      category: reportCategory,
+      description: reportDescription,
+      location: reportLocation || "On Route",
+      barangay: assignedRouteBarangay || "Cebu City",
+      sitio: activeSchedule?.sitio || "",
+      lat,
+      lng,
+      reportedBy: `Truck ${TRUCK_ID}`,
+    };
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${TRACKING_SERVER}/api/reports`);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.onload = () => {
+      setSubmittingReport(false);
+      if (xhr.status === 201) {
+        Alert.alert("Success", "Report submitted successfully to LGU officials.");
+        setShowReportModal(false);
+        setReportDescription("");
+        setReportLocation("");
+        fetchReports();
+      } else {
+        Alert.alert("Submission Failed", "Failed to submit report. Please try again.");
+      }
+    };
+    xhr.onerror = () => {
+      setSubmittingReport(false);
+      Alert.alert("Network Error", "Unable to reach the server.");
+    };
+    xhr.send(JSON.stringify(payload));
+  };
 
   useEffect(() => {
     fetchReports();
@@ -985,12 +1034,7 @@ export default function CollectorMapScreen() {
   ).current;
 
   const handleReportIssue = () => {
-    Alert.alert("Report Hazard", "Identify a road hazard at your location:", [
-      { text: "Road Blocked", onPress: () => Alert.alert("Reported", "Road blockage reported to command center.") },
-      { text: "Illegal Parking", onPress: () => Alert.alert("Reported", "Illegal parking reported.") },
-      { text: "Accident", onPress: () => Alert.alert("Reported", "Accident reported.") },
-      { text: "Cancel", style: "cancel" }
-    ]);
+    setShowReportModal(true);
   };
 
   const startNavigation = () => {
@@ -1199,6 +1243,19 @@ export default function CollectorMapScreen() {
             </View>
           )}
         </View>
+
+        {/* Floating Actions Overlay */}
+        {!isFocusMode && (
+          <View style={[styles.floatingActions, { top: Math.max(16, topInset) }]}>
+            <TouchableOpacity
+              style={[styles.floatingBtn, { backgroundColor: "#DC2626" }]}
+              onPress={() => setShowReportModal(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="report" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Bottom Sheet */}
@@ -1386,6 +1443,102 @@ export default function CollectorMapScreen() {
                 onPress={() => setSelectedReport(null)}
               >
                 <Text style={styles.reportActionBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Driver Report Submission Modal */}
+      <Modal
+        visible={showReportModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReportModal(false)}
+      >
+        <View style={[styles.reportModalBackdrop, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }]}>
+          <View style={[styles.reportModalCard, { width: '100%', borderRadius: 28 }]}>
+            <View style={styles.reportModalHeader}>
+              <View style={[styles.reportModalIconWrap, { backgroundColor: '#FEE2E2' }]}>
+                <MaterialIcons name="report-problem" size={24} color="#DC2626" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.reportModalTitle}>Report Issue</Text>
+                <Text style={styles.reportModalSub}>Send alerts directly to LGU dashboard</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowReportModal(false)} style={styles.reportCloseBtn}>
+                <MaterialIcons name="close" size={20} color="#6F7A70" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Form Fields */}
+            <View style={{ width: '100%', marginTop: 16 }}>
+              {/* Category */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', marginBottom: 8 }}>CATEGORY</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                {["Overflowing Bin", "Blocked Road", "Other"].map((cat) => {
+                  const isSelected = reportCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      onPress={() => setReportCategory(cat)}
+                      style={{
+                        flex: 1,
+                        height: 40,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? '#006A3B' : '#F0EDED',
+                        backgroundColor: isSelected ? '#E6F0EC' : '#FFFFFF',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#006A3B' : '#6F7A70', textAlign: 'center' }}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Location Reference */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', marginBottom: 6 }}>LOCATION REFERENCE (Optional)</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#F0EDED', borderRadius: 12, paddingHorizontal: 12, fontSize: 14, color: '#1B1C1C', backgroundColor: '#F9FAFB', marginBottom: 16, height: 40 }}
+                placeholder="e.g., Near Sudlon Barangay Hall"
+                value={reportLocation}
+                onChangeText={setReportLocation}
+              />
+
+              {/* Description */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', marginBottom: 6 }}>DESCRIPTION / NOTES</Text>
+              <TextInput
+                style={{ borderWidth: 1, borderColor: '#F0EDED', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1B1C1C', backgroundColor: '#F9FAFB', height: 80, textAlignVertical: 'top', marginBottom: 20 }}
+                placeholder="Describe the issue in detail..."
+                value={reportDescription}
+                onChangeText={setReportDescription}
+                multiline
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <TouchableOpacity 
+                onPress={() => setShowReportModal(false)}
+                style={{ flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#F0EDED', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#6F7A70' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={handleSubmitDriverReport}
+                disabled={submittingReport}
+                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: '#006A3B', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {submittingReport ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Submit Report</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

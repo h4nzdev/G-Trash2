@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle, Trash2, Zap } from 'lucide-react';
+import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle, Trash2, Zap, Truck } from 'lucide-react';
 import Badge from '../shared/Badge';
 
 const priorityDot = { Critical: 'bg-red-500', High: 'bg-red-400', Medium: 'bg-amber-500', Low: 'bg-slate-400' };
@@ -70,8 +70,16 @@ export default function ReportCard({ report, onView, onAssign, onResolve, onDele
           </div>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5" />
-              {report.reportedBy}
+              {report.reportedBy?.toLowerCase().startsWith('truck') ? (
+                <Truck className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+              ) : (
+                <User className="w-3.5 h-3.5" />
+              )}
+              {report.reportedBy?.toLowerCase().startsWith('truck') ? (
+                <span className="font-bold text-emerald-700">{report.reportedBy}</span>
+              ) : (
+                <span>{report.reportedBy}</span>
+              )}
             </span>
             <span className="flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5" />

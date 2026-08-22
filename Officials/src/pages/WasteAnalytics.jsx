@@ -4,6 +4,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import API from '../config';
+import { useAuth } from '../context/AuthContext';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -22,23 +23,28 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function WasteAnalytics() {
+  const { official } = useAuth();
   const [trends, setTrends] = useState([]);
   const [hotspots, setHotspots] = useState([]);
   const [stats, setStats] = useState([]);
+  const [sitios, setSitios] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [trendsRes, hotspotsRes, statsRes] = await Promise.all([
-        fetch(`${API}/api/analytics/report-trends`),
-        fetch(`${API}/api/analytics/hotspots`),
-        fetch(`${API}/api/analytics/collection-stats`)
+      const brgyParam = official?.barangay && official.barangay !== 'All' ? `?barangay=${encodeURIComponent(official.barangay)}` : '';
+      const [trendsRes, hotspotsRes, statsRes, sitiosRes] = await Promise.all([
+        fetch(`${API}/api/analytics/report-trends${brgyParam}`),
+        fetch(`${API}/api/analytics/hotspots${brgyParam}`),
+        fetch(`${API}/api/analytics/collection-stats${brgyParam}`),
+        fetch(`${API}/api/analytics/sitios${brgyParam}`)
       ]);
 
       setTrends(await trendsRes.json());
       setHotspots(await hotspotsRes.json());
       setStats(await statsRes.json());
+      setSitios(await sitiosRes.json());
     } catch (err) {
       console.error('Failed to fetch analytics:', err);
     } finally {
@@ -48,7 +54,7 @@ export default function WasteAnalytics() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [official]);
 
   const totalReports = trends.reduce((acc, curr) => {
     const vals = Object.values(curr).filter(v => typeof v === 'number');
@@ -235,6 +241,70 @@ export default function WasteAnalytics() {
                         <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">Elevated</span>
                       )}
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Sitio Analytics Table */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mt-6">
+        <div className="p-6 border-b border-slate-100">
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-emerald-600" />
+            Sitio Environmental Intelligence
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">Real-time status of IoT gas sensors and community reports by Sitio.</p>
+        </div>
+        
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : sitios.length === 0 ? (
+          <div className="py-12 text-center text-slate-400">No Sitios active in this barangay.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold">
+                <tr>
+                  <th className="px-6 py-4">Sitio</th>
+                  <th className="px-6 py-4 text-center">IoT Gas Sensor</th>
+                  <th className="px-6 py-4 text-center">Ammonia (NH₃)</th>
+                  <th className="px-6 py-4 text-center">Methane (CH₄)</th>
+                  <th className="px-6 py-4 text-center">Active Reports</th>
+                  <th className="px-6 py-4 text-center">Resolved Reports</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sitios.map((s, index) => (
+                  <tr key={index} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 text-sm font-bold text-slate-800">{s.sitio}</td>
+                    <td className="px-6 py-4 text-center">
+                      {s.hasSensor ? (
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold ${
+                          s.status === 'critical' 
+                            ? 'bg-rose-100 text-rose-700' 
+                            : s.status === 'moderate' 
+                              ? 'bg-amber-100 text-amber-700' 
+                              : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {s.status.charAt(0).toUpperCase() + s.status.slice(1)}
+                        </span>
+                      ) : (
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-400">No Sensor</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.ammonia}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.methane}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`text-sm font-bold ${s.pendingReports > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        {s.pendingReports}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm font-bold text-emerald-600">{s.resolvedReports}</td>
                   </tr>
                 ))}
               </tbody>

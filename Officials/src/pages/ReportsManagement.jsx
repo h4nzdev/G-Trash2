@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import {
   X,
@@ -52,6 +52,7 @@ export default function ReportsManagement() {
     search: "",
     status: "All",
     barangay: "All Barangays",
+    sitio: "All Sitios",
     priority: "All Priorities",
     sortBy: "Newest",
     healthOnly: false,
@@ -95,6 +96,12 @@ export default function ReportsManagement() {
       .then(({ data }) => setFleet(data))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (official?.barangay && official.barangay !== 'All') {
+      setFilters(prev => ({ ...prev, barangay: official.barangay }));
+    }
+  }, [official]);
 
   const openReport = (r) => {
     setSelectedReport(r);
@@ -244,6 +251,8 @@ export default function ReportsManagement() {
           : r.status === filters.status.toLowerCase());
       const barangayMatch =
         filters.barangay === "All Barangays" || r.barangay === filters.barangay;
+      const sitioMatch =
+        filters.sitio === "All Sitios" || r.sitio === filters.sitio;
       const priorityMatch =
         filters.priority === "All Priorities" ||
         r.priority === filters.priority;
@@ -252,7 +261,7 @@ export default function ReportsManagement() {
         r.title.toLowerCase().includes(filters.search.toLowerCase()) ||
         r.location.toLowerCase().includes(filters.search.toLowerCase());
       const healthMatch = !filters.healthOnly || r.healthConcern;
-      return statusMatch && barangayMatch && priorityMatch && searchMatch && healthMatch;
+      return statusMatch && barangayMatch && sitioMatch && priorityMatch && searchMatch && healthMatch;
     })
     .sort((a, b) => {
       if (filters.sortBy === "Highest Urgency") return b.urgency - a.urgency;
@@ -268,6 +277,14 @@ export default function ReportsManagement() {
     resolved: reportList.filter((r) => r.status === "resolved").length,
     escalated: reportList.filter((r) => r.escalated).length,
   };
+
+  const uniqueSitios = useMemo(() => {
+    const filteredReports = reportList.filter(r => 
+      filters.barangay === "All Barangays" || r.barangay === filters.barangay
+    );
+    const list = filteredReports.map(r => r.sitio).filter(Boolean);
+    return ["All Sitios", ...new Set(list)];
+  }, [reportList, filters.barangay]);
 
   return (
     <div className="p-6">
@@ -392,7 +409,7 @@ export default function ReportsManagement() {
         ))}
       </div>
 
-      <ReportFilter filters={filters} onChange={setFilters} />
+      <ReportFilter filters={filters} onChange={setFilters} sitios={uniqueSitios} official={official} />
 
       {loading ? (
         <div className="bg-white rounded-2xl border border-slate-100 py-20 text-center">
@@ -590,8 +607,18 @@ export default function ReportsManagement() {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-slate-600">
-                  <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                  <span>Reported by {selectedReport.reportedBy}</span>
+                  {selectedReport.reportedBy?.toLowerCase().startsWith('truck') ? (
+                    <Truck className="w-4 h-4 text-emerald-600 animate-pulse flex-shrink-0" />
+                  ) : (
+                    <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                  )}
+                  {selectedReport.reportedBy?.toLowerCase().startsWith('truck') ? (
+                    <span>
+                      Reported by <span className="font-bold text-emerald-700">{selectedReport.reportedBy}</span>
+                    </span>
+                  ) : (
+                    <span>Reported by {selectedReport.reportedBy}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-sm text-slate-600">
                   <Clock className="w-4 h-4 text-slate-400 flex-shrink-0" />
