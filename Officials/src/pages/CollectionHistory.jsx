@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Package, Truck, Weight, Archive, Heart, AlertTriangle } from 'lucide-react';
+import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -21,15 +21,15 @@ const WASTE_COLORS = {
 };
 
 function exportCSV(data) {
-  const headers = ['Date', 'Truck ID', 'Stop Name', 'Stop Address', 'Route', 'Waste Type', 'Weight (kg)', 'Bins', 'Completed At'];
+  const headers = ['Date', 'Truck ID', 'Driver Name', 'Stop Name', 'Stop Address', 'Route', 'Waste Type', 'Bins', 'Completed At'];
   const rows = data.map((r) => [
     r.date,
     r.truckId,
+    r.driverName  || '',
     r.stopName   || '',
     r.stopAddress || '',
     r.routeName  || '',
     r.wasteType  || 'General',
-    r.weight     ?? 0,
     r.bins       ?? 0,
     new Date(r.completedAt).toLocaleString(),
   ]);
@@ -139,14 +139,8 @@ export default function CollectionHistory() {
     <div className="p-6 space-y-6">
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          {
-            icon: Weight,
-            label: 'Total Weight',
-            value: loading ? '…' : `${stats.totalWeight.toLocaleString()} kg`,
-            color: 'bg-emerald-100 text-emerald-700',
-          },
           {
             icon: Package,
             label: 'Total Stops',
@@ -285,7 +279,7 @@ export default function CollectionHistory() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {['Date', 'Truck ID', 'Stop Name', 'Route', 'Waste Type', 'Weight', 'Bins', ...(isChd ? ['Days Since'] : [])].map((h) => (
+                {['Date', 'Truck ID', 'Driver', 'Stop Name', 'Route', 'Waste Type', 'Bins', ...(isChd ? ['Days Since'] : [])].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -319,11 +313,21 @@ export default function CollectionHistory() {
                   const isStale = days !== null && days > 5;
                   return (
                   <tr key={row._id} className={`hover:bg-slate-50 transition-colors ${isChd && isStale ? 'bg-red-50/40' : ''}`}>
-                    <td className="px-5 py-3.5 text-sm text-slate-700 font-medium whitespace-nowrap">{row.date}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-700 font-medium whitespace-nowrap">
+                      <div>{row.date}</div>
+                      {row.completedAt && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {new Date(row.completedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-5 py-3.5">
                       <span className="text-sm font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                         {row.truckId}
                       </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-slate-700 whitespace-nowrap">
+                      {row.driverName || '—'}
                     </td>
                     <td className="px-5 py-3.5 text-sm text-slate-800 font-semibold max-w-[180px] truncate">
                       {row.stopName || <span className="text-slate-400 italic text-xs">No stop name</span>}
@@ -335,9 +339,6 @@ export default function CollectionHistory() {
                       <span className={`text-xs font-semibold px-2 py-1 rounded-full ${WASTE_COLORS[row.wasteType] ?? WASTE_COLORS.General}`}>
                         {row.wasteType || 'General'}
                       </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-emerald-700 whitespace-nowrap">
-                      {(row.weight ?? 0).toLocaleString()} kg
                     </td>
                     <td className="px-5 py-3.5 text-sm font-semibold text-slate-700">
                       {row.bins ?? 0}

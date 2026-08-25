@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Truck, ArrowLeft, MapPin, Package, Scale, Calendar, Clock, CheckCircle, Route, TrendingUp } from 'lucide-react';
+import { Truck, ArrowLeft, MapPin, Package, Archive, Calendar, Clock, CheckCircle, Route, TrendingUp } from 'lucide-react';
 import API from '../config';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'emerald' }) {
@@ -158,7 +158,7 @@ export default function DriverAnalytics() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <StatCard icon={CheckCircle} label="Pickup Runs" value={pickupRuns.length} sub="This month" color="emerald" />
-        <StatCard icon={Scale} label="Total Weight" value={`${totalWeight} kg`} sub="This month" color="blue" />
+        <StatCard icon={Archive} label="Total Bins" value={totalBins} sub="This month" color="blue" />
         <StatCard icon={Package} label="Avg Stops/Run" value={avgStops} sub="Completed runs" color="amber" />
         <StatCard icon={Calendar} label="Active Days" value={activeDays} sub="Days with a run" color="slate" />
       </div>
@@ -220,7 +220,6 @@ export default function DriverAnalytics() {
               {pickupRuns.slice(0, 20).map((run) => {
                 const date = new Date(run.completedAt || run.createdAt);
                 const stopsCount = run.stopsCompleted?.length || 0;
-                const weight = run.totalWeight || run.stopsCompleted?.reduce((s, st) => s + (st.weight || 0), 0) || 0;
                 return (
                   <div key={run._id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
@@ -230,7 +229,6 @@ export default function DriverAnalytics() {
                       <p className="text-sm font-semibold text-slate-700 truncate">{run.routeName || 'Unnamed Route'}</p>
                       <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                         <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{stopsCount} stops</span>
-                        {weight > 0 && <span className="flex items-center gap-1"><Scale className="w-3 h-3" />{weight} kg</span>}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">

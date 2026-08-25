@@ -133,6 +133,7 @@ function formatGarbageArea(area) {
     intensity: area.intensity ?? 0.5,
     barangay: area.barangay || "",
     reportCount: area.reportCount ?? 0,
+    sensorId: area.sensorId || null,
     lastUpdated: formatRelativeTime(area.lastReportAt || area.updatedAt || area.createdAt),
   };
 }
@@ -335,17 +336,19 @@ function buildLeafletHTML(truckB64) {
           heatmapLayers.push(circle);
 
           // Add a marker showing the physical location where the IoT sensor is integrated
-          var sensorMarker = L.marker([zone.lat, zone.lng], { icon: sensorIcon });
-          sensorMarker.bindPopup(
-            '<div style="font-family:sans-serif;min-width:130px;padding:2px;">' +
-            '<b style="font-size:12px;color:#0F172A;">📡 IoT Waste Sensor</b><br>' +
-            '<span style="font-size:10px;color:#64748B;">Zone: ' + (zone.name || zone.id) + '</span><br>' +
-            '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
-            (zone.status === 'critical' ? '🔴 Critical' : zone.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
-            '</div>'
-          );
-          sensorMarker.addTo(map);
-          heatmapLayers.push(sensorMarker);
+          if (zone.sensorId) {
+            var sensorMarker = L.marker([zone.lat, zone.lng], { icon: sensorIcon });
+            sensorMarker.bindPopup(
+              '<div style="font-family:sans-serif;min-width:130px;padding:2px;">' +
+              '<b style="font-size:12px;color:#0F172A;">📡 IoT Waste Sensor</b><br>' +
+              '<span style="font-size:10px;color:#64748B;">Zone: ' + (zone.name || zone.id) + '</span><br>' +
+              '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
+              (zone.status === 'critical' ? '🔴 Critical' : zone.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
+              '</div>'
+            );
+            sensorMarker.addTo(map);
+            heatmapLayers.push(sensorMarker);
+          }
         });
       };
 

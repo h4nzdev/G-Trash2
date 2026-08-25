@@ -173,19 +173,21 @@ function buildLeafletHTML(truckB64) {
         );
         circle.addTo(group);
 
-        var sensorMarker = L.marker([area.lat, area.lng], { icon: sensorIcon });
-        sensorMarker.bindPopup(
-          '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
-          '<b style="font-size:12px;">📡 IoT Waste Sensor</b><br/>' +
-          '<span style="font-size:10px;color:#64748B;">Zone: ' + (area.name || 'Sensor') + '</span><br/>' +
-          '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
-          (area.status === 'critical' ? '🔴 Critical' : area.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
-          '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
-          'NH₃: ' + (area.ammonia || 'N/A') + ' ppm<br/>' +
-          'CH₄: ' + (area.methane || 'N/A') + ' ppm' +
-          '</div></div>'
-        );
-        sensorMarker.addTo(group);
+        if (area.sensorId) {
+          var sensorMarker = L.marker([area.lat, area.lng], { icon: sensorIcon });
+          sensorMarker.bindPopup(
+            '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
+            '<b style="font-size:12px;">📡 IoT Waste Sensor</b><br/>' +
+            '<span style="font-size:10px;color:#64748B;">Zone: ' + (area.name || 'Sensor') + '</span><br/>' +
+            '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
+            (area.status === 'critical' ? '🔴 Critical' : area.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
+            '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
+            'NH₃: ' + (area.ammonia || 'N/A') + ' ppm<br/>' +
+            'CH₄: ' + (area.methane || 'N/A') + ' ppm' +
+            '</div></div>'
+          );
+          sensorMarker.addTo(group);
+        }
 
         group.addTo(map);
         heatmapCircles[id] = group;
@@ -1043,12 +1045,12 @@ export default function MapScreen() {
             contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
           >
             {/* Barangay IoT Air Quality Section */}
-            {iotAreas.length > 0 && (
+            {iotAreas.filter(area => area.sensorId).length > 0 && (
               <View style={styles.aqSection}>
                 <Text style={styles.aqSectionTitle}>
                   Air Quality · {userBarangay}
                 </Text>
-                {iotAreas.map((area) => {
+                {iotAreas.filter(area => area.sensorId).map((area) => {
                   const aColor = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#F59E0B' : '#4CAF50';
                   return (
                     <View key={area._id} style={styles.aqSensorRow}>
