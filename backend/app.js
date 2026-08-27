@@ -259,6 +259,9 @@ const collectionLogSchema = new mongoose.Schema({
   lat: { type: Number, default: null },
   lng: { type: Number, default: null },
   driverName: { type: String, default: "" },
+  beforeImage: { type: String, default: "" },
+  afterImage: { type: String, default: "" },
+  status: { type: String, default: "clean" }, // clean, moderate, critical
   completedAt: { type: Date, default: Date.now },
 });
 const CollectionLog = mongoose.model("CollectionLog", collectionLogSchema);
@@ -3894,6 +3897,9 @@ app.post("/api/collections", async (req, res) => {
     lat,
     lng,
     driverName,
+    beforeImage,
+    afterImage,
+    status,
   } = req.body;
   if (!truckId || !date) {
     return res.status(400).json({ error: "truckId and date are required" });
@@ -3912,6 +3918,9 @@ app.post("/api/collections", async (req, res) => {
       lat: lat != null ? lat : null,
       lng: lng != null ? lng : null,
       driverName: driverName || truckId || "",
+      beforeImage: beforeImage || "",
+      afterImage: afterImage || "",
+      status: status || "clean",
     });
     io.emit("collection:new", log);
 
@@ -4151,34 +4160,45 @@ function generateIoTAlerts(reading) {
     { field: "co2", label: "CO₂", unit: "ppm" },
     { field: "binLevel", label: "Bin Level", unit: "%" },
   ];
+  
+  const exceededCritical = [];
+  const exceededModerate = [];
+
   for (const { field, label, unit } of checks) {
     const val = reading[field] || 0;
     const thresh = IOT_THRESHOLDS[field];
     if (!thresh) continue;
     if (val >= thresh.critical) {
-      alerts.push({
-        sensorId: reading.sensorId,
-        location: reading.location || "",
-        barangay: reading.barangay || "",
-        severity: "critical",
-        gasType: field,
-        value: val,
-        threshold: thresh.critical,
-        message: `CRITICAL: ${label} level at ${val} ${unit} — exceeds safe limit of ${thresh.critical} ${unit}`,
-      });
+      exceededCritical.push(`${label} (${val} ${unit})`);
     } else if (val >= thresh.moderate) {
-      alerts.push({
-        sensorId: reading.sensorId,
-        location: reading.location || "",
-        barangay: reading.barangay || "",
-        severity: "moderate",
-        gasType: field,
-        value: val,
-        threshold: thresh.moderate,
-        message: `WARNING: ${label} level at ${val} ${unit} — approaching unsafe threshold of ${thresh.critical} ${unit}`,
-      });
+      exceededModerate.push(`${label} (${val} ${unit})`);
     }
   }
+
+  if (exceededCritical.length > 0) {
+    alerts.push({
+      sensorId: reading.sensorId,
+      location: reading.location || "",
+      barangay: reading.barangay || "",
+      severity: "critical",
+      message: `CRITICAL parameters exceeded: ${exceededCritical.join(", ")}`,
+      gasType: "multiple",
+      value: reading.rawValue || 0,
+      threshold: 0,
+    });
+  } else if (exceededModerate.length > 0) {
+    alerts.push({
+      sensorId: reading.sensorId,
+      location: reading.location || "",
+      barangay: reading.barangay || "",
+      severity: "moderate",
+      message: `WARNING parameters approaching limits: ${exceededModerate.join(", ")}`,
+      gasType: "multiple",
+      value: reading.rawValue || 0,
+      threshold: 0,
+    });
+  }
+
   return alerts;
 }
 
@@ -4208,56 +4228,16 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   try {
     const airQuality = classifyAirQuality(ammonia, methane);
 
-    let finalLat = lat;
-    let finalLng = lng;
-    let finalBarangay = barangay;
-    let finalLocation = location;
-
     // 1. Look up existing pre-registered GarbageArea from dashboard
     const existingArea = await GarbageArea.findOne({ sensorId });
-    if (existingArea) {
-      if (finalLat == null || finalLat === 0) finalLat = existingArea.lat;
-      if (finalLng == null || finalLng === 0) finalLng = existingArea.lng;
-      if (!finalBarangay) finalBarangay = existingArea.barangay;
-      if (!finalLocation) finalLocation = existingArea.name;
+    if (!existingArea) {
+      return res.status(403).json({ error: `Sensor ID "${sensorId}" is not registered by officials.` });
     }
 
-    // 2. Geolocation Fallback: If no coordinates provided or resolved, attempt IP address geolocating
-    if (finalLat == null || finalLat === 0 || finalLng == null || finalLng === 0) {
-      try {
-        let ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-        if (ip.includes("::ffff:")) {
-          ip = ip.replace("::ffff:", "");
-        }
-        if (ip === "127.0.0.1" || ip === "::1") {
-          // Default fallback (Lahug, Metro Sports Center area coordinates)
-          finalLat = 10.3285;
-          finalLng = 123.9033;
-          finalBarangay = finalBarangay || "Lahug";
-          finalLocation = finalLocation || "Metro Sports Center";
-        } else {
-          const axios = require("axios");
-          const geoRes = await axios.get(`http://ip-api.com/json/${ip}`, { timeout: 3000 });
-          if (geoRes.data && geoRes.data.status === "success") {
-            finalLat = geoRes.data.lat;
-            finalLng = geoRes.data.lon;
-            finalLocation = finalLocation || geoRes.data.city || "Cebu City";
-            finalBarangay = finalBarangay || "Lahug";
-          } else {
-            finalLat = 10.3285;
-            finalLng = 123.9033;
-            finalBarangay = finalBarangay || "Lahug";
-            finalLocation = finalLocation || "Metro Sports Center";
-          }
-        }
-      } catch (err) {
-        console.warn("[IoT Geolocation] Failed to resolve IP geolocation:", err.message);
-        finalLat = 10.3285;
-        finalLng = 123.9033;
-        finalBarangay = finalBarangay || "Lahug";
-        finalLocation = finalLocation || "Metro Sports Center";
-      }
-    }
+    const finalLat = existingArea.lat;
+    const finalLng = existingArea.lng;
+    const finalBarangay = existingArea.barangay;
+    const finalLocation = existingArea.name;
 
     // 3. Save reading with the resolved coordinates
     const reading = await SensorReading.create({
@@ -4517,18 +4497,6 @@ app.patch("/api/iot/alerts/:id/acknowledge", async (req, res) => {
   }
 });
 
-// DELETE: Delete a single IoT alert
-app.delete("/api/iot/alerts/:id", async (req, res) => {
-  try {
-    const alert = await IoTAlert.findByIdAndDelete(req.params.id);
-    if (!alert) return res.status(404).json({ error: "Alert not found" });
-    io.emit("iot:alert:deleted", { id: req.params.id });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // DELETE: Clear all IoT alerts (storage optimization)
 app.delete("/api/iot/alerts", optionalAuth, async (req, res) => {
   try {
@@ -4536,6 +4504,18 @@ app.delete("/api/iot/alerts", optionalAuth, async (req, res) => {
     const result = await IoTAlert.deleteMany(filter);
     io.emit("iot:alerts:cleared");
     res.json({ ok: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: Delete a single IoT alert
+app.delete("/api/iot/alerts/:id", async (req, res) => {
+  try {
+    const alert = await IoTAlert.findByIdAndDelete(req.params.id);
+    if (!alert) return res.status(404).json({ error: "Alert not found" });
+    io.emit("iot:alert:deleted", { id: req.params.id });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

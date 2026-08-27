@@ -207,12 +207,12 @@ function buildLeafletHTML(truckB64) {
             { opacity: 0.25, maxZoom: 18 }
           ).addTo(map);
           labelsLayer = L.tileLayer(
-            'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
             { opacity: 0.7, maxZoom: 18 }
           ).addTo(map);
         } else {
           tileLayer = L.tileLayer(
-            'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
             { opacity: 0.9, maxZoom: 17, minZoom: 13 }
           );
         }

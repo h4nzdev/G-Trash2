@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle } from 'lucide-react';
+import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -61,6 +61,7 @@ export default function CollectionHistory() {
   const [truckFilter,setTruckFilter]= useState('');
   const [page,       setPage]       = useState(0);
   const [healthAlertOnly, setHealthAlertOnly] = useState(false);
+  const [selectedLogProof, setSelectedLogProof] = useState(null);
 
   // Fetch logs whenever period or dateFilter changes
   useEffect(() => {
@@ -279,7 +280,7 @@ export default function CollectionHistory() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {['Date', 'Truck ID', 'Driver', 'Stop Name', 'Route', 'Waste Type', 'Bins', ...(isChd ? ['Days Since'] : [])].map((h) => (
+                {['Date', 'Truck ID', 'Driver', 'Stop Name', 'Route', 'Waste Type', 'Bins', ...(isChd ? ['Days Since'] : []), 'Verification'].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -290,7 +291,7 @@ export default function CollectionHistory() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    {Array.from({ length: isChd ? 8 : 7 }).map((__, j) => (
+                    {Array.from({ length: isChd ? 9 : 8 }).map((__, j) => (
                       <td key={j} className="px-5 py-4">
                         <div className="h-3 bg-slate-100 rounded w-3/4" />
                       </td>
@@ -299,7 +300,7 @@ export default function CollectionHistory() {
                 ))
               ) : paged.length === 0 ? (
                 <tr>
-                  <td colSpan={isChd ? 8 : 7} className="px-5 py-16 text-center">
+                  <td colSpan={isChd ? 9 : 8} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="w-8 h-8 text-slate-300" />
                       <p className="text-sm text-slate-400 font-medium">No collection logs found</p>
@@ -353,6 +354,19 @@ export default function CollectionHistory() {
                         )}
                       </td>
                     )}
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      {row.beforeImage || row.afterImage ? (
+                        <button
+                          onClick={() => setSelectedLogProof(row)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          View Proof
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">No photos</span>
+                      )}
+                    </td>
                   </tr>
                   );
                 })
@@ -383,6 +397,120 @@ export default function CollectionHistory() {
           </div>
         )}
       </div>
+
+      {/* Proof Modal */}
+      {selectedLogProof && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Collection Verification Proof</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Stop: <span className="font-bold text-slate-700">{selectedLogProof.stopName || 'Unknown Stop'}</span> · Route: {selectedLogProof.routeName || '—'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedLogProof(null)}
+                className="p-2 hover:bg-slate-200 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Meta information row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs font-semibold text-slate-600">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Truck / Driver</span>
+                  <span className="text-slate-800 font-bold">{selectedLogProof.truckId}</span>
+                  <span className="text-slate-500 block font-normal">{selectedLogProof.driverName || 'Collector'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Waste Type</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[10px] mt-0.5 ${WASTE_COLORS[selectedLogProof.wasteType] ?? WASTE_COLORS.General}`}>
+                    {selectedLogProof.wasteType || 'General'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Bins Cleared</span>
+                  <span className="text-slate-800 font-black text-sm">{selectedLogProof.bins ?? 0} bins</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Status</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[10px] mt-0.5 ${
+                    selectedLogProof.status === 'clean' ? 'bg-emerald-100 text-emerald-700' :
+                    selectedLogProof.status === 'moderate' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {selectedLogProof.status || 'Clean'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Side by side Before/After Images */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Before Image */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center">BEFORE CLEARING</span>
+                  <div className="aspect-[4/3] bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden flex items-center justify-center relative group">
+                    {selectedLogProof.beforeImage ? (
+                      <img
+                        src={selectedLogProof.beforeImage}
+                        alt="Before clearing"
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="text-center p-4">
+                        <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                        <span className="text-xs text-slate-400 font-medium">No photo logged</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* After Image */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center text-emerald-600">AFTER CLEARING</span>
+                  <div className="aspect-[4/3] bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden flex items-center justify-center relative group">
+                    {selectedLogProof.afterImage ? (
+                      <img
+                        src={selectedLogProof.afterImage}
+                        alt="After clearing"
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="text-center p-4">
+                        <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                        <span className="text-xs text-slate-400 font-medium">No photo logged</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Address / Notes */}
+              {selectedLogProof.stopAddress && (
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                  <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">Notes / Address Reference</span>
+                  <p className="text-sm font-semibold text-slate-700 leading-relaxed">{selectedLogProof.stopAddress}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end bg-slate-50">
+              <button
+                onClick={() => setSelectedLogProof(null)}
+                className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10"
+              >
+                Close Proof
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

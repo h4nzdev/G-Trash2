@@ -947,9 +947,9 @@ export default function RouteMonitoring() {
                   url={
                     isSatellite
                       ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                      : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   }
-                  attribution=""
+                  attribution="&copy; OpenStreetMap contributors"
                 />
 
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { MapContainer, TileLayer, Circle, CircleMarker, Popup, useMapEvents, Polygon, Polyline, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet.heat';
@@ -860,7 +860,7 @@ export default function HeatmapAnalytics() {
           />
 
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
             opacity={0.8}
           />
           
@@ -886,62 +886,77 @@ export default function HeatmapAnalytics() {
 
           <MapClickHandler onMapClick={handleMapClick} />
 
-          {/* Render Density Heatmap using IoT Data ONLY */}
-          <HeatmapLayer 
-            data={zones.filter(z => z.sensorId).map(z => {
-              const ammoniaPpm = parseAmmoniaPpm(z.ammonia);
-              // Intensity scales based on ammonia ppm. Normalize around 100ppm being very intense (1.0).
-              let intensity = 0.2; // base intensity
-              if (ammoniaPpm > 100) intensity = 1.0;
-              else if (ammoniaPpm > 50) intensity = 0.7;
-              else if (ammoniaPpm > 10) intensity = 0.4;
-              return [z.lat, z.lng, intensity];
-            })}
-            options={{
-              radius: 40,
-              blur: 35,
-              maxZoom: 15,
-              max: 1.0,
-              gradient: {
-                0.2: '#10b981', // Clean
-                0.5: '#f59e0b', // Moderate
-                1.0: '#ef4444'  // Critical
-              }
-            }}
-          />
-
-          {/* Visible markers for clicking the IoT sensors */}
+          {/* Visible markers and status-colored volumetric smoke/heat circles for the IoT sensors */}
           {zones.filter(z => z.sensorId).map(zone => {
             const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
             const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
             const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
             
             return (
-              <Marker
-                key={zone._id}
-                position={[zone.lat, zone.lng]}
-                icon={L.divIcon({
-                  className: 'bg-transparent',
-                  html: `
-                    <div style="
-                      width: 28px; 
-                      height: 28px; 
-                      background: white; 
-                      border: 2px solid #2563EB; 
-                      border-radius: 50%; 
-                      display: flex; 
-                      align-items: center; 
-                      justify-content: center;
-                      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                      cursor: pointer;
-                    ">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
-                    </div>
-                  `,
-                  iconSize: [28, 28],
-                  iconAnchor: [14, 14]
-                })}
-              >
+              <Fragment key={zone._id}>
+                {/* Volumetric gas/smoke cloud - 3 concentric layers with fading opacities */}
+                {zone.isActive !== false && (
+                  <>
+                    {/* Layer 1: Outer soft halo & dashed perimeter border */}
+                    <Circle
+                      center={[zone.lat, zone.lng]}
+                      radius={250} // 250 meters maximum reach
+                      pathOptions={{
+                        color: circleColor,
+                        fillColor: circleColor,
+                        fillOpacity: 0.04,
+                        weight: 1.5,
+                        dashArray: zone.status === 'critical' ? '5, 5' : undefined
+                      }}
+                    />
+                    {/* Layer 2: Mid-level smoke thickness */}
+                    <Circle
+                      center={[zone.lat, zone.lng]}
+                      radius={160}
+                      pathOptions={{
+                        fillColor: circleColor,
+                        fillOpacity: 0.08,
+                        weight: 0
+                      }}
+                    />
+                    {/* Layer 3: Inner core dense smoke concentration */}
+                    <Circle
+                      center={[zone.lat, zone.lng]}
+                      radius={90}
+                      pathOptions={{
+                        fillColor: circleColor,
+                        fillOpacity: 0.13,
+                        weight: 0
+                      }}
+                    />
+                  </>
+                )}
+
+                <Marker
+                  position={[zone.lat, zone.lng]}
+                  icon={L.divIcon({
+                    className: 'bg-transparent',
+                    html: `
+                      <div style="
+                        width: 28px; 
+                        height: 28px; 
+                        background: white; 
+                        border: 2.5px solid ${circleColor}; 
+                        border-radius: 50%; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                        cursor: pointer;
+                        ${zone.status === 'critical' ? 'animation: pulseBorder 1.5s infinite;' : ''}
+                      ">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${circleColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+                      </div>
+                    `,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                  })}
+                >
                 <Popup className="custom-popup" minWidth={320}>
                   <div className="p-1">
                     <div className="flex items-start gap-3 mb-4">
@@ -1004,8 +1019,9 @@ export default function HeatmapAnalytics() {
                   </div>
                 </Popup>
               </Marker>
-            );
-          })}
+            </Fragment>
+          );
+        })}
 
           {newArea && (
             <CircleMarker
@@ -1166,6 +1182,11 @@ export default function HeatmapAnalytics() {
         @keyframes toastIn {
           from { transform: translateX(20px); opacity: 0; }
           to   { transform: translateX(0);    opacity: 1; }
+        }
+        @keyframes pulseBorder {
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+          70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
       `}</style>
 

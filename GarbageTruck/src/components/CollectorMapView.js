@@ -39,7 +39,7 @@ function generateCollectorMapHTML(stops, truckLat, truckLng) {
         touchZoom: true,
       });
       map.setView([${truckLat}, ${truckLng}], 14);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         opacity: 0.9, maxZoom: 17, minZoom: 12,
       }).addTo(map);
 

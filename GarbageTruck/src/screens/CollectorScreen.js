@@ -125,7 +125,7 @@ function generateMapHTML(stops) {
       });
       map.setView([${centerLat}, ${centerLng}], 14);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         opacity: 0.9, maxZoom: 17, minZoom: 12,
       }).addTo(map);
 

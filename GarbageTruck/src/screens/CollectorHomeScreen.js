@@ -24,6 +24,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useNetwork } from "../context/NetworkContext";
 import API_URL from "../config";
+import * as ImagePicker from 'expo-image-picker';
 
 import NetworkBanner from "../components/NetworkBanner";
 import colors from "../constants/colors";
@@ -58,6 +59,25 @@ export default function CollectorHomeScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const chatScrollRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // --- Before/After Clearance Flow States ---
+  const MOCK_BEFORE_IMAGE = "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80";
+  const MOCK_AFTER_IMAGE = "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80";
+
+  const [activeFlowTask, setActiveFlowTask] = useState(null); // { scheduleId, sitioName, routeName, step }
+  const [beforeImage, setBeforeImage] = useState("");
+  const [afterImage, setAfterImage] = useState("");
+  const [flowStatus, setFlowStatus] = useState("clean");
+  const [flowLocation, setFlowLocation] = useState("");
+  const [flowWasteType, setFlowWasteType] = useState("General");
+  const [flowBins, setFlowBins] = useState(1);
+  const [isSubmittingFlow, setIsSubmittingFlow] = useState(false);
+  
+  // Basic report within task flow
+  const [showBasicReportModal, setShowBasicReportModal] = useState(false);
+  const [basicReportNotes, setBasicReportNotes] = useState("");
+  const [basicReportCategory, setBasicReportCategory] = useState("Other");
+  const [submittingBasicReport, setSubmittingBasicReport] = useState(false);
 
   // Restore shift state from local storage on mount
   useEffect(() => {
@@ -144,58 +164,206 @@ export default function CollectorHomeScreen() {
   };
 
   // Toggle single schedule completed (Todo List item)
-  const toggleScheduleComplete = (id, currentStatus) => {
+  const toggleScheduleComplete = (id, currentStatus, routeName = "Collection Duty", sitioName = "Depot") => {
     if (currentStatus === "completed") return; // No-op if already complete
-    Alert.alert(
-      "Complete Task",
-      "Mark this collection sitio task as completed?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Mark Completed",
-          onPress: () => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("POST", `${API_URL}/api/schedules/${id}/complete`);
-            xhr.onload = () => {
-              if (xhr.status === 200) {
-                fetchScheduleData();
-              } else {
-                Alert.alert("Error", "Could not complete task.");
-              }
-            };
-            xhr.send();
-          }
-        }
-      ]
-    );
+    
+    // Reset state for new flow
+    setBeforeImage("");
+    setAfterImage("");
+    setFlowStatus("clean");
+    setFlowLocation(`${sitioName}`);
+    setFlowWasteType("General");
+    setFlowBins(1);
+    
+    setActiveFlowTask({
+      scheduleId: id,
+      sitioName,
+      routeName,
+      step: 'options'
+    });
   };
 
   // Toggle specific sitio task completed inside a sequential schedule
-  const toggleTaskComplete = (scheduleId, sitioName, isCompleted) => {
+  const toggleTaskComplete = (scheduleId, sitioName, isCompleted, routeName = "Collection Duty") => {
     if (isCompleted) return; // No-op if already complete
-    Alert.alert(
-      "Complete Task",
-      `Mark "${sitioName}" collection task as completed?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Mark Completed",
-          onPress: () => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("POST", `${API_URL}/api/schedules/${scheduleId}/complete-task`);
-            xhr.setRequestHeader("Content-Type", "application/json");
-            xhr.onload = () => {
-              if (xhr.status === 200) {
-                fetchScheduleData();
-              } else {
-                Alert.alert("Error", "Could not complete task.");
-              }
-            };
-            xhr.send(JSON.stringify({ sitioName }));
+    
+    // Reset state for new flow
+    setBeforeImage("");
+    setAfterImage("");
+    setFlowStatus("clean");
+    setFlowLocation(`${sitioName}`);
+    setFlowWasteType("General");
+    setFlowBins(1);
+    
+    setActiveFlowTask({
+      scheduleId,
+      sitioName,
+      routeName,
+      step: 'options'
+    });
+  };
+
+  // Helper to request camera and snap photo (hybrid with mock camera)
+  const takePhotoStep = async (type) => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status === 'granted') {
+        let result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.6,
+          base64: true,
+        });
+        if (!result.canceled) {
+          const imgBase64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+          if (type === 'before') {
+            setBeforeImage(imgBase64);
+          } else {
+            setAfterImage(imgBase64);
           }
+          return;
         }
-      ]
-    );
+      }
+    } catch (e) {
+      console.warn("Camera error:", e);
+    }
+    
+    // Fallback placeholder mock image URLs if camera permission is denied or emulator
+    if (type === 'before') {
+      setBeforeImage(MOCK_BEFORE_IMAGE);
+    } else {
+      setAfterImage(MOCK_AFTER_IMAGE);
+    }
+  };
+
+  // Helper to submit the basic report
+  const submitBasicReportFlow = () => {
+    if (!activeFlowTask) return;
+    setSubmittingBasicReport(true);
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/api/reports`);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.onload = () => {
+      setSubmittingBasicReport(false);
+      if (xhr.status === 201) {
+        Alert.alert("Success", "Basic hazard report submitted successfully.");
+        setBasicReportNotes("");
+        setBasicReportCategory("Other");
+        setShowBasicReportModal(false);
+        setActiveFlowTask(null);
+      } else {
+        Alert.alert("Error", "Could not submit report.");
+      }
+    };
+    xhr.onerror = () => {
+      setSubmittingBasicReport(false);
+      Alert.alert("Error", "Network connection failed.");
+    };
+    
+    xhr.send(JSON.stringify({
+      category: basicReportCategory,
+      description: basicReportNotes || `Issue reported at ${activeFlowTask.sitioName}`,
+      location: activeFlowTask.sitioName,
+      reportedBy: driverName,
+      truckId: TRUCK_ID,
+    }));
+  };
+
+  // Helper to complete the cleaning flow and submit to backend
+  const submitCleaningFlow = async () => {
+    if (!activeFlowTask || isSubmittingFlow) return;
+    setIsSubmittingFlow(true);
+
+    try {
+      let finalBeforeUrl = beforeImage;
+      let finalAfterUrl = afterImage;
+
+      // Helper function to upload to Cloudinary if it's base64 data
+      const uploadToCloudinary = async (base64Data) => {
+        if (!base64Data || !base64Data.startsWith("data:")) return base64Data;
+        const res = await fetch(`${API_URL}/api/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: base64Data }),
+        });
+        if (!res.ok) throw new Error("Image upload failed");
+        const json = await res.json();
+        return json.url;
+      };
+
+      // Upload images in parallel if needed
+      if (beforeImage && beforeImage.startsWith("data:")) {
+        try {
+          finalBeforeUrl = await uploadToCloudinary(beforeImage);
+        } catch (_) {
+          finalBeforeUrl = MOCK_BEFORE_IMAGE;
+        }
+      }
+      if (afterImage && afterImage.startsWith("data:")) {
+        try {
+          finalAfterUrl = await uploadToCloudinary(afterImage);
+        } catch (_) {
+          finalAfterUrl = MOCK_AFTER_IMAGE;
+        }
+      }
+
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+      // 1. Post to collections endpoint
+      const collectionPayload = {
+        truckId: TRUCK_ID,
+        date: today,
+        stopName: activeFlowTask.sitioName,
+        stopAddress: flowLocation || activeFlowTask.sitioName,
+        wasteType: flowWasteType,
+        bins: flowBins,
+        routeId: activeFlowTask.scheduleId,
+        routeName: activeFlowTask.routeName,
+        driverName: driverName,
+        beforeImage: finalBeforeUrl,
+        afterImage: finalAfterUrl,
+        status: flowStatus,
+      };
+
+      const submitLogPromise = new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_URL}/api/collections`);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onload = () => {
+          if (xhr.status === 201) resolve(JSON.parse(xhr.responseText));
+          else reject(new Error("Could not log collection"));
+        };
+        xhr.onerror = () => reject(new Error("Network failed"));
+        xhr.send(JSON.stringify(collectionPayload));
+      });
+
+      await submitLogPromise;
+
+      // 2. Complete sitio task on schedule
+      const completeTaskPromise = new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_URL}/api/schedules/${activeFlowTask.scheduleId}/complete-task`);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onload = () => {
+          if (xhr.status === 200) resolve();
+          else reject(new Error("Could not mark task complete"));
+        };
+        xhr.onerror = () => reject(new Error("Network failed"));
+        xhr.send(JSON.stringify({ sitioName: activeFlowTask.sitioName }));
+      });
+
+      await completeTaskPromise;
+
+      Alert.alert("Success", "Collection verified and logged successfully!");
+      fetchScheduleData();
+      setActiveFlowTask(null);
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to log pickup.");
+    } finally {
+      setIsSubmittingFlow(false);
+    }
   };
 
   // AI Chat
@@ -411,7 +579,7 @@ export default function CollectorHomeScreen() {
                         {sched.sitioTasks.map((task, idx) => (
                           <View key={task._id || idx} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6 }}>
                             <TouchableOpacity
-                              onPress={() => toggleTaskComplete(sched._id, task.name, task.completed)}
+                              onPress={() => toggleTaskComplete(sched._id, task.name, task.completed, sched.routeName || "Collection Duty")}
                               activeOpacity={task.completed ? 1 : 0.7}
                               style={{ padding: 4 }}
                             >
@@ -434,7 +602,7 @@ export default function CollectorHomeScreen() {
                       // Legacy single-sitio schedule manual completion fallback
                       <View style={{ marginTop: 4, paddingLeft: 12 }}>
                         <TouchableOpacity
-                          onPress={() => toggleScheduleComplete(sched._id, sched.status)}
+                          onPress={() => toggleScheduleComplete(sched._id, sched.status, sched.routeName || "Collection Duty", sched.sitio || "Depot")}
                           activeOpacity={sched.status === "completed" ? 1 : 0.7}
                           style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}
                         >
@@ -467,6 +635,384 @@ export default function CollectorHomeScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Clearance Flow Modal */}
+      <Modal
+        visible={!!activeFlowTask}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (!isSubmittingFlow) {
+            setActiveFlowTask(null);
+          }
+        }}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
+          <View style={{ flex: 1 }}>
+            {/* Header */}
+            <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (activeFlowTask.step === 'options') {
+                    setActiveFlowTask(null);
+                  } else if (activeFlowTask.step === 'before_photo') {
+                    setActiveFlowTask(prev => ({ ...prev, step: 'options' }));
+                  } else if (activeFlowTask.step === 'cleaning') {
+                    setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }));
+                  } else if (activeFlowTask.step === 'after_photo') {
+                    setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
+                  } else if (activeFlowTask.step === 'details') {
+                    setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }));
+                  }
+                }}
+                disabled={isSubmittingFlow}
+                style={{ padding: 4 }}
+              >
+                <MaterialIcons name="arrow-back" size={24} color="#F8FAFC" />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>
+                {activeFlowTask?.step === 'options' && 'Select Action'}
+                {activeFlowTask?.step === 'before_photo' && 'Proof: Before Cleaning'}
+                {activeFlowTask?.step === 'cleaning' && 'Clearing In Progress'}
+                {activeFlowTask?.step === 'after_photo' && 'Proof: After Cleaning'}
+                {activeFlowTask?.step === 'details' && 'Log Verification Details'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setActiveFlowTask(null)}
+                disabled={isSubmittingFlow}
+                style={{ padding: 4 }}
+              >
+                <MaterialIcons name="close" size={24} color="#F8FAFC" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Step Content */}
+            <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 20, justifyContent: 'center' }}>
+              {activeFlowTask?.step === 'options' && (
+                <View style={{ gap: 16, width: '100%' }}>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginBottom: 8 }}>
+                    {activeFlowTask.sitioName}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
+                    Select an action to perform at this garbage collection area.
+                  </Text>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      setBasicReportNotes("");
+                      setBasicReportCategory("Other");
+                      setShowBasicReportModal(true);
+                    }}
+                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
+                  >
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialIcons name="warning" size={26} color="#EF4444" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Basic Report</Text>
+                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>File a hazard, obstruction or incident report</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }))}
+                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#10B981', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
+                  >
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialIcons name="local-shipping" size={26} color="#10B981" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Clear Area & Log Pickup</Text>
+                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Perform standard before/after clearing flow</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {activeFlowTask?.step === 'before_photo' && (
+                <View style={{ alignItems: 'center', width: '100%' }}>
+                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
+                    Please capture the accumulation levels BEFORE you start cleaning.
+                  </Text>
+
+                  {beforeImage ? (
+                    <View style={{ width: '100%', alignItems: 'center' }}>
+                      <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
+                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                        <TouchableOpacity
+                          onPress={() => takePhotoStep('before')}
+                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }))}
+                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
+                      <TouchableOpacity
+                        onPress={() => takePhotoStep('before')}
+                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap Before Photo</Text>
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Permission prompt will open. Fallback to sample photo on simulators.</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {activeFlowTask?.step === 'cleaning' && (
+                <View style={{ alignItems: 'center', width: '100%', gap: 24 }}>
+                  <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#E2E8F0' }}>
+                    <MaterialIcons name="cleaning-services" size={54} color="#10B981" />
+                  </View>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' }}>
+                    Clean the Area Now
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', lineHeight: 22 }}>
+                    Begin collecting waste bins and sweeping the surroundings at <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{activeFlowTask.sitioName}</Text>.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }))}
+                    style={{ backgroundColor: '#10B981', width: '100%', height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Mark as Cleared</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {activeFlowTask?.step === 'after_photo' && (
+                <View style={{ alignItems: 'center', width: '100%' }}>
+                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
+                    Please capture the final cleared area AFTER cleaning is done.
+                  </Text>
+
+                  {afterImage ? (
+                    <View style={{ width: '100%', alignItems: 'center' }}>
+                      <Image source={{ uri: afterImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
+                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                        <TouchableOpacity
+                          onPress={() => takePhotoStep('after')}
+                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
+                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
+                      <TouchableOpacity
+                        onPress={() => takePhotoStep('after')}
+                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap After Photo</Text>
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Verify that the site is completely empty and clean.</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {activeFlowTask?.step === 'details' && (
+                <View style={{ width: '100%' }}>
+                  {/* Photo Thumbnails */}
+                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>BEFORE</Text>
+                      {beforeImage ? (
+                        <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
+                      ) : (
+                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
+                      )}
+                    </View>
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>AFTER</Text>
+                      {afterImage ? (
+                        <Image source={{ uri: afterImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
+                      ) : (
+                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Form */}
+                  <View style={{ gap: 16 }}>
+                    {/* Status */}
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Area Status</Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {[
+                          { label: 'Clean', value: 'clean', color: '#10B981', bg: 'rgba(16,185,129,0.1)' },
+                          { label: 'Moderate', value: 'moderate', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
+                          { label: 'Critical', value: 'critical', color: '#EF4444', bg: 'rgba(239,68,68,0.1)' }
+                        ].map(st => {
+                          const isSelected = flowStatus === st.value;
+                          return (
+                            <TouchableOpacity
+                              key={st.value}
+                              onPress={() => setFlowStatus(st.value)}
+                              style={{ flex: 1, height: 40, borderRadius: 10, borderWidth: 1.5, borderColor: isSelected ? st.color : '#334155', backgroundColor: isSelected ? st.bg : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? st.color : '#94A3B8' }}>{st.label}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    {/* Location Description */}
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 6 }}>Location Reference</Text>
+                      <TextInput
+                        style={{ borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, fontSize: 14, color: '#F8FAFC', backgroundColor: '#1E293B', height: 44 }}
+                        value={flowLocation}
+                        onChangeText={setFlowLocation}
+                        placeholder="e.g. Sitio Sudlon near court"
+                        placeholderTextColor="#64748B"
+                      />
+                    </View>
+
+                    {/* Waste Type */}
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Waste Classification</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                        {['General', 'Organic', 'Recyclable', 'Hazardous', 'Bulky'].map(wt => {
+                          const isSelected = flowWasteType === wt;
+                          return (
+                            <TouchableOpacity
+                              key={wt}
+                              onPress={() => setFlowWasteType(wt)}
+                              style={{ height: 36, borderRadius: 18, paddingHorizontal: 16, borderWidth: 1.5, borderColor: isSelected ? '#10B981' : '#334155', backgroundColor: isSelected ? 'rgba(16,185,129,0.1)' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? '#10B981' : '#94A3B8' }}>{wt}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+
+                    {/* Bins Cleared */}
+                    <View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Number of Bins Cleared</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                        <TouchableOpacity
+                          onPress={() => setFlowBins(b => Math.max(1, b - 1))}
+                          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <MaterialIcons name="remove" size={20} color="#F8FAFC" />
+                        </TouchableOpacity>
+                        <Text style={{ fontSize: 18, fontWeight: '800', color: '#F8FAFC', minWidth: 30, textAlign: 'center' }}>{flowBins}</Text>
+                        <TouchableOpacity
+                          onPress={() => setFlowBins(b => b + 1)}
+                          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <MaterialIcons name="add" size={20} color="#F8FAFC" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                      onPress={submitCleaningFlow}
+                      disabled={isSubmittingFlow}
+                      style={{ backgroundColor: '#10B981', height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
+                    >
+                      {isSubmittingFlow ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Submit Collection Proof</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Basic Report Sub-Modal inside Flow */}
+      <Modal
+        visible={showBasicReportModal}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => {
+          if (!submittingBasicReport) setShowBasicReportModal(false);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#1E293B', width: '100%', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#334155' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#F8FAFC' }}>File Incident Report</Text>
+              <TouchableOpacity onPress={() => setShowBasicReportModal(false)}>
+                <MaterialIcons name="close" size={24} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Incident Category</Text>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+              {['Blocked Road', 'Hazard', 'Other'].map(cat => {
+                const isSelected = basicReportCategory === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    onPress={() => setBasicReportCategory(cat)}
+                    style={{ flex: 1, height: 38, borderRadius: 8, borderWidth: 1.5, borderColor: isSelected ? '#10B981' : '#334155', backgroundColor: isSelected ? 'rgba(16,185,129,0.1)' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#10B981' : '#94A3B8' }}>{cat}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 6 }}>Notes / Description</Text>
+            <TextInput
+              style={{ borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#F8FAFC', backgroundColor: '#0F172A', height: 80, textAlignVertical: 'top', marginBottom: 20 }}
+              value={basicReportNotes}
+              onChangeText={setBasicReportNotes}
+              placeholder="e.g. Blocked street due to parked truck"
+              placeholderTextColor="#475569"
+              multiline
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => setShowBasicReportModal(false)}
+                style={{ flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ color: '#94A3B8', fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={submitBasicReportFlow}
+                disabled={submittingBasicReport}
+                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {submittingBasicReport ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Submit Report</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* EcoAssist AI Chat Modal */}
       <Modal

@@ -223,7 +223,7 @@ export default function ZoneManagement() {
         {/* Map */}
         <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden h-[480px] shadow">
           <MapContainer center={[10.3157, 123.8854]} zoom={13} style={{ width: '100%', height: '100%' }} className="z-0">
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}" />
             {zones.map(z => z.lat && z.lng ? (
               <Circle
                 key={z._id}
