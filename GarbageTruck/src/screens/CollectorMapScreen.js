@@ -546,13 +546,17 @@ export default function CollectorMapScreen() {
   const { top: topInset, bottom: bottomInset } = useSafeAreaInsets();
   const [todaySchedules, setTodaySchedules] = useState(null); // null=loading, []=not scheduled
   const [activeScheduleId, setActiveScheduleId] = useState(null);
+  const [hazardOptimizeActive, setHazardOptimizeActive] = useState(false);
+  const shouldNotifyRef = useRef(false);
 
   // Fetch all of today's schedules for this truck
-  const fetchTodaySchedules = useCallback(() => {
+  const fetchTodaySchedules = useCallback((notifyResidents = false) => {
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const truckIdUpper = TRUCK_ID.toUpperCase();
-    const url = `${TRACKING_SERVER}/api/schedules/truck/${truckIdUpper}/today?date=${today}`;
+    const endpoint = hazardOptimizeActive ? "priority-stops" : "today";
+    const notifyParam = (hazardOptimizeActive && notifyResidents) ? "&notify=true" : "";
+    const url = `${TRACKING_SERVER}/api/schedules/truck/${truckIdUpper}/${endpoint}?date=${today}${notifyParam}`;
     
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
@@ -578,10 +582,14 @@ export default function CollectorMapScreen() {
     xhr.onerror = () => setTodaySchedules([]);
     xhr.ontimeout = () => setTodaySchedules([]);
     xhr.send();
-  }, [TRUCK_ID]);
+  }, [TRUCK_ID, hazardOptimizeActive]);
 
-  // Initial fetch on mount
-  useEffect(() => { fetchTodaySchedules(); }, [fetchTodaySchedules]);
+  // Initial fetch on mount and when optimization status changes
+  useEffect(() => {
+    const notify = shouldNotifyRef.current;
+    shouldNotifyRef.current = false;
+    fetchTodaySchedules(notify);
+  }, [fetchTodaySchedules]);
 
   // Re-fetch schedule when Map tab focused
   useFocusEffect(
@@ -782,7 +790,10 @@ export default function CollectorMapScreen() {
   // Fetch live garbage-area heatmap data
   const fetchGarbageAreas = useCallback(() => {
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', `${TRACKING_SERVER}/api/garbage-areas`);
+    const url = assignedRouteBarangay
+      ? `${TRACKING_SERVER}/api/garbage-areas?barangay=${encodeURIComponent(assignedRouteBarangay)}`
+      : `${TRACKING_SERVER}/api/garbage-areas`;
+    xhr.open('GET', url);
     xhr.timeout = 8000;
     xhr.onload = () => {
       if (xhr.status === 200) {
@@ -794,7 +805,7 @@ export default function CollectorMapScreen() {
       }
     };
     xhr.send();
-  }, []);
+  }, [assignedRouteBarangay]);
 
   useEffect(() => {
     fetchGarbageAreas();
@@ -865,6 +876,48 @@ export default function CollectorMapScreen() {
       }
     });
 
+    socket.on("iot:alert", (alert) => {
+      if (!navigationActiveRef.current) return;
+      if (alert.severity === "critical" && alert.barangay?.toLowerCase() === assignedRouteBarangay?.toLowerCase()) {
+        Alert.alert(
+          "⚠️ Critical IoT Hazard Alert",
+          `Toxic gas levels (${alert.message || 'Exceeded levels'}) detected in your service area. Would you like to optimize your route to handle this hazard first?`,
+          [
+            { text: "No", style: "cancel" },
+            {
+              text: "Yes, Reroute",
+              onPress: () => {
+                shouldNotifyRef.current = true;
+                setHazardOptimizeActive(true);
+                fetchTodaySchedules(true);
+              }
+            }
+          ]
+        );
+      }
+    });
+
+    socket.on("report:new", (report) => {
+      if (!navigationActiveRef.current) return;
+      if (report.category === "Overflowing Bin" && report.barangay?.toLowerCase() === assignedRouteBarangay?.toLowerCase()) {
+        Alert.alert(
+          "⚠️ New Overflowing Bin Report",
+          `A new overflowing waste report was submitted at ${report.location || report.sitio || 'your area'}. Would you like to optimize your route to collect this prioritized bin?`,
+          [
+            { text: "No", style: "cancel" },
+            {
+              text: "Yes, Reroute",
+              onPress: () => {
+                shouldNotifyRef.current = true;
+                setHazardOptimizeActive(true);
+                fetchTodaySchedules(true);
+              }
+            }
+          ]
+        );
+      }
+    });
+
     socket.on("truck:status", ({ truckId, status }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase() && status === "offline") {
         const pos = lastGpsRef.current;
@@ -889,6 +942,11 @@ export default function CollectorMapScreen() {
         const { latitude, longitude, heading } = initial.coords;
         lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
         setCurrentLocation({ lat: latitude, lng: longitude });
+        if (webViewReady.current) {
+          webViewRef.current?.injectJavaScript(
+            `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
+          );
+        }
       } catch (_) {}
 
       locationSub = await Location.watchPositionAsync(
@@ -903,6 +961,13 @@ export default function CollectorMapScreen() {
           lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
           setCurrentLocation({ lat: latitude, lng: longitude });
 
+          // Always draw the truck position on the map even if shift hasn't started
+          if (webViewReady.current) {
+            webViewRef.current?.injectJavaScript(
+              `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
+            );
+          }
+
           if (navigationActiveRef.current) {
             setCurrentSpeed(Math.round((speed || 0) * 3.6));
             socket.emit("truck:location", {
@@ -912,10 +977,6 @@ export default function CollectorMapScreen() {
               heading: heading || 0,
               speed: speed || 0,
             });
-
-            webViewRef.current?.injectJavaScript(
-              `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
-            );
           }
         },
       );
@@ -1057,6 +1118,10 @@ export default function CollectorMapScreen() {
     shiftStartRef.current = Date.now();
     setElapsedDisplay("00:00");
 
+    // Automatically enable hazard routing on shift start and notify residents
+    shouldNotifyRef.current = true;
+    setHazardOptimizeActive(true);
+
     const pos = lastGpsRef.current;
     const lat = pos?.lat ?? 10.325;
     const lng = pos?.lng ?? 123.893;
@@ -1080,6 +1145,7 @@ export default function CollectorMapScreen() {
     const pos = lastGpsRef.current;
     navigationActiveRef.current = false;
     setNavigationActive(false);
+    setHazardOptimizeActive(false);
     shiftStartRef.current = null;
     setElapsedDisplay("00:00");
     setCurrentSpeed(0);
@@ -1101,6 +1167,12 @@ export default function CollectorMapScreen() {
 
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
+    if (lastGpsRef.current) {
+      const { lat, lng, heading } = lastGpsRef.current;
+      webViewRef.current?.injectJavaScript(
+        `window.updateDriverPosition(${lat}, ${lng}, ${heading || 0}); true;`,
+      );
+    }
   }, []);
 
   return (
@@ -1250,6 +1322,31 @@ export default function CollectorMapScreen() {
         {/* Floating Actions Overlay */}
         {!isFocusMode && (
           <View style={[styles.floatingActions, { top: Math.max(16, topInset) }]}>
+            <TouchableOpacity
+              style={[
+                styles.floatingBtn,
+                hazardOptimizeActive ? { backgroundColor: "#006A3B" } : { backgroundColor: "#FFFFFF" }
+              ]}
+              onPress={() => {
+                const nextVal = !hazardOptimizeActive;
+                shouldNotifyRef.current = true;
+                setHazardOptimizeActive(nextVal);
+                Alert.alert(
+                  nextVal ? "Hazard Optimization Active" : "Standard Route Restored",
+                  nextVal
+                    ? "Collection sequence prioritized by active gas & overflowing reports hazards. Scoped residents have been alerted."
+                    : "Standard schedule routing restored."
+                );
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons
+                name="offline-bolt"
+                size={24}
+                color={hazardOptimizeActive ? "#FFFFFF" : "#E53935"}
+              />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.floatingBtn, { backgroundColor: "#DC2626" }]}
               onPress={() => setShowReportModal(true)}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Filter, CheckCircle, Clock, ShieldAlert, AlertCircle, Search, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Filter, CheckCircle, Clock, ShieldAlert, AlertCircle, Search, RefreshCw, Trash2 } from 'lucide-react';
 import API from '../config';
 
 export default function AlertsManagement() {
@@ -35,6 +35,26 @@ export default function AlertsManagement() {
       setAlerts(prev => prev.map(a => a._id === id ? { ...a, acknowledged: true } : a));
     } catch (err) {
       console.error('Failed to acknowledge alert', err);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this alert?")) return;
+    try {
+      await axios.delete(`${API}/api/iot/alerts/${id}`);
+      setAlerts(prev => prev.filter(a => a._id !== id));
+    } catch (err) {
+      console.error('Failed to delete alert', err);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm("WARNING: This will permanently delete all system and IoT alerts for your barangay. Are you sure you want to clear all alerts to maximize storage?")) return;
+    try {
+      await axios.delete(`${API}/api/iot/alerts`);
+      setAlerts([]);
+    } catch (err) {
+      console.error('Failed to clear alerts', err);
     }
   };
 
@@ -144,12 +164,20 @@ export default function AlertsManagement() {
             </div>
           </div>
           
-          <button 
-            onClick={fetchAlerts}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleClearAll}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl text-xs font-bold text-red-700 transition-colors shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Clear All Alerts
+            </button>
+            <button 
+              onClick={fetchAlerts}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+          </div>
         </div>
 
         {/* Table List */}
@@ -208,7 +236,7 @@ export default function AlertsManagement() {
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                    <td className="px-6 py-4 text-right whitespace-nowrap flex items-center justify-end gap-2.5">
                       {alert.acknowledged ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 px-3 py-1.5">
                           <CheckCircle className="w-4 h-4" /> Resolved
@@ -221,6 +249,13 @@ export default function AlertsManagement() {
                           <CheckCircle className="w-3.5 h-3.5" /> Acknowledge
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(alert._id)}
+                        className="inline-flex items-center justify-center p-1.5 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-lg transition-colors border border-slate-200 hover:border-red-200"
+                        title="Delete Alert"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}

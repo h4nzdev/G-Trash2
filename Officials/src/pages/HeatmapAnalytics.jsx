@@ -328,18 +328,22 @@ export default function HeatmapAnalytics() {
     return () => Object.values(toastTimers.current).forEach(clearTimeout);
   }, []);
 
+  useEffect(() => {
+    if (official?.barangay && official.barangay !== 'All') {
+      setSensorForm(f => ({ ...f, barangay: official.barangay }));
+    }
+  }, [official]);
+
   const fetchZonesAndBoundary = async () => {
     setLoading(true);
     try {
-      const [zonesRes, boundaryRes, sensorRes, unregRes] = await Promise.all([
+      const [zonesRes, boundaryRes, sensorRes] = await Promise.all([
         axios.get(`${API}/api/garbage-areas`),
         official?.barangay ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`) : Promise.resolve({ data: { boundary: [] } }),
         axios.get(`${API}/api/sensor-zones`),
-        axios.get(`${API}/api/unregistered-sensors`),
       ]);
       setZones(zonesRes.data);
       setSensorZones(sensorRes.data);
-      if (unregRes) setUnregisteredSensors(unregRes.data);
       if (boundaryRes.data.boundary?.length > 0) {
         setBoundary(boundaryRes.data.boundary);
       }
@@ -383,7 +387,13 @@ export default function HeatmapAnalytics() {
         return exists ? prev.map(z => z._id === data._id ? data : z) : [data, ...prev];
       });
       setSensorMsg({ type: 'ok', text: `Sensor "${data.sensorId}" registered at (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` });
-      setSensorForm({ sensorId: '', location: '', barangay: '', lat: '', lng: '' });
+      setSensorForm({
+        sensorId: '',
+        location: '',
+        barangay: (official?.barangay && official.barangay !== 'All') ? official.barangay : '',
+        lat: '',
+        lng: ''
+      });
       setTimeout(() => setSensorMsg(null), 5000);
     } catch (err) {
       setSensorMsg({ type: 'err', text: err?.response?.data?.error || 'Failed to register sensor' });
@@ -1070,7 +1080,8 @@ export default function HeatmapAnalytics() {
                       placeholder="e.g. Lahug"
                       value={sensorForm.barangay}
                       onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
-                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white shadow-sm"
+                      disabled={official?.barangay && official.barangay !== 'All'}
+                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-slate-50 disabled:bg-slate-100 disabled:text-slate-500 shadow-sm"
                     />
                   </div>
                 </div>

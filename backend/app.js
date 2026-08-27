@@ -1181,6 +1181,23 @@ app.post("/api/residents/login", async (req, res) => {
   }
 });
 
+app.get("/api/residents/:id", async (req, res) => {
+  try {
+    const resident = await Resident.findById(req.params.id);
+    if (!resident) return res.status(404).json({ error: "Resident not found" });
+    res.json({
+      id: resident._id,
+      name: `${resident.firstName} ${resident.lastName}`,
+      email: resident.email,
+      barangay: resident.barangay,
+      address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
+      notificationsClearedAt: resident.notificationsClearedAt || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch("/api/residents/:id", async (req, res) => {
   try {
     const {
@@ -1762,6 +1779,22 @@ app.put("/api/trucks/:truckId/push-token", async (req, res) => {
   }
 });
 
+// Save Expo push token for a resident (called on app launch)
+app.put("/api/residents/:id/push-token", async (req, res) => {
+  const { pushToken } = req.body;
+  if (!pushToken) return res.status(400).json({ error: "pushToken required" });
+  try {
+    await Resident.findByIdAndUpdate(
+      req.params.id,
+      { pushToken },
+      { new: true },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Helper — send Expo push notification to a truck
 async function notifyTruck(truckId, title, body, data = {}) {
   try {
@@ -1788,6 +1821,56 @@ async function notifyTruck(truckId, title, body, data = {}) {
     req2.write(payload);
     req2.end();
   } catch {}
+}
+
+// Helper — send batch Expo push notifications to all residents in a barangay
+async function notifyBarangayResidents(barangay, title, body, data = {}) {
+  try {
+    const residents = await Resident.find({
+      barangay,
+      pushToken: { $regex: /^ExponentPushToken/ },
+    });
+    if (residents.length === 0) return;
+
+    const chunks = [];
+    let currentChunk = [];
+
+    for (const r of residents) {
+      currentChunk.push({
+        to: r.pushToken,
+        sound: "default",
+        title,
+        body,
+        data,
+      });
+
+      if (currentChunk.length === 100) {
+        chunks.push(currentChunk);
+        currentChunk = [];
+      }
+    }
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    const axios = require("axios");
+    for (const chunk of chunks) {
+      try {
+        await axios.post("https://exp.host/--/api/v2/push/send", chunk, {
+          headers: {
+            "Content-Type": "application/json",
+            "accept-encoding": "gzip, deflate",
+            "accept": "application/json",
+          },
+          timeout: 8000,
+        });
+      } catch (err) {
+        console.error("[Push Notifications] Barangay batch send failed:", err.message);
+      }
+    }
+  } catch (err) {
+    console.error("[Push Notifications] Error notifying barangay residents:", err.message);
+  }
 }
 
 // Called by GarbageTruck app to push GPS position
@@ -3331,6 +3414,110 @@ app.get("/api/schedules/truck/:truckId/today", async (req, res) => {
   }
 });
 
+// GET: prioritized sequential stops for a truck based on active hazard ratings
+app.get("/api/schedules/truck/:truckId/priority-stops", async (req, res) => {
+  try {
+    const truckId = req.params.truckId.toUpperCase();
+    const today = req.query.date || getTodayYMD();
+
+    const schedules = await Schedule.find({ truckId, date: today });
+    if (schedules.length === 0) {
+      return res.json({ schedules: [], today });
+    }
+
+    const prioritizedSchedules = [];
+
+    for (const sched of schedules) {
+      if (!sched.sitioTasks || sched.sitioTasks.length <= 1) {
+        prioritizedSchedules.push(sched);
+        continue;
+      }
+
+      // Fetch active garbage areas in this barangay to map hazard status
+      const garbageAreas = await GarbageArea.find({ barangay: sched.barangay });
+
+      const mappedTasks = sched.sitioTasks.map(task => {
+        // Find matching garbage area near this task (name matching or distance < 200m)
+        const match = garbageAreas.find(area => {
+          if (area.name.toLowerCase() === task.name.toLowerCase()) return true;
+          const dist = haversineM(task.lat, task.lng, area.lat, area.lng);
+          return dist < 200;
+        });
+
+        const status = match ? match.status : "clean";
+        const hazardWeight = status === "critical" ? 3 : status === "moderate" ? 2 : 1;
+
+        return {
+          ...task.toObject(),
+          status,
+          hazardWeight,
+        };
+      });
+
+      // Split into completed vs pending tasks
+      const completedTasks = mappedTasks.filter(t => t.completed);
+      const pendingTasks = mappedTasks.filter(t => !t.completed);
+
+      // Sort pending tasks by hazard weight descending (critical first, then moderate, then clean)
+      pendingTasks.sort((a, b) => b.hazardWeight - a.hazardWeight);
+
+      // Re-assembled sequence: completed tasks kept at start/history, pending tasks prioritized
+      const prioritizedTasks = [...completedTasks, ...pendingTasks];
+
+      // Re-fetch road driving path coordinates from ORS for the new sequence
+      let newRouteCoords = [];
+      if (prioritizedTasks.length >= 2) {
+        try {
+          const coordinates = prioritizedTasks.map(t => [t.lng, t.lat]);
+          const axios = require("axios");
+          const orsRes = await axios.post(
+            'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+            { coordinates },
+            { 
+              headers: { 
+                'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
+                'Content-Type': 'application/json' 
+              },
+              timeout: 5000
+            }
+          );
+          const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+          if (coords && coords.length > 0) {
+            newRouteCoords = coords.map(c => [c[1], c[0]]);
+            console.log(`[Priority Routing] Re-routed ${prioritizedTasks.length} stops via ORS successfully.`);
+          }
+        } catch (err) {
+          console.warn("[Priority Routing] ORS failed, using straight lines fallback:", err.message);
+        }
+      }
+      if (newRouteCoords.length === 0) {
+        newRouteCoords = prioritizedTasks.map(t => [t.lat, t.lng]);
+      }
+
+      // Convert mongoose document to plain object and update sitioTasks/routeCoords
+      const schedObj = sched.toObject();
+      schedObj.sitioTasks = prioritizedTasks;
+      schedObj.routeCoords = newRouteCoords;
+      
+      prioritizedSchedules.push(schedObj);
+
+      // Trigger resident notification alert if client requests it
+      if (req.query.notify === "true" && pendingTasks.some(t => t.hazardWeight > 1)) {
+        notifyBarangayResidents(
+          sched.barangay,
+          "🚚 Collector Rerouted for Hazards",
+          `Truck ${truckId} is prioritizing high-hazard areas in ${sched.barangay} today. Expect minor schedule changes.`,
+          { type: "route_priority", routeName: sched.routeName }
+        ).catch(() => {});
+      }
+    }
+
+    res.json({ schedules: prioritizedSchedules, today });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET: no auth â†’ by ?month=YYYY-MM (Resident calendar); auth â†’ same + supports ?date=
 app.get("/api/schedules", optionalAuth, async (req, res) => {
   try {
@@ -3901,8 +4088,15 @@ app.get("/api/sensor-zones", async (req, res) => {
 // POST: register or update a sensor zone (links sensorId → GPS coordinates)
 // Use this once to seed the sensor's physical location in the DB.
 // After seeding, every POST /api/iot/sensor-data will update this zone automatically.
-app.post("/api/sensor-zones", async (req, res) => {
-  const { sensorId, location, barangay, lat, lng } = req.body;
+app.post("/api/sensor-zones", optionalAuth, async (req, res) => {
+  const { sensorId, location, lat, lng } = req.body;
+  let barangay = req.body.barangay;
+
+  // Auto-assign barangay from logged-in official session if scoped
+  if (req.official && req.official.barangay && req.official.barangay !== "All") {
+    barangay = req.official.barangay;
+  }
+
   if (!sensorId || lat == null || lng == null) {
     return res.status(400).json({ error: "sensorId, lat, and lng are required" });
   }
@@ -3918,7 +4112,7 @@ app.post("/api/sensor-zones", async (req, res) => {
           lng,
           source: "iot",
         },
-        $setOnInsert: { status: "moderate", reportCount: 0, intensity: 0.5 },
+        $setOnInsert: { status: "clean", reportCount: 0, intensity: 0.2 },
       },
       { upsert: true, new: true },
     );
@@ -4014,14 +4208,65 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   try {
     const airQuality = classifyAirQuality(ammonia, methane);
 
-    // 1. Save reading
+    let finalLat = lat;
+    let finalLng = lng;
+    let finalBarangay = barangay;
+    let finalLocation = location;
+
+    // 1. Look up existing pre-registered GarbageArea from dashboard
+    const existingArea = await GarbageArea.findOne({ sensorId });
+    if (existingArea) {
+      if (finalLat == null || finalLat === 0) finalLat = existingArea.lat;
+      if (finalLng == null || finalLng === 0) finalLng = existingArea.lng;
+      if (!finalBarangay) finalBarangay = existingArea.barangay;
+      if (!finalLocation) finalLocation = existingArea.name;
+    }
+
+    // 2. Geolocation Fallback: If no coordinates provided or resolved, attempt IP address geolocating
+    if (finalLat == null || finalLat === 0 || finalLng == null || finalLng === 0) {
+      try {
+        let ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+        if (ip.includes("::ffff:")) {
+          ip = ip.replace("::ffff:", "");
+        }
+        if (ip === "127.0.0.1" || ip === "::1") {
+          // Default fallback (Lahug, Metro Sports Center area coordinates)
+          finalLat = 10.3285;
+          finalLng = 123.9033;
+          finalBarangay = finalBarangay || "Lahug";
+          finalLocation = finalLocation || "Metro Sports Center";
+        } else {
+          const axios = require("axios");
+          const geoRes = await axios.get(`http://ip-api.com/json/${ip}`, { timeout: 3000 });
+          if (geoRes.data && geoRes.data.status === "success") {
+            finalLat = geoRes.data.lat;
+            finalLng = geoRes.data.lon;
+            finalLocation = finalLocation || geoRes.data.city || "Cebu City";
+            finalBarangay = finalBarangay || "Lahug";
+          } else {
+            finalLat = 10.3285;
+            finalLng = 123.9033;
+            finalBarangay = finalBarangay || "Lahug";
+            finalLocation = finalLocation || "Metro Sports Center";
+          }
+        }
+      } catch (err) {
+        console.warn("[IoT Geolocation] Failed to resolve IP geolocation:", err.message);
+        finalLat = 10.3285;
+        finalLng = 123.9033;
+        finalBarangay = finalBarangay || "Lahug";
+        finalLocation = finalLocation || "Metro Sports Center";
+      }
+    }
+
+    // 3. Save reading with the resolved coordinates
     const reading = await SensorReading.create({
       sensorId,
       deviceType: deviceType || "ESP32",
-      location: location || "",
-      barangay: barangay || "",
-      lat,
-      lng,
+      location: finalLocation || "",
+      barangay: finalBarangay || "",
+      lat: finalLat,
+      lng: finalLng,
       ammonia,
       methane,
       hydrogen,
@@ -4033,43 +4278,41 @@ app.post("/api/iot/sensor-data", async (req, res) => {
       airQuality,
     });
 
-    // 2. AI analysis — generate alerts if thresholds exceeded
+    // 4. AI analysis — generate alerts if thresholds exceeded
     const alertDefs = generateIoTAlerts(reading);
     const savedAlerts = [];
     for (const a of alertDefs) {
       const alert = await IoTAlert.create(a);
       savedAlerts.push(alert);
-      io.emit("iot:alert", alert); // real-time push
+      io.emit("iot:alert", alert); // real-time push to dashboard & other endpoints
     }
 
-    // 3. Auto-create a report when air quality is Unhealthy or Hazardous
+    // 5. Auto-create a report when air quality is Unhealthy or Hazardous
     let autoReport = null;
     if (airQuality === "Unhealthy" || airQuality === "Hazardous") {
       const severity = airQuality === "Hazardous" ? "Critical" : "High";
       autoReport = await Report.create({
-        title: `IoT Alert: ${airQuality} Air Quality at ${location || sensorId}`,
-        category:
-          airQuality === "Hazardous" ? "Hazardous Waste" : "Overflowing Bin",
+        title: `IoT Alert: ${airQuality} Air Quality at ${finalLocation || sensorId}`,
+        category: airQuality === "Hazardous" ? "Hazardous Waste" : "Overflowing Bin",
         description: `Automated IoT detection — Ammonia: ${ammonia} ppm, Methane: ${methane}%, Bin Level: ${binLevel}%. Sensor: ${sensorId}`,
-        location: location || "",
-        barangay: barangay || "",
-        lat,
-        lng,
+        location: finalLocation || "",
+        barangay: finalBarangay || "",
+        lat: finalLat,
+        lng: finalLng,
         reportedBy: `IoT Sensor ${sensorId}`,
         priority: severity,
       });
       io.emit("report:new", autoReport);
     }
 
-    // 4. Update garbage-area heatmap node if it exists for this sensor
+    // 6. Update or Create garbage-area map node
     const areaStatus =
-      airQuality === "Hazardous"
+      airQuality === "Hazardous" || airQuality === "Unhealthy"
         ? "critical"
-        : airQuality === "Unhealthy"
-          ? "critical"
-          : airQuality === "Moderate"
-            ? "moderate"
-            : "clean";
+        : airQuality === "Moderate"
+          ? "moderate"
+          : "clean";
+
     const areaIntensity =
       airQuality === "Hazardous"
         ? 1.0
@@ -4078,89 +4321,65 @@ app.post("/api/iot/sensor-data", async (req, res) => {
           : airQuality === "Moderate"
             ? 0.5
             : 0.2;
-    // 4a. If sensor sends GPS: upsert GarbageArea by name and tag with sensorId
-    if (lat != null && lng != null) {
-      const updatedArea = await GarbageArea.findOneAndUpdate(
-        { $or: [{ sensorId }, { name: location || sensorId }] },
-        {
-          lat,
-          lng,
-          status: areaStatus,
-          ammonia: `${ammonia} ppm`,
-          methane: `${methane}%`,
-          intensity: areaIntensity,
-          barangay: barangay || "",
-          sensorId,
-          source: "iot",
-          name: location || sensorId,
-        },
-        { upsert: true, new: true },
-      );
-      io.emit("garbage-area:updated", updatedArea);
-      const iotColorMap = { critical: "red", moderate: "yellow", clean: "green" };
-      io.emit("zone:status:update", {
-        zoneId: updatedArea._id,
-        areaId: updatedArea._id,
-        name: updatedArea.name,
-        barangay: updatedArea.barangay,
-        previousStatus: null,
-        newStatus: areaStatus,
-        newColor: iotColorMap[areaStatus] || "yellow",
-        reason: "iot_sensor_reading",
-        changedBy: `Sensor ${sensorId}`,
-        timestamp: new Date().toISOString(),
-      });
-      if (updatedArea.barangay) {
-        const qualityPts =
-          airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
-          airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
-        if (qualityPts !== 0) {
-          addBarangayScore(updatedArea.barangay, qualityPts, "iotScore",
-            qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});
-        }
+
+    const updatedArea = await GarbageArea.findOneAndUpdate(
+      { sensorId },
+      {
+        lat: finalLat,
+        lng: finalLng,
+        status: areaStatus,
+        ammonia: `${ammonia} ppm`,
+        methane: `${methane}%`,
+        intensity: areaIntensity,
+        barangay: finalBarangay || "",
+        sensorId,
+        source: "iot",
+        name: finalLocation || sensorId,
+      },
+      { upsert: true, new: true },
+    );
+
+    io.emit("garbage-area:updated", updatedArea);
+
+    const iotColorMap = { critical: "red", moderate: "yellow", clean: "green" };
+    io.emit("zone:status:update", {
+      zoneId: updatedArea._id,
+      areaId: updatedArea._id,
+      name: updatedArea.name,
+      barangay: updatedArea.barangay,
+      previousStatus: null,
+      newStatus: areaStatus,
+      newColor: iotColorMap[areaStatus] || "yellow",
+      reason: "iot_sensor_reading",
+      changedBy: `Sensor ${sensorId}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (updatedArea.barangay) {
+      const qualityPts =
+        airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
+        airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
+      if (qualityPts !== 0) {
+        addBarangayScore(updatedArea.barangay, qualityPts, "iotScore",
+          qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});
       }
     }
 
-    // 4b. No GPS in payload — update a pre-registered sensor zone by sensorId
-    if (lat == null || lng == null) {
-      const preReg = await GarbageArea.findOne({ sensorId });
-      if (preReg) {
-        const prevStatus = preReg.status;
-        preReg.ammonia = `${ammonia} ppm`;
-        preReg.methane = `${methane}%`;
-        preReg.source = "iot";
-        await preReg.save();
-        const updated = await recalculateAndEmitZone(preReg._id, "iot_sensor_reading", `Sensor ${sensorId}`);
-        console.log(
-          `[IoT] Pre-registered zone "${preReg.name}" updated: ${prevStatus} → ${updated?.status || preReg.status}`,
-        );
-        if (preReg.barangay) {
-          const qualityPts =
-            airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
-            airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
-          if (qualityPts !== 0) {
-            addBarangayScore(preReg.barangay, qualityPts, "iotScore",
-              qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});
-          }
-        }
-      } else {
-        console.log(`[IoT] Sensor ${sensorId} not registered — no GPS in payload, zone not updated. Register via POST /api/sensor-zones`);
-      }
-    }
-
-    // 5. Emit real-time sensor update to all dashboard clients
+    // Emit real-time sensor update to all dashboard clients
     io.emit("iot:reading", reading);
 
     console.log(
-      `[IoT] Sensor ${sensorId}: NH₃=${ammonia}ppm CH₄=${methane}% AQ=${airQuality} Alerts=${savedAlerts.length}`,
+      `[IoT] Sensor ${sensorId} updated at (${finalLat.toFixed(4)}, ${finalLng.toFixed(4)}): NH₃=${ammonia}ppm CH₄=${methane}% AQ=${airQuality} Alerts=${savedAlerts.length}`,
     );
 
     res.status(201).json({
+      status: "success",
       reading,
       airQuality,
       alerts: savedAlerts,
       autoReport: autoReport || null,
       thresholds: IOT_THRESHOLDS,
+      area: updatedArea,
     });
   } catch (err) {
     console.error("[IoT] Error:", err.message);
@@ -4298,6 +4517,30 @@ app.patch("/api/iot/alerts/:id/acknowledge", async (req, res) => {
   }
 });
 
+// DELETE: Delete a single IoT alert
+app.delete("/api/iot/alerts/:id", async (req, res) => {
+  try {
+    const alert = await IoTAlert.findByIdAndDelete(req.params.id);
+    if (!alert) return res.status(404).json({ error: "Alert not found" });
+    io.emit("iot:alert:deleted", { id: req.params.id });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: Clear all IoT alerts (storage optimization)
+app.delete("/api/iot/alerts", optionalAuth, async (req, res) => {
+  try {
+    const filter = barangayFilter(req.official);
+    const result = await IoTAlert.deleteMany(filter);
+    io.emit("iot:alerts:cleared");
+    res.json({ ok: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET: CHD health risk summary
 app.get("/api/iot/health-summary", async (req, res) => {
   try {
@@ -4354,7 +4597,7 @@ app.get("/api/iot/summary", optionalAuth, async (req, res) => {
     const brgyFilter = barangayFilter(req.official);
     const [totalSensors, recentReadings, activeAlerts, criticalAlerts] =
       await Promise.all([
-        SensorReading.distinct("sensorId", brgyFilter),
+        GarbageArea.distinct("sensorId", { sensorId: { $ne: null }, ...brgyFilter }),
         SensorReading.countDocuments({
           timestamp: { $gte: oneHourAgo },
           ...brgyFilter,

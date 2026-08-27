@@ -422,16 +422,15 @@ export default function OfficialsDashboard() {
   const fetchAll = async () => {
     setLoading(true);
     try {
+      const headers = { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` };
       const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes, collectionRes] = await Promise.all([
-        fetch(`${API}/api/iot/summary`).then(r => r.json()),
-        fetch(`${API}/api/iot/trends?hours=168`).then(r => r.json()),
-        fetch(`${API}/api/iot/alerts?limit=10`).then(r => r.json()),
-        fetch(`${API}/api/iot/readings/latest`).then(r => r.json()),
-        fetch(`${API}/api/stats`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` }
-        }).then(r => r.ok ? r.json() : { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 }),
+        fetch(`${API}/api/iot/summary`, { headers }).then(r => r.json()),
+        fetch(`${API}/api/iot/trends?hours=168`, { headers }).then(r => r.json()),
+        fetch(`${API}/api/iot/alerts?limit=10`, { headers }).then(r => r.json()),
+        fetch(`${API}/api/iot/readings/latest`, { headers }).then(r => r.json()),
+        fetch(`${API}/api/stats`, { headers }).then(r => r.ok ? r.json() : { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 }),
         fetch(`${API}/api/leaderboard`).then(r => r.json()).catch(() => []),
-        fetch(`${API}/api/analytics/collection-stats`).then(r => r.ok ? r.json() : []),
+        fetch(`${API}/api/analytics/collection-stats`, { headers }).then(r => r.ok ? r.json() : []),
       ]);
       setIotSummary(summaryRes);
       setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);

@@ -82,11 +82,29 @@ export const AuthProvider = ({ children }) => {
       const stored = await AsyncStorage.getItem('@AuthData');
       if (stored) {
         const userData = JSON.parse(stored);
-        setUser(userData);
-        registerAndSavePushToken(userData.truckId);
+        
+        // Verify with the backend if the truck still exists in the fleet
+        const res = await fetch(`${BACKEND_URL}/api/fleet/${userData.truckId.trim().toUpperCase()}`);
+        
+        if (res.ok) {
+          const freshData = await res.json();
+          const mergedData = {
+            truckId: freshData.truckId,
+            driverName: freshData.driverName,
+            route: freshData.route,
+          };
+          setUser(mergedData);
+          await AsyncStorage.setItem('@AuthData', JSON.stringify(mergedData));
+          registerAndSavePushToken(mergedData.truckId);
+        } else {
+          // Truck deleted or invalid, force logout
+          setUser(null);
+          await AsyncStorage.removeItem('@AuthData');
+        }
       }
     } catch (e) {
       console.error('Failed to load auth data', e);
+      // Fallback: keep current session on network/server error to allow offline mode
     } finally {
       setIsLoading(false);
     }
