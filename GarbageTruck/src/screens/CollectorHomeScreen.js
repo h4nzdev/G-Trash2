@@ -82,9 +82,16 @@ export default function CollectorHomeScreen() {
   // Restore shift state from local storage on mount
   useEffect(() => {
     AsyncStorage.getItem("@truck_shift_active")
-      .then((val) => { if (val === "true") setShiftActive(true); })
+      .then((val) => {
+        // Only set true if schedule validation passes
+        if (val === "true" && todaySchedules.length > 0) {
+          setShiftActive(true);
+        } else {
+          setShiftActive(false);
+        }
+      })
       .catch(() => {});
-  }, []);
+  }, [todaySchedules.length]);
 
   // Fetch today's schedule for this truck
   const fetchScheduleData = useCallback(() => {
@@ -100,12 +107,26 @@ export default function CollectorHomeScreen() {
       if (xhr.status === 200) {
         try {
           const { schedules } = JSON.parse(xhr.responseText);
-          setTodaySchedules(Array.isArray(schedules) ? schedules : []);
+          const list = Array.isArray(schedules) ? schedules : [];
+          setTodaySchedules(list);
+          if (list.length === 0) {
+            // No schedule for today -> reset shift state to default "Waiting for Schedule"
+            setShiftActive(false);
+            AsyncStorage.setItem("@truck_shift_active", "false").catch(() => {});
+            AsyncStorage.setItem("@truck_nav_active", "false").catch(() => {});
+          } else {
+            // Check shift status from AsyncStorage
+            AsyncStorage.getItem("@truck_shift_active").then((val) => {
+              setShiftActive(val === "true");
+            }).catch(() => {});
+          }
         } catch (_) {
           setTodaySchedules([]);
+          setShiftActive(false);
         }
       } else {
         setTodaySchedules([]);
+        setShiftActive(false);
       }
       setIsLoading(false);
     };
@@ -114,10 +135,13 @@ export default function CollectorHomeScreen() {
     xhr.send();
   }, [TRUCK_ID]);
 
-  // Refresh on focus
+  // Refresh on focus and synchronize shift status
   useFocusEffect(
     useCallback(() => {
       fetchScheduleData();
+      AsyncStorage.getItem("@truck_shift_active").then((val) => {
+        setShiftActive(val === "true");
+      }).catch(() => {});
     }, [fetchScheduleData]),
   );
 
@@ -143,24 +167,9 @@ export default function CollectorHomeScreen() {
     return () => loop.stop();
   }, [isLoading]);
 
-  // Toggle shift (start/stop GPS streaming)
-  const toggleShift = () => {
-    const newState = !shiftActive;
-    setShiftActive(newState);
-    AsyncStorage.setItem("@truck_shift_active", newState ? "true" : "false").catch(() => {});
-
-    if (newState) {
-      // Notify the map screen to start streaming via AsyncStorage flag
-      AsyncStorage.setItem("@truck_nav_active", "true").catch(() => {});
-      Alert.alert("Shift Started", "Your GPS location is now being shared. Residents can see your truck on the map.");
-    } else {
-      AsyncStorage.setItem("@truck_nav_active", "false").catch(() => {});
-      // Send offline status to server
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${API_URL}/api/trucks/location`);
-      xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.send(JSON.stringify({ truckId: TRUCK_ID, lat: 0, lng: 0, heading: 0, speed: 0 }));
-    }
+  // Navigate to Map Collector screen to start/manage shift
+  const goToMap = () => {
+    navigation.navigate("Map");
   };
 
   // Toggle single schedule completed (Todo List item)
@@ -489,41 +498,53 @@ export default function CollectorHomeScreen() {
           </View>
         ) : null}
 
-        {/* ── Shift Toggle ── */}
+        {/* ── Shift Status & Route Overview ── */}
         {!isLoading && !hasError ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Shift Status</Text>
             <View style={styles.surface}>
               <View style={styles.shiftCard}>
-                <View style={[styles.shiftIndicator, shiftActive && styles.shiftIndicatorActive]}>
+                <View style={[
+                  styles.shiftIndicator,
+                  shiftActive ? styles.shiftIndicatorActive : todaySchedules.length > 0 ? styles.shiftIndicatorReady : styles.shiftIndicatorWaiting
+                ]}>
                   <MaterialIcons
-                    name={shiftActive ? "gps-fixed" : "gps-off"}
+                    name={shiftActive ? "gps-fixed" : todaySchedules.length > 0 ? "local-shipping" : "hourglass-empty"}
                     size={28}
-                    color={shiftActive ? "#FFFFFF" : "#9CA3AF"}
+                    color={shiftActive ? "#FFFFFF" : todaySchedules.length > 0 ? "#D97706" : "#6B7280"}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.shiftTitle}>
-                    {shiftActive ? "On Duty — Streaming GPS" : "Off Duty"}
+                    {shiftActive
+                      ? "On Duty — Streaming GPS"
+                      : todaySchedules.length > 0
+                      ? "Waiting — Ready to Start"
+                      : "Waiting for Schedule"}
                   </Text>
                   <Text style={styles.shiftSub}>
                     {shiftActive
-                      ? "Residents can see your truck on the map"
-                      : "Start your shift to share your location"}
+                      ? "Live tracking active. Residents can see your truck."
+                      : todaySchedules.length > 0
+                      ? `Assigned to ${todaySchedules[0]?.routeName || "collection route"}. Start shift in Map.`
+                      : "No collection schedule assigned for today yet."}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.shiftBtn, shiftActive && styles.shiftBtnStop]}
-                  onPress={toggleShift}
+                  style={[
+                    styles.shiftBtn,
+                    shiftActive ? styles.shiftBtnActive : todaySchedules.length > 0 ? styles.shiftBtnStart : styles.shiftBtnMuted
+                  ]}
+                  onPress={goToMap}
                   activeOpacity={0.8}
                 >
                   <MaterialIcons
-                    name={shiftActive ? "stop" : "play-arrow"}
-                    size={20}
+                    name={shiftActive ? "map" : todaySchedules.length > 0 ? "play-arrow" : "map"}
+                    size={18}
                     color="#FFFFFF"
                   />
                   <Text style={styles.shiftBtnText}>
-                    {shiftActive ? "End" : "Start"}
+                    {shiftActive ? "Live Map" : todaySchedules.length > 0 ? "Go to Map" : "View Map"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1146,20 +1167,26 @@ const styles = StyleSheet.create({
   },
 
   // ── Shift Toggle ──────────────────────────────────────────────────────────
+  // ── Shift Status & Route Overview ──────────────────────────────────────────
   shiftCard: { flexDirection: "row", alignItems: "center", gap: 14 },
   shiftIndicator: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: "#F3F4F6",
+    width: 54, height: 54, borderRadius: 27, backgroundColor: "#F3F4F6",
     justifyContent: "center", alignItems: "center",
   },
   shiftIndicatorActive: { backgroundColor: "#006A3B" },
+  shiftIndicatorReady: { backgroundColor: "#FEF3C7" },
+  shiftIndicatorWaiting: { backgroundColor: "#F3F4F6" },
   shiftTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
-  shiftSub: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  shiftSub: { fontSize: 12, color: "#6B7280", marginTop: 2, lineHeight: 16 },
   shiftBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#006A3B",
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
+    flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#006A3B",
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
   },
+  shiftBtnActive: { backgroundColor: "#006A3B" },
+  shiftBtnStart: { backgroundColor: "#006A3B" },
+  shiftBtnMuted: { backgroundColor: "#6B7280" },
   shiftBtnStop: { backgroundColor: "#DC2626" },
-  shiftBtnText: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
+  shiftBtnText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
 
   // ── Schedule Items ──────────────────────────────────────────────────────────
   schedItem: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },

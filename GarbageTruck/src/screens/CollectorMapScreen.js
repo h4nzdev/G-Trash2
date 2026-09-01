@@ -353,9 +353,29 @@ function buildLeafletHTML(truckB64) {
       };
 
       // Stop marker icons
-      var completedIcon = L.divIcon({ html:'<div style="background:#006E1C;width:14px;height:14px;border-radius:7px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);"></div>', iconSize:[14,14], iconAnchor:[7,7], className:'' });
-      var activeIcon = L.divIcon({ html:'<div style="background:#006A3B;width:20px;height:20px;border-radius:10px;border:3px solid white;box-shadow:0 2px 8px rgba(0,106,59,0.4);"></div>', iconSize:[20,20], iconAnchor:[10,10], className:'' });
-      var upcomingIcon = L.divIcon({ html:'<div style="background:#BECABE;width:12px;height:12px;border-radius:6px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.15);"></div>', iconSize:[12,12], iconAnchor:[6,6], className:'' });
+      var completedIcon = L.divIcon({
+        html:'<div style="position:relative;display:flex;flex-direction:column;align-items:center;">' +
+             '<div style="background:#059669;width:24px;height:24px;border-radius:12px;border:2.5px solid white;box-shadow:0 3px 8px rgba(5,150,105,0.4);display:flex;align-items:center;justify-content:center;">' +
+               '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' +
+             '</div>' +
+             '<div style="background:#065F46;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;margin-top:2px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);">CLEAN</div>' +
+             '</div>',
+        iconSize:[40,40],
+        iconAnchor:[20,12],
+        className:''
+      });
+      var activeIcon = L.divIcon({
+        html:'<div style="background:#2563EB;width:22px;height:22px;border-radius:11px;border:3px solid white;box-shadow:0 2px 8px rgba(37,99,235,0.4);"></div>',
+        iconSize:[22,22],
+        iconAnchor:[11,11],
+        className:''
+      });
+      var upcomingIcon = L.divIcon({
+        html:'<div style="background:#94A3B8;width:14px;height:14px;border-radius:7px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.15);"></div>',
+        iconSize:[14,14],
+        iconAnchor:[7,7],
+        className:''
+      });
 
       // Dynamic stop markers — injected from React Native when route loads
       var stopMarkers = [];
@@ -369,6 +389,14 @@ function buildLeafletHTML(truckB64) {
         arr.forEach(function(s) {
           var icon = s.status === 'completed' ? completedIcon : s.status === 'in-progress' ? activeIcon : upcomingIcon;
           var m = L.marker([s.lat, s.lng], { icon: icon });
+          m.bindPopup(
+            '<div style="font-family:sans-serif;padding:3px;text-align:center;">' +
+            '<b style="font-size:12px;color:#0F172A;">' + (s.status === 'completed' ? '✨ ' : '📍 ') + s.name + '</b><br>' +
+            '<span style="font-size:11px;font-weight:700;color:' + (s.status === 'completed' ? '#059669' : '#2563EB') + ';">' +
+            (s.status === 'completed' ? 'Marked as Clean ✓' : 'Scheduled Stop') +
+            '</span>' +
+            '</div>'
+          );
           m.addTo(map);
           stopMarkers.push(m);
         });
@@ -572,15 +600,30 @@ export default function CollectorMapScreen() {
               : [];
           setTodaySchedules(list);
           setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null));
+          if (list.length === 0) {
+            // Unscheduled truck -> reset shift state to default inactive
+            setNavigationActive(false);
+            navigationActiveRef.current = false;
+            AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
+            AsyncStorage.setItem('@truck_shift_active', 'false').catch(() => {});
+          }
         } catch (e) {
           setTodaySchedules([]);
+          setNavigationActive(false);
+          navigationActiveRef.current = false;
         }
       } else {
         setTodaySchedules([]);
+        setNavigationActive(false);
+        navigationActiveRef.current = false;
       }
     };
-    xhr.onerror = () => setTodaySchedules([]);
-    xhr.ontimeout = () => setTodaySchedules([]);
+    xhr.onerror = () => {
+      setTodaySchedules([]);
+    };
+    xhr.ontimeout = () => {
+      setTodaySchedules([]);
+    };
     xhr.send();
   }, [TRUCK_ID, hazardOptimizeActive]);
 
@@ -615,6 +658,67 @@ export default function CollectorMapScreen() {
   const [showTools, setShowTools] = useState(false);
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [clearingSitio, setClearingSitio] = useState(null);
+
+  const handleMarkStopClean = async (scheduleId, sitioName) => {
+    if (!scheduleId || !sitioName) return;
+    setClearingSitio(sitioName);
+    try {
+      // 1. Mark task as complete on backend schedule
+      await fetch(`${TRACKING_SERVER}/api/schedules/${scheduleId}/complete-task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sitioName }),
+      });
+
+      // 2. Also register collection log
+      const sched = todaySchedules?.find(s => s._id === scheduleId);
+      const barangay = sched?.barangay || assignedRouteBarangay || 'Apas';
+      await fetch(`${TRACKING_SERVER}/api/collections`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          truckId: TRUCK_ID,
+          driverName: user?.name || user?.driverName || 'Driver',
+          stopName: sitioName,
+          route: `${barangay} Route`,
+          wasteType: 'General',
+          bins: 1,
+          barangay,
+          status: 'verified',
+        }),
+      }).catch(() => {});
+
+      // 3. Update local state immediately
+      setTodaySchedules(prev => {
+        if (!prev) return prev;
+        return prev.map(s => {
+          if (s._id === scheduleId) {
+            const updatedTasks = (s.sitioTasks || []).map(t => {
+              if (t.name.toLowerCase() === sitioName.toLowerCase()) {
+                return { ...t, completed: true, completedAt: new Date() };
+              }
+              return t;
+            });
+            const allDone = updatedTasks.length > 0 ? updatedTasks.every(t => t.completed) : true;
+            return {
+              ...s,
+              sitioTasks: updatedTasks,
+              status: allDone ? 'completed' : s.status,
+            };
+          }
+          return s;
+        });
+      });
+
+      Alert.alert("Area Marked as Clean! ✨", `Collection recorded and verified for ${sitioName}. Map marker and LGU dashboard updated.`);
+      fetchTodaySchedules();
+    } catch (err) {
+      Alert.alert("Error", "Failed to mark stop as clean. Please verify network connection.");
+    } finally {
+      setClearingSitio(null);
+    }
+  };
 
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportCategory, setReportCategory] = useState("Overflowing Bin");
@@ -1102,10 +1206,10 @@ export default function CollectorMapScreen() {
   };
 
   const startNavigation = () => {
-    if (todaySchedules !== null && todaySchedules.length === 0) {
+    if (!todaySchedules || todaySchedules.length === 0) {
       Alert.alert(
-        'Not Scheduled Today',
-        "You don't have a scheduled collection run for today. Please contact your supervisor if you believe this is an error.",
+        'Waiting for Schedule',
+        "You don't have an active collection route assigned for today yet. Please contact your dispatch supervisor.",
         [{ text: 'OK' }]
       );
       return;
@@ -1277,12 +1381,21 @@ export default function CollectorMapScreen() {
             <View style={styles.discoveryMode} pointerEvents="box-none">
               {!isExpanded && (
                 <TouchableOpacity 
-                  style={[styles.bigStartBtn, todaySchedules?.length === 0 && { opacity: 0.5 }]} 
+                  style={[
+                    styles.bigStartBtn,
+                    (!todaySchedules || todaySchedules.length === 0) && styles.bigStartBtnWaiting
+                  ]} 
                   onPress={startNavigation}
                   activeOpacity={0.9}
                 >
-                  <Text style={styles.bigStartBtnText}>START SHIFT</Text>
-                  <MaterialIcons name="local-shipping" size={24} color="#FFF" />
+                  <MaterialIcons
+                    name={(!todaySchedules || todaySchedules.length === 0) ? "hourglass-empty" : "local-shipping"}
+                    size={22}
+                    color="#FFF"
+                  />
+                  <Text style={styles.bigStartBtnText}>
+                    {(!todaySchedules || todaySchedules.length === 0) ? "WAITING FOR SCHEDULE" : "START SHIFT"}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1372,17 +1485,55 @@ export default function CollectorMapScreen() {
             </View>
             <View style={styles.sheetHeader}>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={[
+                    styles.statusBadgeDot,
+                    navigationActive
+                      ? styles.statusBadgeDotActive
+                      : (todaySchedules?.length > 0)
+                      ? styles.statusBadgeDotReady
+                      : styles.statusBadgeDotWaiting
+                  ]} />
                   <Text style={styles.sheetTitle}>
-                    {navigationActive ? 'Shift In Progress' : 'Shift Inactive'}
+                    {navigationActive
+                      ? 'Shift In Progress'
+                      : (todaySchedules?.length > 0)
+                      ? 'Waiting — Ready'
+                      : 'Waiting for Schedule'}
                   </Text>
                 </View>
-                <Text style={styles.sheetSub}>
+                <Text style={styles.sheetSub} numberOfLines={1}>
                   {navigationActive
-                    ? `Streaming GPS location for ${assignedRouteBarangay || 'assigned area'}`
-                    : 'Tap Start Shift to begin sharing location'}
+                    ? `Streaming GPS for ${assignedRouteBarangay || 'assigned area'}`
+                    : (todaySchedules?.length > 0)
+                    ? `Assigned: ${assignedRouteBarangay || 'Route'}. Tap Start to begin.`
+                    : 'No collection schedule assigned today'}
                 </Text>
               </View>
+
+              {/* Direct Header Start / End Action Pill */}
+              <TouchableOpacity
+                style={[
+                  styles.sheetHeaderActionBtn,
+                  navigationActive
+                    ? styles.sheetHeaderActionBtnEnd
+                    : (todaySchedules?.length > 0)
+                    ? styles.sheetHeaderActionBtnStart
+                    : styles.sheetHeaderActionBtnWaiting
+                ]}
+                onPress={navigationActive ? stopNavigation : startNavigation}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons
+                  name={navigationActive ? "stop" : (todaySchedules?.length > 0) ? "play-arrow" : "hourglass-empty"}
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.sheetHeaderActionBtnText}>
+                  {navigationActive ? 'End' : (todaySchedules?.length > 0) ? 'Start' : 'Waiting'}
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={styles.expandBtn}
                 onPress={() => isExpandedRef.current ? collapseSheet() : expandSheet()}
@@ -1414,7 +1565,9 @@ export default function CollectorMapScreen() {
                 <Text style={styles.unassignedBody}>
                   {navigationActive
                     ? `Your shift is active. You are currently streaming GPS coordinates to residents of ${assignedRouteBarangay || 'your assigned area'}.`
-                    : 'Start your shift to let residents track your vehicle location in real-time.'}
+                    : (todaySchedules?.length > 0)
+                    ? `You are assigned to ${assignedRouteBarangay || 'your route'}. Start your shift to begin live GPS streaming.`
+                    : 'No route is currently assigned to this vehicle for today. Please wait for dispatch.'}
                 </Text>
 
                 {/* Live bin status summary if assigned to area */}
@@ -1432,7 +1585,109 @@ export default function CollectorMapScreen() {
                       </View>
                     </View>
                   </View>
-                ) : null}
+                {/* Scheduled Stops & Mark as Clean Checklist */}
+                {todaySchedules && todaySchedules.length > 0 && (
+                  <View style={{ width: '100%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <MaterialIcons name="fact-check" size={18} color="#2563EB" />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>Collection Route Stops</Text>
+                      </View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>
+                        {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s.status === 'completed' ? 1 : 0)), 0)} / {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.length : 1), 0)} Cleaned
+                      </Text>
+                    </View>
+
+                    <View style={{ gap: 10 }}>
+                      {todaySchedules.map(sched => {
+                        const tasks = sched.sitioTasks && sched.sitioTasks.length > 0
+                          ? sched.sitioTasks
+                          : (sched.sitios && sched.sitios.length > 0 ? sched.sitios.map(name => ({ name, completed: sched.status === 'completed' })) : [{ name: sched.barangay || 'Route Area', completed: sched.status === 'completed' }]);
+
+                        return tasks.map((task, taskIdx) => {
+                          const isDone = !!task.completed;
+                          const isBusy = clearingSitio === task.name;
+                          return (
+                            <View
+                              key={`${sched._id}-${task.name}-${taskIdx}`}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                paddingVertical: 10,
+                                paddingHorizontal: 12,
+                                borderRadius: 12,
+                                backgroundColor: isDone ? '#F0FDF4' : '#F8FAFC',
+                                borderWidth: 1,
+                                borderColor: isDone ? '#BBF7D0' : '#E2E8F0',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                                <View style={{
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: 12,
+                                  backgroundColor: isDone ? '#059669' : '#E2E8F0',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}>
+                                  <MaterialIcons
+                                    name={isDone ? "check" : "place"}
+                                    size={14}
+                                    color={isDone ? "#FFFFFF" : "#64748B"}
+                                  />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDone ? '#166534' : '#1E293B' }}>
+                                    {task.name}
+                                  </Text>
+                                  <Text style={{ fontSize: 10, color: isDone ? '#15803D' : '#64748B' }}>
+                                    {isDone ? 'Marked as Clean ✓' : 'Pending Cleanup'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {isDone ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#DCFCE7', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
+                                  <MaterialIcons name="check-circle" size={14} color="#16A34A" />
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Clean</Text>
+                                </View>
+                              ) : (
+                                <TouchableOpacity
+                                  onPress={() => handleMarkStopClean(sched._id, task.name)}
+                                  disabled={isBusy}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    backgroundColor: '#059669',
+                                    paddingVertical: 6,
+                                    paddingHorizontal: 10,
+                                    borderRadius: 10,
+                                    shadowColor: '#059669',
+                                    shadowOffset: { width: 0, height: 1 },
+                                    shadowOpacity: 0.2,
+                                    shadowRadius: 2,
+                                    elevation: 2,
+                                  }}
+                                >
+                                  {isBusy ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                  ) : (
+                                    <>
+                                      <MaterialIcons name="cleaning-services" size={13} color="#FFFFFF" />
+                                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>Mark as Clean</Text>
+                                    </>
+                                  )}
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          );
+                        });
+                      })}
+                    </View>
+                  </View>
+                )}
 
                 {/* Shift Details */}
                 <View style={{ width: '100%', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB' }}>
@@ -1440,8 +1695,16 @@ export default function CollectorMapScreen() {
                   <View style={{ gap: 8 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 12, color: '#6F7A70' }}>Status</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: navigationActive ? '#065F46' : '#DC2626' }}>
-                        {navigationActive ? 'On Duty' : 'Off Duty'}
+                      <Text style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: navigationActive ? '#065F46' : (todaySchedules?.length > 0) ? '#D97706' : '#6B7280'
+                      }}>
+                        {navigationActive
+                          ? 'On Duty (Active)'
+                          : (todaySchedules?.length > 0)
+                          ? 'Waiting to Start'
+                          : 'Waiting for Schedule'}
                       </Text>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -1459,14 +1722,26 @@ export default function CollectorMapScreen() {
                 <TouchableOpacity
                   style={[
                     styles.deviationBtnPrimary,
-                    navigationActive && { backgroundColor: '#DC2626' }
+                    navigationActive
+                      ? { backgroundColor: '#DC2626' }
+                      : (!todaySchedules || todaySchedules.length === 0)
+                      ? { backgroundColor: '#6B7280' }
+                      : { backgroundColor: '#006A3B' }
                   ]}
                   onPress={navigationActive ? stopNavigation : startNavigation}
                   activeOpacity={0.8}
                 >
-                  <MaterialIcons name={navigationActive ? "stop" : "play-arrow"} size={18} color="#FFFFFF" />
+                  <MaterialIcons
+                    name={navigationActive ? "stop" : (todaySchedules?.length > 0) ? "play-arrow" : "hourglass-empty"}
+                    size={18}
+                    color="#FFFFFF"
+                  />
                   <Text style={styles.deviationBtnPrimaryText}>
-                    {navigationActive ? 'End Shift' : 'Start Shift'}
+                    {navigationActive
+                      ? 'End Shift'
+                      : (todaySchedules?.length > 0)
+                      ? 'Start Shift'
+                      : 'Waiting for Schedule'}
                   </Text>
                 </TouchableOpacity>
 
@@ -1870,12 +2145,12 @@ const styles = StyleSheet.create({
   },
   bigStartBtn: {
     position: 'absolute',
-    bottom: 70,
+    bottom: 105,
     right: 20,
     backgroundColor: '#006A3B',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 30,
     gap: 8,
@@ -1885,9 +2160,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
   },
+  bigStartBtnWaiting: {
+    backgroundColor: '#4B5563',
+    shadowColor: '#000',
+    opacity: 0.9,
+  },
   bigStartBtnText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -2323,16 +2603,55 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 8,
   },
   sheetTitle: {
-    fontSize: 17,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#1B1C1C",
-    lineHeight: 22,
+    lineHeight: 20,
   },
-  sheetSub: { fontSize: 13, color: "#6F7A70", marginTop: 2, lineHeight: 18 },
+  sheetSub: { fontSize: 12, color: "#6F7A70", marginTop: 2, lineHeight: 16 },
+  statusBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#9CA3AF',
+  },
+  statusBadgeDotActive: {
+    backgroundColor: '#10B981',
+  },
+  statusBadgeDotReady: {
+    backgroundColor: '#F59E0B',
+  },
+  statusBadgeDotWaiting: {
+    backgroundColor: '#9CA3AF',
+  },
+  sheetHeaderActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  sheetHeaderActionBtnStart: {
+    backgroundColor: '#006A3B',
+  },
+  sheetHeaderActionBtnEnd: {
+    backgroundColor: '#DC2626',
+  },
+  sheetHeaderActionBtnWaiting: {
+    backgroundColor: '#6B7280',
+    opacity: 0.85,
+  },
+  sheetHeaderActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   prefBadge: {
     flexDirection: "row",
     alignItems: "center",
