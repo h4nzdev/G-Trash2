@@ -214,7 +214,7 @@ function ChdDashboard() {
   );
 }
 
-const PIE_COLORS = ['#065f46', '#10b981', '#6ee7b7', '#d1fae5'];
+const PIE_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#94a3b8'];
 
 const ANSWER_LABELS = {
   'I want my barangay to win': 'Win for Barangay',
@@ -257,9 +257,9 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-emerald-600" />
+          <MessageSquare className="w-4 h-4 text-indigo-600" />
           <h2 className="text-sm font-bold text-slate-900">User Feedback — Gamification Survey</h2>
-          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-100">
             {total} responses
           </span>
         </div>
@@ -271,7 +271,7 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
               onClick={() => onPeriodChange(b.key)}
               className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition-colors ${
                 period === b.key
-                  ? 'bg-emerald-800 text-white'
+                  ? 'bg-slate-900 text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -290,7 +290,7 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
             onClick={() => onContextChange(b.key)}
             className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors border ${
               context === b.key
-                ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
                 : 'border-slate-200 text-slate-500 hover:bg-slate-50'
             }`}
           >
@@ -359,11 +359,11 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
             ))}
 
             {/* Key insight */}
-            <div className={`mt-4 rounded-xl p-3.5 ${gamificationPct >= 50 ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-200'}`}>
-              <p className={`text-xs font-bold mb-1 ${gamificationPct >= 50 ? 'text-emerald-800' : 'text-amber-800'}`}>
+            <div className={`mt-4 rounded-xl p-3.5 ${gamificationPct >= 50 ? 'bg-indigo-50 border border-indigo-200' : 'bg-amber-50 border border-amber-200'}`}>
+              <p className={`text-xs font-bold mb-1 ${gamificationPct >= 50 ? 'text-indigo-800' : 'text-amber-800'}`}>
                 {gamificationPct >= 50 ? '✅ Gamification is working!' : '📊 Gamification insight'}
               </p>
-              <p className={`text-[11px] leading-relaxed ${gamificationPct >= 50 ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <p className={`text-[11px] leading-relaxed ${gamificationPct >= 50 ? 'text-indigo-700' : 'text-amber-700'}`}>
                 <strong>{Math.round(gamificationPct)}%</strong> of residents are motivated by gamification
                 (winning + points). {gamificationPct >= 50
                   ? 'The majority of users are driven by the leaderboard and rewards system.'
@@ -423,22 +423,115 @@ export default function OfficialsDashboard() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` };
-      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes, collectionRes] = await Promise.all([
-        fetch(`${API}/api/iot/summary`, { headers }).then(r => r.json()),
-        fetch(`${API}/api/iot/trends?hours=168`, { headers }).then(r => r.json()),
-        fetch(`${API}/api/iot/alerts?limit=10`, { headers }).then(r => r.json()),
-        fetch(`${API}/api/iot/readings/latest`, { headers }).then(r => r.json()),
-        fetch(`${API}/api/stats`, { headers }).then(r => r.ok ? r.json() : { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 }),
+      const todayStr = new Date().toISOString().substring(0, 10);
+      const currentMonth = todayStr.substring(0, 7);
+
+      const [summaryRes, trendsRes, alertsRes, latestRes, statsRes, rankingsRes, collectionRes, fleetRes, schedulesRes, collectionsRes] = await Promise.all([
+        fetch(`${API}/api/iot/summary`, { headers }).then(r => r.json()).catch(() => ({})),
+        fetch(`${API}/api/iot/trends?hours=168`, { headers }).then(r => r.json()).catch(() => []),
+        fetch(`${API}/api/iot/alerts?limit=10`, { headers }).then(r => r.json()).catch(() => []),
+        fetch(`${API}/api/iot/readings/latest`, { headers }).then(r => r.json()).catch(() => []),
+        fetch(`${API}/api/stats`, { headers }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
         fetch(`${API}/api/leaderboard`).then(r => r.json()).catch(() => []),
-        fetch(`${API}/api/analytics/collection-stats`, { headers }).then(r => r.ok ? r.json() : []),
+        fetch(`${API}/api/analytics/collection-stats`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API}/api/fleet`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API}/api/schedules?month=${currentMonth}`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API}/api/collections`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
-      setIotSummary(summaryRes);
+
+      setIotSummary(summaryRes || {});
       setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);
       setIotAlerts(Array.isArray(alertsRes) ? alertsRes : []);
       setLatestReadings(Array.isArray(latestRes) ? latestRes : []);
-      setStats(statsRes);
       setRankings(Array.isArray(rankingsRes) ? rankingsRes : []);
-      setCollectionStats(Array.isArray(collectionRes) ? collectionRes : []);
+
+      // Calculate scoped & accurate stats
+      const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
+      const userBrgy = official?.barangay?.toLowerCase();
+
+      // Fleet scoping
+      let scopedFleet = Array.isArray(fleetRes) ? fleetRes : [];
+      if (isScoped && userBrgy) {
+        scopedFleet = scopedFleet.filter(t => 
+          t.barangay?.toLowerCase() === userBrgy || 
+          (t.type === 'shared' && Array.isArray(t.serviceBarangays) && t.serviceBarangays.some(b => b.toLowerCase() === userBrgy))
+        );
+      }
+      const totalFleet = scopedFleet.length;
+      const activeTrucks = scopedFleet.filter(t => t.status === 'online' || t.status === 'on-route' || t.isOnline).length || (totalFleet > 0 ? 1 : 0);
+
+      // Schedules & Stops Cleared scoping
+      const allSchedules = Array.isArray(schedulesRes) ? schedulesRes : [];
+      const todaySchedules = allSchedules.filter(s => 
+        s.date === todayStr && (!isScoped || s.barangay?.toLowerCase() === userBrgy)
+      );
+
+      const allCollections = Array.isArray(collectionsRes) ? collectionsRes : [];
+      const todayCollections = allCollections.filter(c => {
+        const cDate = (c.createdAt || c.date || '').substring(0, 10);
+        return cDate === todayStr && (!isScoped || c.route?.toLowerCase()?.includes(userBrgy) || c.barangay?.toLowerCase() === userBrgy);
+      });
+
+      let totalTasks = 0;
+      let completedTasks = 0;
+
+      if (todaySchedules.length > 0) {
+        todaySchedules.forEach(s => {
+          if (s.sitioTasks && s.sitioTasks.length > 0) {
+            totalTasks += s.sitioTasks.length;
+            completedTasks += s.sitioTasks.filter(t => t.completed).length;
+          } else if (s.sitios && s.sitios.length > 0) {
+            totalTasks += s.sitios.length;
+            const completedCount = s.sitios.filter(st => 
+              todayCollections.some(c => c.stopName?.toLowerCase() === st.toLowerCase())
+            ).length;
+            completedTasks += Math.max(completedCount, s.status === 'completed' ? s.sitios.length : 0);
+          } else {
+            totalTasks += 1;
+            if (s.status === 'completed' || todayCollections.length > 0) completedTasks += 1;
+          }
+        });
+      }
+
+      if (todayCollections.length > completedTasks) {
+        completedTasks = todayCollections.length;
+        if (completedTasks > totalTasks) totalTasks = completedTasks;
+      }
+
+      // Priority Route Recommendation
+      let priorityArea = isScoped ? official.barangay : (statsRes?.priorityArea || 'All Areas');
+      let priorityReason = 'All areas operating under standard parameters.';
+      if (todaySchedules.length > 0 && completedTasks < totalTasks) {
+        priorityReason = `${totalTasks - completedTasks} scheduled stop(s) remaining for today.`;
+      } else if (todaySchedules.length > 0 && completedTasks >= totalTasks && totalTasks > 0) {
+        priorityReason = `All ${totalTasks} scheduled stops completed today.`;
+      }
+
+      setStats({
+        totalFleet,
+        activeTrucks,
+        totalTasks,
+        completedTasks,
+        totalReports: statsRes?.totalReports || 0,
+        pendingReports: statsRes?.pendingReports || 0,
+        priorityArea,
+        priorityReason,
+      });
+
+      // Collections chart scoping
+      if (Array.isArray(collectionRes) && collectionRes.length > 0) {
+        setCollectionStats(collectionRes);
+      } else if (allCollections.length > 0) {
+        const byDay = {};
+        allCollections.forEach(c => {
+          const d = (c.createdAt || c.date || '').substring(0, 10);
+          if (d) byDay[d] = (byDay[d] || 0) + (c.bins || 1);
+        });
+        const generatedStats = Object.entries(byDay).map(([date, binsCleared]) => ({ date, binsCleared }));
+        setCollectionStats(generatedStats);
+      } else {
+        setCollectionStats([]);
+      }
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
@@ -460,15 +553,15 @@ export default function OfficialsDashboard() {
         const filtered = prev.filter(r => r.sensorId !== reading.sensorId);
         return [reading, ...filtered];
       });
-      setIotSummary(prev => ({ ...prev, recentReadings: prev.recentReadings + 1 }));
+      setIotSummary(prev => ({ ...prev, recentReadings: (prev.recentReadings || 0) + 1 }));
     });
 
     socket.on('iot:alert', (alert) => {
       setIotAlerts(prev => [alert, ...prev].slice(0, 10));
       setIotSummary(prev => ({
         ...prev,
-        activeAlerts: prev.activeAlerts + 1,
-        criticalAlerts: alert.severity === 'critical' ? prev.criticalAlerts + 1 : prev.criticalAlerts,
+        activeAlerts: (prev.activeAlerts || 0) + 1,
+        criticalAlerts: alert.severity === 'critical' ? (prev.criticalAlerts || 0) + 1 : prev.criticalAlerts,
       }));
     });
 
@@ -477,17 +570,15 @@ export default function OfficialsDashboard() {
     });
 
     socket.on('truck:status', () => {
-      fetch(`${API}/api/stats`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` }
-      }).then(r => r.ok ? r.json() : null).then(data => {
-        if (data) setStats(data);
-      });
+      fetchAll();
+    });
+
+    socket.on('schedule:changed', () => {
+      fetchAll();
     });
 
     socket.on('collection:new', () => {
-      fetch(`${API}/api/analytics/collection-stats`).then(r => r.ok ? r.json() : []).then(data => {
-        if (Array.isArray(data)) setCollectionStats(data);
-      });
+      fetchAll();
     });
 
     return () => socket.disconnect();
@@ -543,18 +634,18 @@ export default function OfficialsDashboard() {
     } else if (collectionFilter === 'year') {
       const byMonth = {};
       collectionStats.forEach(d => {
-        const month = d.date.substring(0, 7);
+        const month = (d.date || '').substring(0, 7);
         byMonth[month] = (byMonth[month] || 0) + d.binsCleared;
       });
       return Object.entries(byMonth).map(([m, val]) => ({ name: m, Bins: val }));
     } else if (collectionFilter === 'today') {
       const today = new Date().toISOString().substring(0,10);
-      const todayData = collectionStats.find(d => d.date === today);
+      const todayData = collectionStats.find(d => (d.date || '').substring(0,10) === today);
       return [{ name: today, Bins: todayData ? todayData.binsCleared : 0 }];
     }
     
     return filtered.map(d => ({
-      name: d.date.substring(5), // MM-DD
+      name: (d.date || '').substring(5), // MM-DD
       Bins: d.binsCleared
     }));
   };
@@ -587,8 +678,8 @@ export default function OfficialsDashboard() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          <button className="flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors border border-emerald-200">
-            Generate Report <ChevronRight className="w-3.5 h-3.5" />
+          <button className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 px-3.5 py-1.5 rounded-lg transition-colors border border-slate-200 shadow-sm">
+            Generate Report <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>
       </div>
@@ -598,40 +689,46 @@ export default function OfficialsDashboard() {
         <StatCard
           icon={Truck}
           title="Active Trucks"
-          value={`${stats.activeTrucks}/${stats.totalFleet}`}
-          subtitle="On route today"
+          value={`${stats.activeTrucks || 0}/${stats.totalFleet || 0}`}
+          subtitle={stats.totalFleet > 0 ? "On route today" : "No trucks assigned"}
           color="blue"
         />
         <StatCard
           icon={Radio}
           title="IoT Sensors Integrated"
-          value={iotSummary.totalSensors}
-          subtitle={`${iotSummary.recentReadings} readings in last hour`}
-          color="emerald"
+          value={iotSummary.totalSensors || 0}
+          subtitle={`${iotSummary.recentReadings || 0} readings in last hour`}
+          color="purple"
         />
         <StatCard
           icon={CheckCircle}
-          title="Barangays Collected"
-          value="12 / 80"
-          subtitle="Estimated 15% completion"
+          title={official?.barangay && official.barangay !== 'All' ? "Stops Cleared" : "Collection Progress"}
+          value={`${stats.completedTasks || 0} / ${stats.totalTasks || 0}`}
+          subtitle={
+            stats.totalTasks > 0
+              ? `${Math.round(((stats.completedTasks || 0) / stats.totalTasks) * 100)}% completion today`
+              : "No collection tasks today"
+          }
           color="emerald"
         />
-        <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-4 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
             <Lightbulb className="w-16 h-16 text-amber-500" />
           </div>
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
                   <Navigation className="w-4 h-4 text-amber-600" />
                 </div>
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Route Recommendation</h3>
               </div>
-              <p className="text-base font-bold text-amber-600 leading-tight">Priority: Lahug</p>
+              <p className="text-base font-bold text-slate-900 leading-tight truncate">
+                Priority: <span className="text-amber-600">{stats.priorityArea || (official?.barangay && official.barangay !== 'All' ? official.barangay : 'All Clear')}</span>
+              </p>
             </div>
-            <p className="text-xs font-medium text-slate-600 mt-2 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-100/50">
-              Bin levels at 95% in sector 4.
+            <p className="text-xs font-medium text-slate-600 mt-2 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+              {stats.priorityReason || 'All areas operating under standard parameters.'}
             </p>
           </div>
         </div>
@@ -646,7 +743,11 @@ export default function OfficialsDashboard() {
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-blue-500" /> Waste Collected
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Total volume collected across all routes</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {official?.barangay && official.barangay !== 'All'
+                  ? `Total volume collected in Barangay ${official.barangay}`
+                  : 'Total volume collected across all routes'}
+              </p>
             </div>
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
               {['today', 'week', 'month', 'year'].map(filter => (
@@ -699,7 +800,11 @@ export default function OfficialsDashboard() {
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Top 5 barangays with highest gas levels</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {official?.barangay && official.barangay !== 'All'
+                  ? `Areas with highest gas levels in Barangay ${official.barangay}`
+                  : 'Top 5 areas with highest gas levels'}
+              </p>
             </div>
           </div>
           {pollutionByArea.length > 0 ? (
@@ -739,7 +844,7 @@ export default function OfficialsDashboard() {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">Real-time alerts requiring official response</p>
           </div>
-          <button onClick={() => navigate('/alerts')} className="text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => navigate('/alerts')} className="text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-sm px-3.5 py-1.5 rounded-lg transition-colors">
             View All Alerts
           </button>
         </div>
@@ -781,7 +886,7 @@ export default function OfficialsDashboard() {
                       <span className="text-[11px] font-medium text-slate-500">{alert.time}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <button className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 bg-white border border-slate-200 shadow-sm hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all opacity-0 group-hover:opacity-100">
+                      <button className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 bg-white border border-slate-200 shadow-sm hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all opacity-0 group-hover:opacity-100">
                         <Eye className="w-4 h-4" />
                       </button>
                     </td>
@@ -809,8 +914,8 @@ export default function OfficialsDashboard() {
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 Pollution Trends Over Time
                 {pollutionData.length > 0 && (
-                  <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" /> LIVE
                   </span>
                 )}
               </h2>
@@ -839,8 +944,8 @@ export default function OfficialsDashboard() {
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 Top Performing Barangays
                 {rankings.length > 0 && (
-                  <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> LIVE
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" /> LIVE
                   </span>
                 )}
               </h2>

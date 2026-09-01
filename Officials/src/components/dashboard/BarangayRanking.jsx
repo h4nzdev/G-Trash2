@@ -44,7 +44,7 @@ export default function BarangayRanking({ data }) {
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-emerald-500 rounded-full transition-all"
+                    className="h-full bg-indigo-600 rounded-full transition-all"
                     style={{ width: `${barWidth}%` }}
                   />
                 </div>
@@ -58,7 +58,7 @@ export default function BarangayRanking({ data }) {
 
             {/* Points */}
             <div className="text-right flex-shrink-0">
-              <p className="text-sm font-bold text-emerald-700">{b.points ?? 0}</p>
+              <p className="text-sm font-bold text-slate-900">{b.points ?? 0}</p>
               <p className="text-[10px] text-slate-400 font-medium">pts</p>
             </div>
           </div>

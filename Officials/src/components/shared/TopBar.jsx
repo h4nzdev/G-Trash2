@@ -45,7 +45,9 @@ export default function TopBar() {
   const socketRef = useRef(null);
 
   const title = pageTitles[location.pathname] || 'Dashboard';
-  const subtitle = subTitles[location.pathname] || '';
+  const subtitle = location.pathname === '/dashboard' && official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin'
+    ? `Monitor waste collection for Barangay ${official.barangay}`
+    : (subTitles[location.pathname] || '');
 
   // Fetch existing IoT alerts on mount + listen for new ones
   useEffect(() => {

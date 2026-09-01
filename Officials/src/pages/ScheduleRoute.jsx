@@ -194,6 +194,23 @@ export default function ScheduleRoute() {
     try {
       const truck = fleet.find(t => t.truckId === selTruck);
       
+      // Auto-heal / sync coverage if truck belongs to this barangay or official
+      if (truck && truck.type === 'shared') {
+        const currentServiceBarangays = Array.isArray(truck.serviceBarangays) ? truck.serviceBarangays : [];
+        const allowed = currentServiceBarangays.map(b => b.toLowerCase());
+        if (!allowed.includes(selectedBarangay.toLowerCase())) {
+          try {
+            const updatedServiceBarangays = [...new Set([...currentServiceBarangays, selectedBarangay])];
+            await axios.patch(`${API}/api/fleet/${selTruck}`, {
+              serviceBarangays: updatedServiceBarangays
+            });
+            truck.serviceBarangays = updatedServiceBarangays;
+          } catch (patchErr) {
+            console.warn('Auto-sync truck coverage failed:', patchErr);
+          }
+        }
+      }
+
       await axios.post(`${API}/api/schedules`, {
         date: selectedDate,
         truckId: selTruck,
