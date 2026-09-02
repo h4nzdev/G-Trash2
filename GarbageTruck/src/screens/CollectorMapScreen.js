@@ -1585,6 +1585,8 @@ export default function CollectorMapScreen() {
                       </View>
                     </View>
                   </View>
+                ) : null}
+
                 {/* Scheduled Stops & Mark as Clean Checklist */}
                 {todaySchedules && todaySchedules.length > 0 && (
                   <View style={{ width: '100%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }}>

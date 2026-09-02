@@ -1,17 +1,29 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, ActivityIndicator, Dimensions,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 
 const { width } = Dimensions.get("window");
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function CalendarScreen() {
+  const { user } = useAuth();
+  const userBarangay = user?.barangay || "";
+
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState(null);
@@ -20,15 +32,25 @@ export default function CalendarScreen() {
   const today = new Date();
 
   const goToPreviousMonth = () => {
-    if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(y => y - 1); }
-    else setCurrentMonth(m => m - 1);
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
     setSelectedDay(null);
   };
+
   const goToNextMonth = () => {
-    if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(y => y + 1); }
-    else setCurrentMonth(m => m + 1);
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
     setSelectedDay(null);
   };
+
   const goToToday = () => {
     setCurrentYear(today.getFullYear());
     setCurrentMonth(today.getMonth());
@@ -40,148 +62,207 @@ export default function CalendarScreen() {
     try {
       const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
       const res = await fetch(`${API_URL}/api/schedules?month=${monthStr}`);
-      if (res.ok) setSchedules(await res.json());
-    } catch (_) {}
-    finally { setIsLoading(false); }
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(Array.isArray(data) ? data : data.schedules || []);
+      }
+    } catch (_) {
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchSchedules(currentYear, currentMonth); }, [fetchSchedules, currentYear, currentMonth]);
+  useEffect(() => {
+    fetchSchedules(currentYear, currentMonth);
+  }, [fetchSchedules, currentYear, currentMonth]);
 
   const collectionDays = useMemo(() => {
     const days = new Set();
-    schedules.forEach(s => { const d = parseInt(s.date?.split("-")[2], 10); if (!isNaN(d)) days.add(d); });
+    schedules.forEach((s) => {
+      const d = parseInt(s.date?.split("-")[2], 10);
+      if (!isNaN(d)) days.add(d);
+    });
     return days;
   }, [schedules]);
 
   const schedulesForDay = useMemo(() => {
     if (!selectedDay) return [];
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
-    return schedules.filter(s => s.date === dateStr);
+    return schedules.filter((s) => s.date === dateStr);
   }, [selectedDay, schedules, currentYear, currentMonth]);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const days = [];
-    for (let i = 0; i < firstDay; i++) days.push({ day: null, key: `e-${i}` });
-    for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, key: `d-${d}` });
+    for (let i = 0; i < firstDay; i++) days.push({ day: null, key: `empty-${i}` });
+    for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, key: `day-${d}` });
     return days;
   }, [currentYear, currentMonth]);
 
   const nextPickup = useMemo(() => {
     if (today.getFullYear() === currentYear && today.getMonth() === currentMonth) {
       const todayDay = today.getDate();
-      const upcoming = [...collectionDays].filter(d => d >= todayDay).sort((a, b) => a - b);
+      const upcoming = [...collectionDays].filter((d) => d >= todayDay).sort((a, b) => a - b);
       if (upcoming.length > 0) {
         const diff = upcoming[0] - todayDay;
-        if (diff === 0) return { label: "Today!", sub: "Collection scheduled for today", urgent: true };
-        if (diff === 1) return { label: "Tomorrow", sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}`, urgent: false };
-        return { label: `In ${diff} days`, sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}`, urgent: false };
+        const matchingSched = schedules.find(
+          (s) => s.date === `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(upcoming[0]).padStart(2, "0")}`
+        );
+        if (diff === 0) {
+          return {
+            label: "Today!",
+            sub: matchingSched ? `Route: ${matchingSched.routeName || matchingSched.barangay}` : "Collection scheduled for today",
+            truck: matchingSched?.truckId,
+            urgent: true,
+          };
+        }
+        if (diff === 1) {
+          return {
+            label: "Tomorrow",
+            sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}${matchingSched ? ` · ${matchingSched.routeName || matchingSched.barangay}` : ""}`,
+            truck: matchingSched?.truckId,
+            urgent: false,
+          };
+        }
+        return {
+          label: `In ${diff} days`,
+          sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}${matchingSched ? ` · ${matchingSched.routeName || matchingSched.barangay}` : ""}`,
+          truck: matchingSched?.truckId,
+          urgent: false,
+        };
       }
-      return { label: "None left", sub: "No more pickups this month", urgent: false };
+      return { label: "Completed", sub: "No more pickups remaining this month", urgent: false };
     }
     const sorted = [...collectionDays].sort((a, b) => a - b);
     return sorted.length > 0
-      ? { label: `${MONTH_NAMES[currentMonth]} ${sorted[0]}`, sub: `${sorted.length} collection days`, urgent: false }
-      : { label: "No schedule", sub: "No pickups scheduled", urgent: false };
-  }, [currentYear, currentMonth, collectionDays]);
-
-  const handleQuickReport = (type) => {
-    const msgs = {
-      overflowing: "We've received your report about an overflowing bin. Our team will address it shortly.",
-      odor: "We've received your report about bad odor. Environmental team has been notified.",
-      missed: "We've noted your missed collection. A truck will be rerouted to your area.",
-    };
-    Alert.alert("Report Submitted ✓", msgs[type] || "Report submitted.");
-  };
+      ? { label: `${MONTH_NAMES[currentMonth]} ${sorted[0]}`, sub: `${sorted.length} collection days this month`, urgent: false }
+      : { label: "No schedule", sub: "No collection scheduled for this month", urgent: false };
+  }, [currentYear, currentMonth, collectionDays, schedules]);
 
   const isCurrentMonth = today.getFullYear() === currentYear && today.getMonth() === currentMonth;
 
   return (
-    <SafeAreaView style={s.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* Header */}
-        <View style={s.header}>
-          <View>
-            <Text style={s.headerTitle}>Collection Schedule</Text>
-            <Text style={s.headerSub}>{MONTH_NAMES[currentMonth]} {currentYear}</Text>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        
+        {/* Top Header */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Collection Calendar</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+              <MaterialIcons name="location-on" size={14} color="#006A3B" />
+              <Text style={styles.headerSub}>
+                {userBarangay ? `Barangay ${userBarangay}` : "All Routes"}
+              </Text>
+            </View>
           </View>
-          {!isCurrentMonth && (
-            <TouchableOpacity style={s.todayBtn} onPress={goToToday}>
+          {!isCurrentMonth ? (
+            <TouchableOpacity style={styles.todayBtn} onPress={goToToday} activeOpacity={0.8}>
               <MaterialIcons name="today" size={16} color="#006A3B" />
-              <Text style={s.todayBtnText}>Today</Text>
+              <Text style={styles.todayBtnText}>Today</Text>
             </TouchableOpacity>
+          ) : (
+            <View style={styles.monthPill}>
+              <Text style={styles.monthPillText}>{MONTH_NAMES[currentMonth].slice(0, 3)} {currentYear}</Text>
+            </View>
           )}
         </View>
 
-        {/* Next Pickup Banner */}
-        <View style={[s.pickupBanner, nextPickup.urgent && s.pickupBannerUrgent]}>
-          <View style={[s.pickupIcon, nextPickup.urgent && s.pickupIconUrgent]}>
-            <MaterialIcons
-              name={nextPickup.urgent ? "local-shipping" : "notifications-active"}
-              size={22} color={nextPickup.urgent ? "#FFFFFF" : "#006A3B"}
-            />
+        {/* Next Pickup Hero Card */}
+        <View style={[styles.pickupHero, nextPickup.urgent && styles.pickupHeroUrgent]}>
+          <View style={styles.pickupHeroTop}>
+            <View style={[styles.pickupIconWrap, nextPickup.urgent && styles.pickupIconWrapUrgent]}>
+              <MaterialIcons
+                name={nextPickup.urgent ? "local-shipping" : "event-available"}
+                size={22}
+                color={nextPickup.urgent ? "#FFFFFF" : "#006A3B"}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.pickupTag, nextPickup.urgent && styles.pickupTagUrgent]}>
+                NEXT COLLECTION
+              </Text>
+              <Text style={[styles.pickupTitle, nextPickup.urgent && styles.pickupTitleUrgent]}>
+                {nextPickup.label}
+              </Text>
+            </View>
+            {nextPickup.truck && (
+              <View style={[styles.truckBadge, nextPickup.urgent && styles.truckBadgeUrgent]}>
+                <MaterialIcons name="directions-car" size={13} color={nextPickup.urgent ? "#FFFFFF" : "#006A3B"} />
+                <Text style={[styles.truckBadgeText, nextPickup.urgent && styles.truckBadgeTextUrgent]}>
+                  {nextPickup.truck}
+                </Text>
+              </View>
+            )}
           </View>
-          <View style={s.pickupContent}>
-            <Text style={s.pickupLabel}>Next Pickup</Text>
-            <Text style={[s.pickupValue, nextPickup.urgent && s.pickupValueUrgent]}>{nextPickup.label}</Text>
-            <Text style={s.pickupSub}>{nextPickup.sub}</Text>
-          </View>
-          {isLoading && <ActivityIndicator size="small" color="#006A3B" />}
+          <Text style={[styles.pickupSubtext, nextPickup.urgent && styles.pickupSubtextUrgent]} numberOfLines={1}>
+            {nextPickup.sub}
+          </Text>
         </View>
 
         {/* Calendar Card */}
-        <View style={s.calCard}>
-          <View style={s.monthNav}>
-            <TouchableOpacity onPress={goToPreviousMonth} style={s.navBtn}>
-              <MaterialIcons name="chevron-left" size={24} color="#3F4941" />
+        <View style={styles.calendarCard}>
+          {/* Month Switcher */}
+          <View style={styles.monthNav}>
+            <TouchableOpacity onPress={goToPreviousMonth} style={styles.navArrowBtn} activeOpacity={0.7}>
+              <MaterialIcons name="chevron-left" size={24} color="#1E293B" />
             </TouchableOpacity>
-            <View style={s.monthCenter}>
-              <Text style={s.monthText}>{MONTH_NAMES[currentMonth]}</Text>
-              <Text style={s.yearText}>{currentYear}</Text>
+            <View style={styles.monthCenter}>
+              <Text style={styles.monthName}>{MONTH_NAMES[currentMonth]}</Text>
+              <Text style={styles.yearName}>{currentYear}</Text>
             </View>
-            <TouchableOpacity onPress={goToNextMonth} style={s.navBtn}>
-              <MaterialIcons name="chevron-right" size={24} color="#3F4941" />
+            <TouchableOpacity onPress={goToNextMonth} style={styles.navArrowBtn} activeOpacity={0.7}>
+              <MaterialIcons name="chevron-right" size={24} color="#1E293B" />
             </TouchableOpacity>
           </View>
 
-          <View style={s.dayHeaders}>
-            {DAY_NAMES.map(d => (
-              <Text key={d} style={[s.dayLabel, (d === "Sun" || d === "Sat") && s.dayLabelWE]}>{d}</Text>
+          {/* Weekday Names */}
+          <View style={styles.weekRow}>
+            {DAY_NAMES.map((d) => (
+              <Text key={d} style={[styles.weekDayLabel, (d === "Sun" || d === "Sat") && styles.weekDayWeekend]}>
+                {d}
+              </Text>
             ))}
           </View>
 
-          <View style={s.grid}>
-            {calendarGrid.map(item => {
-              if (!item.day) return <View key={item.key} style={s.cell} />;
+          {/* Month Grid */}
+          <View style={styles.gridContainer}>
+            {calendarGrid.map((item) => {
+              if (!item.day) return <View key={item.key} style={styles.gridCell} />;
               const day = item.day;
               const isCol = collectionDays.has(day);
               const isToday = isCurrentMonth && today.getDate() === day;
               const isSel = selectedDay === day;
+
               return (
                 <TouchableOpacity
                   key={item.key}
-                  style={s.cell}
+                  style={styles.gridCell}
                   onPress={() => setSelectedDay(isSel ? null : day)}
                   activeOpacity={0.6}
                 >
-                  <View style={[
-                    s.dayCir,
-                    isCol && s.dayCirCol,
-                    isToday && !isCol && s.dayCirToday,
-                    isSel && s.dayCirSel,
-                    isToday && isCol && s.dayCirTodayCol,
-                  ]}>
-                    <Text style={[
-                      s.dayNum,
-                      isCol && s.dayNumCol,
-                      isToday && s.dayNumToday,
-                      isSel && s.dayNumSel,
-                    ]}>{day}</Text>
+                  <View
+                    style={[
+                      styles.dayCircle,
+                      isCol && styles.dayCircleCollection,
+                      isToday && styles.dayCircleToday,
+                      isSel && styles.dayCircleSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        isCol && styles.dayNumberCollection,
+                        isToday && styles.dayNumberToday,
+                        isSel && styles.dayNumberSelected,
+                      ]}
+                    >
+                      {day}
+                    </Text>
                   </View>
                   {isCol && (
-                    <View style={[s.colDot, isToday && s.colDotToday]} />
+                    <View style={[styles.collectionDot, isSel && styles.collectionDotSelected]} />
                   )}
                 </TouchableOpacity>
               );
@@ -189,98 +270,198 @@ export default function CalendarScreen() {
           </View>
 
           {/* Legend */}
-          <View style={s.legend}>
-            <View style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: "#D4FCDD", borderColor: "#006A3B" }]} />
-              <Text style={s.legendText}>Collection day</Text>
+          <View style={styles.legendContainer}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { backgroundColor: "#DCFCE7", borderColor: "#059669" }]} />
+              <Text style={styles.legendLabel}>Collection Day</Text>
             </View>
-            <View style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: "#FFFFFF", borderColor: "#006A3B" }]} />
-              <Text style={s.legendText}>Today</Text>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { backgroundColor: "#FFFFFF", borderColor: "#006A3B" }]} />
+              <Text style={styles.legendLabel}>Today</Text>
             </View>
-            <Text style={s.legendCount}>{collectionDays.size} day{collectionDays.size !== 1 ? "s" : ""}</Text>
+            <View style={styles.legendCountPill}>
+              <Text style={styles.legendCountText}>
+                {collectionDays.size} {collectionDays.size === 1 ? "day" : "days"}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Selected Day Details */}
-        {selectedDay && (
-          <View style={s.detailCard}>
-            <View style={s.detailHeader}>
-              <MaterialIcons name="event" size={20} color="#006A3B" />
-              <Text style={s.detailTitle}>
-                {MONTH_NAMES[currentMonth]} {selectedDay}, {currentYear}
+        {/* Schedules Section */}
+        <View style={styles.schedulesSection}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>
+                {selectedDay
+                  ? `Schedules for ${MONTH_NAMES[currentMonth]} ${selectedDay}`
+                  : `Monthly Collection Schedules`}
+              </Text>
+              <Text style={styles.sectionSubtitle}>
+                {selectedDay
+                  ? `${schedulesForDay.length} pickup${schedulesForDay.length !== 1 ? "s" : ""} on this date`
+                  : `${schedules.length} total route${schedules.length !== 1 ? "s" : ""} in ${MONTH_NAMES[currentMonth]}`}
               </Text>
             </View>
-            {schedulesForDay.length > 0 ? (
-              schedulesForDay.map((sched, i) => (
-                <View key={sched._id || i} style={s.schedItem}>
-                  <View style={s.schedIcon}>
-                    <MaterialIcons name="local-shipping" size={18} color="#006A3B" />
+            {selectedDay && (
+              <TouchableOpacity onPress={() => setSelectedDay(null)} style={styles.clearBtn} activeOpacity={0.7}>
+                <Text style={styles.clearBtnText}>View All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {isLoading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="small" color="#006A3B" />
+              <Text style={styles.loadingText}>Loading schedules...</Text>
+            </View>
+          ) : selectedDay ? (
+            /* Selected Date Schedules */
+            schedulesForDay.length > 0 ? (
+              schedulesForDay.map((sched, idx) => (
+                <View key={sched._id || idx} style={styles.scheduleCard}>
+                  <View style={styles.scheduleCardHeader}>
+                    <View style={styles.truckIconBadge}>
+                      <MaterialIcons name="local-shipping" size={20} color="#006A3B" />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.scheduleRouteName}>
+                        {sched.routeName || sched.barangay || "Collection Route"}
+                      </Text>
+                      <Text style={styles.scheduleTruckMeta}>
+                        Truck {sched.truckId || "GT-001"} · {sched.driverName || "Driver Assigned"}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.statusPill,
+                      sched.status === "completed" ? styles.statusPillDone : styles.statusPillActive
+                    ]}>
+                      <Text style={[
+                        styles.statusPillText,
+                        sched.status === "completed" ? styles.statusPillTextDone : styles.statusPillTextActive
+                      ]}>
+                        {sched.status ? sched.status.toUpperCase() : "SCHEDULED"}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={s.schedContent}>
-                    <Text style={s.schedRoute}>{sched.routeName || "Scheduled Route"}</Text>
-                    <Text style={s.schedMeta}>
-                      Truck {sched.truckId}{sched.driverName ? ` · ${sched.driverName}` : ""}
-                      {sched.startTime ? ` · ${sched.startTime}` : ""}
-                    </Text>
-                    {sched.notes ? <Text style={s.schedNotes}>{sched.notes}</Text> : null}
-                  </View>
+
+                  {/* Shift Time */}
+                  {sched.startTime && (
+                    <View style={styles.scheduleTimeRow}>
+                      <MaterialIcons name="schedule" size={14} color="#64748B" />
+                      <Text style={styles.scheduleTimeText}>
+                        Shift: {sched.startTime} {sched.endTime ? `- ${sched.endTime}` : ""}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Route Stops Checklist */}
+                  {sched.sitioTasks && sched.sitioTasks.length > 0 && (
+                    <View style={styles.stopsContainer}>
+                      <Text style={styles.stopsHeader}>Route Stops Checklist:</Text>
+                      <View style={styles.stopsList}>
+                        {sched.sitioTasks.map((t, sIdx) => (
+                          <View key={sIdx} style={styles.stopRow}>
+                            <MaterialIcons
+                              name={t.completed ? "check-circle" : "radio-button-unchecked"}
+                              size={15}
+                              color={t.completed ? "#059669" : "#94A3B8"}
+                            />
+                            <Text style={[styles.stopText, t.completed && styles.stopTextDone]}>
+                              {t.name}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {sched.notes && (
+                    <View style={styles.notesBox}>
+                      <Text style={styles.notesText}>Note: {sched.notes}</Text>
+                    </View>
+                  )}
                 </View>
               ))
             ) : (
-              <View style={s.noSched}>
-                <MaterialIcons name="event-busy" size={32} color="#BECABE" />
-                <Text style={s.noSchedText}>No collection scheduled</Text>
+              <View style={styles.emptyState}>
+                <MaterialIcons name="event-busy" size={40} color="#CBD5E1" />
+                <Text style={styles.emptyTitle}>No Collection Scheduled</Text>
+                <Text style={styles.emptySub}>
+                  No garbage collection is assigned for {MONTH_NAMES[currentMonth]} {selectedDay}.
+                </Text>
               </View>
-            )}
-          </View>
-        )}
+            )
+          ) : (
+            /* Month Schedules Overview List */
+            schedules.length > 0 ? (
+              schedules.map((sched, idx) => {
+                const dayNum = sched.date?.split("-")[2] || "01";
+                const isPast = isCurrentMonth && parseInt(dayNum, 10) < today.getDate();
+                const isToday = isCurrentMonth && parseInt(dayNum, 10) === today.getDate();
 
-        {/* Quick Report */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Quick Report</Text>
-          <Text style={s.sectionSub}>Report an issue in your area</Text>
-          <View style={s.reportList}>
-            {[
-              { key: "overflowing", icon: "delete", color: "#BA1A1A", bg: "#FFDAD6", label: "Overflowing Bin", desc: "Garbage container is full or spilling over" },
-              { key: "odor", icon: "air", color: "#EA580C", bg: "#FED7AA", label: "Bad Odor", desc: "Report strong smell or chemical odor" },
-              { key: "missed", icon: "event-busy", color: "#7C3AED", bg: "#EDE9FE", label: "Missed Pickup", desc: "Truck missed collecting your trash" },
-            ].map(r => (
-              <TouchableOpacity key={r.key} style={s.reportRow} onPress={() => handleQuickReport(r.key)} activeOpacity={0.75}>
-                <View style={[s.reportIcon, { backgroundColor: r.bg }]}>
-                  <MaterialIcons name={r.icon} size={22} color={r.color} />
-                </View>
-                <View style={s.reportRowContent}>
-                  <Text style={s.reportRowLabel}>{r.label}</Text>
-                  <Text style={s.reportRowDesc}>{r.desc}</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                return (
+                  <TouchableOpacity
+                    key={sched._id || idx}
+                    style={[styles.scheduleCard, isToday && styles.scheduleCardToday]}
+                    onPress={() => setSelectedDay(parseInt(dayNum, 10))}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.scheduleCardHeader}>
+                      {/* Date Stamp Pill */}
+                      <View style={[styles.dateStamp, isToday && styles.dateStampToday, isPast && styles.dateStampPast]}>
+                        <Text style={[styles.dateStampMonth, isToday && styles.dateStampMonthToday]}>
+                          {MONTH_NAMES[currentMonth].slice(0, 3).toUpperCase()}
+                        </Text>
+                        <Text style={[styles.dateStampDay, isToday && styles.dateStampDayToday]}>
+                          {dayNum}
+                        </Text>
+                      </View>
 
-        {/* Reminders */}
-        <View style={s.remCard}>
-          <View style={s.remHeader}>
-            <MaterialIcons name="lightbulb-outline" size={18} color="#006A3B" />
-            <Text style={s.remTitle}>Collection Tips</Text>
-          </View>
-          {[
-            { icon: "inventory-2", title: "Curbside Pickup", text: "Place bins at the curb by 7:00 AM" },
-            { icon: "recycling", title: "Sort Your Waste", text: "Recyclables in blue, organic in green" },
-            { icon: "cleaning-services", title: "Keep It Clean", text: "Rinse containers before placing in bin" },
-          ].map((tip, i) => (
-            <View key={i} style={s.remItem}>
-              <View style={s.remIcon}>
-                <MaterialIcons name={tip.icon} size={20} color="#006A3B" />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={styles.scheduleRouteName} numberOfLines={1}>
+                            {sched.routeName || sched.barangay || "Collection Route"}
+                          </Text>
+                        </View>
+                        <Text style={styles.scheduleTruckMeta} numberOfLines={1}>
+                          Truck {sched.truckId || "GT-001"} · {sched.driverName || "Driver Assigned"}
+                        </Text>
+                      </View>
+
+                      <View style={[
+                        styles.statusPill,
+                        isToday ? styles.statusPillToday : isPast ? styles.statusPillPast : styles.statusPillActive
+                      ]}>
+                        <Text style={[
+                          styles.statusPillText,
+                          isToday ? styles.statusPillTextToday : isPast ? styles.statusPillTextPast : styles.statusPillTextActive
+                        ]}>
+                          {isToday ? "TODAY" : isPast ? "COMPLETED" : "UPCOMING"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {sched.sitioTasks && sched.sitioTasks.length > 0 && (
+                      <View style={styles.cardStopsSummary}>
+                        <MaterialIcons name="place" size={13} color="#059669" />
+                        <Text style={styles.cardStopsText} numberOfLines={1}>
+                          {sched.sitioTasks.length} stops ({sched.sitioTasks.map(t => t.name).join(", ")})
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="calendar-today" size={40} color="#CBD5E1" />
+                <Text style={styles.emptyTitle}>No Schedules for this Month</Text>
+                <Text style={styles.emptySub}>
+                  No collection schedules have been posted for {MONTH_NAMES[currentMonth]} {currentYear} yet.
+                </Text>
               </View>
-              <View style={s.remContent}>
-                <Text style={s.remItemTitle}>{tip.title}</Text>
-                <Text style={s.remItemText}>{tip.text}</Text>
-              </View>
-            </View>
-          ))}
+            )
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -289,138 +470,567 @@ export default function CalendarScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#FBF9F8" },
-  scroll: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
 
   // Header
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 16, marginBottom: 8 },
-  headerTitle: { fontSize: 34, fontWeight: "700", color: "#1B1C1C", letterSpacing: -0.4, lineHeight: 41 },
-  headerSub: { fontSize: 15, color: "#6F7A70", marginTop: 4, lineHeight: 20 },
-  todayBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#D4FCDD", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  todayBtnText: { fontSize: 13, fontWeight: "600", color: "#006A3B" },
-
-  // Pickup Banner
-  pickupBanner: {
-    flexDirection: "row", alignItems: "center", backgroundColor: "#D4FCDD",
-    borderRadius: 20, padding: 16, marginBottom: 16, gap: 14,
-    shadowColor: "#006A3B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    marginBottom: 10,
   },
-  pickupBannerUrgent: { backgroundColor: "#006A3B" },
-  pickupIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFF20", justifyContent: "center", alignItems: "center" },
-  pickupIconUrgent: { backgroundColor: "#FFFFFF30" },
-  pickupContent: { flex: 1 },
-  pickupLabel: { fontSize: 11, fontWeight: "600", color: "#00522D", textTransform: "uppercase", letterSpacing: 1.5, lineHeight: 14 },
-  pickupValue: { fontSize: 20, fontWeight: "800", color: "#006A3B", lineHeight: 26, marginTop: 2 },
-  pickupValueUrgent: { color: "#FFFFFF" },
-  pickupSub: { fontSize: 13, color: "#3F4941", lineHeight: 18, marginTop: 1 },
-
-  // Calendar Card
-  calCard: {
-    backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20, marginBottom: 20,
-    borderWidth: 1, borderColor: "#F0EDED",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 30, elevation: 3,
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.5,
   },
-  monthNav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  navBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F6F3F2", justifyContent: "center", alignItems: "center" },
-  monthCenter: { alignItems: "center" },
-  monthText: { fontSize: 18, fontWeight: "700", color: "#1B1C1C", lineHeight: 24 },
-  yearText: { fontSize: 12, color: "#6F7A70", marginTop: 1 },
-
-  dayHeaders: { flexDirection: "row", marginBottom: 8 },
-  dayLabel: { flex: 1, textAlign: "center", fontSize: 11, fontWeight: "600", color: "#6F7A70", textTransform: "uppercase", letterSpacing: 1.2, paddingVertical: 8 },
-  dayLabelWE: { color: "#BECABE" },
-
-  grid: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: "14.28%", aspectRatio: 1, justifyContent: "center", alignItems: "center" },
-  dayCir: { width: 38, height: 38, borderRadius: 19, justifyContent: "center", alignItems: "center" },
-  dayCirCol: { backgroundColor: "#D4FCDD" },
-  dayCirToday: { borderWidth: 2, borderColor: "#006A3B" },
-  dayCirTodayCol: { backgroundColor: "#BDF5BE", borderWidth: 2, borderColor: "#006A3B" },
-  dayCirSel: { backgroundColor: "#006A3B" },
-  dayNum: { fontSize: 15, color: "#1B1C1C", fontWeight: "500" },
-  dayNumCol: { color: "#006A3B", fontWeight: "600" },
-  dayNumToday: { color: "#006A3B", fontWeight: "700" },
-  dayNumSel: { color: "#FFFFFF", fontWeight: "700" },
-  colDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#006A3B", marginTop: 2 },
-  colDotToday: { backgroundColor: "#006A3B" },
-
-  legend: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "#F0EDED" },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  legendDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5 },
-  legendText: { fontSize: 12, color: "#6F7A70" },
-  legendCount: { marginLeft: "auto", fontSize: 12, fontWeight: "600", color: "#006A3B", backgroundColor: "#D4FCDD", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
-
-  // Selected Day Detail
-  detailCard: {
-    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 18, marginBottom: 20,
-    borderWidth: 1, borderColor: "#F0EDED",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 12, elevation: 2,
+  headerSub: {
+    fontSize: 13,
+    color: "#006A3B",
+    fontWeight: "600",
   },
-  detailHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#F0EDED" },
-  detailTitle: { fontSize: 16, fontWeight: "700", color: "#1B1C1C" },
-  schedItem: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 12 },
-  schedIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#D4FCDD", justifyContent: "center", alignItems: "center", marginTop: 2 },
-  schedContent: { flex: 1 },
-  schedRoute: { fontSize: 15, fontWeight: "600", color: "#1B1C1C", lineHeight: 20 },
-  schedMeta: { fontSize: 13, color: "#6B7280", lineHeight: 18, marginTop: 2 },
-  schedNotes: { fontSize: 12, color: "#6F7A70", fontStyle: "italic", marginTop: 4 },
-  noSched: { alignItems: "center", paddingVertical: 20, gap: 8 },
-  noSchedText: { fontSize: 14, color: "#BECABE" },
-
-  // Quick Report
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1B1C1C", lineHeight: 24, marginBottom: 2 },
-  sectionSub: { fontSize: 13, color: "#6B7280", marginBottom: 14 },
-  reportList: { gap: 10 },
-  reportRow: {
+  todayBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#F0EDED",
+    borderColor: "#A7F3D0",
+  },
+  todayBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  monthPill: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  monthPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+  },
+
+  // Pickup Hero Banner
+  pickupHero: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
   },
-  reportIcon: {
+  pickupHeroUrgent: {
+    backgroundColor: "#006A3B",
+    borderColor: "#00522D",
+  },
+  pickupHeroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pickupIconWrap: {
     width: 44,
     height: 44,
     borderRadius: 22,
+    backgroundColor: "#ECFDF5",
     justifyContent: "center",
     alignItems: "center",
   },
-  reportRowContent: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+  pickupIconWrapUrgent: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
-  reportRowLabel: {
-    fontSize: 15,
-    color: "#1B1C1C",
+  pickupTag: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#059669",
+    letterSpacing: 1,
+  },
+  pickupTagUrgent: {
+    color: "#A7F3D0",
+  },
+  pickupTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 1,
+  },
+  pickupTitleUrgent: {
+    color: "#FFFFFF",
+  },
+  truckBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  truckBadgeUrgent: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  truckBadgeText: {
+    fontSize: 11,
     fontWeight: "700",
+    color: "#006A3B",
   },
-  reportRowDesc: {
+  truckBadgeTextUrgent: {
+    color: "#FFFFFF",
+  },
+  pickupSubtext: {
     fontSize: 12,
-    color: "#6B7280",
-    marginTop: 2,
+    color: "#64748B",
+    marginTop: 10,
+    fontWeight: "500",
+  },
+  pickupSubtextUrgent: {
+    color: "#E2E8F0",
   },
 
-  // Reminders / Tips
-  remCard: {
-    backgroundColor: "#F4FDF7", borderRadius: 22, padding: 18,
-    borderWidth: 1, borderColor: "#E8F7EE",
+  // Calendar Card
+  calendarCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 16,
+    elevation: 2,
   },
-  remHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  remTitle: { fontSize: 12, fontWeight: "800", color: "#006A3B", textTransform: "uppercase", letterSpacing: 1.2 },
-  remItem: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
-  remIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#E6F4EA", justifyContent: "center", alignItems: "center" },
-  remContent: { flex: 1 },
-  remItemTitle: { fontSize: 14, fontWeight: "700", color: "#1B1C1C", lineHeight: 18 },
-  remItemText: { fontSize: 12, color: "#555F56", lineHeight: 16, marginTop: 2 },
+  monthNav: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  navArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  monthCenter: {
+    alignItems: "center",
+  },
+  monthName: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  yearName: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 1,
+  },
+
+  weekRow: {
+    flexDirection: "row",
+    marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    paddingBottom: 6,
+  },
+  weekDayLabel: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748B",
+    textTransform: "uppercase",
+  },
+  weekDayWeekend: {
+    color: "#94A3B8",
+  },
+
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  gridCell: {
+    width: "14.28%",
+    aspectRatio: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dayCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dayCircleCollection: {
+    backgroundColor: "#DCFCE7",
+  },
+  dayCircleToday: {
+    borderWidth: 2,
+    borderColor: "#006A3B",
+  },
+  dayCircleSelected: {
+    backgroundColor: "#006A3B",
+  },
+  dayNumber: {
+    fontSize: 14,
+    color: "#1E293B",
+    fontWeight: "500",
+  },
+  dayNumberCollection: {
+    color: "#065F46",
+    fontWeight: "700",
+  },
+  dayNumberToday: {
+    color: "#006A3B",
+    fontWeight: "800",
+  },
+  dayNumberSelected: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  collectionDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#059669",
+    marginTop: 2,
+  },
+  collectionDotSelected: {
+    backgroundColor: "#006A3B",
+  },
+
+  legendContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+  },
+  legendLabel: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  legendCountPill: {
+    marginLeft: "auto",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  legendCountText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+
+  // Schedules Section
+  schedulesSection: {
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  clearBtn: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  clearBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+
+  scheduleCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  scheduleCardToday: {
+    borderColor: "#6EE7B7",
+    backgroundColor: "#F0FDF4",
+  },
+  scheduleCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  truckIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scheduleRouteName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  scheduleTruckMeta: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusPillActive: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#D1FAE5",
+  },
+  statusPillTextActive: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  statusPillDone: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  statusPillTextDone: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  statusPillToday: {
+    backgroundColor: "#006A3B",
+    borderColor: "#006A3B",
+  },
+  statusPillTextToday: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  statusPillPast: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  statusPillTextPast: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#94A3B8",
+  },
+
+  scheduleTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  scheduleTimeText: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "500",
+  },
+
+  stopsContainer: {
+    marginTop: 10,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 10,
+  },
+  stopsHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  stopsList: {
+    gap: 4,
+  },
+  stopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  stopText: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "500",
+  },
+  stopTextDone: {
+    color: "#059669",
+    fontWeight: "600",
+    textDecorationLine: "line-through",
+  },
+
+  notesBox: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FEF3C7",
+  },
+  notesText: {
+    fontSize: 11,
+    color: "#B45309",
+    fontStyle: "italic",
+  },
+
+  // Date Stamp for overview card
+  dateStamp: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#ECFDF5",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  dateStampToday: {
+    backgroundColor: "#006A3B",
+    borderColor: "#006A3B",
+  },
+  dateStampPast: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  dateStampMonth: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#059669",
+    letterSpacing: 0.5,
+  },
+  dateStampMonthToday: {
+    color: "#A7F3D0",
+  },
+  dateStampDay: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#065F46",
+  },
+  dateStampDayToday: {
+    color: "#FFFFFF",
+  },
+
+  cardStopsSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  cardStopsText: {
+    fontSize: 11,
+    color: "#059669",
+    fontWeight: "500",
+    flex: 1,
+  },
+
+  loadingBox: {
+    paddingVertical: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: "#64748B",
+  },
+
+  emptyState: {
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#334155",
+    marginTop: 10,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: "#94A3B8",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 18,
+  },
 });

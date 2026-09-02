@@ -27,13 +27,27 @@ import { WebView } from "react-native-webview";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { io } from "socket.io-client";
-import { useRoute } from "@react-navigation/native";
+import { useRoute, useNavigation } from "@react-navigation/native";
+import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import HeatmapLegend from "../components/HeatmapLegend";
 import API_URL from "../config";
 import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
 
 const TRACKING_SERVER = API_URL;
+
+function getDistanceM(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const dPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const dLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dPhi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const ROUTE_COLORS = [
   "#006A3B",
@@ -269,8 +283,7 @@ function buildLeafletHTML(truckB64) {
 
       window.showIdleTruck = function(lat, lng, truckId) {
         var id = truckId || 'GT';
-        if (truckMarkers[id]) { map.removeLayer(truckMarkers[id]); }
-        truckMarkers[id] = L.marker([lat, lng], { icon: makeIdleIcon(id) }).addTo(map);
+        if (truckMarkers[id]) { map.removeLayer(truckMarkers[id]); delete truckMarkers[id]; }
       };
 
       window.removeTruckMarker = function(truckId) {
@@ -388,6 +401,7 @@ function buildLeafletHTML(truckB64) {
 }
 
 export default function MapScreen() {
+  const navigation = useNavigation();
   const routeParams = useRoute();
   const { focusTruck } = routeParams.params || {};
   const { top: topInset, bottom: bottomInset } = useSafeAreaInsets();
@@ -409,6 +423,8 @@ export default function MapScreen() {
   const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
   const [cleanedNotif, setCleanedNotif] = useState(null);
   const [truckBarangay, setTruckBarangay] = useState(null);
+  const [binReady, setBinReady] = useState(false);
+  const [proximityToast, setProximityToast] = useState(null);
 
   const [sitioList, setSitioList] = useState([]);
   const [todaySchedules, setTodaySchedules] = useState([]);
@@ -418,6 +434,9 @@ export default function MapScreen() {
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const liveTruckPos = useRef(null);
+  const userLocationRef = useRef(null);
+  const truckAlertFiredRef = useRef(new Set());
+  const toastTimerRef = useRef(null);
   const [webViewReady, setWebViewReady] = useState(false);
   const webViewReadyRef = useRef(false);
   const isFollowingRef = useRef(!!focusTruck);
@@ -428,7 +447,44 @@ export default function MapScreen() {
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
 
+  useEffect(() => {
+    userLocationRef.current = userLocation;
+  }, [userLocation]);
 
+  // Load bin prepared status for today
+  useEffect(() => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    AsyncStorage.getItem(`@bin_prepared_${today}`)
+      .then((val) => {
+        if (val === "true") setBinReady(true);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handlePrepareBin = async () => {
+    if (binReady) return;
+    if (!liveTruckOnline) {
+      Alert.alert(
+        "Truck Not Active",
+        "You can prepare your bin when the collection truck is actively online and on route in your area.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setBinReady(true);
+    await AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
+    if (user?.id && user?.barangay) {
+      fetch(`${API_URL}/api/bin/prepare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+      }).catch(() => {});
+    }
+    Alert.alert("Bin Prepared! ✓", "Your garbage bin is marked as prepared for active collection. +2 Points earned!");
+  };
 
   const aqStatus = useMemo(() => {
     if (!iotAreas.length) return null;
@@ -445,6 +501,11 @@ export default function MapScreen() {
     return todaySchedules.find(s => s.barangay?.toLowerCase() === userBarangay.toLowerCase());
   }, [todaySchedules, liveTruckPos.current, liveTruckOnline, userBarangay]);
 
+  const distToUser = useMemo(() => {
+    if (!truckPosState?.lat || !userLocation?.lat) return null;
+    return Math.round(getDistanceM(userLocation.lat, userLocation.lng, truckPosState.lat, truckPosState.lng));
+  }, [truckPosState, userLocation]);
+
   useEffect(() => { iotAreasRef.current = iotAreas; }, [iotAreas]);
 
   useEffect(() => {
@@ -457,7 +518,12 @@ export default function MapScreen() {
           if (online.length > 0) {
             const active = online[0];
             liveTruckPos.current = { lat: active.lat, lng: active.lng, truckId: active.truckId };
+            setTruckPosState({ lat: active.lat, lng: active.lng, truckId: active.truckId });
             setLiveTruckOnline(true);
+          } else {
+            liveTruckPos.current = null;
+            setTruckPosState(null);
+            setLiveTruckOnline(false);
           }
           // Inject markers immediately if WebView is already loaded
           if (webViewReadyRef.current) {
@@ -570,8 +636,6 @@ export default function MapScreen() {
     webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
   }, [sitioList, todaySchedules, webViewReady]);
 
-
-
   useEffect(() => {
     const socket = io(TRACKING_SERVER, {
       transports: ["polling", "websocket"],
@@ -591,26 +655,52 @@ export default function MapScreen() {
           `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}); true;`,
         );
       }
+
+      // Proximity notification when truck is active and approaches user location
+      const loc = userLocationRef.current;
+      if (loc) {
+        const distM = getDistanceM(loc.lat, loc.lng, lat, lng);
+        if (distM < 350 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
+          truckAlertFiredRef.current.add(`near-${truckId}`);
+          clearTimeout(toastTimerRef.current);
+          setProximityToast(`🚚 Truck ${truckId} is very close to your location — prepare your bin!`);
+          toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Garbage Truck Very Close!",
+              body: `Truck ${truckId} is passing near your location — please have your bin ready.`,
+              sound: true,
+            },
+            trigger: null,
+          }).catch(() => {});
+        } else if (distM < 1050 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
+          truckAlertFiredRef.current.add(`approach-${truckId}`);
+          clearTimeout(toastTimerRef.current);
+          setProximityToast(`🚚 Truck ${truckId} is approaching your area.`);
+          toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Garbage Truck Approaching",
+              body: `Truck ${truckId} is on its way to your neighborhood.`,
+              sound: true,
+            },
+            trigger: null,
+          }).catch(() => {});
+        }
+      }
     });
 
     socket.on("truck:status", ({ truckId, status }) => {
       if (status === "offline") {
         setLiveTruckOnline(false);
-        const pos = liveTruckPos.current;
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
         if (webViewReadyRef.current) {
-          if (pos) {
-            webViewRef.current?.injectJavaScript(
-              `window.showIdleTruck(${pos.lat}, ${pos.lng}, '${safeId}'); true;`,
-            );
-          } else {
-            // No last position — remove the marker entirely by truckId
-            webViewRef.current?.injectJavaScript(
-              `window.removeTruckMarker('${safeId}'); true;`,
-            );
-          }
+          webViewRef.current?.injectJavaScript(
+            `window.removeTruckMarker('${safeId}'); true;`,
+          );
         }
         liveTruckPos.current = null;
+        setTruckPosState(null);
       }
     });
 
@@ -907,6 +997,18 @@ export default function MapScreen() {
           <HeatmapLegend />
         </View>
 
+        {/* Proximity Approaching Truck Toast */}
+        {proximityToast && (
+          <View style={styles.proximityToastWrapper} pointerEvents="none">
+            <View style={styles.proximityToast}>
+              <MaterialIcons name="notifications-active" size={20} color="#006A3B" />
+              <Text style={styles.proximityToastText} numberOfLines={2}>
+                {proximityToast}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Zone Cleaned Notification */}
         {cleanedNotif && (
           <View style={styles.cleanedNotifWrapper} pointerEvents="none">
@@ -957,104 +1059,270 @@ export default function MapScreen() {
           { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
         ]}
       >
-        <View>
+        <TouchableOpacity activeOpacity={0.9} onPress={isExpanded ? collapseSheet : expandSheet}>
           <View style={styles.handleBarContainer}>
             <View style={styles.handleBar} />
           </View>
+        </TouchableOpacity>
 
-          {activeSchedule ? (
-            <View style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
-              {/* Header: Status & Stops Left */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: liveTruckOnline ? '#006A3B' : '#F59E0B' }}>
-                    {liveTruckOnline ? 'Driver is on the way' : 'Truck is Offline / Idle'}
-                  </Text>
-                  <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
-                    Route: {activeSchedule.routeName || activeSchedule.barangay}
+        {activeSchedule ? (
+          <View style={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+            {/* Header: Status & Stops Left */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: liveTruckOnline ? '#059669' : '#6B7280' }} />
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: liveTruckOnline ? '#006A3B' : '#374151' }}>
+                    {liveTruckOnline
+                      ? (distToUser != null && distToUser < 350
+                          ? 'Truck Passing Near You!'
+                          : distToUser != null && distToUser < 1050
+                            ? 'Truck Approaching Area'
+                            : 'Driver is Active on Route')
+                      : 'Scheduled · Shift Not Started'}
                   </Text>
                 </View>
-                {/* Remaining stops pill */}
-                {(() => {
-                  const remaining = activeSchedule.sitioTasks
-                    ? activeSchedule.sitioTasks.filter(t => !t.completed).length
-                    : 0;
-                  return (
-                    <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>
-                        {remaining} stops left
-                      </Text>
-                    </View>
-                  );
-                })()}
+                <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
+                  Route: {activeSchedule.routeName || activeSchedule.barangay || userBarangay}
+                </Text>
+              </View>
+              {/* Remaining stops pill */}
+              {(() => {
+                const remaining = activeSchedule.sitioTasks
+                  ? activeSchedule.sitioTasks.filter(t => !t.completed).length
+                  : (sitioList.length || 0);
+                return (
+                  <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#D1FAE5' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>
+                      {remaining} {remaining === 1 ? 'stop' : 'stops'} left
+                    </Text>
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* Driver & Truck Info Section */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6, backgroundColor: '#F8FAFC', padding: 10, borderRadius: 14, borderWidth: 1, borderColor: '#F1F5F9' }}>
+              {/* Avatar Icon */}
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                <MaterialIcons name="person" size={22} color="#006A3B" />
               </View>
 
-              {/* Divider */}
-              <View style={{ height: 1, backgroundColor: '#F3F4F6', marginVertical: 8 }} />
-
-              {/* Driver & Truck Info Section */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6 }}>
-                {/* Avatar Icon */}
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                  <MaterialIcons name="person" size={24} color="#4B5563" />
-                </View>
-
-                {/* Driver Details */}
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>
-                    {activeSchedule.driverName || "Driver Assigned"}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1, fontWeight: '500' }}>
-                    G-TRASH Driver · 5.0 ⭐
-                  </Text>
-                </View>
-
-                {/* Truck Badge */}
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#111827', letterSpacing: 0.5 }}>
-                    {activeSchedule.truckId}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
-                    Compactor Truck
-                  </Text>
-                </View>
+              {/* Driver Details */}
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>
+                  {activeSchedule.driverName || "Driver Assigned"}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1, fontWeight: '500' }}>
+                  {distToUser != null
+                    ? (distToUser < 1000 ? `~${distToUser}m from you` : `~${(distToUser/1000).toFixed(1)}km from you`)
+                    : (liveTruckOnline ? 'Active on map' : 'Standby / Waiting')}
+                </Text>
               </View>
 
-              {/* Divider */}
-              <View style={{ height: 1, backgroundColor: '#F3F4F6', marginVertical: 8 }} />
-
-              {/* Chat / Call Buttons */}
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4, alignItems: 'center' }}>
-                <View style={{ flex: 1, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 }}>
-                  <MaterialIcons name="chat-bubble-outline" size={16} color="#4B5563" style={{ marginRight: 8 }} />
-                  <Text style={{ fontSize: 12, color: '#9CA3AF', fontWeight: '500' }}>
-                    Chat with your driver...
-                  </Text>
-                </View>
-                <TouchableOpacity 
-                  onPress={() => Alert.alert("Contact Driver", "Calling G-TRASH collection hub dispatch...")}
-                  style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }}
-                >
-                  <MaterialIcons name="phone" size={16} color="#006A3B" />
-                </TouchableOpacity>
+              {/* Truck Badge */}
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#111827', letterSpacing: 0.5 }}>
+                  {activeSchedule.truckId || 'GT-001'}
+                </Text>
+                <Text style={{ fontSize: 10, color: liveTruckOnline ? '#059669' : '#6B7280', fontWeight: '700', textTransform: 'uppercase' }}>
+                  {liveTruckOnline ? 'Live Tracking' : 'Standby'}
+                </Text>
               </View>
             </View>
-          ) : (
-            <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280', textAlign: 'center' }}>
-                No active collections scheduled in your area today.
-              </Text>
+
+            {/* Resident Action Shortcuts */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              {/* Prepare Bin Button */}
+              <TouchableOpacity
+                onPress={handlePrepareBin}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                  borderRadius: 12,
+                  backgroundColor: binReady ? '#ECFDF5' : liveTruckOnline ? '#006A3B' : '#F3F4F6',
+                  borderWidth: 1,
+                  borderColor: binReady ? '#A7F3D0' : liveTruckOnline ? '#006A3B' : '#E5E7EB',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: 5,
+                }}
+              >
+                <MaterialIcons
+                  name={binReady ? 'check-circle' : 'delete-outline'}
+                  size={16}
+                  color={binReady ? '#006A3B' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF'}
+                />
+                <Text style={{
+                  fontSize: 12,
+                  fontWeight: '700',
+                  color: binReady ? '#006A3B' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF',
+                }}>
+                  {binReady ? 'Bin Ready ✓' : 'Prepare Bin'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Report Hazard Shortcut */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Report')}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                  borderRadius: 12,
+                  backgroundColor: '#FEF3C7',
+                  borderWidth: 1,
+                  borderColor: '#FDE68A',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: 5,
+                }}
+              >
+                <MaterialIcons name="report-problem" size={16} color="#B45309" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#B45309' }}>
+                  Report Issue
+                </Text>
+              </TouchableOpacity>
+
+              {/* Follow / Focus Truck Shortcut */}
+              <TouchableOpacity
+                onPress={() => {
+                  const next = !isFollowing;
+                  setIsFollowing(next);
+                  if (liveTruckPos.current) {
+                    const { lat, lng } = liveTruckPos.current;
+                    webViewRef.current?.injectJavaScript(`window.gotoLocation(${lat}, ${lng}, 16); true;`);
+                  }
+                }}
+                activeOpacity={0.8}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderRadius: 12,
+                  backgroundColor: isFollowing ? '#DCFCE7' : '#F1F5F9',
+                  borderWidth: 1,
+                  borderColor: isFollowing ? '#86EFAC' : '#E2E8F0',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <MaterialIcons
+                  name={isFollowing ? 'gps-fixed' : 'gps-not-fixed'}
+                  size={16}
+                  color={isFollowing ? '#006A3B' : '#475569'}
+                />
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280', textAlign: 'center' }}>
+              No active collections scheduled in your area today.
+            </Text>
+          </View>
+        )}
+
         <Animated.View
           style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}
         >
           <ScrollView
             showsVerticalScrollIndicator={false}
             scrollEnabled={isExpanded}
-            contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomInset + 16 }}
           >
+            {/* Route Stops Checklist Card */}
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: '#EDF4F0',
+              padding: 14,
+              marginBottom: 16,
+              marginTop: 8,
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Today's Collection Route Stops
+                </Text>
+                <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '600' }}>
+                  {activeSchedule?.sitioTasks ? `${activeSchedule.sitioTasks.filter(t => t.completed).length}/${activeSchedule.sitioTasks.length} Cleaned` : ''}
+                </Text>
+              </View>
+
+              {(() => {
+                const stops = activeSchedule?.sitioTasks || sitioList.map(s => ({ name: s.name, completed: false }));
+                if (stops.length === 0) {
+                  return (
+                    <Text style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>
+                      No specific stops configured for this route.
+                    </Text>
+                  );
+                }
+                return stops.map((stop, idx) => {
+                  const isDone = !!stop.completed;
+                  return (
+                    <View
+                      key={idx}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 8,
+                        borderBottomWidth: idx === stops.length - 1 ? 0 : 1,
+                        borderBottomColor: '#F3F4F6',
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        backgroundColor: isDone ? '#ECFDF5' : '#F3F4F6',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 1,
+                        borderColor: isDone ? '#A7F3D0' : '#E5E7EB',
+                      }}>
+                        <MaterialIcons
+                          name={isDone ? 'check' : 'place'}
+                          size={14}
+                          color={isDone ? '#059669' : '#9CA3AF'}
+                        />
+                      </View>
+                      <Text style={{
+                        flex: 1,
+                        fontSize: 13,
+                        fontWeight: isDone ? '600' : '500',
+                        color: isDone ? '#065F46' : '#1F2937',
+                      }}>
+                        {stop.name}
+                      </Text>
+                      <View style={{
+                        backgroundColor: isDone ? '#ECFDF5' : '#F9FAFB',
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: isDone ? '#D1FAE5' : '#E5E7EB',
+                      }}>
+                        <Text style={{
+                          fontSize: 10,
+                          fontWeight: '700',
+                          color: isDone ? '#059669' : '#6B7280',
+                        }}>
+                          {isDone ? 'CLEANED ✓' : 'UPCOMING'}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </View>
+
             {/* Barangay IoT Air Quality Section */}
             {iotAreas.filter(area => area.sensorId).length > 0 && (
               <View style={styles.aqSection}>
@@ -1080,8 +1348,6 @@ export default function MapScreen() {
                 })}
               </View>
             )}
-
-
           </ScrollView>
         </Animated.View>
       </Animated.View>
@@ -1186,6 +1452,36 @@ const styles = StyleSheet.create({
   timelineContent: { flex: 1 },
   timelineStopName: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
   timelineTime: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  // Proximity notification toast (floating top-center of map)
+  proximityToastWrapper: {
+    position: "absolute",
+    top: 55,
+    left: 16,
+    right: 16,
+    zIndex: 30,
+  },
+  proximityToast: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#059669",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: "#006A3B",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  proximityToastText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#065F46",
+    flex: 1,
+    lineHeight: 18,
+  },
   // Air quality banner (floating top-center of map)
   cleanedNotifWrapper: {
     position: "absolute", top: 50, left: 12, right: 12, zIndex: 20,

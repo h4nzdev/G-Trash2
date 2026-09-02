@@ -41,10 +41,7 @@ export default function ProfileScreen({ navigation }) {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [showBarangayModal, setShowBarangayModal] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [showRouteModal, setShowRouteModal] = useState(false);
   const [barangaySearch, setBarangaySearch] = useState("");
-  const [routePreference, setRoutePreference] = useState(null); // { id, name }
-  const [availableRoutes, setAvailableRoutes] = useState([]);
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
@@ -187,23 +184,6 @@ export default function ProfileScreen({ navigation }) {
     await i18n.changeLanguage(lang);
     await AsyncStorage.setItem("user-language", lang);
     setShowLanguageModal(false);
-  };
-
-  useEffect(() => {
-    AsyncStorage.getItem("@route_preference")
-      .then((val) => { if (val) setRoutePreference(JSON.parse(val)); })
-      .catch(() => {});
-    fetch(`${API_URL}/api/routes`)
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setAvailableRoutes(data); })
-      .catch(() => {});
-  }, []);
-
-  const handleSelectRoute = async (route) => {
-    const pref = route ? { id: route._id, name: route.name } : null;
-    setRoutePreference(pref);
-    await AsyncStorage.setItem("@route_preference", JSON.stringify(pref));
-    setShowRouteModal(false);
   };
 
   const resolvedCount = myReports.filter((r) => r.status === "resolved").length;
@@ -362,26 +342,7 @@ export default function ProfileScreen({ navigation }) {
                 />
               </View>
 
-              <View style={styles.separator} />
 
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => setShowRouteModal(true)}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
-                    <MaterialIcons name="alt-route" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>Route Preference</Text>
-                </View>
-                <View style={styles.menuRight}>
-                  <Text style={styles.menuValue} numberOfLines={1}>
-                    {routePreference ? routePreference.name : "None"}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-                </View>
-              </TouchableOpacity>
 
               <View style={styles.separator} />
 
@@ -699,55 +660,6 @@ export default function ProfileScreen({ navigation }) {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Route Preference Modal ── */}
-      <Modal visible={showRouteModal} animationType="slide" transparent onRequestClose={() => setShowRouteModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { paddingTop: 0 }]}>
-            <View style={styles.barangayModalHeader}>
-              <Text style={styles.modalTitle}>Route Preference</Text>
-              <TouchableOpacity onPress={() => setShowRouteModal(false)}>
-                <Ionicons name="close" size={24} color="#1B1C1C" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.routeModalHint}>
-              Select your garbage collection route. The map will auto-select it when you open the Map tab.
-            </Text>
-            <FlatList
-              data={[{ _id: null, name: "None – no preference" }, ...availableRoutes]}
-              keyExtractor={(item) => item._id || 'none'}
-              showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 380 }}
-              renderItem={({ item }) => {
-                const isActive = item._id
-                  ? routePreference?.id === item._id
-                  : !routePreference;
-                return (
-                  <TouchableOpacity
-                    style={[styles.barangayItem, isActive && styles.barangayItemActive]}
-                    onPress={() => handleSelectRoute(item._id ? item : null)}
-                  >
-                    <MaterialIcons
-                      name={item._id ? "alt-route" : "not-interested"}
-                      size={18}
-                      color={isActive ? "#006A3B" : "#C4CEC7"}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.barangayItemText, isActive && { color: "#006A3B", fontWeight: "700" }]}>
-                        {item.name}
-                      </Text>
-                      {item.barangay ? (
-                        <Text style={styles.routeSubLabel}>{item.barangay}</Text>
-                      ) : null}
-                    </View>
-                    {isActive && <Ionicons name="checkmark-circle" size={18} color="#006A3B" />}
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
-        </View>
       </Modal>
 
       {/* ── Barangay Picker ── */}
@@ -1290,18 +1202,6 @@ const styles = StyleSheet.create({
   },
   barangayItemActive:  { backgroundColor: "#ECFDF5" },
   barangayItemText:    { flex: 1, fontSize: 15, color: "#374151" },
-  routeModalHint: {
-    fontSize: 13,
-    color: "#7A8C7F",
-    paddingHorizontal: 24,
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  routeSubLabel: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    marginTop: 1,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

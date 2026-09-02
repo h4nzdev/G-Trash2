@@ -5,17 +5,19 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Switch,
   Alert,
   StatusBar,
   Modal,
   TextInput,
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ProfileMenuItem from '../components/ProfileMenuItem';
 import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
 
@@ -54,7 +56,6 @@ export default function CollectorProfileScreen() {
 
       if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
         setFleetData(fleetRes.value);
-        // Keep local auth cache in sync with DB
         await updateUser({ driverName: fleetRes.value.driverName, route: fleetRes.value.route });
       }
       if (routeRes.status === 'fulfilled' && routeRes.value?.name) {
@@ -72,14 +73,18 @@ export default function CollectorProfileScreen() {
     } finally {
       setLoadingData(false);
     }
-  }, [truckId]);
+  }, [truckId, updateUser]);
 
-  useEffect(() => { fetchProfileData(); }, [fetchProfileData]);
+  useEffect(() => {
+    fetchProfileData();
+  }, [fetchProfileData]);
 
   // Load saved route preference from AsyncStorage
   useEffect(() => {
     AsyncStorage.getItem('@truck_route_preference')
-      .then((val) => { if (val) setPreferredRoute(JSON.parse(val)); })
+      .then((val) => {
+        if (val) setPreferredRoute(JSON.parse(val));
+      })
       .catch(() => {});
   }, []);
 
@@ -90,10 +95,10 @@ export default function CollectorProfileScreen() {
     setShowRouteModal(false);
   };
 
-  // Derived display values — DB data takes priority over cached auth
-  const driverName = fleetData?.driverName || user?.driverName || 'Driver';
-  const routeName  = routeData?.name || fleetData?.route || user?.route || 'No route assigned';
-  const isOnline   = truckStatus?.status === 'online';
+  // Derived display values
+  const driverName = fleetData?.driverName || user?.driverName || user?.name || 'Driver';
+  const routeName = routeData?.name || fleetData?.route || user?.route || 'No route assigned';
+  const isOnline = truckStatus?.status === 'online';
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -142,419 +147,661 @@ export default function CollectorProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <StatusBar barStyle="light-content" backgroundColor="#006A3B" />
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Profile header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarWrap}>
-            <View style={styles.avatar}>
-              {loadingData ? (
-                <ActivityIndicator size="large" color="#006A3B" />
-              ) : (
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              )}
-            </View>
-            <TouchableOpacity style={styles.editBtn} activeOpacity={0.8} onPress={openEditModal}>
-              <MaterialIcons name="edit" size={14} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.collectorName}>{driverName}</Text>
-          <Text style={styles.collectorId}>{truckId}</Text>
-          <View style={styles.routeChip}>
-            <MaterialIcons name="location-on" size={14} color="#006A3B" />
-            <Text style={styles.routeChipText} numberOfLines={1}>{routeName}</Text>
-          </View>
+        {/* ── Green curved cover header ── */}
+        <View style={styles.coverHeader}>
+          <Text style={styles.screenLabel}>Collector Profile</Text>
         </View>
 
-        {/* Truck status card */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Assigned Truck</Text>
-          <View style={styles.truckCard}>
-            <View style={[styles.truckIconWrap, isOnline && styles.truckIconWrapOnline]}>
-              <MaterialIcons name="local-shipping" size={28} color={isOnline ? '#006A3B' : '#BECABE'} />
+        {/* ── White sheet (overlaps cover) ── */}
+        <View style={styles.whiteSheet}>
+
+          {/* Avatar Section */}
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarRing}>
+              <View style={styles.avatar}>
+                {loadingData ? (
+                  <ActivityIndicator size="small" color="#006A3B" />
+                ) : (
+                  <Text style={styles.avatarInitials}>{initials || 'DR'}</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={styles.editBadge}
+                onPress={openEditModal}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="edit" size={13} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-            <View style={styles.truckInfo}>
-              <Text style={styles.truckTitle}>Truck {truckId}</Text>
-              {routeData ? (
-                <>
-                  <Text style={styles.truckMeta}>Route: {routeData.name}</Text>
-                  {routeData.barangay && (
-                    <Text style={styles.truckMeta}>Area: {routeData.barangay}</Text>
-                  )}
-                  {routeData.totalStops != null && (
-                    <Text style={styles.truckMeta}>Total stops: {routeData.totalStops}</Text>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.truckMeta}>
-                  {loadingData ? 'Loading route info…' : 'No route assigned yet'}
-                </Text>
-              )}
-              <View style={styles.operationalRow}>
-                <View style={[styles.operationalDot, !isOnline && styles.operationalDotOff]} />
-                <Text style={[styles.operationalText, !isOnline && styles.operationalTextOff]}>
-                  {isOnline ? 'Currently Active' : 'Standby'}
-                </Text>
+
+            <Text style={styles.userName}>{driverName}</Text>
+
+            {truckId ? (
+              <View style={styles.barangayBadge}>
+                <MaterialIcons name="local-shipping" size={14} color="#006A3B" />
+                <Text style={styles.barangayBadgeText}>Assigned Truck: {truckId}</Text>
+              </View>
+            ) : null}
+
+            {routeName ? (
+              <View style={styles.metaRow}>
+                <Ionicons name="navigate-outline" size={13} color="#7A8C7F" />
+                <Text style={styles.metaText} numberOfLines={1}>{routeName}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* ── Stats Row ── */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCell}>
+              <Text style={styles.statValue}>
+                {routeData?.waypoints?.length ?? routeData?.totalStops ?? (fleetData?.route ? '1' : '—')}
+              </Text>
+              <Text style={styles.statLabel}>Stops</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              <Text style={[styles.statValue, { color: '#006A3B' }]}>{truckId || '—'}</Text>
+              <Text style={styles.statLabel}>Truck ID</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              <Text style={[styles.statValue, { color: isOnline ? '#059669' : '#6B7280' }]}>
+                {isOnline ? 'Online' : 'Standby'}
+              </Text>
+              <Text style={styles.statLabel}>Status</Text>
+            </View>
+          </View>
+
+          {/* ── Body content ── */}
+          <View style={styles.body}>
+
+            {/* Assigned Truck Banner Card */}
+            <Text style={styles.sectionLabel}>Vehicle & Route Overview</Text>
+            <View style={styles.truckCard}>
+              <View style={[styles.truckIconWrap, isOnline && styles.truckIconWrapOnline]}>
+                <MaterialIcons name="local-shipping" size={28} color={isOnline ? '#006A3B' : '#9CA3AF'} />
+              </View>
+              <View style={styles.truckInfo}>
+                <Text style={styles.truckTitle}>Truck {truckId || 'Unassigned'}</Text>
+                {routeData ? (
+                  <>
+                    <Text style={styles.truckMeta}>Route: {routeData.name}</Text>
+                    {routeData.barangay ? (
+                      <Text style={styles.truckMeta}>Service Area: {routeData.barangay}</Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <Text style={styles.truckMeta}>
+                    {loadingData ? 'Loading route info…' : 'No route assigned yet'}
+                  </Text>
+                )}
+                <View style={styles.operationalRow}>
+                  <View style={[styles.operationalDot, !isOnline && styles.operationalDotOff]} />
+                  <Text style={[styles.operationalText, !isOnline && styles.operationalTextOff]}>
+                    {isOnline ? 'Active On Route' : 'Standby / Waiting for Shift'}
+                  </Text>
+                </View>
               </View>
             </View>
+
+            {/* Preferences */}
+            <Text style={styles.sectionLabel}>Preferences</Text>
+            <View style={styles.card}>
+              <View style={styles.menuRow}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <Ionicons name="notifications" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Shift Notifications</Text>
+                </View>
+                <Switch
+                  value={notifEnabled}
+                  onValueChange={setNotifEnabled}
+                  trackColor={{ false: '#DCD9D9', true: '#006A3B' }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#DCD9D9"
+                />
+              </View>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={() => setShowRouteModal(true)}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <MaterialIcons name="alt-route" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Route Preferences</Text>
+                </View>
+                <View style={styles.menuRight}>
+                  <Text style={styles.menuValue} numberOfLines={1}>
+                    {preferredRoute ? preferredRoute.name : 'None'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <View style={styles.menuRow}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <MaterialIcons name="directions-bus" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Vehicle Plate</Text>
+                </View>
+                <Text style={styles.menuValue}>{fleetData?.plateNumber || truckId || '—'}</Text>
+              </View>
+            </View>
+
+            {/* Resources & Support */}
+            <Text style={styles.sectionLabel}>Resources & Support</Text>
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <Ionicons name="book-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Collector Manual</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#FEF3C7' }]}>
+                    <Ionicons name="warning-outline" size={18} color="#D97706" />
+                  </View>
+                  <Text style={styles.menuText}>Report Route Issue</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <Ionicons name="help-circle-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Help & Support</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Account & Logout */}
+            <Text style={styles.sectionLabel}>Account</Text>
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={openEditModal}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <Ionicons name="person-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Edit Profile</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5} onPress={handleLogout}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#FEE2E2' }]}>
+                    <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+                  </View>
+                  <Text style={[styles.menuText, { color: '#DC2626', fontWeight: '600' }]}>Logout</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ height: 48 }} />
           </View>
         </View>
-
-        {/* Quick stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statPill}>
-            <MaterialIcons name="route" size={16} color="#006A3B" />
-            <Text style={styles.statPillValue}>
-              {routeData?.waypoints?.length ?? routeData?.totalStops ?? '—'}
-            </Text>
-            <Text style={styles.statPillLabel}>Stops</Text>
-          </View>
-          <View style={styles.statPillDivider} />
-          <View style={styles.statPill}>
-            <MaterialIcons name="local-shipping" size={16} color="#2196F3" />
-            <Text style={styles.statPillValue}>{truckId || '—'}</Text>
-            <Text style={styles.statPillLabel}>Truck</Text>
-          </View>
-          <View style={styles.statPillDivider} />
-          <View style={styles.statPill}>
-            <MaterialIcons name="fiber-manual-record" size={16} color={isOnline ? '#10B981' : '#BECABE'} />
-            <Text style={styles.statPillValue}>{isOnline ? 'Online' : 'Offline'}</Text>
-            <Text style={styles.statPillLabel}>Status</Text>
-          </View>
-        </View>
-
-        {/* Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <View style={styles.menuCard}>
-            <ProfileMenuItem
-              icon="notifications"
-              label="Notification Settings"
-              showToggle
-              toggleValue={notifEnabled}
-              onToggle={setNotifEnabled}
-            />
-            <ProfileMenuItem
-              icon="map"
-              label="Route Preferences"
-              value={preferredRoute ? preferredRoute.name : 'None'}
-              onPress={() => setShowRouteModal(true)}
-            />
-            <ProfileMenuItem
-              icon="local-shipping"
-              label="Vehicle Info"
-              value={truckId}
-              onPress={() => {}}
-              isLast
-            />
-          </View>
-        </View>
-
-        {/* Resources */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Resources</Text>
-          <View style={styles.menuCard}>
-            <ProfileMenuItem
-              icon="menu-book"
-              label="Segregation Guide"
-              onPress={() => {}}
-            />
-            <ProfileMenuItem
-              icon="report-problem"
-              iconBg="#FEF4DC"
-              iconColor="#92400E"
-              label="Report Problem"
-              onPress={() => {}}
-            />
-            <ProfileMenuItem
-              icon="help-outline"
-              label="Help & Support"
-              onPress={() => {}}
-              isLast
-            />
-          </View>
-        </View>
-
-        {/* Logout */}
-        <View style={[styles.menuCard, { marginBottom: 0 }]}>
-          <ProfileMenuItem
-            icon="logout"
-            label="Logout"
-            danger
-            onPress={handleLogout}
-            isLast
-          />
-        </View>
-
-        <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* Route Preference Modal */}
-      <Modal
-        visible={showRouteModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowRouteModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowRouteModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalTitleRow}>
-              <View style={styles.modalIconWrap}>
-                <MaterialIcons name="map" size={20} color="#006A3B" />
-              </View>
-              <View>
-                <Text style={styles.modalTitle}>Route Preference</Text>
-                <Text style={styles.modalSub}>Used when no schedule is assigned</Text>
-              </View>
+      {/* ── Route Preference Modal ── */}
+      <Modal visible={showRouteModal} animationType="slide" transparent onRequestClose={() => setShowRouteModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingTop: 0 }]}>
+            <View style={styles.modalSheetHeader}>
+              <Text style={styles.modalSheetTitle}>Route Preference</Text>
+              <TouchableOpacity onPress={() => setShowRouteModal(false)}>
+                <Ionicons name="close" size={24} color="#1B1C1C" />
+              </TouchableOpacity>
             </View>
-
+            <Text style={styles.routeModalHint}>
+              Select your default collection route when no automated dispatch is active.
+            </Text>
             <FlatList
               data={[{ _id: null, name: 'None – no preference', barangay: '' }, ...allRoutes]}
               keyExtractor={(item) => item._id || 'none'}
-              style={styles.routeList}
               showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 380 }}
               renderItem={({ item }) => {
                 const isActive = item._id ? preferredRoute?.id === item._id : !preferredRoute;
                 return (
                   <TouchableOpacity
                     style={[styles.routeItem, isActive && styles.routeItemActive]}
                     onPress={() => handleSelectRoute(item._id ? item : null)}
-                    activeOpacity={0.7}
                   >
-                    <View style={[styles.routeItemIcon, isActive && styles.routeItemIconActive]}>
-                      <MaterialIcons
-                        name={item._id ? 'alt-route' : 'not-interested'}
-                        size={18}
-                        color={isActive ? '#006A3B' : '#9CA3AF'}
-                      />
-                    </View>
+                    <MaterialIcons
+                      name={item._id ? 'alt-route' : 'not-interested'}
+                      size={18}
+                      color={isActive ? '#006A3B' : '#C4CEC7'}
+                    />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.routeItemName, isActive && styles.routeItemNameActive]}>
+                      <Text style={[styles.routeItemText, isActive && { color: '#006A3B', fontWeight: '700' }]}>
                         {item.name}
                       </Text>
                       {item.barangay ? (
                         <Text style={styles.routeItemSub}>{item.barangay}</Text>
                       ) : null}
                     </View>
-                    {isActive && (
-                      <MaterialIcons name="check-circle" size={20} color="#006A3B" />
-                    )}
+                    {isActive && <Ionicons name="checkmark-circle" size={18} color="#006A3B" />}
                   </TouchableOpacity>
                 );
               }}
             />
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
-      {/* Edit Profile Modal */}
+      {/* ── Edit Profile Modal ── */}
       <Modal
         visible={editModal}
-        transparent
         animationType="slide"
+        transparent
         onRequestClose={() => setEditModal(false)}
       >
-        <TouchableOpacity
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setEditModal(false)}
         >
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+          <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-
-            <View style={styles.modalTitleRow}>
-              <View style={styles.modalIconWrap}>
-                <MaterialIcons name="person" size={20} color="#006A3B" />
-              </View>
-              <View>
-                <Text style={styles.modalTitle}>Edit Profile</Text>
-                <Text style={styles.modalSub}>Update your display name</Text>
-              </View>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalSheetTitle}>Edit Profile</Text>
+              <TouchableOpacity
+                onPress={() => setEditModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={24} color="#1B1C1C" />
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput
-              style={styles.textInput}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="e.g. Juan Dela Cruz"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="words"
-              autoCorrect={false}
-              maxLength={60}
-            />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Driver Full Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="e.g. Juan Dela Cruz"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="words"
+                />
+              </View>
 
-            <View style={styles.truckIdRow}>
-              <MaterialIcons name="local-shipping" size={16} color="#6B7280" />
-              <Text style={styles.truckIdHint}>Truck ID: {truckId} (cannot be changed)</Text>
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Assigned Truck</Text>
+                <View style={styles.readonlyField}>
+                  <MaterialIcons name="local-shipping" size={18} color="#7A8C7F" />
+                  <Text style={styles.readonlyFieldText}>
+                    Truck ID: {truckId || 'Not Assigned'} (Set by Dispatch Official)
+                  </Text>
+                </View>
+              </View>
 
-            <TouchableOpacity
-              style={[styles.saveBtn, (!editName.trim() || saving) && styles.saveBtnDisabled]}
-              onPress={handleSave}
-              activeOpacity={0.85}
-              disabled={!editName.trim() || saving}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.saveBtnText}>Save Changes</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditModal(false)}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, (!editName.trim() || saving) && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={!editName.trim() || saving}
+                activeOpacity={0.85}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea:  { flex: 1, backgroundColor: '#FBF9F8' },
-  container: { paddingHorizontal: 16, paddingTop: 24 },
+  safeArea: { flex: 1, backgroundColor: '#006A3B' },
+  scroll:   { flex: 1, backgroundColor: '#F8FAFC' },
 
-  profileHeader: { alignItems: 'center', marginBottom: 28 },
-  avatarWrap:    { position: 'relative', marginBottom: 16 },
+  // ── Cover Header ──
+  coverHeader: {
+    backgroundColor: '#006A3B',
+    paddingTop: 16,
+    paddingBottom: 48,
+    paddingHorizontal: 24,
+  },
+  screenLabel: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+
+  // ── White Sheet ──
+  whiteSheet: {
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -28,
+    paddingTop: 16,
+  },
+
+  // ── Avatar ──
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 24,
+  },
+  avatarRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    padding: 4,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+    marginBottom: 12,
+    position: 'relative',
+  },
   avatar: {
-    width: 96, height: 96, borderRadius: 48,
+    flex: 1,
+    borderRadius: 44,
     backgroundColor: '#E4EEE9',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 4, borderColor: '#FFFFFF',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1, shadowRadius: 16, elevation: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  avatarInitials: { fontSize: 32, fontWeight: '700', color: '#006A3B', letterSpacing: -0.5 },
-  editBtn: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: '#006A3B', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#FFFFFF',
+  avatarInitials: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#006A3B',
+    letterSpacing: -0.5,
   },
-  collectorName: {
-    fontSize: 26, fontWeight: '700', color: '#1B1C1C',
-    letterSpacing: -0.3, lineHeight: 32, marginBottom: 4, textAlign: 'center',
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#006A3B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
-  collectorId: { fontSize: 15, color: '#6F7A70', lineHeight: 20, marginBottom: 10 },
-  routeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#E4EEE9', borderRadius: 9999,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderWidth: 1, borderColor: '#C8DDD4', maxWidth: '80%',
+  userName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1B1C1C',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  routeChipText: { fontSize: 13, fontWeight: '600', color: '#006A3B' },
-
-  section:      { marginBottom: 24 },
-  sectionTitle: { fontSize: 17, fontWeight: '600', color: '#1B1C1C', lineHeight: 22, marginBottom: 12 },
-
-  truckCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 16,
-    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-    borderWidth: 1, borderColor: '#F0EDED',
-  },
-  truckIconWrap: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: '#F0EDED',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  truckIconWrapOnline: { backgroundColor: '#E4EEE9' },
-  truckInfo:    { flex: 1, gap: 4 },
-  truckTitle:   { fontSize: 17, fontWeight: '600', color: '#1B1C1C', lineHeight: 22 },
-  truckMeta:    { fontSize: 13, color: '#6F7A70', lineHeight: 18 },
-  operationalRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  operationalDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#006A3B' },
-  operationalDotOff: { backgroundColor: '#BECABE' },
-  operationalText: { fontSize: 13, fontWeight: '600', color: '#006A3B' },
-  operationalTextOff: { color: '#9CA3AF' },
-
-  statsRow: {
-    flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 20,
-    padding: 16, marginBottom: 24, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-    borderWidth: 1, borderColor: '#F0EDED',
-  },
-  statPill:      { flex: 1, alignItems: 'center', gap: 4 },
-  statPillValue: { fontSize: 15, fontWeight: '700', color: '#1B1C1C' },
-  statPillLabel: { fontSize: 11, color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.5 },
-  statPillDivider: { width: 1, height: 32, backgroundColor: '#F0EDED' },
-
-  menuCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, paddingHorizontal: 16, marginBottom: 24,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
-    borderWidth: 1, borderColor: '#F0EDED',
-  },
-
-  bottomSpacer: { height: 32 },
-
-  // ── Edit modal ──
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  modalSheet: {
-    backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 40,
-  },
-  modalHandle: {
-    width: 40, height: 4, backgroundColor: '#D1D5DB', borderRadius: 2,
-    alignSelf: 'center', marginBottom: 24,
-  },
-  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
-  modalIconWrap: {
-    width: 44, height: 44, borderRadius: 14, backgroundColor: '#E4EEE9',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1B1C1C', letterSpacing: -0.3 },
-  modalSub:   { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 8, marginTop: 4 },
-  textInput: {
-    backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 16,
-    paddingVertical: 14, fontSize: 16, color: '#1B1C1C', marginBottom: 12,
-    borderWidth: 1.5, borderColor: '#E5E7EB',
-  },
-  truckIdRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 24,
-  },
-  truckIdHint: { fontSize: 13, color: '#9CA3AF' },
-  saveBtn: {
-    backgroundColor: '#006A3B', paddingVertical: 16, borderRadius: 14,
-    alignItems: 'center', marginBottom: 12,
-  },
-  saveBtnDisabled: { backgroundColor: '#6DA880' },
-  saveBtnText: { fontSize: 17, fontWeight: '600', color: '#FFFFFF' },
-  cancelBtn: { paddingVertical: 12, alignItems: 'center' },
-  cancelBtnText: { fontSize: 15, color: '#9CA3AF' },
-
-  routeList: { maxHeight: 360, marginBottom: 8 },
-  routeItem: {
+  barangayBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    gap: 12,
+    gap: 5,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
   },
-  routeItemActive: { backgroundColor: '#F0FDF4', borderRadius: 12, paddingHorizontal: 8 },
-  routeItemIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  barangayBadgeText: { fontSize: 12, fontWeight: '700', color: '#006A3B' },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+    maxWidth: '85%',
+  },
+  metaText: { fontSize: 13, color: '#7A8C7F' },
+
+  // ── Stats ──
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 18,
+    paddingVertical: 18,
+    shadowColor: '#006A3B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#EDF4F0',
+  },
+  statCell: { flex: 1, alignItems: 'center' },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1B1C1C',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#7A8C7F',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontWeight: '700',
+  },
+  statDivider: { width: 1, backgroundColor: '#EDF4F0' },
+
+  // ── Body ──
+  body: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+
+  // ── Section labels ──
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7A8C7F',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 6,
+  },
+
+  // ── Truck Card ──
+  truckCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#EDF4F0',
+    shadowColor: '#006A3B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  truckIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  routeItemIconActive: { backgroundColor: '#DCFCE7' },
-  routeItemName: { fontSize: 15, color: '#1B1C1C', fontWeight: '500' },
-  routeItemNameActive: { color: '#006A3B', fontWeight: '700' },
-  routeItemSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  truckIconWrapOnline: { backgroundColor: '#ECFDF5' },
+  truckInfo: { flex: 1, gap: 3 },
+  truckTitle: { fontSize: 16, fontWeight: '700', color: '#1B1C1C' },
+  truckMeta: { fontSize: 12, color: '#6F7A70' },
+  operationalRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  operationalDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#059669' },
+  operationalDotOff: { backgroundColor: '#BECABE' },
+  operationalText: { fontSize: 12, fontWeight: '700', color: '#059669' },
+  operationalTextOff: { color: '#9CA3AF' },
+
+  // ── Cards ──
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EDF4F0',
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: '#006A3B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  separator: { height: 1, backgroundColor: '#F2F6F3', marginLeft: 56 },
+
+  // ── Menu rows ──
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  menuRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuText: { fontSize: 15, color: '#1B1C1C', fontWeight: '500' },
+  menuValue: { fontSize: 14, color: '#7A8C7F', maxWidth: 140 },
+
+  // ── Modals ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingTop: 12,
+    maxHeight: '90%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: '#EDF4F0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 20,
+    marginBottom: 12,
+  },
+  modalSheetTitle: { fontSize: 20, fontWeight: '700', color: '#1B1C1C' },
+  routeModalHint: {
+    fontSize: 13,
+    color: '#7A8C7F',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  routeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    gap: 12,
+  },
+  routeItemActive: { backgroundColor: '#ECFDF5' },
+  routeItemText: { fontSize: 15, color: '#374151', fontWeight: '500' },
+  routeItemSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+
+  inputGroup: { marginBottom: 16 },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7A8C7F',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  textInput: {
+    backgroundColor: '#F6FAF8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#1B1C1C',
+    borderWidth: 1,
+    borderColor: '#EDF4F0',
+  },
+  readonlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  readonlyFieldText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  saveBtn: {
+    backgroundColor: '#006A3B',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });

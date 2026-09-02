@@ -9,11 +9,14 @@ import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
 
 const ACTION_META = {
-  correct_scan:      { icon: 'qr-code-scanner', color: '#10B981', label: 'AI Scan' },
-  report_submit:     { icon: 'report-problem',  color: '#3B82F6', label: 'Report Submitted' },
-  report_upvote:     { icon: 'thumb-up',        color: '#8B5CF6', label: 'Report Upvoted' },
+  report_submit:     { icon: 'report-problem',  color: '#3B82F6', label: 'Report Submitted (+10)' },
+  report_resolved:   { icon: 'task-alt',        color: '#059669', label: 'Issue Resolved (+15)' },
+  report_upvote:     { icon: 'thumb-up',        color: '#8B5CF6', label: 'Community Upvote (+1)' },
+  verify_resolution: { icon: 'verified',        color: '#006A3B', label: 'Resolution Verified (+10)' },
+  bin_prepared:      { icon: 'delete-outline',   color: '#0284C7', label: 'Bin Prepared (+2)' },
+  bin_pickedup:      { icon: 'check-circle',    color: '#059669', label: 'Trash Picked Up' },
   report_comment:    { icon: 'chat-bubble',     color: '#F59E0B', label: 'Comment Added' },
-  verify_resolution: { icon: 'verified',        color: '#006A3B', label: 'Resolution Verified' },
+  correct_scan:      { icon: 'qr-code-scanner', color: '#64748B', label: 'AI Scan' },
   report_penalty:    { icon: 'report',          color: '#EF4444', label: 'Penalty' },
 };
 
@@ -154,7 +157,7 @@ export default function PointsHistoryScreen({ navigation }) {
             <View style={styles.empty}>
               <Ionicons name="star-outline" size={56} color="#E5E7EB" />
               <Text style={styles.emptyTitle}>No activity yet</Text>
-              <Text style={styles.emptySub}>Start scanning waste or submitting reports to earn points!</Text>
+              <Text style={styles.emptySub}>Submit verified reports or participate in community cleanups to earn points!</Text>
             </View>
           }
           ListFooterComponent={

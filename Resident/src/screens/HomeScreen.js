@@ -416,16 +416,43 @@ export default function HomeScreen({ navigation }) {
       }
     });
 
+    socket.on("schedule:changed", () => {
+      fetchDashboard();
+    });
+
+    socket.on("schedules:updated", () => {
+      fetchDashboard();
+    });
+
+    socket.on("collection:new", () => {
+      fetchDashboard();
+    });
+
+    socket.on("task:completed", () => {
+      fetchDashboard();
+    });
+
     return () => {
       socket.disconnect();
       clearTimeout(toastTimerRef.current);
       clearTimeout(pointsToastTimerRef.current);
     };
-  }, []);
+  }, [fetchDashboard]);
 
   const onlineTrucks = trucks.filter((t) => t.status === "online");
   const nearestTruck = onlineTrucks[0] || null;
   const firstSchedule = todaySchedules[0] || null;
+
+  const activeTruckId = useMemo(() => {
+    return (
+      nearestTruck?.truckId ||
+      nearestTruck?.plateNumber ||
+      firstSchedule?.truckId ||
+      onlineTrucks[0]?.truckId ||
+      (trucks.length > 0 ? (trucks[0].truckId || trucks[0].plateNumber) : null) ||
+      "GT-001"
+    );
+  }, [nearestTruck, firstSchedule, onlineTrucks, trucks]);
 
   // Distance in meters to the nearest online truck (null if no location or truck)
   const distToTruck = useMemo(() => {
@@ -496,57 +523,76 @@ export default function HomeScreen({ navigation }) {
     clearTimeout(toastTimerRef.current);
     setToastMsg("✓ Trash collected — thank you for participating!");
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-    Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Trash Collected!",
-        body: "Your trash has been successfully picked up. See you next collection!",
-        sound: true,
-      },
-      trigger: null,
-    }).catch(() => {});
+    notifyPickupComplete();
   };
 
-  // Zone visual driven by real distance when available
-  const zoneData = useMemo(() => {
-    let z1Label = nearestTruck ? t("live") : "—";
-    let z2Label = onlineTrucks.length > 0 ? t("approaching") : "—";
-    let z3Label = onlineTrucks.length === 0 ? "—" : t("area");
-    if (distToTruck != null) {
-      if (distToTruck < 350) {
-        z1Label = t("very_close");
-        z2Label = t("passed");
-        z3Label = t("passed");
-      } else if (distToTruck < 700) {
-        z1Label = `${distToTruck}m away`;
-        z2Label = t("nearby");
-        z3Label = t("area");
-      } else if (distToTruck < 1050) {
-        z1Label = t("approaching");
-        z2Label = `${distToTruck}m`;
-        z3Label = t("area");
+  // Real route stops visual driven by actual driver's route/schedule
+  const routeStopsData = useMemo(() => {
+    const sched = firstSchedule || todaySchedules[0];
+    let stops = [];
+
+    if (sched?.sitioTasks && sched.sitioTasks.length > 0) {
+      stops = sched.sitioTasks.map((t) => ({
+        name: t.name,
+        completed: !!t.completed,
+      }));
+    } else if (sched?.sitios && sched.sitios.length > 0) {
+      stops = sched.sitios.map((name) => ({
+        name,
+        completed: sched.status === "completed",
+      }));
+    }
+
+    if (stops.length === 0) {
+      if (sched?.barangay || user?.barangay) {
+        const brgy = sched?.barangay || user?.barangay;
+        stops = [
+          { name: `${brgy} Main`, completed: sched?.status === "completed" },
+          { name: `${brgy} Route`, completed: false },
+        ];
+      } else {
+        stops = [
+          { name: "Scheduled Route", completed: false },
+        ];
       }
     }
-    return [
-      {
-        name: `${t("zone")} 3`,
-        distance: z3Label,
-        icon: "location-on",
-        highlighted: false,
-      },
-      {
-        name: `${t("zone")} 2`,
-        distance: z2Label,
-        icon: "location-on",
-        highlighted: false,
-      },
-      {
-        name: `${t("zone")} 1`,
-        distance: z1Label,
-        icon: nearestTruck ? "check-circle" : "location-off",
-        highlighted: !!nearestTruck,
-      },
-    ];
-  }, [nearestTruck, onlineTrucks.length, distToTruck, t]);
+
+    // Determine current active stop index (first pending stop)
+    let activeIndex = stops.findIndex((s) => !s.completed);
+    if (activeIndex === -1 && stops.length > 0) {
+      activeIndex = stops.length - 1;
+    }
+
+    const hasActiveTruck = onlineTrucks.length > 0 || !!nearestTruck;
+
+    return stops.map((stop, index) => {
+      const isDone = stop.completed;
+      const isActive = !isDone && (index === activeIndex) && hasActiveTruck;
+
+      let statusLabel = "UPCOMING";
+      let icon = "place";
+
+      if (isDone) {
+        statusLabel = "CLEANED ✓";
+        icon = "check-circle";
+      } else if (isActive) {
+        statusLabel = distToTruck != null && distToTruck < 350 ? "NEARBY" : "APPROACHING";
+        icon = "local-shipping";
+      } else {
+        statusLabel = "UPCOMING";
+        icon = "place";
+      }
+
+      return {
+        name: stop.name,
+        status: statusLabel,
+        isCompleted: isDone,
+        isActive,
+        icon,
+        highlighted: isDone || isActive,
+      };
+    });
+  }, [firstSchedule, todaySchedules, onlineTrucks.length, nearestTruck, distToTruck, user?.barangay]);
 
   const tarsiData = useMemo(() => {
     const hour = new Date().getHours();
@@ -952,39 +998,52 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.truckStatusCard}>
-            {/* Zone Progress */}
+            {/* Route Stops Progress */}
             <View style={styles.zoneContainer}>
               <View style={styles.progressLine} />
-              {zoneData.map((zone, index) => (
+              {routeStopsData.map((stop, index) => (
                 <View key={index} style={styles.zoneItem}>
                   <View
                     style={[
                       styles.zoneCircle,
-                      zone.highlighted && styles.zoneCircleHighlighted,
+                      stop.highlighted && styles.zoneCircleHighlighted,
+                      stop.isCompleted && {
+                        backgroundColor: "#006E1C",
+                        borderColor: "#86D896",
+                      },
+                      stop.isActive && {
+                        backgroundColor: "#2563EB",
+                        borderColor: "#93C5FD",
+                      },
                     ]}
                   >
                     <MaterialIcons
-                      name={zone.icon}
+                      name={stop.icon}
                       size={22}
-                      color={zone.highlighted ? "#FFFFFF" : "#9CA3AF"}
+                      color={stop.highlighted ? "#FFFFFF" : "#9CA3AF"}
                     />
                   </View>
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.zoneName,
-                      zone.highlighted && styles.zoneNameHighlighted,
+                      stop.highlighted && styles.zoneNameHighlighted,
+                      stop.isCompleted && { color: "#006E1C" },
+                      stop.isActive && { color: "#2563EB" },
                     ]}
                   >
-                    {zone.name}
+                    {stop.name}
                   </Text>
                   <Text
                     numberOfLines={1}
                     style={[
                       styles.zoneDistance,
-                      zone.highlighted && styles.zoneDistanceHighlighted,
+                      stop.highlighted && styles.zoneDistanceHighlighted,
+                      stop.isCompleted && { color: "#006E1C", fontWeight: "800" },
+                      stop.isActive && { color: "#2563EB", fontWeight: "800" },
                     ]}
                   >
-                    {zone.distance}
+                    {stop.status}
                   </Text>
                 </View>
               ))}
@@ -997,7 +1056,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <ActivityIndicator size="small" color="#006A3B" />
               </View>
-            ) : nearestTruck ? (
+            ) : (nearestTruck || onlineTrucks.length > 0) ? (
               <View style={styles.truckInfoCard}>
                 <View style={styles.truckImagePlaceholder}>
                   <MaterialIcons
@@ -1008,9 +1067,10 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <View style={styles.truckDetails}>
                   <Text style={styles.truckTitle}>
-                    Truck {nearestTruck.truckId} is active
+                    Truck {activeTruckId} is active
                   </Text>
                   <Text style={styles.truckEstimate}>
+                    {firstSchedule?.driverName ? `${firstSchedule.driverName} · ` : ""}
                     {distToTruck != null
                       ? distToTruck < 350
                         ? "Very close — prepare your bin!"
@@ -1018,8 +1078,8 @@ export default function HomeScreen({ navigation }) {
                           ? `~${distToTruck}m from you`
                           : distToTruck < 1050
                             ? "Approaching your area"
-                            : "Active in your area"
-                      : `${onlineTrucks.length} truck${onlineTrucks.length > 1 ? "s" : ""} online`}
+                            : "Active on collection route"
+                      : `${onlineTrucks.length > 0 ? onlineTrucks.length : 1} truck online`}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -1027,6 +1087,36 @@ export default function HomeScreen({ navigation }) {
                   onPress={() => navigation.navigate("Map")}
                 >
                   <MaterialIcons name="map" size={20} color="#00731E" />
+                </TouchableOpacity>
+              </View>
+            ) : firstSchedule ? (
+              <View style={styles.truckInfoCard}>
+                <View
+                  style={[
+                    styles.truckImagePlaceholder,
+                    { backgroundColor: "#F3F4F6" },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="schedule"
+                    size={30}
+                    color="#6B7280"
+                  />
+                </View>
+                <View style={styles.truckDetails}>
+                  <Text style={[styles.truckTitle, { color: "#374151" }]}>
+                    Scheduled for Today
+                  </Text>
+                  <Text style={styles.truckEstimate}>
+                    {firstSchedule.driverName ? `${firstSchedule.driverName} · ` : ""}
+                    Shift has not started yet · Waiting for truck
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.mapButton}
+                  onPress={() => navigation.navigate("Map")}
+                >
+                  <MaterialIcons name="map" size={20} color="#6B7280" />
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1047,7 +1137,7 @@ export default function HomeScreen({ navigation }) {
                   <Text style={[styles.truckTitle, { color: "#6B7280" }]}>
                     No trucks active
                   </Text>
-                  <Text style={styles.truckEstimate}>Check back later</Text>
+                  <Text style={styles.truckEstimate}>Check back later for schedule</Text>
                 </View>
               </View>
             )}

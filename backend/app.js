@@ -161,9 +161,13 @@ const Report = mongoose.model("Report", reportSchema);
 
 const fleetSchema = new mongoose.Schema({
   truckId: { type: String, required: true, unique: true },
-  driverName: { type: String, required: true },
+  driverName: { type: String, default: "Unassigned" },
   driverId: { type: String, default: "" },
   driverImage: { type: String, default: null },
+  model: { type: String, default: "" },
+  plateNumber: { type: String, default: "" },
+  fuelType: { type: String, default: "Diesel" },
+  capacity: { type: Number, default: 0 },
   route: { type: String, default: "" },
   barangay: { type: String, default: "" },
   type: { type: String, enum: ["dedicated", "shared"], default: "dedicated" },
@@ -378,7 +382,7 @@ const residentSchema = new mongoose.Schema({
   monthlyHistory: [{ month: String, points: Number }],
   pointsHistory: [{
     points: Number,
-    action: { type: String, enum: ['correct_scan', 'report_submit', 'report_upvote', 'report_comment', 'verify_resolution', 'report_penalty'] },
+    action: { type: String, default: 'report_submit' },
     description: String,
     reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'Report', default: null },
     date: { type: Date, default: Date.now },
@@ -800,7 +804,8 @@ const STAT_MAP = {
   report_upvote:       { inc: 'stats.reportsUpvoted' },
   report_comment:      { inc: 'stats.commentsMade' },
   verify_resolution:   { inc: 'stats.resolutionsVerified' },
-  report_resolved:     { inc: 'stats.reportsSubmitted' },
+  report_resolved:     {},
+  bin_prepared:        {},
   bin_pickedup:        {},
 };
 async function awardResidentPoints(residentId, points, action, description, reportId = null) {
@@ -1718,28 +1723,102 @@ app.get("/api/stats", authMiddleware, async (req, res) => {
   try {
     const reportFilter = barangayFilter(req.official);
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const isScoped = req.official && req.official.barangay && req.official.barangay !== "All" && req.official.role !== "superadmin";
+    const brgy = req.official?.barangay;
+
+    // Filter Fleet trucks by barangay
+    const fleetFilter = isScoped
+      ? { $or: [{ barangay: brgy }, { serviceBarangays: brgy }] }
+      : {};
+
+    // Get truckIds assigned to this barangay
+    const scopedTrucks = isScoped ? await Fleet.find(fleetFilter).select("truckId") : null;
+    const scopedTruckIds = scopedTrucks ? scopedTrucks.map(t => t.truckId) : null;
+
+    const truckFilter = {
+      status: "online",
+      updatedAt: { $gte: fiveMinAgo },
+      ...(scopedTruckIds ? { truckId: { $in: scopedTruckIds } } : {})
+    };
+
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // Get today's schedules for completion calculations
+    const scheduleFilter = isScoped ? { date: today, barangay: brgy } : { date: today };
+    const todaySchedules = await Schedule.find(scheduleFilter);
+
+    let totalTasks = 0;
+    let completedTasks = 0;
+    todaySchedules.forEach(s => {
+      if (s.sitioTasks && s.sitioTasks.length > 0) {
+        totalTasks += s.sitioTasks.length;
+        completedTasks += s.sitioTasks.filter(t => t.completed).length;
+      } else {
+        totalTasks += 1;
+        if (s.status === "completed") completedTasks += 1;
+      }
+    });
+
     const [
       totalFleet,
       activeTrucks,
       totalReports,
       pendingReports,
       totalRoutes,
+      totalSitios,
     ] = await Promise.all([
-      Fleet.countDocuments(),
-      Truck.countDocuments({
-        status: "online",
-        updatedAt: { $gte: fiveMinAgo },
-      }),
+      Fleet.countDocuments(fleetFilter),
+      Truck.countDocuments(truckFilter),
       Report.countDocuments(reportFilter),
       Report.countDocuments({ ...reportFilter, status: { $ne: "resolved" } }),
       Route.countDocuments(barangayFilter(req.official)),
+      Sitio.countDocuments(barangayFilter(req.official)),
     ]);
+
+    // Priority route recommendation based on live readings, reports, or pending schedule
+    let priorityArea = null;
+    let priorityReason = "All areas within normal parameters";
+    
+    // Find highest gas reading area in this barangay
+    const criticalArea = await GarbageArea.findOne({
+      ...(isScoped ? { barangay: brgy } : {}),
+      status: { $in: ["critical", "moderate"] }
+    }).sort({ avgGas: -1, status: 1 });
+
+    if (criticalArea) {
+      priorityArea = criticalArea.name;
+      priorityReason = `Elevated gas levels detected (${criticalArea.avgGas || 0} ppm) — status: ${criticalArea.status}.`;
+    } else {
+      const topReport = await Report.findOne({
+        ...reportFilter,
+        status: { $ne: "resolved" }
+      }).sort({ createdAt: -1 });
+
+      if (topReport) {
+        priorityArea = topReport.location || topReport.sitio || topReport.category;
+        priorityReason = `Pending report: ${topReport.category} requiring response.`;
+      } else if (todaySchedules.length > 0) {
+        const pendingSched = todaySchedules.find(s => s.status !== "completed");
+        if (pendingSched) {
+          priorityArea = pendingSched.routeName || pendingSched.sitio || "Assigned Route";
+          priorityReason = "Scheduled collection pending for today.";
+        }
+      }
+    }
+
     res.json({
       totalFleet,
       activeTrucks,
       totalReports,
       pendingReports,
       totalRoutes,
+      totalTasks,
+      completedTasks,
+      totalSitios,
+      priorityArea: priorityArea || (isScoped ? brgy : "All Clear"),
+      priorityReason,
+      barangayName: isScoped ? brgy : "All Barangays",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2022,10 +2101,10 @@ app.patch("/api/reports/:id", authMiddleware, async (req, res) => {
         setOps.resolvedAt = new Date();
         setOps.resolvedBy = req.official.name || req.official.email;
         setOps.resolutionConfirmed = "pending";
-        // Award resident +10 points when their report is resolved
+        // Award resident +15 points when their report is resolved
         const existing = await Report.findById(req.params.id).select('userId').lean();
         if (existing?.userId) {
-          awardResidentPoints(existing.userId, 10, 'report_resolved', 'Your garbage report was resolved', req.params.id).catch(() => {});
+          awardResidentPoints(existing.userId, 15, 'report_resolved', 'Your garbage report was resolved by the barangay', req.params.id).catch(() => {});
         }
       }
       // Response time bonus: award responseScore when an official picks up a report
@@ -2230,7 +2309,7 @@ app.post("/api/reports/:id/verify", async (req, res) => {
       if (report.barangay)
         await addBarangayScore(report.barangay, 20, "reportScore", null, "Resident confirmed resolution");
       if (userId)
-        awardResidentPoints(userId, 15, 'verify_resolution', 'Verified a reported issue was resolved', report._id).catch(() => {});
+        awardResidentPoints(userId, 10, 'verify_resolution', 'Verified a reported issue was resolved', report._id).catch(() => {});
     }
 
     const updated = await Report.findByIdAndUpdate(
@@ -2323,22 +2402,86 @@ app.get("/api/fleet/:truckId", async (req, res) => {
 
 // Mutations require Officials auth
 app.post("/api/fleet", authMiddleware, async (req, res) => {
-  const { driverName, driverId, driverImage, route, type, serviceBarangays } =
-    req.body;
-  if (!driverName)
-    return res.status(400).json({ error: "driverName is required" });
+  const {
+    registrationType,
+    driverName,
+    driverId,
+    driverImage,
+    assignedTruck,
+    truckModel,
+    model,
+    plateNumber,
+    fuelType,
+    capacity,
+    route,
+    type,
+    serviceBarangays,
+  } = req.body;
+
   try {
-    const truckId = await generateUniqueTruckId();
     const brgy = req.official?.barangay;
+
+    if (registrationType === "driver") {
+      if (!driverName?.trim()) {
+        return res.status(400).json({ error: "driverName is required" });
+      }
+
+      if (assignedTruck) {
+        // Assign driver to existing truck
+        const updatedTruck = await Fleet.findOneAndUpdate(
+          { truckId: assignedTruck },
+          {
+            driverName: driverName.trim(),
+            driverId: driverId?.trim() || "",
+            driverImage: driverImage || null,
+          },
+          { new: true }
+        );
+        if (updatedTruck) {
+          io.emit("fleet:updated", updatedTruck);
+          return res.status(200).json(updatedTruck);
+        }
+      }
+
+      // Create new truck for this driver if no truck assigned
+      const truckId = await generateUniqueTruckId();
+      const entry = await Fleet.create({
+        truckId,
+        driverName: driverName.trim(),
+        driverId: driverId?.trim() || "",
+        driverImage: driverImage || null,
+        route: route || "",
+        barangay: brgy === "All" ? "" : brgy || "",
+        type: type || "dedicated",
+        serviceBarangays: Array.isArray(serviceBarangays) ? serviceBarangays : [],
+      });
+      io.emit("fleet:new", entry);
+      return res.status(201).json(entry);
+    }
+
+    const homeBrgy = brgy === "All" ? "" : brgy || "";
+    let finalServiceBarangays = [];
+    if (type === "shared") {
+      finalServiceBarangays = Array.isArray(serviceBarangays) ? [...serviceBarangays] : [];
+      if (homeBrgy && !finalServiceBarangays.map(b => b.toLowerCase()).includes(homeBrgy.toLowerCase())) {
+        finalServiceBarangays.unshift(homeBrgy);
+      }
+    }
+
+    const truckId = await generateUniqueTruckId();
     const entry = await Fleet.create({
       truckId,
-      driverName,
-      driverId: driverId || "",
+      model: (truckModel || model || "").trim(),
+      plateNumber: (plateNumber || "").trim().toUpperCase(),
+      fuelType: fuelType || "Diesel",
+      capacity: capacity ? Number(capacity) : 0,
+      driverName: driverName?.trim() || "Unassigned",
+      driverId: driverId?.trim() || "",
       driverImage: driverImage || null,
       route: route || "",
-      barangay: brgy === "All" ? "" : brgy || "",
+      barangay: homeBrgy,
       type: type || "dedicated",
-      serviceBarangays: Array.isArray(serviceBarangays) ? serviceBarangays : [],
+      serviceBarangays: finalServiceBarangays,
     });
     io.emit("fleet:new", entry);
     res.status(201).json(entry);
@@ -3002,6 +3145,10 @@ app.post("/api/bin/prepare", async (req, res) => {
     const { residentId, barangay } = req.body;
     if (!residentId || !barangay) return res.status(400).json({ error: "residentId and barangay required" });
     const date = new Date().toISOString().slice(0, 10);
+    const existing = await BinStatus.findOne({ residentId, date });
+    if (!existing || existing.status !== "prepared") {
+      awardResidentPoints(residentId, 2, 'bin_prepared', 'Prepared bin for active garbage collection').catch(() => {});
+    }
     await BinStatus.findOneAndUpdate(
       { residentId, date },
       { barangay, status: "prepared" },
@@ -3009,7 +3156,7 @@ app.post("/api/bin/prepare", async (req, res) => {
     );
     const counts = await getBinCounts(barangay, date);
     io.emit("bin:status:update", { barangay, date, ...counts });
-    res.json({ ok: true, ...counts });
+    res.json({ ok: true, pointsAwarded: (!existing || existing.status !== "prepared") ? 2 : 0, ...counts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3631,10 +3778,12 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       if (fleet.type === "dedicated" && fleet.barangay && fleet.barangay.toLowerCase() !== barangay.toLowerCase()) {
         return res.status(400).json({ error: `This truck is assigned exclusively to Barangay ${fleet.barangay}` });
       }
-      if (fleet.type === "shared" && fleet.serviceBarangays && fleet.serviceBarangays.length > 0) {
-        const allowed = fleet.serviceBarangays.map(b => b.toLowerCase());
-        if (!allowed.includes(barangay.toLowerCase())) {
-          return res.status(400).json({ error: `This truck is not assigned to serve ${barangay}. Allowed: ${fleet.serviceBarangays.join(", ")}` });
+      if (fleet.type === "shared") {
+        const allowed = (fleet.serviceBarangays || []).map(b => b.toLowerCase());
+        if (fleet.barangay) allowed.push(fleet.barangay.toLowerCase());
+        if (allowed.length > 0 && !allowed.includes(barangay.toLowerCase())) {
+          const allowedDisplay = [...new Set([...(fleet.serviceBarangays || []), fleet.barangay].filter(Boolean))];
+          return res.status(400).json({ error: `This truck is not assigned to serve ${barangay}. Allowed: ${allowedDisplay.join(", ")}` });
         }
       }
     }
@@ -4935,12 +5084,10 @@ Keep responses short and practical — drivers read on a phone while working. Us
 
 // --- Resident Points -----------------------------------------
 
-// Award +5 for a correct AI scan
+// Scan tracking (points reward disabled)
 app.post("/api/residents/:id/award-scan-points", async (req, res) => {
   try {
-    const { item } = req.body;
-    await awardResidentPoints(req.params.id, 5, 'correct_scan', `Correctly scanned: ${item || 'waste item'}`);
-    res.json({ ok: true, pointsAwarded: 5 });
+    res.json({ ok: true, pointsAwarded: 0, message: "Scanning does not award points" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5273,25 +5420,26 @@ app.post("/api/waste-classification/lookup", (req, res) => {
   res.json({ objectName, ...result });
 });
 
-// POST scan log — records a completed scan and optionally awards points
+// POST scan log — records a completed scan without awarding points
 app.post("/api/residents/:id/scan-log", async (req, res) => {
   try {
     const { objectDetected, category, confidence, correct } = req.body;
     const resident = await Resident.findById(req.params.id);
     if (!resident) return res.status(404).json({ error: "Resident not found" });
 
-    // Always log the scan in pointsHistory
-    const description = `Scanned: ${objectDetected || "unknown"} (${category || "?"}) — ${correct ? "correct" : "corrected"}`;
+    // Update scan stats without awarding points
+    resident.stats = resident.stats || {};
+    resident.stats.totalScans = (resident.stats.totalScans || 0) + 1;
     if (correct) {
-      await awardResidentPoints(req.params.id, 5, "correct_scan", description);
-    } else {
-      // Log without awarding points for corrections
-      resident.pointsHistory = resident.pointsHistory || [];
-      resident.pointsHistory.unshift({ type: "correct_scan", points: 0, description, date: new Date() });
-      await resident.save();
+      resident.stats.correctScans = (resident.stats.correctScans || 0) + 1;
     }
 
-    res.json({ ok: true, logged: true, pointsAwarded: correct ? 5 : 0 });
+    const description = `Scanned: ${objectDetected || "unknown"} (${category || "?"}) — ${correct ? "correct" : "corrected"}`;
+    resident.pointsHistory = resident.pointsHistory || [];
+    resident.pointsHistory.unshift({ type: "correct_scan", points: 0, description, date: new Date() });
+    await resident.save();
+
+    res.json({ ok: true, logged: true, pointsAwarded: 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -516,6 +516,7 @@ export default function ScannerScreen() {
   const [showManualPicker, setShowManualPicker] = useState(false);
   const [multiObjectPicker, setMultiObjectPicker] = useState(false);
   const [surveyVisible, setSurveyVisible] = useState(false);
+  const [flash, setFlash] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const hasPermission = cameraPermission?.status === "granted";
@@ -628,7 +629,7 @@ export default function ScannerScreen() {
         setDetectionResult(topResult);
         setAllDetections(results);
         setEcoImpact(calculateEnvironmentalImpact(topResult));
-        // Award +5 points and log the scan
+        // Log the scan activity
         const uid = user?.id || user?._id;
         if (uid && topResult.label !== 'No Item Detected') {
           logScan(uid, topResult.className || topResult.label, topResult.category, topResult.confidence, true);
@@ -1074,7 +1075,7 @@ export default function ScannerScreen() {
         </View>
       )}
 
-      {/* Camera View */}
+      {/* Full-Screen Camera View */}
       {hasPermission ? (
         <View style={styles.cameraContainer}>
           <CameraView
@@ -1082,12 +1083,33 @@ export default function ScannerScreen() {
             ref={cameraRef}
             facing="back"
             mode="picture"
+            enableTorch={flash}
           />
+
           {/* Camera Overlay */}
           <View style={styles.cameraOverlay}>
-            <View style={styles.overlayBackground} />
-            <View style={styles.overlayRow}>
-              <View style={styles.overlayBackground} />
+            {/* Top Control Bar */}
+            <View style={styles.topControlBar}>
+              <View style={styles.headerTag}>
+                <Ionicons name="scan-circle" size={20} color="#10B981" />
+                <Text style={styles.headerTagText}>AI Waste Scanner</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.topIconBtn, flash && styles.topIconBtnActive]}
+                onPress={() => setFlash(!flash)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={flash ? "flash" : "flash-off"}
+                  size={20}
+                  color={flash ? "#10B981" : "#FFFFFF"}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Viewfinder Section */}
+            <View style={styles.viewfinderWrapper}>
               <View style={styles.viewfinder}>
                 {/* Corner markers */}
                 <View style={[styles.corner, styles.topLeft]} />
@@ -1095,31 +1117,78 @@ export default function ScannerScreen() {
                 <View style={[styles.corner, styles.bottomLeft]} />
                 <View style={[styles.corner, styles.bottomRight]} />
 
-                {/* Viewfinder text */}
+                {/* Reticle content */}
                 <View style={styles.viewfinderContent}>
                   {isProcessing ? (
-                    <>
-                      <ActivityIndicator size="large" color="#fff" />
-                      <Text style={styles.viewfinderText}>
-                        Analyzing waste...
-                      </Text>
-                    </>
+                    <View style={styles.processingBadge}>
+                      <ActivityIndicator size="large" color="#FFFFFF" />
+                      <Text style={styles.viewfinderText}>Analyzing waste...</Text>
+                    </View>
                   ) : (
                     <>
-                      <Ionicons name="scan" size={40} color="#fff" />
+                      <Ionicons name="scan-outline" size={44} color="rgba(255,255,255,0.75)" />
                       <Text style={styles.viewfinderText}>
-                        Point camera at waste item
-                      </Text>
-                      <Text style={styles.viewfinderSubtext}>
-                        Position item within the frame
+                        Align item inside frame
                       </Text>
                     </>
                   )}
                 </View>
               </View>
-              <View style={styles.overlayBackground} />
             </View>
-            <View style={styles.overlayBackground} />
+
+            {/* Bottom Controls Area */}
+            <View style={styles.bottomControls}>
+              {/* Manual select shortcut */}
+              <TouchableOpacity
+                style={styles.secondaryControlBtn}
+                onPress={() => setShowManualPicker(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="grid-outline" size={22} color="#FFFFFF" />
+                <Text style={styles.secondaryControlLabel}>Manual</Text>
+              </TouchableOpacity>
+
+              {/* Shutter Capture Button */}
+              <TouchableOpacity
+                style={[
+                  styles.captureButton,
+                  (!hasPermission || !systemReady || isProcessing) &&
+                    styles.captureButtonDisabled,
+                ]}
+                disabled={!hasPermission || !systemReady || isProcessing}
+                onPress={handleCapture}
+                activeOpacity={0.8}
+              >
+                <View style={styles.captureButtonOuter}>
+                  <View style={styles.captureButtonInner}>
+                    {isProcessing ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons
+                        name="camera"
+                        size={32}
+                        color={hasPermission && systemReady ? "#FFFFFF" : colors.greyedOut}
+                      />
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Quick Guide modal / tip shortcut */}
+              <TouchableOpacity
+                style={styles.secondaryControlBtn}
+                onPress={() => {
+                  Alert.alert(
+                    "Scanner Guide",
+                    "Center bottles, cans, plastic, paper, organic food, or e-waste inside the frame and tap the camera button.",
+                  );
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="help-circle-outline" size={24} color="#FFFFFF" />
+                <Text style={styles.secondaryControlLabel}>Guide</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       ) : (
@@ -1129,50 +1198,12 @@ export default function ScannerScreen() {
             <Ionicons name="camera-outline" size={64} color="#666" />
             <Text style={styles.placeholderText}>
               {hasPermission
-                ? "Camera preview unavailable"
+                ? "Camera preview loading..."
                 : "Camera access required"}
             </Text>
           </View>
         </View>
       )}
-
-      {/* Capture Button */}
-      <View style={styles.captureContainer}>
-        {!systemReady && hasPermission ? (
-          <View style={styles.loadingIndicator}>
-            <ActivityIndicator size="small" color={colors.primaryGreen} />
-            <Text style={styles.loadingText}>Loading waste detector...</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.captureButton,
-              (!hasPermission || !systemReady || isProcessing) &&
-                styles.captureButtonDisabled,
-            ]}
-            disabled={!hasPermission || !systemReady || isProcessing}
-            onPress={handleCapture}
-            activeOpacity={0.7}
-          >
-            <View style={styles.captureButtonInner}>
-              <Ionicons
-                name="camera"
-                size={36}
-                color={hasPermission && systemReady ? "#fff" : colors.greyedOut}
-              />
-            </View>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Status Card */}
-      <View style={styles.statusCardContainer}>
-        <ScanResultCard
-          itemName="Ready to Scan"
-          category="Point camera at waste item and press capture"
-          binColor={colors.primaryGreen}
-        />
-      </View>
 
       <SurveyPopup
         visible={surveyVisible}
@@ -1190,7 +1221,7 @@ const styles = StyleSheet.create({
   // Layout
   safeArea: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#000000",
   },
   centerContainer: {
     flex: 1,
@@ -1254,92 +1285,182 @@ const styles = StyleSheet.create({
 
   // Camera
   cameraContainer: {
+    flex: 1,
     width: "100%",
-    height: SCREEN_HEIGHT * 0.55,
+    backgroundColor: "#000000",
     position: "relative",
-    backgroundColor: "#000",
   },
   cameraView: {
-    width: "100%",
-    height: "100%",
+    ...StyleSheet.absoluteFillObject,
   },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 10,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 36,
   },
-  overlayBackground: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
-  },
-  overlayRow: {
+  topControlBar: {
     flexDirection: "row",
-    height: 280,
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    paddingTop: Platform.OS === "android" ? 12 : 0,
   },
-  viewfinder: {
-    width: 280,
-    height: 280,
-    position: "relative",
+  headerTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  headerTagText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  topIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  topIconBtnActive: {
+    backgroundColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "#10B981",
+  },
+  viewfinderWrapper: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  viewfinder: {
+    width: 270,
+    height: 270,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.12)",
+    borderRadius: 24,
+  },
   viewfinderContent: {
     alignItems: "center",
-    padding: 24,
+    padding: 16,
   },
   viewfinderText: {
-    color: "#fff",
-    fontSize: 18,
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
-    marginTop: 12,
+    marginTop: 10,
+    textShadowColor: "rgba(0, 0, 0, 0.75)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  viewfinderSubtext: {
-    color: "#CCCCCC",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 8,
+  processingBadge: {
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  bottomControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 12,
+  },
+  secondaryControlBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 64,
+    gap: 4,
+  },
+  secondaryControlLabel: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "600",
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  captureButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  captureButtonOuter: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 4,
+    borderColor: "rgba(255, 255, 255, 0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+  },
+  captureButtonInner: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: colors.primaryGreen,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureButtonDisabled: {
+    opacity: 0.5,
   },
 
   // Corner Markers
   corner: {
     position: "absolute",
-    width: 40,
-    height: 40,
-    borderColor: colors.primaryGreen,
+    width: 36,
+    height: 36,
+    borderColor: "#10B981",
   },
   topLeft: {
     top: 0,
     left: 0,
     borderTopWidth: 4,
     borderLeftWidth: 4,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 16,
   },
   topRight: {
     top: 0,
     right: 0,
     borderTopWidth: 4,
     borderRightWidth: 4,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 16,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 16,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 4,
     borderRightWidth: 4,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 16,
   },
 
   // Camera Placeholder
   cameraPlaceholder: {
+    flex: 1,
     width: "100%",
-    height: SCREEN_HEIGHT * 0.55,
     backgroundColor: "#1a1a1a",
     justifyContent: "center",
     alignItems: "center",
@@ -1349,54 +1470,11 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   placeholderText: {
-    color: "#666",
+    color: "#9CA3AF",
     fontSize: 16,
     marginTop: 20,
     textAlign: "center",
     lineHeight: 24,
-  },
-
-  // Capture Button
-  captureContainer: {
-    alignItems: "center",
-    marginVertical: 24,
-    paddingHorizontal: 24,
-  },
-  captureButton: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: colors.primaryGreen,
-    justifyContent: "center",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  captureButtonInner: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 3,
-    borderColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  captureButtonDisabled: {
-    opacity: 0.5,
-  },
-
-  // Status Card Container
-  statusCardContainer: {
-    marginTop: 8,
   },
 
   // ── RESULTS VIEW ENHANCED STYLES ─────────────
