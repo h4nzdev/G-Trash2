@@ -584,12 +584,16 @@ export default function CollectorHomeScreen() {
                       <View style={[
                         styles.schedStatus,
                         sched.status === "completed" && styles.schedStatusDone,
+                        sched.status === "accepted" && styles.schedStatusAccepted,
+                        sched.status === "missed" && styles.schedStatusMissed,
                       ]}>
                         <Text style={[
                           styles.schedStatusText,
                           sched.status === "completed" && styles.schedStatusTextDone,
+                          sched.status === "accepted" && styles.schedStatusTextAccepted,
+                          sched.status === "missed" && styles.schedStatusTextMissed,
                         ]}>
-                          {sched.status === "completed" ? "Done" : sched.status === "missed" ? "Missed" : "Pending"}
+                          {sched.status === "completed" ? "Done" : sched.status === "accepted" ? "Accepted" : sched.status === "missed" ? "Missed" : "Pending"}
                         </Text>
                       </View>
                     </View>
@@ -1201,8 +1205,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "#FEF3C7",
   },
   schedStatusDone: { backgroundColor: "#D1FAE5" },
+  schedStatusAccepted: { backgroundColor: "#DBEAFE" },
+  schedStatusMissed: { backgroundColor: "#FEE2E2" },
   schedStatusText: { fontSize: 10, fontWeight: "700", color: "#92400E", textTransform: "uppercase" },
   schedStatusTextDone: { color: "#065F46" },
+  schedStatusTextAccepted: { color: "#1D4ED8" },
+  schedStatusTextMissed: { color: "#B91C1C" },
 
   emptySchedule: { alignItems: "center", paddingVertical: 28, gap: 6 },
   emptyScheduleText: { fontSize: 15, fontWeight: "600", color: "#9CA3AF" },

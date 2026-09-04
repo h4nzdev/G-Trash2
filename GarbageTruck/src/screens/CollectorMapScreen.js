@@ -1226,6 +1226,17 @@ export default function CollectorMapScreen() {
     shouldNotifyRef.current = true;
     setHazardOptimizeActive(true);
 
+    // Notify backend that truck started shift / accepted schedule
+    try {
+      const xhrShift = new XMLHttpRequest();
+      xhrShift.open("POST", `${TRACKING_SERVER}/api/schedules/truck/${TRUCK_ID}/start-shift`);
+      xhrShift.setRequestHeader("Content-Type", "application/json");
+      xhrShift.send(JSON.stringify({ date: todaySchedules?.[0]?.date }));
+    } catch (_) {}
+
+    // Update local schedule status immediately to accepted
+    setTodaySchedules(prev => Array.isArray(prev) ? prev.map(s => ({ ...s, status: s.status === 'pending' ? 'accepted' : s.status })) : prev);
+
     const pos = lastGpsRef.current;
     const lat = pos?.lat ?? 10.325;
     const lng = pos?.lng ?? 123.893;

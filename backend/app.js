@@ -163,6 +163,7 @@ const fleetSchema = new mongoose.Schema({
   truckId: { type: String, required: true, unique: true },
   driverName: { type: String, default: "Unassigned" },
   driverId: { type: String, default: "" },
+  driverPhone: { type: String, default: "" },
   driverImage: { type: String, default: null },
   model: { type: String, default: "" },
   plateNumber: { type: String, default: "" },
@@ -192,6 +193,7 @@ const scheduleSchema = new mongoose.Schema({
   date: { type: String, required: true }, // YYYY-MM-DD
   truckId: { type: String, required: true },
   driverName: { type: String, default: "" },
+  driverPhone: { type: String, default: "" },
   routeId: { type: String, default: "" },
   routeName: { type: String, default: "" },
   barangay: { type: String, default: "" },
@@ -208,7 +210,7 @@ const scheduleSchema = new mongoose.Schema({
   routeCoords: { type: [[Number]], default: [] },
   startTime: { type: String, default: "" }, // HH:MM for ordering
   endTime: { type: String, default: "" }, // Optional HH:MM
-  status: { type: String, enum: ["pending", "completed", "missed"], default: "pending" },
+  status: { type: String, enum: ["pending", "accepted", "completed", "missed"], default: "pending" },
   notes: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
@@ -548,50 +550,74 @@ async function startRewardExpirer() {
   setInterval(expire, 60 * 60 * 1000);
 }
 
-async function startScheduleMonitor() {
-  const check = async () => {
-    try {
-      const now = new Date();
-      const pendingSchedules = await Schedule.find({ status: "pending" });
+async function updateOverdueSchedules() {
+  try {
+    const now = new Date();
+    const today = getTodayYMD();
+    // Query both pending and accepted schedules that are not yet completed
+    const activeSchedules = await Schedule.find({ status: { $in: ["pending", "accepted"] } });
+    
+    for (const s of activeSchedules) {
+      if (!s.date) continue;
       
-      for (const s of pendingSchedules) {
-        if (!s.date || !s.startTime) continue;
-        
-        let targetTimeStr = s.endTime || s.startTime;
-        let [hours, minutes] = targetTimeStr.split(":").map(Number);
-        
-        if (!s.endTime) {
-          hours += 2; // 2 hour grace period if no endTime
+      let isOverdue = false;
+      
+      // Case 1: Date is strictly prior to today
+      if (s.date < today) {
+        isOverdue = true;
+      } else if (s.date === today) {
+        // Case 2: Date is today — check if designated end time (or start time + 2h) has passed
+        if (s.endTime) {
+          const [hours, minutes] = s.endTime.split(":").map(Number);
+          const scheduleEndTime = new Date(`${s.date}T00:00:00`);
+          scheduleEndTime.setHours(hours, minutes, 0, 0);
+          if (now > scheduleEndTime) {
+            isOverdue = true;
+          }
+        } else if (s.startTime) {
+          const [hours, minutes] = s.startTime.split(":").map(Number);
+          const scheduleStartTime = new Date(`${s.date}T00:00:00`);
+          // 2 hour grace period after start time if no explicit end time
+          scheduleStartTime.setHours(hours + 2, minutes, 0, 0);
+          if (now > scheduleStartTime) {
+            isOverdue = true;
+          }
         }
+        // "Any Time" today remains valid until the date turns into yesterday (s.date < today)
+      }
 
-        const scheduleDate = new Date(`${s.date}T00:00:00`);
-        scheduleDate.setHours(hours, minutes, 0, 0);
-
-        if (now > scheduleDate) {
-          await Schedule.findByIdAndUpdate(s._id, { status: "missed" });
-          
+      if (isOverdue) {
+        await Schedule.findByIdAndUpdate(s._id, { status: "missed" });
+        
+        try {
+          const timeDesc = s.startTime ? ` at ${s.startTime}` : " (Any Time)";
           const report = await Report.create({
             title: `Missed Route: ${s.routeName || "Unknown"}`,
             category: "System Alert",
-            description: `Truck ${s.truckId} (${s.driverName || "Unknown Driver"}) failed to complete the scheduled route on time. Scheduled for ${s.date} at ${s.startTime}.`,
+            description: `Truck ${s.truckId} (${s.driverName || "Unknown Driver"}) failed to complete the scheduled route on time. Scheduled for ${s.date}${timeDesc}.`,
             priority: "High",
             status: "pending",
             assignedTruck: s.truckId,
             assignedDriver: s.driverName,
             reportedBy: "System",
           });
-
-          console.log(`[ScheduleMonitor] Schedule ${s._id} missed. Report ${report._id}`);
-          io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
           io.emit("report:new", report);
+        } catch (repErr) {
+          console.error("[ScheduleMonitor] Report creation error:", repErr.message);
         }
+
+        console.log(`[ScheduleMonitor] Schedule ${s._id} for ${s.date} (${s.truckId}) marked as missed.`);
+        io.emit("schedule:changed", { truckId: s.truckId, date: s.date });
       }
-    } catch (err) {
-      console.error("[ScheduleMonitor] Error:", err.message);
     }
-  };
-  await check();
-  setInterval(check, 5 * 60 * 1000);
+  } catch (err) {
+    console.error("[ScheduleMonitor] Error updating overdue schedules:", err.message);
+  }
+}
+
+async function startScheduleMonitor() {
+  await updateOverdueSchedules();
+  setInterval(updateOverdueSchedules, 5 * 60 * 1000);
 }
 
 async function startSLAChecker() {
@@ -2406,6 +2432,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
     registrationType,
     driverName,
     driverId,
+    driverPhone,
     driverImage,
     assignedTruck,
     truckModel,
@@ -2428,13 +2455,16 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
 
       if (assignedTruck) {
         // Assign driver to existing truck
+        const updatePayload = {
+          driverName: driverName.trim(),
+          driverId: driverId?.trim() || "",
+          driverImage: driverImage || null,
+        };
+        if (driverPhone !== undefined) updatePayload.driverPhone = driverPhone.trim();
+
         const updatedTruck = await Fleet.findOneAndUpdate(
           { truckId: assignedTruck },
-          {
-            driverName: driverName.trim(),
-            driverId: driverId?.trim() || "",
-            driverImage: driverImage || null,
-          },
+          updatePayload,
           { new: true }
         );
         if (updatedTruck) {
@@ -2449,6 +2479,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
         truckId,
         driverName: driverName.trim(),
         driverId: driverId?.trim() || "",
+        driverPhone: driverPhone?.trim() || "",
         driverImage: driverImage || null,
         route: route || "",
         barangay: brgy === "All" ? "" : brgy || "",
@@ -2477,6 +2508,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
       capacity: capacity ? Number(capacity) : 0,
       driverName: driverName?.trim() || "Unassigned",
       driverId: driverId?.trim() || "",
+      driverPhone: driverPhone?.trim() || "",
       driverImage: driverImage || null,
       route: route || "",
       barangay: homeBrgy,
@@ -2505,22 +2537,23 @@ app.patch("/api/fleet/:truckId", authMiddleware, async (req, res) => {
   }
 });
 
-// Driver self-update â€” no Officials auth required; driver can only update their own name
+// Driver self-update — no Officials auth required; driver can update their own name or phone
 app.patch("/api/fleet/:truckId/self", async (req, res) => {
   try {
-    const { driverName } = req.body;
-    if (!driverName?.trim())
-      return res.status(400).json({ error: "driverName required" });
+    const { driverName, driverPhone } = req.body;
+    const update = {};
+    if (driverName?.trim()) update.driverName = driverName.trim();
+    if (driverPhone !== undefined) update.driverPhone = driverPhone.trim();
+    if (Object.keys(update).length === 0)
+      return res.status(400).json({ error: "driverName or driverPhone required" });
+
     const entry = await Fleet.findOneAndUpdate(
       { truckId: req.params.truckId },
-      { driverName: driverName.trim() },
+      update,
       { new: true },
     );
     if (!entry) return res.status(404).json({ error: "Truck ID not found" });
-    io.emit("fleet:updated", {
-      truckId: entry.truckId,
-      driverName: entry.driverName,
-    });
+    io.emit("fleet:updated", entry);
     res.json(entry);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3521,6 +3554,7 @@ app.delete("/api/garbage-areas/:id", async (req, res) => {
 // Public: today's schedules for Resident HomeScreen
 app.get("/api/schedules/today", async (req, res) => {
   try {
+    await updateOverdueSchedules();
     const today = getTodayYMD();
     const schedules = await Schedule.find({ date: today }).sort({
       createdAt: 1,
@@ -3536,6 +3570,7 @@ app.get("/api/schedules/today", async (req, res) => {
 // avoiding server-timezone mismatches (server may run in UTC, device in UTC+8).
 app.get("/api/schedules/truck/:truckId/today", async (req, res) => {
   try {
+    await updateOverdueSchedules();
     const truckId = req.params.truckId.toUpperCase();
     const today = req.query.date || getTodayYMD();
     console.log(
@@ -3668,9 +3703,10 @@ app.get("/api/schedules/truck/:truckId/priority-stops", async (req, res) => {
   }
 });
 
-// GET: no auth â†’ by ?month=YYYY-MM (Resident calendar); auth â†’ same + supports ?date=
+// GET: no auth → by ?month=YYYY-MM (Resident calendar); auth → same + supports ?date=
 app.get("/api/schedules", optionalAuth, async (req, res) => {
   try {
+    await updateOverdueSchedules();
     const filter = {};
     if (req.query.date) {
       filter.date = req.query.date;
@@ -3856,6 +3892,7 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       date,
       truckId,
       driverName,
+      driverPhone: fleet?.driverPhone || req.body.driverPhone || "",
       routeId: routeId || null,
       routeName: finalRouteName,
       barangay,
@@ -3961,6 +3998,78 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
       date: schedule.date,
     });
 
+    res.json(schedule);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Truck shift start: auto-accept today's pending schedules for this truck
+app.post("/api/schedules/truck/:truckId/start-shift", async (req, res) => {
+  try {
+    const truckId = req.params.truckId.toUpperCase();
+    const today = req.body.date || getTodayYMD();
+
+    const pending = await Schedule.find({
+      truckId,
+      date: today,
+      status: "pending",
+    });
+
+    if (pending.length === 0) {
+      const accepted = await Schedule.find({
+        truckId,
+        date: today,
+        status: "accepted",
+      });
+      return res.json({
+        ok: true,
+        message: accepted.length > 0 ? "Schedule already accepted" : "No pending schedule found for today",
+        acceptedCount: accepted.length,
+      });
+    }
+
+    await Schedule.updateMany(
+      { truckId, date: today, status: "pending" },
+      { $set: { status: "accepted" } }
+    );
+
+    io.emit("schedule:changed", { truckId, date: today });
+    console.log(`[Shift] Truck ${truckId} accepted ${pending.length} schedule(s) for ${today}`);
+
+    res.json({ ok: true, acceptedCount: pending.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual status update by Officials or System
+app.patch("/api/schedules/:id/status", authMiddleware, async (req, res) => {
+  const { status } = req.body;
+  if (!["pending", "accepted", "completed", "missed"].includes(status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+
+    schedule.status = status;
+    if (status === "completed" && schedule.sitioTasks && schedule.sitioTasks.length > 0) {
+      schedule.sitioTasks.forEach(t => {
+        t.completed = true;
+        if (!t.completedAt) t.completedAt = new Date();
+      });
+    } else if (status === "pending") {
+      if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
+        schedule.sitioTasks.forEach(t => {
+          t.completed = false;
+          t.completedAt = null;
+        });
+      }
+    }
+
+    await schedule.save();
+    io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
     res.json(schedule);
   } catch (err) {
     res.status(500).json({ error: err.message });

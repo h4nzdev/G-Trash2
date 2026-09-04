@@ -41,6 +41,7 @@ export default function CollectorProfileScreen() {
   // Edit modal
   const [editModal, setEditModal] = useState(false);
   const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
   const fetchProfileData = useCallback(async () => {
@@ -56,7 +57,7 @@ export default function CollectorProfileScreen() {
 
       if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
         setFleetData(fleetRes.value);
-        await updateUser({ driverName: fleetRes.value.driverName, route: fleetRes.value.route });
+        await updateUser({ driverName: fleetRes.value.driverName, driverPhone: fleetRes.value.driverPhone, route: fleetRes.value.route });
       }
       if (routeRes.status === 'fulfilled' && routeRes.value?.name) {
         setRouteData(routeRes.value);
@@ -97,6 +98,7 @@ export default function CollectorProfileScreen() {
 
   // Derived display values
   const driverName = fleetData?.driverName || user?.driverName || user?.name || 'Driver';
+  const driverPhone = fleetData?.driverPhone || user?.driverPhone || '';
   const routeName = routeData?.name || fleetData?.route || user?.route || 'No route assigned';
   const isOnline = truckStatus?.status === 'online';
 
@@ -109,6 +111,7 @@ export default function CollectorProfileScreen() {
 
   const openEditModal = () => {
     setEditName(driverName);
+    setEditPhone(driverPhone);
     setEditModal(true);
   };
 
@@ -123,12 +126,12 @@ export default function CollectorProfileScreen() {
       const res = await fetch(`${API_URL}/api/fleet/${truckId}/self`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ driverName: trimmed }),
+        body: JSON.stringify({ driverName: trimmed, driverPhone: editPhone.trim() }),
       });
       if (!res.ok) throw new Error('Update failed');
       const updated = await res.json();
       setFleetData(updated);
-      await updateUser({ driverName: updated.driverName });
+      await updateUser({ driverName: updated.driverName, driverPhone: updated.driverPhone });
       setEditModal(false);
     } catch (e) {
       Alert.alert('Error', 'Could not save changes. Check your connection.');
@@ -299,6 +302,18 @@ export default function CollectorProfileScreen() {
                 </View>
                 <Text style={styles.menuValue}>{fleetData?.plateNumber || truckId || '—'}</Text>
               </View>
+
+              <View style={styles.separator} />
+
+              <View style={styles.menuRow}>
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
+                    <Ionicons name="call-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Contact Number</Text>
+                </View>
+                <Text style={styles.menuValue}>{driverPhone || 'Not set'}</Text>
+              </View>
             </View>
 
             {/* Resources & Support */}
@@ -453,6 +468,18 @@ export default function CollectorProfileScreen() {
                   placeholder="e.g. Juan Dela Cruz"
                   placeholderTextColor="#9CA3AF"
                   autoCapitalize="words"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Driver Contact Number</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editPhone}
+                  onChangeText={setEditPhone}
+                  placeholder="e.g. 0917 123 4567"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="phone-pad"
                 />
               </View>
 

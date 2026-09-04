@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -37,6 +37,11 @@ export default function ScheduleRoute() {
   const [scheduleError, setScheduleError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [fleetError, setFleetError] = useState(false);
+
+  // Status update modal state
+  const [statusModalSchedule, setStatusModalSchedule] = useState(null);
+  const [selectedNewStatus, setSelectedNewStatus] = useState('pending');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   // Modal form state
   const [selTruck, setSelTruck] = useState('');
@@ -248,8 +253,23 @@ export default function ScheduleRoute() {
     try {
       const { data } = await axios.patch(`${API}/api/schedules/${id}/status`, { status });
       setSchedules(prev => prev.map(s => s._id === id ? { ...s, status: data.status } : s));
+      return data;
     } catch (err) {
       console.error('Failed to update schedule status:', err);
+      throw err;
+    }
+  };
+
+  const handleSaveStatusModal = async () => {
+    if (!statusModalSchedule) return;
+    setUpdatingStatus(true);
+    try {
+      await handleUpdateStatus(statusModalSchedule._id, selectedNewStatus);
+      setStatusModalSchedule(null);
+    } catch (err) {
+      console.error('Failed to update status from modal:', err);
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -548,23 +568,24 @@ export default function ScheduleRoute() {
                       )}
                     </div>
 
-                    {/* Actions: Status selector & Delete button */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <select
-                        value={s.status || 'pending'}
-                        onChange={(e) => handleUpdateStatus(s._id, e.target.value)}
-                        className="text-[10px] font-bold uppercase rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
-                        title="Update Schedule Status"
+                    {/* Actions: Update Status button & Delete button */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStatusModalSchedule(s);
+                          setSelectedNewStatus(s.status || 'pending');
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+                        title="Update Driver Status"
                       >
-                        <option value="pending">Pending</option>
-                        <option value="accepted">Accepted</option>
-                        <option value="completed">Completed</option>
-                        <option value="missed">Missed</option>
-                      </select>
+                        <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Update Status</span>
+                      </button>
 
                       <button
                         onClick={() => handleDelete(s._id)}
-                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
+                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 cursor-pointer"
                         title="Delete Schedule"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -929,6 +950,187 @@ export default function ScheduleRoute() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Update Status Modal ── */}
+      {statusModalSchedule && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 leading-tight">Update Status</h3>
+                  <p className="text-xs text-slate-500">Change driver status for this route</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusModalSchedule(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Driver & Schedule Context Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl mb-5 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                  {statusModalSchedule.driverName || 'No Driver Assigned'}
+                </span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {statusModalSchedule.truckId}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium truncate">
+                <Route className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <span className="truncate">{statusModalSchedule.routeName || 'No route specified'}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span>
+                  {statusModalSchedule.date} • {statusModalSchedule.startTime ? `${statusModalSchedule.startTime}${statusModalSchedule.endTime ? ` - ${statusModalSchedule.endTime}` : ''}` : 'Any Time'}
+                </span>
+              </div>
+            </div>
+
+            {/* Status Selection Options */}
+            <div className="space-y-2.5 mb-6">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Select Status
+              </label>
+
+              {/* Option: Pending */}
+              <button
+                type="button"
+                onClick={() => setSelectedNewStatus('pending')}
+                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
+                  selectedNewStatus === 'pending'
+                    ? 'border-amber-400 bg-amber-50/50 shadow-sm ring-2 ring-amber-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">Pending</span>
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded uppercase">Scheduled</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Awaiting driver shift start or route confirmation</p>
+                  </div>
+                </div>
+                {selectedNewStatus === 'pending' && <Check className="w-5 h-5 text-amber-600" />}
+              </button>
+
+              {/* Option: Accepted */}
+              <button
+                type="button"
+                onClick={() => setSelectedNewStatus('accepted')}
+                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
+                  selectedNewStatus === 'accepted'
+                    ? 'border-blue-400 bg-blue-50/50 shadow-sm ring-2 ring-blue-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">Accepted</span>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100/80 px-1.5 py-0.5 rounded uppercase">In Progress</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Driver started shift and accepted route</p>
+                  </div>
+                </div>
+                {selectedNewStatus === 'accepted' && <Check className="w-5 h-5 text-blue-600" />}
+              </button>
+
+              {/* Option: Completed */}
+              <button
+                type="button"
+                onClick={() => setSelectedNewStatus('completed')}
+                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
+                  selectedNewStatus === 'completed'
+                    ? 'border-emerald-400 bg-emerald-50/50 shadow-sm ring-2 ring-emerald-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">Completed</span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded uppercase">Finished</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Waste collection route successfully completed</p>
+                  </div>
+                </div>
+                {selectedNewStatus === 'completed' && <Check className="w-5 h-5 text-emerald-600" />}
+              </button>
+
+              {/* Option: Missed */}
+              <button
+                type="button"
+                onClick={() => setSelectedNewStatus('missed')}
+                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
+                  selectedNewStatus === 'missed'
+                    ? 'border-red-400 bg-red-50/50 shadow-sm ring-2 ring-red-400/20'
+                    : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 flex items-center justify-center font-bold text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">Missed</span>
+                      <span className="text-[10px] font-bold text-red-700 bg-red-100/80 px-1.5 py-0.5 rounded uppercase">Overdue</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Collection was not completed within designated window</p>
+                  </div>
+                </div>
+                {selectedNewStatus === 'missed' && <Check className="w-5 h-5 text-red-600" />}
+              </button>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setStatusModalSchedule(null)}
+                className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updatingStatus}
+                onClick={handleSaveStatusModal}
+                className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                {updatingStatus ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                Save Status
+              </button>
+            </div>
           </div>
         </div>
       )}
