@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -242,6 +242,15 @@ export default function ScheduleRoute() {
       await axios.delete(`${API}/api/schedules/${id}`);
       setSchedules(prev => prev.filter(s => s._id !== id));
     } catch { /* silent */ }
+  };
+
+  const handleUpdateStatus = async (id, status) => {
+    try {
+      const { data } = await axios.patch(`${API}/api/schedules/${id}/status`, { status });
+      setSchedules(prev => prev.map(s => s._id === id ? { ...s, status: data.status } : s));
+    } catch (err) {
+      console.error('Failed to update schedule status:', err);
+    }
   };
 
   const getBarangayCenter = (brgy) => {
@@ -494,6 +503,12 @@ export default function ScheduleRoute() {
                         {s.status === 'completed' && (
                           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider">Completed</span>
                         )}
+                        {s.status === 'accepted' && (
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                            Accepted
+                          </span>
+                        )}
                         {s.status === 'missed' && (
                           <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded-md uppercase tracking-wider">Missed</span>
                         )}
@@ -504,9 +519,21 @@ export default function ScheduleRoute() {
                       
                       {/* Driver & Route Info */}
                       <div>
-                        {s.driverName && (
-                          <p className="text-sm font-bold text-slate-800 truncate mb-0.5">{s.driverName}</p>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          {s.driverName && (
+                            <p className="text-sm font-bold text-slate-800 truncate">{s.driverName}</p>
+                          )}
+                          {(s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone) && (
+                            <a
+                              href={`tel:${s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone}`}
+                              className="text-xs text-slate-500 hover:text-emerald-600 flex items-center gap-1 font-medium transition-colors"
+                              title="Call driver"
+                            >
+                              <Phone className="w-3 h-3 text-emerald-500" />
+                              {s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone}
+                            </a>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5">
                           <Route className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
                           <span className="text-xs text-slate-600 font-medium truncate">{s.routeName || <span className="italic text-slate-400">No route assigned</span>}</span>
@@ -521,14 +548,28 @@ export default function ScheduleRoute() {
                       )}
                     </div>
 
-                    {/* Delete button (reveals on hover on desktop, always visible on mobile) */}
-                    <button
-                      onClick={() => handleDelete(s._id)}
-                      className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 md:opacity-0 md:group-hover:opacity-100"
-                      title="Delete Schedule"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Actions: Status selector & Delete button */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <select
+                        value={s.status || 'pending'}
+                        onChange={(e) => handleUpdateStatus(s._id, e.target.value)}
+                        className="text-[10px] font-bold uppercase rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
+                        title="Update Schedule Status"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="completed">Completed</option>
+                        <option value="missed">Missed</option>
+                      </select>
+
+                      <button
+                        onClick={() => handleDelete(s._id)}
+                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
+                        title="Delete Schedule"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -817,7 +858,7 @@ export default function ScheduleRoute() {
                         return false;
                       }).map(t => (
                         <option key={t.truckId} value={t.truckId}>
-                          {t.truckId} — {t.driverName}
+                          {t.truckId} — {t.driverName}{t.driverPhone ? ` (${t.driverPhone})` : ''}
                         </option>
                       ))}
                     </select>

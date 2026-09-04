@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Truck, ArrowLeft, MapPin, Package, Archive, Calendar, Clock, CheckCircle, Route, TrendingUp } from 'lucide-react';
+import { Truck, ArrowLeft, MapPin, Package, Archive, Calendar, Clock, CheckCircle, Route, TrendingUp, Phone } from 'lucide-react';
 import API from '../config';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'emerald' }) {
@@ -145,6 +145,16 @@ export default function DriverAnalytics() {
                   <Route className="w-4 h-4 text-blue-500" />
                   {route.name}
                 </span>
+              )}
+              {driver.driverPhone && (
+                <a
+                  href={`tel:${driver.driverPhone}`}
+                  className="flex items-center gap-1.5 hover:text-emerald-600 font-medium transition-colors"
+                  title="Call driver"
+                >
+                  <Phone className="w-4 h-4 text-emerald-500" />
+                  {driver.driverPhone}
+                </a>
               )}
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-slate-400" />

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   Truck, Plus, Trash2, RefreshCw, Copy, Check, X, Share2, BarChart2,
-  ChevronDown, Search, UserPlus, ArrowRight, ArrowLeft, UserCheck, Shield, Edit3
+  ChevronDown, Search, UserPlus, ArrowRight, ArrowLeft, UserCheck, Shield, Edit3, Phone
 } from 'lucide-react';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +38,7 @@ export default function FleetManagement() {
   // Driver Form state (within Add Truck or standalone)
   const [driverName, setDriverName] = useState('');
   const [driverId, setDriverId] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
   const [driverImage, setDriverImage] = useState(null);
 
   // Assign Driver Modal for existing trucks
@@ -45,6 +46,7 @@ export default function FleetManagement() {
   const [selectedTruckForAssignment, setSelectedTruckForAssignment] = useState(null);
   const [assignDriverName, setAssignDriverName] = useState('');
   const [assignDriverId, setAssignDriverId] = useState('');
+  const [assignDriverPhone, setAssignDriverPhone] = useState('');
   const [assignDriverImage, setAssignDriverImage] = useState(null);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
 
@@ -151,6 +153,7 @@ export default function FleetManagement() {
     setServiceBarangays(official?.barangay && official.barangay !== 'All' ? [official.barangay] : []);
     setDriverName('');
     setDriverId('');
+    setDriverPhone('');
     setDriverImage(null);
     setBrgySearch('');
     setIsModalOpen(true);
@@ -179,6 +182,7 @@ export default function FleetManagement() {
         registrationType: 'truck',
         driverName: driverName.trim() || 'Unassigned',
         driverId: driverId.trim() || '',
+        driverPhone: driverPhone.trim() || '',
         driverImage: driverImage || null,
         truckModel: truckModel.trim(),
         plateNumber: plateNumber.trim(),
@@ -195,7 +199,7 @@ export default function FleetManagement() {
       setFleet((prev) => [data, ...prev]);
       
       // Reset forms
-      setDriverName(''); setDriverId(''); setDriverImage(null);
+      setDriverName(''); setDriverId(''); setDriverPhone(''); setDriverImage(null);
       setTruckModel(''); setPlateNumber(''); setCapacity('');
       setRoute(''); setTruckType('dedicated'); setServiceBarangays([]);
       setBrgySearch(''); setIsBrgyDropdownOpen(false);
@@ -213,6 +217,7 @@ export default function FleetManagement() {
     setSelectedTruckForAssignment(truck);
     setAssignDriverName(truck.driverName && truck.driverName !== 'Unassigned' ? truck.driverName : '');
     setAssignDriverId(truck.driverId || '');
+    setAssignDriverPhone(truck.driverPhone || '');
     setAssignDriverImage(truck.driverImage || null);
     setIsAssignModalOpen(true);
   };
@@ -228,6 +233,7 @@ export default function FleetManagement() {
       const { data } = await axios.patch(`${API}/api/fleet/${selectedTruckForAssignment.truckId}`, {
         driverName: assignDriverName.trim(),
         driverId: assignDriverId.trim(),
+        driverPhone: assignDriverPhone.trim(),
         driverImage: assignDriverImage,
       });
       setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
@@ -401,6 +407,17 @@ export default function FleetManagement() {
                             </button>
                           </div>
                           {t.driverId && <span className="text-[10px] text-slate-400 font-mono">ID: {t.driverId}</span>}
+                          {t.driverPhone && (
+                            <a
+                              href={`tel:${t.driverPhone}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[11px] text-slate-500 hover:text-emerald-600 font-medium flex items-center gap-1 mt-0.5 transition-colors"
+                              title="Call driver"
+                            >
+                              <Phone className="w-3 h-3 text-slate-400" />
+                              {t.driverPhone}
+                            </a>
+                          )}
                         </div>
                       ) : (
                         <button
@@ -818,6 +835,16 @@ export default function FleetManagement() {
                       />
                     </div>
                     <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Driver Contact Number / Phone (Optional)</label>
+                      <input
+                        type="tel"
+                        value={driverPhone}
+                        onChange={(e) => setDriverPhone(e.target.value)}
+                        placeholder="e.g. 0917 123 4567"
+                        className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Driver Picture / ID Photo</label>
                       <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-slate-50 transition-colors">
                         <input
@@ -895,6 +922,16 @@ export default function FleetManagement() {
                     value={assignDriverId}
                     onChange={(e) => setAssignDriverId(e.target.value)}
                     placeholder="e.g. DRV-1029"
+                    className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Driver Contact Number / Phone (Optional)</label>
+                  <input
+                    type="tel"
+                    value={assignDriverPhone}
+                    onChange={(e) => setAssignDriverPhone(e.target.value)}
+                    placeholder="e.g. 0917 123 4567"
                     className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm"
                   />
                 </div>
