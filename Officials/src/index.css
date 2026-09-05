@@ -30,3 +30,14 @@ body {
   background: transparent;
   border: none;
 }
+
+/* Leaflet Free Grayscale Map Filters (No API Key Required) */
+.leaflet-tile-grayscale .leaflet-tile-pane,
+.leaflet-tile-grayscale {
+  filter: grayscale(100%) contrast(108%) brightness(98%);
+}
+
+.leaflet-tile-dark .leaflet-tile-pane,
+.leaflet-tile-dark {
+  filter: grayscale(100%) invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}

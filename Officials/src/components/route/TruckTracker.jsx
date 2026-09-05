@@ -50,7 +50,8 @@ export default function TruckTracker({ trucks, selectedTruck }) {
       className="rounded-2xl z-0"
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        className="leaflet-tile-grayscale"
+        attribution='&copy; OpenStreetMap contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 

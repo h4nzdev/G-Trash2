@@ -33,7 +33,8 @@
           "color": "#006A3B",
           "sounds": []
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {

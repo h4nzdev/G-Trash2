@@ -10,6 +10,7 @@ import {
   Polygon,
   Tooltip,
   Popup,
+  useMap,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -32,10 +33,12 @@ import {
   User,
   CreditCard,
   ChevronDown,
-  Route as RouteIcon
+  Route as RouteIcon,
+  Maximize2
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
+import MapTileControl, { GOOGLE_MAP_TILES } from "../components/route/MapTileControl";
 
 // === CUSTOM IMPORTED ASSETS (SVG ICONS) ===
 import gtruck from "../assets/svg/garbage-truck.svg?url";
@@ -54,34 +57,47 @@ import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCit
  */
 function makeTruckIcon(status, heading = 0) {
   const isOnline = status === "online";
-  
-  // Side-view truck shouldn't rotate based on heading, otherwise it tilts.
-  // Instead, flip horizontally if it's moving West (between 180 and 360 degrees).
+  const pinColor = isOnline ? "#059669" : "#475569"; // Emerald green if online, Slate grey if offline
+  const pulseColor = isOnline ? "rgba(16, 185, 129, 0.4)" : "rgba(100, 116, 139, 0.2)";
   const isMovingWest = heading > 180 && heading < 360;
   const flipStyle = isMovingWest ? 'transform: scaleX(-1);' : '';
 
   return L.divIcon({
     html: `
-      <div class="relative flex flex-col items-center w-10 h-10 justify-end">
-        <!-- Pulsing Background Ring for Online Status -->
+      <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
+        <!-- Pulsing Aura Ring for Online Truck -->
         ${
           isOnline
-            ? `
-          <div class="absolute inset-0 rounded-full bg-emerald-500/20 animate-pulse-truck shadow-[0_0_0_0_rgba(5,150,105,0.7)]"></div>
-        `
+            ? `<div class="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>`
             : ""
         }
-        
-        <!-- Truck SVG Wrapper -->
-        <div style="${flipStyle}" class="relative w-8 h-8 flex items-center justify-center drop-shadow-md transition-transform duration-200">
-          <img src="${gtruck}" style="width:100%; height:100%; object-fit:contain; display:block;" alt="Garbage Truck" />
-          <!-- Shadow below truck for depth -->
-          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-black/15 rounded-full blur-[1px]"></div>
+
+        <!-- Teardrop Pinpoint Container -->
+        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.4)]">
+          <!-- Pin Head Teardrop Body -->
+          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[2.5px] border-white shadow-2xl flex items-center justify-center" style="background:${pinColor};">
+             <!-- White Inner Core Circle Housing Truck Icon -->
+             <div class="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-inner">
+               <!-- Truck SVG (Rotated back upright + flipped if moving West) -->
+               <div class="rotate-45 w-5 h-5 flex items-center justify-center" style="${flipStyle}">
+                 <img src="${gtruck}" class="w-4 h-4 object-contain" alt="Truck" />
+               </div>
+             </div>
+          </div>
+          
+          <!-- Sharp Downward Pointer Tip -->
+          <div class="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[9px] -mt-[2px]" style="border-top-color:${pinColor};"></div>
         </div>
+
+        <!-- Status Dot Badge -->
+        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white shadow-md z-20"></div>
+
+        <!-- Pinpoint Target Dot on Road Ground -->
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-emerald-600/30 border border-emerald-600 animate-pulse"></div>
       </div>
     `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 40],
+    iconSize: [48, 56],
+    iconAnchor: [24, 56],
     className: "",
   });
 }
@@ -93,36 +109,49 @@ function makeTruckIcon(status, heading = 0) {
  */
 function makeBinIcon(score) {
   const isHighUrgency = score >= 5;
-  const color = isHighUrgency ? "#dc2626" : "#eab308"; // Red (High) or Amber (Normal)
+  const bgColor = isHighUrgency ? "#9f1239" : "#e11d48"; // Rose-Red (#e11d48) or Dark Crimson (#9f1239)
+  const pulseColor = isHighUrgency ? "rgba(159, 18, 57, 0.7)" : "rgba(225, 29, 72, 0.5)";
 
   return L.divIcon({
     html: `
-      <div class="relative flex flex-col items-center w-10 h-12 justify-end">
-        <!-- Glowing Area Pulse Ring -->
-        <div class="absolute top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-${isHighUrgency ? "red" : "amber"}-500/20 animate-pulse-area pointer-events-none"></div>
-        
-        <!-- Teardrop Pin Body -->
-        <div class="w-7 h-7 rounded-[50%_50%_50%_0] -rotate-45 border-2 border-white shadow-lg flex items-center justify-center transition-colors relative z-10" style="background:${color};">
-           <!-- Trash Icon (Rotated back upright inside the tilted pin) -->
-           <div class="rotate-45 flex items-center justify-center w-5 h-5 text-white -mt-1 -ml-1">
-             <img src="${trashIcon}" class="w-3.5 h-3.5 brightness-0 invert" alt="trash" />
-           </div>
-        </div>
-        
-        <!-- Sharp Triangle Tip to make it point directly down -->
-        <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] -mt-[1px] filter drop-shadow-sm z-10" style="border-top-color:${color};"></div>
+      <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
+        <!-- Pulsing Red Hazard Aura -->
+        <div class="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>
 
-        <!-- Score Badge (Always shown) -->
-        <div class="absolute -top-1 -right-1 w-5 h-5 ${isHighUrgency ? 'bg-red-600' : 'bg-amber-500'} text-white rounded-full text-[9px] font-bold flex items-center justify-center border-[1.5px] border-white shadow-sm z-20 animate-pop-in">
+        <!-- Teardrop Pin Container -->
+        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.45)]">
+          <!-- Pin Head (Crimson Red with Dark Core) -->
+          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[3px] border-white shadow-2xl flex items-center justify-center" style="background:${bgColor};">
+             <!-- Dark Contrast Inner Core -->
+             <div class="w-7 h-7 rounded-full bg-slate-950 flex items-center justify-center shadow-inner">
+               <!-- Rotated back upright SVG Warning Trash Can Icon -->
+               <div class="rotate-45 text-amber-400 flex items-center justify-center">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                   <path d="M3 6h18"/>
+                   <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                   <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                   <line x1="10" y1="11" x2="10" y2="17"/>
+                   <line x1="14" y1="11" x2="14" y2="17"/>
+                 </svg>
+               </div>
+             </div>
+          </div>
+          
+          <!-- Downward Pointer Tip -->
+          <div class="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[9px] -mt-[2px]" style="border-top-color:${bgColor};"></div>
+        </div>
+
+        <!-- Score / Upvote Badge -->
+        <div class="absolute -top-1 -right-1 min-w-[22px] h-5 px-1 bg-amber-400 text-slate-950 rounded-full text-[10px] font-black flex items-center justify-center border-2 border-white shadow-xl z-20">
           ${score}
         </div>
         
-        <!-- Pin Drop Shadow -->
-        <div class="absolute -bottom-0 w-6 h-1 bg-black/20 rounded-full blur-[1px]"></div>
+        <!-- Ground Shadow -->
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-black/40 rounded-full blur-[1px]"></div>
       </div>
     `,
-    iconSize: [40, 48],
-    iconAnchor: [20, 48], // Anchors exactly at the very bottom tip
+    iconSize: [48, 56],
+    iconAnchor: [24, 56],
     className: "",
   });
 }
@@ -134,20 +163,23 @@ function makeStopIcon(n, isFirst, isLast, isCompleted, isCurrent) {
   const bg = isCompleted
     ? "#10b981"
     : isCurrent
-      ? "#3b82f6"
+      ? "#2563eb"
       : isFirst
-        ? "#10b981"
+        ? "#059669"
         : isLast
           ? "#dc2626"
-          : "#cbd5e1";
+          : "#64748b";
   return L.divIcon({
     html: `
-      <div class="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] text-white shadow-md transition-colors border-2 border-white" style="background:${bg};">
-        ${isCompleted ? "✓" : n}
+      <div class="relative flex items-center justify-center">
+        ${isCurrent ? '<div class="absolute -inset-1 rounded-full bg-blue-500/40 animate-ping"></div>' : ''}
+        <div class="relative w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-[11px] text-white shadow-lg transition-colors border-2 border-white drop-shadow-md" style="background:${bg}; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
+          ${isCompleted ? "✓" : n}
+        </div>
       </div>
     `,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
     className: "",
   });
 }
@@ -455,7 +487,7 @@ export default function RouteMonitoring() {
   const [assignTarget, setAssignTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deviationAlerts, setDeviationAlerts] = useState([]);
-  const [isSatellite, setIsSatellite] = useState(false);
+  const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [showReports, setShowReports] = useState(true);
   const socketRef = useRef(null);
 
@@ -512,13 +544,26 @@ export default function RouteMonitoring() {
         : mappedRoutes;
 
       setRoutes(filteredRoutes);
+      setFleet(fleetRes.data);
+
+      // Filter visible trucks by official's barangay restriction
+      const officialBrgy = official?.barangay?.toLowerCase();
+      const isRestricted = officialBrgy && officialBrgy !== 'all';
+      
+      const allowedTruckIds = isRestricted
+        ? new Set([
+            ...fleetRes.data.filter(f => f.barangay?.toLowerCase() === officialBrgy).map(f => f.truckId),
+            ...filteredRoutes.map(r => r.truckId).filter(Boolean)
+          ])
+        : null;
 
       const truckMap = {};
       trucksRes.data.forEach((t) => {
-        truckMap[t.truckId] = t;
+        if (!allowedTruckIds || allowedTruckIds.has(t.truckId)) {
+          truckMap[t.truckId] = t;
+        }
       });
       setTrucks(truckMap);
-      setFleet(fleetRes.data);
       setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
     } catch (err) {
       console.error("Failed to load route monitoring data:", err);
@@ -943,15 +988,20 @@ export default function RouteMonitoring() {
                 zoomControl={false}
               >
                 <TileLayer
-                  key={isSatellite ? "satellite" : "street"}
-                  url={
-                    isSatellite
-                      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  key={activeTileKey}
+                  className={
+                    GOOGLE_MAP_TILES[activeTileKey]?.className ||
+                    "leaflet-tile-grayscale"
                   }
-                  attribution="&copy; OpenStreetMap contributors"
+                  url={
+                    GOOGLE_MAP_TILES[activeTileKey]?.url ||
+                    GOOGLE_MAP_TILES.grayscale.url
+                  }
+                  attribution={
+                    GOOGLE_MAP_TILES[activeTileKey]?.attribution ||
+                    "&copy; OpenStreetMap contributors"
+                  }
                 />
-
 
                 {/* Route Polylines */}
                 {mappableRoutes.map((route) => {
@@ -964,17 +1014,24 @@ export default function RouteMonitoring() {
                   if (validCoords.length === 0) return null;
                   return (
                     <span key={route._id}>
+                      {/* High-Contrast Polyline Casing */}
+                      <Polyline
+                        positions={validCoords}
+                        color="#ffffff"
+                        weight={isSelected ? 8 : 6}
+                        opacity={0.9}
+                      />
                       <Polyline
                         positions={validCoords}
                         color={
                           isSelected
                             ? "#059669"
                             : hasDriver
-                              ? "#3b82f6"
-                              : "#94a3b8"
+                              ? "#2563eb"
+                              : "#64748b"
                         }
-                        weight={isSelected ? 4 : 3}
-                        opacity={isSelected ? 0.9 : 0.7}
+                        weight={isSelected ? 5 : 3.5}
+                        opacity={1.0}
                         eventHandlers={{
                           click: () =>
                             setSelectedRoute(isSelected ? null : route),
@@ -1068,61 +1125,52 @@ export default function RouteMonitoring() {
 
             {/* ── MAP OVERLAYS ── */}
 
-            {/* Top Right Controls */}
-            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
-              <button
-                onClick={() => setIsSatellite((prev) => !prev)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold shadow-md bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
-              >
-                <Layers className="w-3.5 h-3.5" />{" "}
-                {isSatellite ? "Street" : "Satellite"}
-              </button>
+            {/* Google Maps Style Control (Top Right) */}
+            <MapTileControl
+              activeTileKey={activeTileKey}
+              onChangeTile={setActiveTileKey}
+            />
+
+            {/* Additional Top Right Actions */}
+            <div className="absolute top-14 right-3 z-[1000] flex flex-col gap-2">
               <button
                 onClick={() => setShowReports((prev) => !prev)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold shadow-md bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg bg-white/95 backdrop-blur-md text-slate-700 border border-slate-200/80 hover:bg-slate-50 transition-all"
               >
-                <AlertTriangle className="w-3.5 h-3.5" />{" "}
-                {showReports ? "Hide" : "Show"}
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{" "}
+                {showReports ? "Hide Alerts" : "Show Alerts"}
               </button>
             </div>
 
-            {/* LEGEND BOX (Positioned below controls to avoid overlap) */}
-            <div className="absolute top-36 right-4 z-[1000] bg-white p-4 rounded-xl shadow-md border border-slate-200 min-w-[140px]">
+            {/* LEGEND BOX */}
+            <div className="absolute top-28 right-3 z-[1000] bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-xl border border-slate-200/80 min-w-[150px]">
               <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">
                 Legend
               </h4>
               <div className="space-y-2">
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck
-                  (Current)
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck (Live)
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-4 h-1 bg-emerald-500 rounded-full"></div>{" "}
-                  Completed Route
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-4 h-1 bg-emerald-600 rounded-full"></div> Selected Route
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-4 h-1 bg-emerald-500 rounded-full"></div>{" "}
-                  Active Route
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-4 h-1 bg-blue-600 rounded-full"></div> Active Route
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-4 h-1 bg-slate-300 rounded-full"></div>{" "}
-                  Upcoming Route
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-4 h-1 bg-slate-400 rounded-full"></div> Inactive Route
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm"></div>{" "}
-                  Completed Stop
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm flex items-center justify-center text-[8px] text-white font-bold">✓</div> Completed Stop
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-3.5 h-3.5 bg-emerald-600 rounded-full border border-white shadow-sm"></div>{" "}
-                  Current Stop
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-3.5 h-3.5 bg-blue-600 rounded-full border border-white shadow-sm"></div> Current Stop
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600">
-                  <div className="w-3.5 h-3.5 bg-white border border-slate-300 rounded-full shadow-sm"></div>{" "}
-                  Upcoming Stop
+                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                  <div className="w-3.5 h-3.5 bg-slate-500 rounded-full border border-white shadow-sm"></div> Upcoming Stop
                 </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 pt-2 border-t border-slate-100 mt-2">
-                  <div className="w-3.5 h-3.5 border border-dashed border-emerald-400 rounded-full bg-emerald-50/50"></div>{" "}
-                  Barangay Boundary
+                <div className="flex items-center gap-2.5 text-[11px] text-rose-700 font-semibold pt-1 border-t border-slate-100 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Waste Report Alert
                 </div>
               </div>
             </div>

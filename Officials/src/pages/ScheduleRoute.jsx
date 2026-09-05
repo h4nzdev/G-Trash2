@@ -718,8 +718,9 @@ export default function ScheduleRoute() {
                           zoomControl={false}
                         >
                           <TileLayer
+                            className="leaflet-tile-grayscale"
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            attribution='&copy; OpenStreetMap'
+                            attribution='&copy; OpenStreetMap contributors'
                           />
                           {selectedSitios.map((name, index) => {
                             const s = sitioList.find(s => s.name === name);
@@ -802,8 +803,9 @@ export default function ScheduleRoute() {
                             zoomControl={false}
                           >
                             <TileLayer
+                              className="leaflet-tile-grayscale"
                               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                              attribution='&copy; OpenStreetMap'
+                              attribution='&copy; OpenStreetMap contributors'
                             />
                             {newSitioLat && newSitioLng && (
                               <CircleMarker
