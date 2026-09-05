@@ -2185,12 +2185,20 @@ app.get("/api/reports/:id/suggestions", async (req, res) => {
       Fleet.find({}).lean(),
     ]);
 
-    // 1. Nearest route suggestion
+    // 1. Nearest route suggestion (restricted to the report's barangay to prevent cross-border suggestion issues)
     if (report.lat != null && report.lng != null) {
       let nearestRoute = null;
       let nearestDist = Infinity;
 
-      for (const route of routes) {
+      const barangayRoutes = report.barangay
+        ? routes.filter(
+            (route) =>
+              route.barangay &&
+              route.barangay.trim().toLowerCase() === report.barangay.trim().toLowerCase()
+          )
+        : routes;
+
+      for (const route of barangayRoutes) {
         for (const wp of route.waypoints || []) {
           if (wp.lat == null || wp.lng == null) continue;
           const d = haversineM(report.lat, report.lng, wp.lat, wp.lng);
@@ -2209,6 +2217,7 @@ app.get("/api/reports/:id/suggestions", async (req, res) => {
             lat: report.lat,
             lng: report.lng,
             stopName: report.location || report.barangay || "Reported Location",
+            distance: nearestDist,
           },
         });
       }
@@ -2246,20 +2255,21 @@ app.get("/api/reports/:id/suggestions", async (req, res) => {
       });
     }
 
-    // 4. Groq AI insight (fire async, with 8s timeout)
+    // 4. Groq AI insight (fire async, with 8s timeout) or fallback Recommended Action
     const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    const routeContext = suggestions.find((s) => s.type === "route");
+
     if (GROQ_API_KEY) {
-      const routeContext = suggestions.find((s) => s.type === "route");
-      const systemMsg = `You are a smart assistant for G-TRASH, a waste management system in Cebu City, Philippines. Give a 1-2 sentence practical action recommendation for the barangay official. Be concise and specific.`;
+      const systemMsg = `You are a smart assistant for G-TRASH, a waste management system in Cebu City, Philippines. Give a 1-2 sentence practical, actionable recommendation for the barangay official. Do not always recommend route modifications or adding route stops. Instead, suggest diverse actions such as site inspection, sending personnel to verify the situation, dispatching a scout, checking on the nearest collector, coordinating with residents, or raising local awareness. Be concise and specific.`;
       const userMsg = `Garbage report details:
 - Category: ${report.category}
 - Location: ${report.location || "Unknown"}, Barangay ${report.barangay}
 - Description: ${report.description}
 - Status: ${report.status}
 - Community Urgency Score: +${urgencyScore}
-${routeContext ? `- Nearest route: ${routeContext.action.routeName} (${Math.round(haversineM(report.lat, report.lng, 0, 0))} m — use the route context above)` : ""}
+${routeContext ? `- Nearest route in same barangay: ${routeContext.action.routeName} (${Math.round(routeContext.action.distance)} meters away)` : ""}
 
-What should the official do first?`;
+What should the official do first? Please suggest a diverse range of immediate actions (such as investigating, verifying, checking, or mobilizing collectors) rather than just adding route stops.`;
 
       const aiText = await new Promise((resolve) => {
         const body = JSON.stringify({
@@ -2297,7 +2307,23 @@ What should the official do first?`;
 
       if (aiText) {
         suggestions.push({ type: "ai", title: "AI Recommendation", description: aiText, action: null });
+      } else {
+        // Fallback if AI fails or times out
+        suggestions.push({
+          type: "ai",
+          title: "AI Recommendation (Offline)",
+          description: `Dispatch a barangay personnel to check and verify the report status at ${report.location || "the location"} before dispatching a truck.`,
+          action: null,
+        });
       }
+    } else {
+      // No Groq API Key
+      suggestions.push({
+        type: "ai",
+        title: "Recommended Action",
+        description: `Dispatch a barangay personnel to check and verify the report status at ${report.location || "the location"} before assigning a collector.`,
+        action: null,
+      });
     }
 
     res.json(suggestions);
@@ -3940,21 +3966,47 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
     if (!schedule) {
       return res.status(404).json({ error: "Schedule not found" });
     }
-    
+
+    // Preserve old status for validation
+    const oldStatus = schedule.status;
+    // Validation for completing schedule
+    if (true) { // always attempting to complete via this endpoint
+      // Must have at least one sitio task
+      if (!schedule.sitioTasks || schedule.sitioTasks.length === 0) {
+        return res.status(400).json({ error: 'Schedule must have at least one sitio task before completion.' });
+      }
+      // Ensure all sitioTasks are completed
+      if (schedule.sitioTasks.some(t => !t.completed)) {
+        return res.status(400).json({ error: 'All sitio tasks must be completed before marking schedule as completed.' });
+      }
+      // Ensure a driver is assigned
+      if (!schedule.driverName || !schedule.driverName.trim()) {
+        return res.status(400).json({ error: 'Schedule must have a driver assigned before completion.' });
+      }
+      // Ensure the schedule was previously accepted
+      if (oldStatus !== "accepted") {
+        return res.status(400).json({ error: 'Schedule must be in accepted state before completing.' });
+      }
+    }
+
+    // Update status to completed
     schedule.status = "completed";
+    // Ensure sitio tasks are flagged completed (in case they aren't already)
     if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach(t => {
         t.completed = true;
         if (!t.completedAt) t.completedAt = new Date();
       });
     }
-    
+
     await schedule.save();
-    
-    io.emit("schedule:changed", {
-      truckId: schedule.truckId,
-      date: schedule.date,
-    });
+
+    // Award points to barangay (10 points per schedule)
+    const POINTS_PER_SCHEDULE = 10;
+    await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null,
+      `Schedule ${schedule._id} completed`);
+
+    io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
     res.json(schedule);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3986,9 +4038,20 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
     }
 
     // Auto-complete main schedule if all sitio tasks are completed
-    const allDone = schedule.sitioTasks.every(t => t.completed);
+    const allDone = schedule.sitioTasks && schedule.sitioTasks.every(t => t.completed);
     if (allDone) {
+      // Validation before auto-completing
+      if (!schedule.driverName || !schedule.driverName.trim()) {
+        return res.status(400).json({ error: 'Schedule must have a driver assigned before auto-completing.' });
+      }
+      if (schedule.status !== "accepted") {
+        return res.status(400).json({ error: 'Schedule must be in accepted state before auto-completing.' });
+      }
+      // All checks passed – mark completed and award points
       schedule.status = "completed";
+      const POINTS_PER_SCHEDULE = 10;
+      await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null,
+        `Schedule ${schedule._id} auto-completed`);
     }
 
     await schedule.save();
@@ -4053,6 +4116,28 @@ app.patch("/api/schedules/:id/status", authMiddleware, async (req, res) => {
     const schedule = await Schedule.findById(req.params.id);
     if (!schedule) return res.status(404).json({ error: "Schedule not found" });
 
+    // Preserve old status for validation
+    const oldStatus = schedule.status;
+    // Validation for completing schedule
+    if (status === "completed") {
+      // Must have at least one sitio task
+      if (!schedule.sitioTasks || schedule.sitioTasks.length === 0) {
+        return res.status(400).json({ error: 'Schedule must have at least one sitio task before completion.' });
+      }
+      // Ensure all sitioTasks are completed
+      if (schedule.sitioTasks.some(t => !t.completed)) {
+        return res.status(400).json({ error: 'All sitio tasks must be completed before marking schedule as completed.' });
+      }
+      // Ensure a driver is assigned (non‑empty string)
+      if (!schedule.driverName || !schedule.driverName.trim()) {
+        return res.status(400).json({ error: 'Schedule must have a driver assigned before completion.' });
+      }
+      // Ensure the schedule was previously accepted
+      if (oldStatus !== "accepted") {
+        return res.status(400).json({ error: 'Schedule must be in accepted state before completing.' });
+      }
+    }
+    // Update status
     schedule.status = status;
     if (status === "completed" && schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach(t => {
@@ -4069,6 +4154,11 @@ app.patch("/api/schedules/:id/status", authMiddleware, async (req, res) => {
     }
 
     await schedule.save();
+    // Award points for completed schedule
+    if (status === "completed") {
+      const POINTS_PER_SCHEDULE = 10;
+      await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null, `Schedule ${schedule._id} completed`);
+    }
     io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
     res.json(schedule);
   } catch (err) {
@@ -5456,6 +5546,30 @@ app.patch("/api/rewards/:id", async (req, res) => {
     } else if (action === "expire") {
       reward.status = "expired";
       await reward.save();
+      // Validation for completing schedule
+      if (status === 'completed') {
+        // Ensure all sitioTasks are completed
+        if (schedule.sitioTasks?.some(t => !t.completed)) {
+          return res.status(400).json({ error: 'All sitio tasks must be completed before marking schedule as completed.' });
+        }
+        // Ensure a driver is assigned
+        if (!schedule.driverName) {
+          return res.status(400).json({ error: 'Schedule must have a driver assigned before completion.' });
+        }
+        // Ensure the schedule was previously accepted
+        if (schedule.status !== 'accepted') {
+          return res.status(400).json({ error: 'Schedule must be in accepted state before completing.' });
+        }
+        // Award points to barangay
+        const POINTS_PER_SCHEDULE = 10;
+        const barangayName = schedule.barangay;
+        // Increment points in BarangayScore (atomic)
+        await BarangayScore.findOneAndUpdate({ barangay: barangayName }, { $inc: { points: POINTS_PER_SCHEDULE } }, { upsert: true });
+        // Optional: log the award
+        if (typeof PointsLog !== 'undefined') {
+          await PointsLog.create({ barangay: barangayName, scheduleId: schedule._id, points: POINTS_PER_SCHEDULE });
+        }
+      }
     } else if (action === "revoke") {
       const hoursSincePublish = reward.issuedDate
         ? (Date.now() - new Date(reward.issuedDate).getTime()) / 3600000
