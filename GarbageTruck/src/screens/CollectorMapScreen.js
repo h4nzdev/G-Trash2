@@ -576,6 +576,7 @@ export default function CollectorMapScreen() {
   const [activeScheduleId, setActiveScheduleId] = useState(null);
   const [hazardOptimizeActive, setHazardOptimizeActive] = useState(false);
   const shouldNotifyRef = useRef(false);
+  const [currentStopIndex, setCurrentStopIndex] = useState(0);
 
   // Fetch all of today's schedules for this truck
   const fetchTodaySchedules = useCallback((notifyResidents = false) => {
@@ -744,6 +745,35 @@ export default function CollectorMapScreen() {
 
   const activeSchedule = todaySchedules?.find(s => s._id === activeScheduleId);
   const assignedRouteBarangay = activeSchedule?.barangay || activeSchedule?.routeName || '';
+
+  const allStops = useMemo(() => {
+    if (sitioList && sitioList.length > 0) {
+      return sitioList.map((s, idx) => ({
+        id: s._id || idx,
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        completed: todaySchedules?.some(sched =>
+          sched.sitioTasks?.some(t => t.name?.toLowerCase() === s.name?.toLowerCase() && t.completed)
+        ) || false,
+        schedId: activeScheduleId
+      }));
+    }
+    if (todaySchedules && todaySchedules.length > 0) {
+      const stops = [];
+      todaySchedules.forEach(sched => {
+        if (sched.sitioTasks && sched.sitioTasks.length > 0) {
+          sched.sitioTasks.forEach(t => stops.push({ name: t.name, lat: t.lat, lng: t.lng, completed: !!t.completed, schedId: sched._id }));
+        } else {
+          stops.push({ name: sched.sitio || sched.barangay || 'Stop', lat: sched.lat || 10.325, lng: sched.lng || 123.893, completed: sched.status === 'completed', schedId: sched._id });
+        }
+      });
+      return stops;
+    }
+    return [{ name: 'Main St.', lat: 10.325, lng: 123.893, completed: false }];
+  }, [sitioList, todaySchedules, activeScheduleId]);
+
+  const currentStop = allStops[currentStopIndex] || allStops[0];
 
   // Fetch today's bin preparation counts for assigned area/barangay
   useEffect(() => {
@@ -949,6 +979,33 @@ export default function CollectorMapScreen() {
 
     socket.on("schedule:changed", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
+    });
+
+    socket.on("priority:update", (data) => {
+      if (!data?.truckId || data.truckId.toUpperCase() === TRUCK_ID.toUpperCase()) {
+        fetchTodaySchedules();
+        if (data.lat && data.lng && webViewRef.current) {
+          webViewRef.current?.injectJavaScript(
+            `window.centerMap(${data.lat}, ${data.lng}); true;`
+          );
+        }
+      }
+    });
+
+    socket.on("truck:priority:alert", (data) => {
+      Alert.alert(
+        data.title || "🚨 PRIORITY AREA DISPATCH",
+        data.message || "A high priority collection area has been assigned to your route.",
+        [
+          {
+            text: "View Priority Route",
+            onPress: () => {
+              fetchTodaySchedules();
+              setCurrentStopIndex(0);
+            }
+          }
+        ]
+      );
     });
 
     socket.on("bin:status:update", ({ barangay, preparedCount, pickedUpCount }) => {
@@ -1411,41 +1468,132 @@ export default function CollectorMapScreen() {
               )}
             </View>
           ) : (
-            /* Active Guidance Mode */
-            <View style={styles.guidanceMode} pointerEvents="box-none">
-              {isFocusMode && (
-                <View style={styles.focusGuidanceBanner}>
-                  <View style={styles.focusGuidanceTop}>
-                    <View style={styles.focusTurnIconBox}>
-                      <MaterialIcons name="local-shipping" size={32} color="#FFF" />
-                    </View>
-                    <View style={styles.focusGuidanceText}>
-                      <Text style={styles.focusDistanceText}>{currentSpeed} km/h</Text>
-                      <Text style={styles.focusStreetText}>Active in {assignedRouteBarangay || 'Assigned Area'}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.focusGuidanceDivider} />
-                  <View style={styles.focusGuidanceBottom}>
-                    <View style={styles.focusStatsBox}>
-                      <Text style={styles.focusStatLabel}>DURATION</Text>
-                      <Text style={styles.focusStatValue}>{elapsedDisplay}</Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={styles.focusStopBtn}
-                      onPress={stopNavigation}
-                    >
-                      <Text style={styles.focusStopBtnText}>EXIT SHIFT</Text>
-                    </TouchableOpacity>
-                  </View>
+            /* Active Guidance Mode UI - matching uploaded layout in #006A3B theme */
+            <View style={styles.shiftGuidanceContainer} pointerEvents="box-none">
+              {/* Top Navigation Banner Overlay */}
+              <View style={[styles.topBannerCard, { marginTop: Math.max(10, topInset) }]}>
+                <View style={styles.turnIconWrap}>
+                  <MaterialIcons name="turn-left" size={28} color="#FFFFFF" />
                 </View>
-              )}
+                <View style={styles.bannerTextWrap}>
+                  <Text style={styles.bannerNextStopText} numberOfLines={1}>
+                    NEXT STOP: {currentStop?.name ? currentStop.name.toUpperCase() : 'MAIN ST.'}
+                  </Text>
+                  <Text style={styles.bannerSubtext} numberOfLines={1}>
+                    {assignedRouteBarangay ? `${assignedRouteBarangay} Waste Collection` : 'Scheduled Collection'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* MAP > Tag Pill Button */}
+              <TouchableOpacity
+                style={[styles.mapPillBtn, { top: Math.max(10, topInset) + 76 }]}
+                onPress={() => {
+                  if (currentLocation && webViewRef.current) {
+                    webViewRef.current?.injectJavaScript(
+                      `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
+                    );
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.mapPillText}>MAP ›</Text>
+              </TouchableOpacity>
+
+              {/* Right Control Panel Sidebar */}
+              <View style={[styles.rightControlPanel, { top: Math.max(10, topInset) + 76 }]}>
+                <View style={styles.panelHeaderBlock}>
+                  <Text style={styles.panelCollectHeader}>COLLECT</Text>
+                  <Text style={styles.panelBinText} numberOfLines={1}>
+                    {currentStop?.name ? (currentStop.name.length > 8 ? `BIN ${currentStopIndex + 1}` : currentStop.name.toUpperCase()) : `BIN ${currentStopIndex + 1}`}
+                  </Text>
+                  <Text style={styles.panelLocationSub}>LOCATION</Text>
+                </View>
+
+                {/* Button 1: Top Right Arrow (Zoom/Center Target Stop) */}
+                <TouchableOpacity
+                  style={styles.panelBtnPrimary}
+                  onPress={() => {
+                    if (currentStop?.lat && currentStop?.lng && webViewRef.current) {
+                      webViewRef.current?.injectJavaScript(
+                        `window.centerMap(${currentStop.lat}, ${currentStop.lng}); true;`
+                      );
+                    } else if (currentLocation && webViewRef.current) {
+                      webViewRef.current?.injectJavaScript(
+                        `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
+                      );
+                    }
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="north-east" size={28} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                {/* Button 2: Left Arrow (Previous Stop / Focus Target) */}
+                <TouchableOpacity
+                  style={styles.panelBtnOutline}
+                  onPress={() => {
+                    if (allStops.length > 0) {
+                      const prevIdx = (currentStopIndex - 1 + allStops.length) % allStops.length;
+                      setCurrentStopIndex(prevIdx);
+                      const target = allStops[prevIdx];
+                      if (target?.lat && target?.lng && webViewRef.current) {
+                        webViewRef.current?.injectJavaScript(
+                          `window.centerMap(${target.lat}, ${target.lng}); true;`
+                        );
+                      }
+                    }
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="west" size={26} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                {/* Button 3: Right Arrow (Mark Stop Clean / Next Stop) */}
+                <TouchableOpacity
+                  style={styles.panelBtnPrimary}
+                  onPress={() => {
+                    if (currentStop && !currentStop.completed && activeSchedule?._id) {
+                      handleMarkStopClean(activeSchedule._id, currentStop.name);
+                    }
+                    if (allStops.length > 0) {
+                      const nextIdx = (currentStopIndex + 1) % allStops.length;
+                      setCurrentStopIndex(nextIdx);
+                      const target = allStops[nextIdx];
+                      if (target?.lat && target?.lng && webViewRef.current) {
+                        webViewRef.current?.injectJavaScript(
+                          `window.centerMap(${target.lat}, ${target.lng}); true;`
+                        );
+                      }
+                    }
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="east" size={28} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Bottom Left Floating End Shift Action */}
+              <TouchableOpacity
+                style={styles.bottomLeftExitBtn}
+                onPress={stopNavigation}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="stop" size={20} color="#FFFFFF" />
+                <Text style={styles.bottomLeftExitText}>END SHIFT</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
 
         {/* Floating Actions Overlay */}
         {!isFocusMode && (
-          <View style={[styles.floatingActions, { top: Math.max(16, topInset) }]}>
+          <View style={[
+            styles.floatingActions,
+            navigationActive
+              ? { left: 14, top: Math.max(10, topInset) + 125 }
+              : { right: 16, top: Math.max(16, topInset) }
+          ]}>
             <TouchableOpacity
               style={[
                 styles.floatingBtn,
@@ -3434,5 +3582,166 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#006A3B',
+  },
+
+  /* New Shift Navigation Overlay Styles (Matching Design Layout) */
+  shiftGuidanceContainer: {
+    flex: 1,
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  topBannerCard: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    backgroundColor: '#006A3B',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 20,
+  },
+  turnIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  bannerTextWrap: {
+    flex: 1,
+  },
+  bannerNextStopText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  bannerSubtext: {
+    color: '#A7F3D0',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  mapPillBtn: {
+    position: 'absolute',
+    left: 14,
+    backgroundColor: '#006A3B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 20,
+  },
+  mapPillText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  rightControlPanel: {
+    position: 'absolute',
+    right: 14,
+    width: 140,
+    backgroundColor: '#111827',
+    borderRadius: 20,
+    padding: 14,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 20,
+  },
+  panelHeaderBlock: {
+    alignItems: 'center',
+    marginBottom: 12,
+    width: '100%',
+  },
+  panelCollectHeader: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  panelBinText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    marginVertical: 2,
+    textAlign: 'center',
+  },
+  panelLocationSub: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  panelBtnPrimary: {
+    width: '100%',
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: '#006A3B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 4,
+    shadowColor: '#006A3B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  panelBtnOutline: {
+    width: '100%',
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 6,
+  },
+  bottomLeftExitBtn: {
+    position: 'absolute',
+    left: 14,
+    bottom: 95,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+    zIndex: 20,
+  },
+  bottomLeftExitText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

@@ -155,6 +155,8 @@ const reportSchema = new mongoose.Schema({
   assignedDriver: { type: String, default: null },
   healthConcern: { type: Boolean, default: false },
   healthNotes: [{ text: String, addedBy: String, createdAt: { type: Date, default: Date.now } }],
+  isPriorityArea: { type: Boolean, default: false },
+  priorityScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "Schedule", default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Report = mongoose.model("Report", reportSchema);
@@ -212,6 +214,9 @@ const scheduleSchema = new mongoose.Schema({
   endTime: { type: String, default: "" }, // Optional HH:MM
   status: { type: String, enum: ["pending", "accepted", "completed", "missed"], default: "pending" },
   notes: { type: String, default: "" },
+  isPriority: { type: Boolean, default: false },
+  priorityLevel: { type: String, enum: ["Normal", "High", "Critical"], default: "Normal" },
+  priorityReason: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
 const Schedule = mongoose.model("Schedule", scheduleSchema);
@@ -3815,7 +3820,7 @@ app.post("/api/sitios", authMiddleware, async (req, res) => {
 
 app.post("/api/schedules", authMiddleware, async (req, res) => {
   try {
-    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio, sitios: rawSitios } =
+    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio, sitios: rawSitios, isPriority, priorityLevel, priorityReason } =
       req.body;
     const truckId = rawTruckId?.toUpperCase();
     if (!date || !truckId)
@@ -3881,7 +3886,6 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       console.log(`[ORS Routing] Attempting road routing for ${sitioTasks.length} stops:`, sitioTasks.map(t => t.name).join(' -> '));
       try {
         const coordinates = sitioTasks.map(t => [t.lng, t.lat]);
-        console.log(`[ORS Routing] Sending coordinates:`, JSON.stringify(coordinates));
         const orsRes = await axios.post(
           'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
           { coordinates },
@@ -3896,28 +3900,19 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
         const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
         if (coords && coords.length > 0) {
           routeCoords = coords.map(c => [c[1], c[0]]);
-          console.log(`[ORS Routing] SUCCESS! Received ${routeCoords.length} detailed road path points.`);
-        } else {
-          console.warn(`[ORS Routing] WARNING: Response had no features geometry coordinates.`);
         }
       } catch (err) {
         console.error(`[ORS Routing] ERROR: Request failed:`, err.message);
-        if (err.response) {
-          console.error(`[ORS Routing] Response status:`, err.response.status, `body:`, JSON.stringify(err.response.data));
-        }
       }
-    } else {
-      console.log(`[ORS Routing] Less than 2 stops scheduled. Skipping routing.`);
     }
     if (routeCoords.length === 0) {
       routeCoords = sitioTasks.map(t => [t.lat, t.lng]);
-      console.log(`[ORS Routing] Using straight lines fallback with ${routeCoords.length} points.`);
     }
 
     const schedule = await Schedule.create({
       date,
       truckId,
-      driverName,
+      driverName: driverName || fleet?.driverName || "",
       driverPhone: fleet?.driverPhone || req.body.driverPhone || "",
       routeId: routeId || null,
       routeName: finalRouteName,
@@ -3928,19 +3923,126 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       startTime: startTime || "",
       endTime: endTime || "",
       notes,
+      isPriority: !!isPriority || priorityLevel === "High" || priorityLevel === "Critical",
+      priorityLevel: priorityLevel || (isPriority ? "High" : "Normal"),
+      priorityReason: priorityReason || "",
     });
+
     io.emit("schedule:changed", { truckId, date });
+
+    if (schedule.isPriority) {
+      io.emit("priority:update", {
+        truckId,
+        scheduleId: schedule._id,
+        priorityLevel: schedule.priorityLevel,
+        reason: schedule.priorityReason || finalRouteName,
+        date,
+      });
+
+      io.to(`truck:${truckId}`).emit("truck:priority:alert", {
+        title: "⚠️ Priority Route Assigned",
+        message: `High Priority Area route assigned: ${finalRouteName}`,
+        scheduleId: schedule._id,
+        priorityLevel: schedule.priorityLevel,
+      });
+    }
 
     // Push notification to the assigned truck
     const timeLabel = startTime ? ` at ${startTime}` : "";
     notifyTruck(
       truckId,
-      "New Schedule Assigned",
+      schedule.isPriority ? "🚨 Priority Schedule Assigned" : "New Schedule Assigned",
       `You have been scheduled for "${finalRouteName || "a route"}" on ${date}${timeLabel}.`,
       { type: "schedule", scheduleId: schedule._id.toString(), date, routeName: finalRouteName },
     );
 
     res.status(201).json(schedule);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Assign a report to a truck with High Priority
+app.post("/api/reports/:id/assign-priority", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { truckId: rawTruckId, date, priorityLevel = "High", reason = "Priority Report Dispatch" } = req.body;
+    const truckId = rawTruckId?.toUpperCase();
+
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ error: "Report not found" });
+
+    report.isPriorityArea = true;
+    report.priority = priorityLevel;
+    report.status = "in-progress";
+    if (truckId) {
+      report.assignedTruck = truckId;
+      const fleetEntry = await Fleet.findOne({ truckId });
+      if (fleetEntry) report.assignedDriver = fleetEntry.driverName;
+    }
+    await report.save();
+
+    let schedule = null;
+    if (truckId) {
+      const scheduleDate = date || getTodayYMD();
+      schedule = await Schedule.findOne({ truckId, date: scheduleDate, status: { $ne: "completed" } });
+
+      const newSitioTask = {
+        name: report.sitio || report.location || "Priority Report Area",
+        lat: report.lat || 10.325,
+        lng: report.lng || 123.893,
+        completed: false,
+      };
+
+      if (schedule) {
+        schedule.isPriority = true;
+        schedule.priorityLevel = priorityLevel;
+        schedule.priorityReason = reason || report.title;
+        if (!schedule.sitioTasks.some(t => t.name.toLowerCase() === newSitioTask.name.toLowerCase())) {
+          schedule.sitioTasks.unshift(newSitioTask);
+        }
+        await schedule.save();
+      } else {
+        schedule = await Schedule.create({
+          date: scheduleDate,
+          truckId,
+          driverName: report.assignedDriver || "",
+          routeName: `Priority Report: ${report.location || report.barangay}`,
+          barangay: report.barangay || "Priority Area",
+          sitio: report.sitio || report.location || "",
+          sitioTasks: [newSitioTask],
+          routeCoords: [[newSitioTask.lat, newSitioTask.lng]],
+          isPriority: true,
+          priorityLevel,
+          priorityReason: reason || report.title,
+          status: "pending",
+        });
+      }
+
+      report.priorityScheduleId = schedule._id;
+      await report.save();
+
+      io.emit("priority:update", {
+        truckId,
+        scheduleId: schedule._id,
+        reportId: report._id,
+        priorityLevel,
+        location: report.location || report.sitio,
+        reason: reason || report.title,
+        lat: report.lat,
+        lng: report.lng,
+      });
+
+      io.to(`truck:${truckId}`).emit("truck:priority:alert", {
+        title: "⚠️ Priority Area Dispatch",
+        message: `High Priority report assigned at ${report.location || report.sitio}`,
+        scheduleId: schedule._id,
+        priorityLevel,
+      });
+      io.emit("schedule:changed", { truckId, date: scheduleDate });
+    }
+
+    res.json({ report, schedule });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

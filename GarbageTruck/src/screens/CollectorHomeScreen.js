@@ -145,11 +145,14 @@ export default function CollectorHomeScreen() {
     }, [fetchScheduleData]),
   );
 
-  // Socket: re-fetch when an official assigns a new schedule to this truck
+  // Socket: re-fetch when an official assigns a new schedule to this truck or priority updates
   useEffect(() => {
     const socket = io(API_URL, { transports: ["websocket", "polling"] });
     socket.on("schedule:changed", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchScheduleData();
+    });
+    socket.on("priority:update", ({ truckId }) => {
+      if (!truckId || truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchScheduleData();
     });
     return () => socket.disconnect();
   }, [TRUCK_ID, fetchScheduleData, networkChangeKey]);
@@ -569,16 +572,42 @@ export default function CollectorHomeScreen() {
                         />
                       </View>
                       <View style={{ flex: 1, marginLeft: 8 }}>
-                        <Text style={[
-                          styles.schedTitle,
-                          sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
-                        ]}>
-                          {sched.routeName || "Collection Duty"}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Text style={[
+                            styles.schedTitle,
+                            sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
+                          ]}>
+                            {sched.routeName || "Collection Duty"}
+                          </Text>
+                          {sched.isPriority && (
+                            <View style={{
+                              backgroundColor: sched.priorityLevel === 'Critical' ? '#FEE2E2' : '#FEF3C7',
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderRadius: 4,
+                              marginLeft: 6,
+                              borderWidth: 1,
+                              borderColor: sched.priorityLevel === 'Critical' ? '#F87171' : '#FBBF24'
+                            }}>
+                              <Text style={{
+                                fontSize: 10,
+                                fontWeight: '700',
+                                color: sched.priorityLevel === 'Critical' ? '#991B1B' : '#92400E'
+                              }}>
+                                ⚡ {sched.priorityLevel ? sched.priorityLevel.toUpperCase() : 'PRIORITY'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.schedMeta}>
                           {sched.startTime ? `${sched.startTime}` : "Time TBD"}
                           {sched.endTime ? ` — ${sched.endTime}` : ""}
                         </Text>
+                        {sched.isPriority && sched.priorityReason ? (
+                          <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '600', marginTop: 2 }}>
+                            Priority Note: {sched.priorityReason}
+                          </Text>
+                        ) : null}
                         {sched.notes ? <Text style={styles.schedNotes}>{sched.notes}</Text> : null}
                       </View>
                       <View style={[

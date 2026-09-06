@@ -48,6 +48,9 @@ export default function ScheduleRoute() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [notes, setNotes] = useState('');
+  const [isPriority, setIsPriority] = useState(false);
+  const [priorityLevel, setPriorityLevel] = useState('High');
+  const [priorityReason, setPriorityReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -214,9 +217,7 @@ export default function ScheduleRoute() {
             console.warn('Auto-sync truck coverage failed:', patchErr);
           }
         }
-      }
-
-      await axios.post(`${API}/api/schedules`, {
+      }      await axios.post(`${API}/api/schedules`, {
         date: selectedDate,
         truckId: selTruck,
         driverName: truck?.driverName || '',
@@ -225,6 +226,9 @@ export default function ScheduleRoute() {
         startTime,
         endTime,
         notes,
+        isPriority,
+        priorityLevel,
+        priorityReason,
       });
 
       setShowModal(false);
@@ -232,6 +236,9 @@ export default function ScheduleRoute() {
       setStartTime('');
       setEndTime('');
       setNotes('');
+      setIsPriority(false);
+      setPriorityLevel('High');
+      setPriorityReason('');
       setSelectedSitios([]);
       await fetchAll();
     } catch (e) {
@@ -350,6 +357,9 @@ export default function ScheduleRoute() {
     setStartTime('');
     setEndTime('');
     setNotes('');
+    setIsPriority(false);
+    setPriorityLevel('High');
+    setPriorityReason('');
     setError('');
     
     const initialBrgy = (official?.barangay && official.barangay !== 'All') ? official.barangay : '';
@@ -520,6 +530,12 @@ export default function ScheduleRoute() {
                           <Truck className="w-3.5 h-3.5 text-emerald-600" />
                           <span className="text-xs font-bold truncate max-w-[120px]">{s.driverName || 'No Driver'}</span>
                         </div>
+                        {s.isPriority && (
+                          <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                            Priority ({s.priorityLevel || 'High'})
+                          </span>
+                        )}
                         {s.status === 'completed' && (
                           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider">Completed</span>
                         )}
@@ -560,10 +576,16 @@ export default function ScheduleRoute() {
                         </div>
                       </div>
 
-                      {/* Notes */}
+                      {/* Notes & Priority Reason */}
                       {s.notes && (
                         <p className="text-xs text-slate-500 italic bg-amber-50/50 border border-amber-100/50 px-2.5 py-1.5 rounded-lg border-l-2 border-l-amber-300 mt-1">
                           "{s.notes}"
+                        </p>
+                      )}
+                      {s.isPriority && s.priorityReason && (
+                        <p className="text-xs text-red-700 font-medium bg-red-50/80 border border-red-200 px-2.5 py-1.5 rounded-lg border-l-2 border-l-red-500 mt-1 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0" />
+                          <span>Priority Reason: {s.priorityReason}</span>
                         </p>
                       )}
                     </div>
@@ -803,17 +825,14 @@ export default function ScheduleRoute() {
                             zoomControl={false}
                           >
                             <TileLayer
-                              className="leaflet-tile-grayscale"
                               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                               attribution='&copy; OpenStreetMap contributors'
                             />
-                            {newSitioLat && newSitioLng && (
-                              <CircleMarker
-                                center={[newSitioLat, newSitioLng]}
-                                pathOptions={{ color: '#006A3B', fillColor: '#006A3B', fillOpacity: 0.8 }}
-                                radius={8}
-                              />
-                            )}
+                            <CircleMarker
+                              center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
+                              pathOptions={{ color: '#10B981', fillColor: '#10B981', fillOpacity: 0.9 }}
+                              radius={8}
+                            />
                             <MapClickHandler onClick={(e) => {
                               setNewSitioLat(Number(e.latlng.lat).toFixed(6));
                               setNewSitioLng(Number(e.latlng.lng).toFixed(6));
@@ -928,6 +947,51 @@ export default function ScheduleRoute() {
                   rows={2}
                   className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 placeholder-slate-400 shadow-sm transition-all resize-none"
                 />
+              </div>
+
+              {/* Priority Area Toggle & Options */}
+              <div className="p-3.5 bg-red-50/60 border border-red-200/60 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                    <span className="text-xs font-bold text-slate-800">Set as Priority Area</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPriority}
+                      onChange={e => setIsPriority(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                  </label>
+                </div>
+
+                {isPriority && (
+                  <div className="space-y-3.5 pt-2 border-t border-red-200/40 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Level</label>
+                      <select
+                        value={priorityLevel}
+                        onChange={e => setPriorityLevel(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-semibold border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                      >
+                        <option value="High">🔴 High Priority</option>
+                        <option value="Critical">🚨 Critical Hazard</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Reason / Dispatch Note</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Toxic odor / High waste accumulation report"
+                        value={priorityReason}
+                        onChange={e => setPriorityReason(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-medium border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-3">

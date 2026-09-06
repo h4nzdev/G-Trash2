@@ -189,6 +189,31 @@ export default function ReportsManagement() {
     }
   };
 
+  const [assigningPriority, setAssigningPriority] = useState(false);
+
+  const handleAssignPriority = async (report, truckId) => {
+    if (!truckId) return;
+    setAssigningPriority(true);
+    try {
+      const { data } = await axios.post(`${API}/api/reports/${report._id}/assign-priority`, {
+        truckId,
+        priorityLevel: "High",
+        reason: `Priority Report: ${report.title}`,
+      });
+      if (data.report) {
+        setReportList((prev) =>
+          prev.map((r) => (r._id === report._id ? { ...r, ...data.report } : r))
+        );
+        setSelectedReport((prev) => (prev ? { ...prev, ...data.report } : prev));
+        alert(`🚨 Priority Area assigned & pushed in real-time to Truck ${truckId}!`);
+      }
+    } catch (err) {
+      alert("Failed to assign priority area: " + (err.response?.data?.error || err.message));
+    } finally {
+      setAssigningPriority(false);
+    }
+  };
+
   const handleHealthFlag = async (report) => {
     setFlagging(true);
     try {
@@ -1006,6 +1031,22 @@ export default function ReportsManagement() {
                       className="px-4 py-2 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 rounded-xl transition-colors"
                     >
                       Assign
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedTruckId)
+                          handleAssignPriority(selectedReport, selectedTruckId);
+                      }}
+                      disabled={!selectedTruckId || assigningPriority}
+                      className="px-3.5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+                      title="Dispatch truck as High Priority Area with real-time push to driver"
+                    >
+                      {assigningPriority ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Zap className="w-3.5 h-3.5 fill-current text-amber-300" />
+                      )}
+                      <span>Priority Dispatch</span>
                     </button>
                   </div>
                 </div>
