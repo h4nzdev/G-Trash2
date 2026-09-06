@@ -528,7 +528,10 @@ function pointToSegmentM(pLat, pLng, aLat, aLng, bLat, bLng) {
   return haversineM(pLat, pLng, aLat + t * dx, aLng + t * dy);
 }
 function minDistToPolyline(lat, lng, coords) {
-  if (!coords || coords.length < 2) return Infinity;
+  if (!coords || coords.length === 0) return Infinity;
+  if (coords.length === 1) {
+    return haversineM(lat, lng, coords[0][0], coords[0][1]);
+  }
   let min = Infinity;
   for (let i = 0; i < coords.length - 1; i++) {
     const d = pointToSegmentM(lat, lng, coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1]);
@@ -731,12 +734,17 @@ export default function CollectorMapScreen() {
   const [elapsedDisplay, setElapsedDisplay] = useState("00:00");
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [binStatus, setBinStatus] = useState({ preparedCount: 0, pickedUpCount: 0 });
+  const [isOffRoute, setIsOffRoute] = useState(false);
+  const [offRouteDistance, setOffRouteDistance] = useState(0);
+  const [showOffRouteModal, setShowOffRouteModal] = useState(false);
 
   const [sitioList, setSitioList] = useState([]);
 
   const isExpandedRef = useRef(false);
   const navigationActiveRef = useRef(false);
   const lastGpsRef = useRef(null);
+  const lastOffRouteAlertRef = useRef(0);
+  const activeRouteCoordsRef = useRef([]);
   const shiftStartRef = useRef(null);
   const zoneCardAnim = useRef(new Animated.Value(0)).current;
   const socketRef = useRef(null);
@@ -774,6 +782,30 @@ export default function CollectorMapScreen() {
   }, [sitioList, todaySchedules, activeScheduleId]);
 
   const currentStop = allStops[currentStopIndex] || allStops[0];
+
+  // Dynamically compute active route coordinates for off-route calculation
+  const activeRouteCoords = useMemo(() => {
+    let coords = [];
+    if (todaySchedules && todaySchedules.length > 0) {
+      for (const sched of todaySchedules) {
+        if (sched.routeCoords && sched.routeCoords.length > 0) {
+          coords = [...coords, ...sched.routeCoords];
+        } else if (sched.sitioTasks && sched.sitioTasks.length > 0) {
+          const valid = sched.sitioTasks.filter(t => t.lat != null && t.lng != null).map(t => [t.lat, t.lng]);
+          coords = [...coords, ...valid];
+        }
+      }
+    }
+    if (coords.length === 0 && allStops && allStops.length > 0) {
+      const valid = allStops.filter(s => s.lat != null && s.lng != null).map(s => [s.lat, s.lng]);
+      if (valid.length > 0) coords = valid;
+    }
+    return coords;
+  }, [todaySchedules, allStops]);
+
+  useEffect(() => {
+    activeRouteCoordsRef.current = activeRouteCoords;
+  }, [activeRouteCoords]);
 
   // Fetch today's bin preparation counts for assigned area/barangay
   useEffect(() => {
@@ -848,13 +880,17 @@ export default function CollectorMapScreen() {
       if (sched.routeCoords && sched.routeCoords.length > 0) {
         routeCoords = [...routeCoords, ...sched.routeCoords];
       } else if (sched.sitioTasks && sched.sitioTasks.length > 1) {
-        const coords = sched.sitioTasks.map(t => [t.lat, t.lng]);
+        const coords = sched.sitioTasks.filter(t => t.lat && t.lng).map(t => [t.lat, t.lng]);
         routeCoords = [...routeCoords, ...coords];
       }
     }
+    if (routeCoords.length === 0 && allStops && allStops.length > 1) {
+      routeCoords = allStops.filter(s => s.lat && s.lng).map(s => [s.lat, s.lng]);
+    }
+    activeRouteCoordsRef.current = routeCoords;
     const routeCoordsJson = JSON.stringify(routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
-  }, [sitioList, todaySchedules, webViewReady.current]);
+  }, [sitioList, todaySchedules, allStops, webViewReady.current]);
 
   // Fetch overflowing bin reports
   const fetchReports = useCallback(() => {
@@ -1138,6 +1174,32 @@ export default function CollectorMapScreen() {
               heading: heading || 0,
               speed: speed || 0,
             });
+
+            // ── Off-Route Detection & Warning Validation ──
+            const routeCoords = activeRouteCoordsRef.current;
+            if (routeCoords && routeCoords.length >= 1) {
+              const distM = minDistToPolyline(latitude, longitude, routeCoords);
+              if (distM > 50) {
+                const roundedDist = Math.round(distM);
+                setIsOffRoute(true);
+                setOffRouteDistance(roundedDist);
+
+                socket.emit("truck:off-route", {
+                  truckId: TRUCK_ID,
+                  driverName: user?.driverName || user?.name || "Collector",
+                  distanceM: roundedDist,
+                  lat: latitude,
+                  lng: longitude,
+                });
+
+                if (Date.now() - lastOffRouteAlertRef.current > 15000) {
+                  lastOffRouteAlertRef.current = Date.now();
+                  setShowOffRouteModal(true);
+                }
+              } else {
+                setIsOffRoute(false);
+              }
+            }
           }
         },
       );
@@ -1471,23 +1533,39 @@ export default function CollectorMapScreen() {
             /* Active Guidance Mode UI - matching uploaded layout in #006A3B theme */
             <View style={styles.shiftGuidanceContainer} pointerEvents="box-none">
               {/* Top Navigation Banner Overlay */}
-              <View style={[styles.topBannerCard, { marginTop: Math.max(10, topInset) }]}>
-                <View style={styles.turnIconWrap}>
-                  <MaterialIcons name="turn-left" size={28} color="#FFFFFF" />
+              <View style={[styles.topBannerCard, { marginTop: Math.max(10, topInset), flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={styles.turnIconWrap}>
+                    <MaterialIcons name="turn-left" size={28} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.bannerTextWrap}>
+                    <Text style={styles.bannerNextStopText} numberOfLines={1}>
+                      NEXT STOP: {currentStop?.name ? currentStop.name.toUpperCase() : 'MAIN ST.'}
+                    </Text>
+                    <Text style={styles.bannerSubtext} numberOfLines={1}>
+                      {assignedRouteBarangay ? `${assignedRouteBarangay} Waste Collection` : 'Scheduled Collection'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.bannerTextWrap}>
-                  <Text style={styles.bannerNextStopText} numberOfLines={1}>
-                    NEXT STOP: {currentStop?.name ? currentStop.name.toUpperCase() : 'MAIN ST.'}
-                  </Text>
-                  <Text style={styles.bannerSubtext} numberOfLines={1}>
-                    {assignedRouteBarangay ? `${assignedRouteBarangay} Waste Collection` : 'Scheduled Collection'}
-                  </Text>
-                </View>
+
+                {/* Embedded Off-Route Warning Alert Strip */}
+                {isOffRoute && (
+                  <TouchableOpacity
+                    style={styles.bannerOffRouteStrip}
+                    onPress={() => setShowOffRouteModal(true)}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons name="warning" size={14} color="#FFFFFF" />
+                    <Text style={styles.bannerOffRouteText} numberOfLines={1}>
+                      OFF ROUTE WARNING (~{offRouteDistance}m away) — Tap for info
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* MAP > Tag Pill Button */}
               <TouchableOpacity
-                style={[styles.mapPillBtn, { top: Math.max(10, topInset) + 76 }]}
+                style={[styles.mapPillBtn, { top: Math.max(10, topInset) + (isOffRoute ? 114 : 76) }]}
                 onPress={() => {
                   if (currentLocation && webViewRef.current) {
                     webViewRef.current?.injectJavaScript(
@@ -1499,89 +1577,6 @@ export default function CollectorMapScreen() {
               >
                 <Text style={styles.mapPillText}>MAP ›</Text>
               </TouchableOpacity>
-
-              {/* Right Control Panel Sidebar */}
-              <View style={[styles.rightControlPanel, { top: Math.max(10, topInset) + 76 }]}>
-                <View style={styles.panelHeaderBlock}>
-                  <Text style={styles.panelCollectHeader}>COLLECT</Text>
-                  <Text style={styles.panelBinText} numberOfLines={1}>
-                    {currentStop?.name ? (currentStop.name.length > 8 ? `BIN ${currentStopIndex + 1}` : currentStop.name.toUpperCase()) : `BIN ${currentStopIndex + 1}`}
-                  </Text>
-                  <Text style={styles.panelLocationSub}>LOCATION</Text>
-                </View>
-
-                {/* Button 1: Top Right Arrow (Zoom/Center Target Stop) */}
-                <TouchableOpacity
-                  style={styles.panelBtnPrimary}
-                  onPress={() => {
-                    if (currentStop?.lat && currentStop?.lng && webViewRef.current) {
-                      webViewRef.current?.injectJavaScript(
-                        `window.centerMap(${currentStop.lat}, ${currentStop.lng}); true;`
-                      );
-                    } else if (currentLocation && webViewRef.current) {
-                      webViewRef.current?.injectJavaScript(
-                        `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
-                      );
-                    }
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="north-east" size={28} color="#FFFFFF" />
-                </TouchableOpacity>
-
-                {/* Button 2: Left Arrow (Previous Stop / Focus Target) */}
-                <TouchableOpacity
-                  style={styles.panelBtnOutline}
-                  onPress={() => {
-                    if (allStops.length > 0) {
-                      const prevIdx = (currentStopIndex - 1 + allStops.length) % allStops.length;
-                      setCurrentStopIndex(prevIdx);
-                      const target = allStops[prevIdx];
-                      if (target?.lat && target?.lng && webViewRef.current) {
-                        webViewRef.current?.injectJavaScript(
-                          `window.centerMap(${target.lat}, ${target.lng}); true;`
-                        );
-                      }
-                    }
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="west" size={26} color="#FFFFFF" />
-                </TouchableOpacity>
-
-                {/* Button 3: Right Arrow (Mark Stop Clean / Next Stop) */}
-                <TouchableOpacity
-                  style={styles.panelBtnPrimary}
-                  onPress={() => {
-                    if (currentStop && !currentStop.completed && activeSchedule?._id) {
-                      handleMarkStopClean(activeSchedule._id, currentStop.name);
-                    }
-                    if (allStops.length > 0) {
-                      const nextIdx = (currentStopIndex + 1) % allStops.length;
-                      setCurrentStopIndex(nextIdx);
-                      const target = allStops[nextIdx];
-                      if (target?.lat && target?.lng && webViewRef.current) {
-                        webViewRef.current?.injectJavaScript(
-                          `window.centerMap(${target.lat}, ${target.lng}); true;`
-                        );
-                      }
-                    }
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="east" size={28} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Bottom Left Floating End Shift Action */}
-              <TouchableOpacity
-                style={styles.bottomLeftExitBtn}
-                onPress={stopNavigation}
-                activeOpacity={0.85}
-              >
-                <MaterialIcons name="stop" size={20} color="#FFFFFF" />
-                <Text style={styles.bottomLeftExitText}>END SHIFT</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -1591,7 +1586,7 @@ export default function CollectorMapScreen() {
           <View style={[
             styles.floatingActions,
             navigationActive
-              ? { left: 14, top: Math.max(10, topInset) + 125 }
+              ? { left: 14, top: Math.max(10, topInset) + (isOffRoute ? 160 : 125) }
               : { right: 16, top: Math.max(16, topInset) }
           ]}>
             <TouchableOpacity
@@ -2077,6 +2072,58 @@ export default function CollectorMapScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Off-Route Deviation Warning Modal ── */}
+      <Modal
+        visible={showOffRouteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOffRouteModal(false)}
+      >
+        <View style={styles.deviationBackdrop}>
+          <View style={styles.deviationCard}>
+            <TouchableOpacity
+              style={styles.deviationClose}
+              onPress={() => setShowOffRouteModal(false)}
+            >
+              <MaterialIcons name="close" size={18} color="#6F7A70" />
+            </TouchableOpacity>
+
+            <View style={styles.deviationIconWrap}>
+              <MaterialIcons name="warning" size={38} color="#D97706" />
+            </View>
+
+            <Text style={styles.deviationTitle}>Off Route Warning</Text>
+            <Text style={styles.deviationBody}>
+              You are currently <Text style={{ fontWeight: '800', color: '#DC2626' }}>~{offRouteDistance}m away</Text> from your assigned collection route. Please return to your route to ensure scheduled barangay stops are collected.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.deviationBtnPrimary}
+              onPress={() => {
+                setShowOffRouteModal(false);
+                if (currentLocation && webViewRef.current) {
+                  webViewRef.current?.injectJavaScript(
+                    `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
+                  );
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="my-location" size={18} color="#FFFFFF" />
+              <Text style={styles.deviationBtnPrimaryText}>Re-Center Route Map</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.deviationBtnOutline, { marginTop: 8 }]}
+              onPress={() => setShowOffRouteModal(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deviationBtnOutlineText}>Acknowledge & Continue</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -3636,6 +3683,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
+  bannerOffRouteStrip: {
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  bannerOffRouteText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   mapPillBtn: {
     position: 'absolute',
     left: 14,
@@ -3656,11 +3720,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  offRouteBanner: {
+    position: 'absolute',
+    left: 14,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 20,
+  },
+  offRouteBannerText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   rightControlPanel: {
     position: 'absolute',
     right: 14,
     width: 140,
-    backgroundColor: '#111827',
+    backgroundColor: '#006A3B',
     borderRadius: 20,
     padding: 14,
     alignItems: 'center',
@@ -3690,7 +3777,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   panelLocationSub: {
-    color: '#9CA3AF',
+    color: '#A7F3D0',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
@@ -3699,13 +3786,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     borderRadius: 16,
-    backgroundColor: '#006A3B',
+    backgroundColor: '#004D2B',
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 4,
-    shadowColor: '#006A3B',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
   },
@@ -3713,9 +3800,9 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48,
     borderRadius: 16,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: '#003D22',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 6,

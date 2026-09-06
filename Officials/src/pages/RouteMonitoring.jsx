@@ -1,7 +1,7 @@
 // ============================================================
 // === 1. IMPORTS & DEPENDENCIES ==============================
 // ============================================================
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -14,6 +14,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet.heat";
 import { io } from "socket.io-client";
 import axios from "axios";
 import {
@@ -34,7 +35,12 @@ import {
   CreditCard,
   ChevronDown,
   Route as RouteIcon,
-  Maximize2
+  Maximize2,
+  Flame,
+  Grid,
+  Palette,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
@@ -180,6 +186,100 @@ function makeStopIcon(n, isFirst, isLast, isCompleted, isCurrent) {
     `,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
+    className: "",
+  });
+}
+
+/**
+ * Renders Leaflet Heatmap Layer for waste density and truck activity hotspots.
+ */
+function HeatmapLayer({ points, options }) {
+  const map = useMap();
+  const heatLayerRef = useRef(null);
+
+  useEffect(() => {
+    if (!map) return;
+    if (heatLayerRef.current) {
+      map.removeLayer(heatLayerRef.current);
+      heatLayerRef.current = null;
+    }
+    if (points && points.length > 0) {
+      heatLayerRef.current = L.heatLayer(points, options).addTo(map);
+    }
+    return () => {
+      if (heatLayerRef.current && map) {
+        map.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
+      }
+    };
+  }, [map, points, options]);
+
+  return null;
+}
+
+/**
+ * Computes polygon coordinates for a group of route waypoints.
+ */
+function computeZonePolygon(waypoints) {
+  if (!waypoints || waypoints.length === 0) return null;
+  const valid = waypoints.filter((w) => w.lat != null && w.lng != null && !isNaN(w.lat) && !isNaN(w.lng));
+  if (valid.length === 0) return null;
+
+  if (valid.length === 1) {
+    const { lat, lng } = valid[0];
+    const offset = 0.0035;
+    return [
+      [lat + offset, lng - offset],
+      [lat + offset, lng + offset],
+      [lat - offset, lng + offset],
+      [lat - offset, lng - offset],
+    ];
+  }
+
+  if (valid.length === 2) {
+    const minLat = Math.min(valid[0].lat, valid[1].lat) - 0.003;
+    const maxLat = Math.max(valid[0].lat, valid[1].lat) + 0.003;
+    const minLng = Math.min(valid[0].lng, valid[1].lng) - 0.003;
+    const maxLng = Math.max(valid[0].lng, valid[1].lng) + 0.003;
+    return [
+      [maxLat, minLng],
+      [maxLat, maxLng],
+      [minLat, maxLng],
+      [minLat, minLng],
+    ];
+  }
+
+  return valid.map((w) => [w.lat, w.lng]);
+}
+
+/**
+ * Computes centroid [lat, lng] for zone badges.
+ */
+function computeCentroid(coords) {
+  if (!coords || coords.length === 0) return null;
+  let sumLat = 0, sumLng = 0;
+  coords.forEach(([lat, lng]) => {
+    sumLat += lat;
+    sumLng += lng;
+  });
+  return [sumLat / coords.length, sumLng / coords.length];
+}
+
+/**
+ * Creates numbered zone badge pin icons matching the reference screenshot.
+ */
+function makeZoneBadgeIcon(number, color = "#059669") {
+  return L.divIcon({
+    html: `
+      <div class="relative flex items-center justify-center filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]">
+        <div class="w-8 h-8 rounded-full border-2 border-white shadow-2xl flex items-center justify-center font-black text-xs text-white" style="background:${color}; text-shadow:0 1px 2px rgba(0,0,0,0.6);">
+          <div class="absolute -inset-1 rounded-full border border-emerald-400/40 animate-pulse pointer-events-none"></div>
+          ${number}
+        </div>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
     className: "",
   });
 }
@@ -489,7 +589,35 @@ export default function RouteMonitoring() {
   const [deviationAlerts, setDeviationAlerts] = useState([]);
   const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [showReports, setShowReports] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showZones, setShowZones] = useState(true);
+  const [selectedColorHex, setSelectedColorHex] = useState("#059669");
   const socketRef = useRef(null);
+
+  // Dynamic Heatmap Points calculation for report clusters & truck activity
+  const heatmapPoints = useMemo(() => {
+    const pts = [];
+    reports.forEach((r) => {
+      if (r.lat != null && r.lng != null && !isNaN(r.lat) && !isNaN(r.lng)) {
+        const score = (r.upvotes?.length || 0) - (r.downvotes?.length || 0);
+        const intensity = Math.min(1.0, Math.max(0.4, (score + 2) / 6));
+        pts.push([r.lat, r.lng, intensity]);
+      }
+    });
+    Object.values(trucks).forEach((t) => {
+      if (t.lat != null && t.lng != null && !isNaN(t.lat) && !isNaN(t.lng)) {
+        pts.push([t.lat, t.lng, t.status === "online" ? 0.9 : 0.4]);
+      }
+    });
+    routes.forEach((rt) => {
+      (rt.waypoints || []).forEach((wp) => {
+        if (wp.lat != null && wp.lng != null && !isNaN(wp.lat) && !isNaN(wp.lng)) {
+          pts.push([wp.lat, wp.lng, 0.4]);
+        }
+      });
+    });
+    return pts;
+  }, [reports, trucks, routes]);
 
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   useEffect(() => {
@@ -1006,6 +1134,59 @@ export default function RouteMonitoring() {
                   }
                 />
 
+                {/* Heatmap Layer */}
+                {showHeatmap && (
+                  <HeatmapLayer
+                    points={heatmapPoints}
+                    options={{
+                      radius: 30,
+                      blur: 20,
+                      maxZoom: 17,
+                      gradient: {
+                        0.2: "#2563eb",
+                        0.4: "#06b6d4",
+                        0.6: "#10b981",
+                        0.8: "#eab308",
+                        1.0: "#ef4444",
+                      },
+                    }}
+                  />
+                )}
+
+                {/* Zone Polygons & Numbered Centroid Badges */}
+                {showZones &&
+                  routes.map((route, rIdx) => {
+                    const poly = computeZonePolygon(route.waypoints);
+                    if (!poly) return null;
+                    const centroid = computeCentroid(poly);
+                    return (
+                      <span key={`zone-${route._id || rIdx}`}>
+                        <Polygon
+                          positions={poly}
+                          pathOptions={{
+                            fillColor: selectedColorHex,
+                            fillOpacity: 0.22,
+                            color: selectedColorHex,
+                            weight: 2.5,
+                            dashArray: "6, 6",
+                          }}
+                        />
+                        {centroid && (
+                          <Marker
+                            position={centroid}
+                            icon={makeZoneBadgeIcon(rIdx + 1, selectedColorHex)}
+                          >
+                            <Tooltip direction="top" offset={[0, -10]}>
+                              <span className="font-bold text-xs">
+                                Zone {rIdx + 1}: {route.name}
+                              </span>
+                            </Tooltip>
+                          </Marker>
+                        )}
+                      </span>
+                    );
+                  })}
+
                 {/* Route Polylines */}
                 {mappableRoutes.map((route) => {
                   const isSelected = selectedRoute?._id === route._id;
@@ -1128,25 +1309,80 @@ export default function RouteMonitoring() {
 
             {/* ── MAP OVERLAYS ── */}
 
+            {/* Top-Left Floating Map Control Bar (Matching Reference UI) */}
+            <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-xl border border-slate-200/90">
+              {/* Route Color Selector Dropdown */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100/90 rounded-xl">
+                <Palette className="w-4 h-4 text-slate-500" />
+                <span className="text-xs font-bold text-slate-700">Route Color:</span>
+                <div className="flex items-center gap-1.5 ml-1">
+                  {[
+                    { name: "Emerald", hex: "#059669" },
+                    { name: "Ocean", hex: "#2563eb" },
+                    { name: "Sunset", hex: "#f59e0b" },
+                    { name: "Crimson", hex: "#ef4444" },
+                  ].map((c) => (
+                    <button
+                      key={c.hex}
+                      onClick={() => setSelectedColorHex(c.hex)}
+                      title={c.name}
+                      className={`w-4 h-4 rounded-full transition-transform ${selectedColorHex === c.hex ? "scale-125 ring-2 ring-offset-1 ring-slate-400" : "hover:scale-110 opacity-70"}`}
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="w-px h-5 bg-slate-200"></div>
+
+              {/* Heatmap Toggle Button */}
+              <button
+                onClick={() => setShowHeatmap((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  showHeatmap
+                    ? "bg-rose-600 text-white shadow-md shadow-rose-600/20"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <Flame className={`w-4 h-4 ${showHeatmap ? "animate-pulse text-amber-300" : "text-slate-400"}`} />
+                Heatmap
+              </button>
+
+              {/* Zones Toggle Button */}
+              <button
+                onClick={() => setShowZones((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  showZones
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <Grid className="w-4 h-4" />
+                Zones
+              </button>
+
+              {/* Reports Alert Toggle Button */}
+              <button
+                onClick={() => setShowReports((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  showReports
+                    ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Alerts ({reports.length})
+              </button>
+            </div>
+
             {/* Google Maps Style Control (Top Right) */}
             <MapTileControl
               activeTileKey={activeTileKey}
               onChangeTile={setActiveTileKey}
             />
 
-            {/* Additional Top Right Actions */}
-            <div className="absolute top-14 right-3 z-[1000] flex flex-col gap-2">
-              <button
-                onClick={() => setShowReports((prev) => !prev)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg bg-white/95 backdrop-blur-md text-slate-700 border border-slate-200/80 hover:bg-slate-50 transition-all"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{" "}
-                {showReports ? "Hide Alerts" : "Show Alerts"}
-              </button>
-            </div>
-
             {/* LEGEND BOX */}
-            <div className="absolute top-28 right-3 z-[1000] bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-xl border border-slate-200/80 min-w-[150px]">
+            <div className="absolute top-14 right-3 z-[1000] bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-xl border border-slate-200/80 min-w-[160px]">
               <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">
                 Legend
               </h4>
@@ -1155,22 +1391,19 @@ export default function RouteMonitoring() {
                   <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck (Live)
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-4 h-1 bg-emerald-600 rounded-full"></div> Selected Route
+                  <div className="w-3.5 h-3.5 rounded-full border border-white flex items-center justify-center text-[9px] font-bold text-white shadow-sm" style={{ backgroundColor: selectedColorHex }}>1</div> Zone Boundary
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-4 h-1 bg-blue-600 rounded-full"></div> Active Route
+                  <div className="w-4 h-1 rounded-full" style={{ backgroundColor: selectedColorHex }}></div> Route Path
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-4 h-1 bg-slate-400 rounded-full"></div> Inactive Route
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-rose-500 opacity-80"></div> Heatmap Glow
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
                   <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm flex items-center justify-center text-[8px] text-white font-bold">✓</div> Completed Stop
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
                   <div className="w-3.5 h-3.5 bg-blue-600 rounded-full border border-white shadow-sm"></div> Current Stop
-                </div>
-                <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-3.5 h-3.5 bg-slate-500 rounded-full border border-white shadow-sm"></div> Upcoming Stop
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-rose-700 font-semibold pt-1 border-t border-slate-100 mt-1">
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Waste Report Alert

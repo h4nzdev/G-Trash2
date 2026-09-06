@@ -5114,7 +5114,7 @@ io.on("connection", (socket) => {
 
   // Truck reports it is off its assigned route â€” relay to Officials dashboard
   socket.on("truck:off-route", (data) => {
-    socket.broadcast.emit("truck:off-route", data);
+    io.emit("truck:off-route", data);
   });
 
   // Driver requests help from dispatch â€” relay to Officials dashboard
