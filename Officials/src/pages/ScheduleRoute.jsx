@@ -44,6 +44,7 @@ export default function ScheduleRoute() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   // Modal form state
+  const [modalStep, setModalStep] = useState(1);
   const [selTruck, setSelTruck] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -651,369 +652,479 @@ export default function ScheduleRoute() {
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">{error}</div>
             )}
 
-            <form onSubmit={handleAddSchedule} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Area / Barangay *</label>
-                <div className="relative">
-                  <Route className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  {official?.barangay && official.barangay !== 'All' ? (
-                    <div className="w-full pl-10 pr-4 py-3 text-sm font-semibold border border-slate-200 rounded-xl bg-slate-50 text-slate-600 shadow-sm">
-                      {official.barangay}
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedBarangay}
-                      onChange={e => {
-                        setSelectedBarangay(e.target.value);
-                        setSelectedSitios([]);
-                      }}
-                      required
-                      className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
-                    >
-                      <option value="">— Select Barangay —</option>
-                      {barangayList.map(name => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
+            {/* Tab-by-Tab Step Header Bar */}
+            <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 bg-slate-50/80 p-1.5 rounded-xl mb-4 overflow-x-auto custom-green-scrollbar">
+              <style>{`
+                .custom-green-scrollbar::-webkit-scrollbar { height: 5px; width: 5px; }
+                .custom-green-scrollbar::-webkit-scrollbar-track { background: #E2E8F0; border-radius: 10px; }
+                .custom-green-scrollbar::-webkit-scrollbar-thumb { background: #059669; border-radius: 10px; }
+                .custom-green-scrollbar::-webkit-scrollbar-thumb:hover { background: #047857; }
+                .custom-green-scrollbar::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+                .custom-green-scrollbar { scrollbar-width: thin; scrollbar-color: #059669 #E2E8F0; }
+              `}</style>
+              {[
+                { step: 1, label: '1. Area & Sitios' },
+                { step: 2, label: '2. Truck & Time' },
+                { step: 3, label: '3. Priority & Notes' },
+                { step: 4, label: '4. Review & Confirm' },
+              ].map((s) => (
+                <button
+                  key={s.step}
+                  type="button"
+                  onClick={() => {
+                    if (s.step === 1 || selectedBarangay) setModalStep(s.step);
+                  }}
+                  className={`flex items-center justify-center text-[11px] sm:text-xs font-bold transition-all py-2 px-2.5 sm:px-3.5 rounded-lg whitespace-nowrap shrink-0 flex-1 text-center ${
+                    modalStep === s.step
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : modalStep > s.step
+                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        : 'text-slate-500 hover:text-slate-700 bg-white/80 border border-slate-200/60'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
 
-              <div>
-                {!showAddSitioForm ? (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Sitios / Sub-areas *</label>
-                      {selectedBarangay && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddSitioForm(true);
-                            setSitioError('');
+            <form onSubmit={handleAddSchedule} className="space-y-5">
+              {/* STEP 1: Area & Sitios */}
+              {modalStep === 1 && (
+                <div className="space-y-5 animate-in fade-in duration-150">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Area / Barangay *</label>
+                    <div className="relative">
+                      <Route className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      {official?.barangay && official.barangay !== 'All' ? (
+                        <div className="w-full pl-10 pr-4 py-3 text-sm font-semibold border border-slate-200 rounded-xl bg-slate-50 text-slate-600 shadow-sm">
+                          {official.barangay}
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedBarangay}
+                          onChange={e => {
+                            setSelectedBarangay(e.target.value);
+                            setSelectedSitios([]);
                           }}
-                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                          required
+                          className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
                         >
-                          + Add New Sitio
-                        </button>
+                          <option value="">— Select Barangay —</option>
+                          {barangayList.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
                       )}
                     </div>
-                    
-                    <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50/50">
-                      {!selectedBarangay ? (
-                        <p className="text-xs text-slate-400 italic text-center py-2">Select a barangay to view sitios.</p>
-                      ) : sitioList.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic text-center py-2">No sitios verified under this barangay.</p>
-                      ) : (
-                        sitioList.map(s => {
-                          const isChecked = selectedSitios.includes(s.name);
-                          return (
-                            <label key={s._id} className="flex items-center gap-2.5 py-1 px-1 cursor-pointer select-none">
+                  </div>
+
+                  <div>
+                    {!showAddSitioForm ? (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Sitios / Sub-areas *</label>
+                          {selectedBarangay && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAddSitioForm(true);
+                                setSitioError('');
+                              }}
+                              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                            >
+                              + Add New Sitio
+                            </button>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                          {!selectedBarangay ? (
+                            <p className="text-xs text-slate-400 italic text-center py-2">Select a barangay to view sitios.</p>
+                          ) : sitioList.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic text-center py-2">No sitios verified under this barangay.</p>
+                          ) : (
+                            sitioList.map(s => {
+                              const isChecked = selectedSitios.includes(s.name);
+                              return (
+                                <label key={s._id} className="flex items-center gap-2.5 py-1 px-1 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      if (isChecked) {
+                                        setSelectedSitios(prev => prev.filter(name => name !== s.name));
+                                      } else {
+                                        setSelectedSitios(prev => [...prev, s.name]);
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
+                                  />
+                                  <span className="text-sm font-medium text-slate-700">{s.name}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* Live Route Preview Map */}
+                        {selectedSitios.length > 0 && (
+                          <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
+                            <MapContainer
+                              center={[
+                                sitioList.find(s => s.name === selectedSitios[0])?.lat || getBarangayCenter(selectedBarangay).lat,
+                                sitioList.find(s => s.name === selectedSitios[0])?.lng || getBarangayCenter(selectedBarangay).lng
+                              ]}
+                              zoom={14}
+                              style={{ height: '100%', width: '100%' }}
+                              zoomControl={false}
+                            >
+                              <TileLayer
+                                className="leaflet-tile-grayscale"
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                attribution='&copy; OpenStreetMap contributors'
+                              />
+                              {selectedSitios.map((name, index) => {
+                                const s = sitioList.find(s => s.name === name);
+                                if (!s) return null;
+                                return (
+                                  <CircleMarker
+                                    key={s._id}
+                                    center={[s.lat, s.lng]}
+                                    pathOptions={{
+                                      color: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
+                                      fillColor: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
+                                      fillOpacity: 0.8
+                                    }}
+                                    radius={6}
+                                  />
+                                );
+                              })}
+                              {previewCoords.length > 1 && (
+                                <RoutePolyline positions={previewCoords} />
+                              )}
+                              <MapController
+                                center={[
+                                  sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lat || getBarangayCenter(selectedBarangay).lat,
+                                  sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lng || getBarangayCenter(selectedBarangay).lng
+                                ]}
+                              />
+                            </MapContainer>
+                            <div className="absolute bottom-2 right-2 bg-slate-900/70 text-[9px] text-white px-2 py-1 rounded font-mono z-[1000] pointer-events-none">
+                              Route Preview ({selectedSitios.length} stops)
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl animate-in fade-in duration-200">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Add New Sitio</h4>
+                        
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Sitio name (e.g. La Guardia)"
+                            value={newSitioName}
+                            onChange={e => setNewSitioName(e.target.value)}
+                            required
+                            className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-slate-800 shadow-sm transition-all"
+                          />
+                          
+                          <div className="space-y-2 pt-1">
+                            <div className="flex gap-2">
                               <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {
-                                  if (isChecked) {
-                                    setSelectedSitios(prev => prev.filter(name => name !== s.name));
-                                  } else {
-                                    setSelectedSitios(prev => [...prev, s.name]);
+                                type="text"
+                                placeholder="Search location on map..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSearchMap();
                                   }
                                 }}
-                                className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
+                                className="flex-1 px-3.5 py-2 text-xs border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                               />
-                              <span className="text-sm font-medium text-slate-700">{s.name}</span>
-                            </label>
-                          );
-                        })
-                      )}
-                    </div>
+                              <button
+                                type="button"
+                                onClick={handleSearchMap}
+                                disabled={searchingMap || !searchQuery.trim()}
+                                className="px-3.5 py-2 text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 rounded-xl transition-colors flex items-center gap-1 shadow-sm"
+                              >
+                                <Search className="w-3.5 h-3.5" />
+                                {searchingMap ? 'Searching...' : 'Search'}
+                              </button>
+                            </div>
+                            {searchError && <p className="text-[10px] text-red-600 font-medium">{searchError}</p>}
 
-                    {/* Live Route Preview Map */}
-                    {selectedSitios.length > 0 && (
-                      <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
-                        <MapContainer
-                          center={[
-                            sitioList.find(s => s.name === selectedSitios[0])?.lat || getBarangayCenter(selectedBarangay).lat,
-                            sitioList.find(s => s.name === selectedSitios[0])?.lng || getBarangayCenter(selectedBarangay).lng
-                          ]}
-                          zoom={14}
-                          style={{ height: '100%', width: '100%' }}
-                          zoomControl={false}
-                        >
-                          <TileLayer
-                            className="leaflet-tile-grayscale"
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            attribution='&copy; OpenStreetMap contributors'
-                          />
-                          {selectedSitios.map((name, index) => {
-                            const s = sitioList.find(s => s.name === name);
-                            if (!s) return null;
-                            return (
-                              <CircleMarker
-                                key={s._id}
-                                center={[s.lat, s.lng]}
-                                pathOptions={{
-                                  color: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
-                                  fillColor: index === 0 ? '#10B981' : index === selectedSitios.length - 1 ? '#EF4444' : '#F59E0B',
-                                  fillOpacity: 0.8
-                                }}
-                                radius={6}
-                              />
-                            );
-                          })}
-                          {previewCoords.length > 1 && (
-                            <RoutePolyline positions={previewCoords} />
-                          )}
-                          <MapController
-                            center={[
-                              sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lat || getBarangayCenter(selectedBarangay).lat,
-                              sitioList.find(s => s.name === selectedSitios[selectedSitios.length - 1])?.lng || getBarangayCenter(selectedBarangay).lng
-                            ]}
-                          />
-                        </MapContainer>
-                        <div className="absolute bottom-2 right-2 bg-slate-900/70 text-[9px] text-white px-2 py-1 rounded font-mono z-[1000] pointer-events-none">
-                          Route Preview ({selectedSitios.length} stops)
+                            <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-1">
+                              <MapContainer
+                                center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
+                                zoom={15}
+                                style={{ height: '100%', width: '100%' }}
+                                zoomControl={false}
+                              >
+                                <TileLayer
+                                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  attribution='&copy; OpenStreetMap contributors'
+                                />
+                                <CircleMarker
+                                  center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
+                                  pathOptions={{ color: '#10B981', fillColor: '#10B981', fillOpacity: 0.9 }}
+                                  radius={8}
+                                />
+                                <MapClickHandler onClick={(e) => {
+                                  setNewSitioLat(Number(e.latlng.lat).toFixed(6));
+                                  setNewSitioLng(Number(e.latlng.lng).toFixed(6));
+                                }} />
+                                <MapController center={[newSitioLat, newSitioLng]} />
+                              </MapContainer>
+                              <div className="absolute bottom-2 right-2 bg-slate-900/70 text-[9px] text-white px-2 py-1 rounded font-mono z-[1000] pointer-events-none">
+                                {Number(newSitioLat).toFixed(5)}, {Number(newSitioLng).toFixed(5)}
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-normal">
+                              🔍 Search above, or **click anywhere on the map** to place the sitio pin.
+                            </p>
+                          </div>
+                          
+                          {sitioError && <p className="text-[11px] font-medium text-red-600 mb-2">{sitioError}</p>}
+                          
+                          <div className="flex justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAddSitioForm(false);
+                                setSitioError('');
+                              }}
+                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveNewSitio}
+                              disabled={addingSitio || !newSitioName.trim()}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 rounded-lg transition-colors"
+                            >
+                              {addingSitio ? 'Saving...' : 'Save Sitio'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
-                  </>
-                ) : (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl animate-in fade-in duration-200">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Add New Sitio</h4>
-                    
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Sitio name (e.g. La Guardia)"
-                        value={newSitioName}
-                        onChange={e => setNewSitioName(e.target.value)}
-                        required
-                        className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 text-slate-800 shadow-sm transition-all"
-                      />
-                      
-                      <div className="space-y-2 pt-1">
-                        <div className="flex gap-2">
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Truck & Time */}
+              {modalStep === 2 && (
+                <div className="space-y-5 animate-in fade-in duration-150">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck / Driver Assignment *</label>
+                    {fleetError ? (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                        Could not load fleet. Make sure the backend is running and you are logged in.
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Truck className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <select
+                          value={selTruck}
+                          onChange={e => setSelTruck(e.target.value)}
+                          required
+                          disabled={!selectedBarangay}
+                          className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
+                        >
+                          <option value="">— Select truck —</option>
+                          {fleet.filter(t => {
+                            if (!selectedBarangay) return true;
+                            if (t.barangay && t.barangay.toLowerCase() === selectedBarangay.toLowerCase()) return true;
+                            if (t.type === 'shared' && t.serviceBarangays && t.serviceBarangays.map(b => b.toLowerCase()).includes(selectedBarangay.toLowerCase())) return true;
+                            if (!t.barangay && (!t.serviceBarangays || t.serviceBarangays.length === 0)) return true;
+                            return false;
+                          }).map(t => (
+                            <option key={t.truckId} value={t.truckId}>
+                              {t.truckId} — {t.driverName}{t.driverPhone ? ` (${t.driverPhone})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                        <div className="relative">
+                          <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="time"
+                            value={startTime}
+                            onChange={e => setStartTime(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">End Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                        <div className="relative">
+                          <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <input
+                            type="time"
+                            value={endTime}
+                            onChange={e => setEndTime(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">Recommended when assigning multiple routes to the same truck. Missing the end time will auto-generate an alert.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: Priority & Notes */}
+              {modalStep === 3 && (
+                <div className="space-y-5 animate-in fade-in duration-150">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Operational Notes <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="e.g. Early shift, holiday route..."
+                      rows={3}
+                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 placeholder-slate-400 shadow-sm transition-all resize-none"
+                    />
+                  </div>
+
+                  {/* Priority Area Toggle & Options */}
+                  <div className="p-4 bg-red-50/60 border border-red-200/60 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-600" />
+                        <span className="text-xs font-bold text-slate-800">Set as Priority Area</span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isPriority}
+                          onChange={e => setIsPriority(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                      </label>
+                    </div>
+
+                    {isPriority && (
+                      <div className="space-y-3.5 pt-2 border-t border-red-200/40 animate-in fade-in duration-150">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Level</label>
+                          <select
+                            value={priorityLevel}
+                            onChange={e => setPriorityLevel(e.target.value)}
+                            className="w-full px-3 py-2 text-xs font-semibold border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                          >
+                            <option value="High">🔴 High Priority</option>
+                            <option value="Critical">🚨 Critical Hazard</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Reason / Dispatch Note</label>
                           <input
                             type="text"
-                            placeholder="Search location on map..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleSearchMap();
-                              }
-                            }}
-                            className="flex-1 px-3.5 py-2 text-xs border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                            placeholder="e.g. Toxic odor / High waste accumulation report"
+                            value={priorityReason}
+                            onChange={e => setPriorityReason(e.target.value)}
+                            className="w-full px-3 py-2 text-xs font-medium border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                           />
-                          <button
-                            type="button"
-                            onClick={handleSearchMap}
-                            disabled={searchingMap || !searchQuery.trim()}
-                            className="px-3.5 py-2 text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 rounded-xl transition-colors flex items-center gap-1 shadow-sm"
-                          >
-                            <Search className="w-3.5 h-3.5" />
-                            {searchingMap ? 'Searching...' : 'Search'}
-                          </button>
                         </div>
-                        {searchError && <p className="text-[10px] text-red-600 font-medium">{searchError}</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                        <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-1">
-                          <MapContainer
-                            center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
-                            zoom={15}
-                            style={{ height: '100%', width: '100%' }}
-                            zoomControl={false}
-                          >
-                            <TileLayer
-                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                              attribution='&copy; OpenStreetMap contributors'
-                            />
-                            <CircleMarker
-                              center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
-                              pathOptions={{ color: '#10B981', fillColor: '#10B981', fillOpacity: 0.9 }}
-                              radius={8}
-                            />
-                            <MapClickHandler onClick={(e) => {
-                              setNewSitioLat(Number(e.latlng.lat).toFixed(6));
-                              setNewSitioLng(Number(e.latlng.lng).toFixed(6));
-                            }} />
-                            <MapController center={[newSitioLat, newSitioLng]} />
-                          </MapContainer>
-                          <div className="absolute bottom-2 right-2 bg-slate-900/70 text-[9px] text-white px-2 py-1 rounded font-mono z-[1000] pointer-events-none">
-                            {Number(newSitioLat).toFixed(5)}, {Number(newSitioLng).toFixed(5)}
-                          </div>
+              {/* STEP 4: Review & Confirm */}
+              {modalStep === 4 && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                    <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Collection Dispatch Summary</h4>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 block font-medium">Barangay:</span>
+                        <span className="font-bold text-slate-800">{selectedBarangay || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">Date:</span>
+                        <span className="font-bold text-slate-800">{formatDisplayDate(selectedDate)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">Assigned Truck:</span>
+                        <span className="font-bold text-emerald-700">{selTruck || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">Sitios Covered:</span>
+                        <span className="font-bold text-slate-800">{selectedSitios.length} sitio stops</span>
+                      </div>
+                      {(startTime || endTime) && (
+                        <div className="col-span-2">
+                          <span className="text-slate-400 block font-medium">Time Window:</span>
+                          <span className="font-bold text-slate-800">{startTime || 'Anytime'} — {endTime || 'End of Shift'}</span>
                         </div>
-                        <p className="text-[10px] text-slate-400 leading-normal">
-                          🔍 Search above, or **click anywhere on the map** to place the sitio pin.
-                        </p>
-                      </div>
-                      
-                      {sitioError && <p className="text-[11px] font-medium text-red-600 mb-2">{sitioError}</p>}
-                      
-                      <div className="flex justify-end gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddSitioForm(false);
-                            setSitioError('');
-                          }}
-                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveNewSitio}
-                          disabled={addingSitio || !newSitioName.trim()}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 rounded-lg transition-colors"
-                        >
-                          {addingSitio ? 'Saving...' : 'Save Sitio'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck / Driver *</label>
-                {fleetError ? (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
-                    Could not load fleet. Make sure the backend is running and you are logged in.
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Truck className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                    <select
-                      value={selTruck}
-                      onChange={e => setSelTruck(e.target.value)}
-                      required
-                      disabled={!selectedBarangay}
-                      className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all appearance-none"
-                    >
-                      <option value="">— Select truck —</option>
-                      {fleet.filter(t => {
-                        if (!selectedBarangay) return true;
-                        if (t.barangay && t.barangay.toLowerCase() === selectedBarangay.toLowerCase()) return true;
-                        if (t.type === 'shared' && t.serviceBarangays && t.serviceBarangays.map(b => b.toLowerCase()).includes(selectedBarangay.toLowerCase())) return true;
-                        if (!t.barangay && (!t.serviceBarangays || t.serviceBarangays.length === 0)) return true;
-                        return false;
-                      }).map(t => (
-                        <option key={t.truckId} value={t.truckId}>
-                          {t.truckId} — {t.driverName}{t.driverPhone ? ` (${t.driverPhone})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
-                    <div className="relative">
-                      <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                      <input
-                        type="time"
-                        value={startTime}
-                        onChange={e => setStartTime(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">End Time <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
-                    <div className="relative">
-                      <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                      <input
-                        type="time"
-                        value={endTime}
-                        onChange={e => setEndTime(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 shadow-sm transition-all"
-                      />
+                      )}
+                      {isPriority && (
+                        <div className="col-span-2 bg-red-100/80 text-red-800 p-2.5 rounded-xl border border-red-200">
+                          <span className="font-bold">🚨 Priority Area ({priorityLevel}):</span> {priorityReason || 'Immediate collection priority requested'}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5 leading-tight">Recommended when assigning multiple routes to the same truck. Missing the end time will auto-generate an alert.</p>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Notes <span className="text-slate-400 lowercase normal-case font-normal">(optional)</span></label>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="e.g. Early shift, holiday route..."
-                  rows={2}
-                  className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white text-slate-800 placeholder-slate-400 shadow-sm transition-all resize-none"
-                />
-              </div>
-
-              {/* Priority Area Toggle & Options */}
-              <div className="p-3.5 bg-red-50/60 border border-red-200/60 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-600" />
-                    <span className="text-xs font-bold text-slate-800">Set as Priority Area</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isPriority}
-                      onChange={e => setIsPriority(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
-                  </label>
-                </div>
-
-                {isPriority && (
-                  <div className="space-y-3.5 pt-2 border-t border-red-200/40 animate-in fade-in duration-150">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Level</label>
-                      <select
-                        value={priorityLevel}
-                        onChange={e => setPriorityLevel(e.target.value)}
-                        className="w-full px-3 py-2 text-xs font-semibold border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                      >
-                        <option value="High">🔴 High Priority</option>
-                        <option value="Critical">🚨 Critical Hazard</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Priority Reason / Dispatch Note</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Toxic odor / High waste accumulation report"
-                        value={priorityReason}
-                        onChange={e => setPriorityReason(e.target.value)}
-                        className="w-full px-3 py-2 text-xs font-medium border border-red-200 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                      />
-                    </div>
-                  </div>
+              {/* Step Navigation Controls Footer */}
+              <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
+                {modalStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setModalStep(prev => prev - 1)}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    ← Back
+                  </button>
                 )}
-              </div>
-
-              <div className="flex gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  className="px-4 py-2.5 text-xs font-bold text-slate-400 hover:bg-slate-100 rounded-xl transition-colors ml-auto"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting || !selTruck}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg shadow-emerald-600/20 transition-all"
-                >
-                  {submitting ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Plus className="w-4 h-4" />
-                  )}
-                  Save Schedule
-                </button>
+                {modalStep < 4 ? (
+                  <button
+                    type="button"
+                    disabled={modalStep === 1 ? !selectedBarangay || selectedSitios.length === 0 : modalStep === 2 ? !selTruck : false}
+                    onClick={() => setModalStep(prev => prev + 1)}
+                    className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all shadow-md shadow-emerald-600/20"
+                  >
+                    Next Step →
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={submitting || !selTruck}
+                    className="px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5"
+                  >
+                    {submitting ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                    Save & Dispatch Schedule
+                  </button>
+                )}
               </div>
             </form>
           </div>

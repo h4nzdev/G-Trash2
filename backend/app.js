@@ -403,11 +403,28 @@ const residentSchema = new mongoose.Schema({
     resolutionsVerified: { type: Number, default: 0 },
   },
   lastPointsAt: { type: Date, default: null },
+  disposalStreak: { type: Number, default: 0 },
+  lastDisposalClaimAt: { type: Date, default: null },
+  lastDisposalRunAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 // sparse: true → null householdIds (incomplete address) are not indexed, so old records won't conflict
 residentSchema.index({ householdId: 1 }, { unique: true, sparse: true });
 const Resident = mongoose.model("Resident", residentSchema);
+
+const disposalVerificationSchema = new mongoose.Schema({
+  residentId: { type: mongoose.Schema.Types.ObjectId, ref: "Resident", required: true },
+  residentName: { type: String, required: true },
+  barangay: { type: String, required: true },
+  sitio: { type: String, default: "" },
+  photoUrl: { type: String, required: true },
+  streakCount: { type: Number, default: 1 },
+  pointsAwarded: { type: Number, default: 0 },
+  truckId: { type: String, default: "" },
+  status: { type: String, enum: ["active", "deleted"], default: "active" },
+  createdAt: { type: Date, default: Date.now },
+});
+const DisposalVerification = mongoose.model("DisposalVerification", disposalVerificationSchema);
 
 const rewardSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -5100,6 +5117,34 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Batch location sync handler for offline buffering
+  socket.on("truck:location:batch", async ({ truckId, points }, ack) => {
+    if (!truckId || !Array.isArray(points) || points.length === 0) {
+      if (typeof ack === "function") ack({ ok: false, error: "Invalid payload" });
+      return;
+    }
+    const lastPoint = points[points.length - 1];
+    try {
+      await Truck.findOneAndUpdate(
+        { truckId },
+        { lat: lastPoint.lat, lng: lastPoint.lng, heading: lastPoint.heading || 0, speed: lastPoint.speed || 0, status: "online", updatedAt: new Date() },
+        { upsert: true, new: true }
+      );
+      if (typeof ack === "function") ack({ ok: true, count: points.length });
+      socket.broadcast.emit("truck:location:update", {
+        truckId,
+        lat: lastPoint.lat,
+        lng: lastPoint.lng,
+        heading: lastPoint.heading || 0,
+        speed: lastPoint.speed || 0,
+        timestamp: new Date().toISOString(),
+      });
+      checkTruckProximity(truckId).catch(() => {});
+    } catch (err) {
+      if (typeof ack === "function") ack({ ok: false, error: err.message });
+    }
+  });
+
   // Truck marks itself offline — broadcast to ALL clients including sender
   socket.on("truck:offline", async ({ truckId }) => {
     if (!truckId) return;
@@ -5598,6 +5643,109 @@ app.post("/api/rewards", async (req, res) => {
     }
 
     res.status(201).json(reward);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Resident Waste Disposal Photo Verifications ---
+app.post("/api/disposal/submit", async (req, res) => {
+  try {
+    const { residentId, photoUrl, sitio, barangay, truckId, isTruckNearAndScheduled } = req.body;
+    if (!residentId || !photoUrl) {
+      return res.status(400).json({ error: "residentId and photoUrl are required" });
+    }
+
+    const resident = await Resident.findById(residentId);
+    if (!resident) return res.status(404).json({ error: "Resident not found" });
+
+    const now = new Date();
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+    let awardPoints = 0;
+    let newStreak = (resident.disposalStreak || 0) + 1;
+
+    // Reset streak if more than 7 days have passed since last disposal run
+    if (resident.lastDisposalRunAt && (now.getTime() - new Date(resident.lastDisposalRunAt).getTime() > 7 * 24 * 60 * 60 * 1000)) {
+      newStreak = 1;
+    }
+
+    const lastClaim = resident.lastDisposalClaimAt ? new Date(resident.lastDisposalClaimAt).getTime() : 0;
+    const canClaimPoints = (now.getTime() - lastClaim >= THREE_DAYS_MS) && !!isTruckNearAndScheduled;
+
+    if (canClaimPoints) {
+      awardPoints = 10;
+      resident.totalPoints = (resident.totalPoints || 0) + 10;
+      resident.monthlyPoints = (resident.monthlyPoints || 0) + 10;
+      resident.lastPointsAt = now;
+      resident.lastDisposalClaimAt = now;
+      resident.pointsHistory.unshift({
+        points: 10,
+        action: "disposal_verification",
+        description: `Verified Waste Disposal (+10 pts) — Streak: ${newStreak} days`,
+        date: now,
+      });
+    }
+
+    resident.disposalStreak = newStreak;
+    resident.lastDisposalRunAt = now;
+    await resident.save();
+
+    const record = await DisposalVerification.create({
+      residentId: resident._id,
+      residentName: `${resident.firstName} ${resident.lastName}`,
+      barangay: barangay || resident.barangay,
+      sitio: sitio || "",
+      photoUrl,
+      streakCount: newStreak,
+      pointsAwarded: awardPoints,
+      truckId: truckId || "",
+      status: "active",
+    });
+
+    // Notify Officials via socket in real-time
+    io.emit("disposal:photo:new", record);
+
+    res.status(201).json({
+      success: true,
+      verification: record,
+      pointsAwarded: awardPoints,
+      newStreak,
+      totalPoints: resident.totalPoints,
+      message: awardPoints > 0 ? `🎉 Disposal Verified! +10 Points & ${newStreak}-Day Streak!` : `🎉 Disposal Verified! ${newStreak}-Day Streak! (Next points in 3 days)`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/disposal/photos", async (req, res) => {
+  try {
+    const { barangay } = req.query;
+    const filter = { status: "active" };
+    if (barangay && barangay !== "All") filter.barangay = barangay;
+    const photos = await DisposalVerification.find(filter).sort({ createdAt: -1 }).limit(100);
+    res.json(photos);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/disposal/photos/:id", async (req, res) => {
+  try {
+    const verification = await DisposalVerification.findByIdAndUpdate(
+      req.params.id,
+      { status: "deleted" },
+      { new: true }
+    );
+    if (!verification) return res.status(404).json({ error: "Photo not found" });
+
+    io.to(`resident:${verification.residentId}`).emit("resident:photo:deleted", {
+      photoId: verification._id,
+      message: "LGU Official reviewed & cleared your disposal photo validation."
+    });
+
+    res.json({ success: true, message: "Photo dismissed from official dashboard", verification });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

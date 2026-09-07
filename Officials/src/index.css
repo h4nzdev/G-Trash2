@@ -41,3 +41,29 @@ body {
 .leaflet-tile-dark {
   filter: grayscale(100%) invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
 }
+
+/* Custom Emerald Green Scrollbar */
+.custom-green-scrollbar::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;
+}
+.custom-green-scrollbar::-webkit-scrollbar-track {
+  background: #E2E8F0;
+  border-radius: 10px;
+}
+.custom-green-scrollbar::-webkit-scrollbar-thumb {
+  background: #059669;
+  border-radius: 10px;
+}
+.custom-green-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #047857;
+}
+.custom-green-scrollbar::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.custom-green-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #059669 #E2E8F0;
+}

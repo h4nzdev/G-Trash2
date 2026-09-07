@@ -592,12 +592,47 @@ export default function RouteMonitoring() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showZones, setShowZones] = useState(true);
   const [selectedColorHex, setSelectedColorHex] = useState("#059669");
+  const [selectedBarangay, setSelectedBarangay] = useState(official?.barangay || "All");
+  const [barangayList, setBarangayList] = useState([]);
   const socketRef = useRef(null);
+
+  // Sync selectedBarangay with official's barangay restriction
+  useEffect(() => {
+    if (official?.barangay && official.barangay !== "All") {
+      setSelectedBarangay(official.barangay);
+    }
+  }, [official]);
+
+  // Fetch list of Barangays
+  useEffect(() => {
+    axios
+      .get(`${API}/api/barangays`)
+      .then(({ data }) => setBarangayList(data))
+      .catch(() => {});
+  }, []);
+
+  // Filter reports by selected Barangay
+  const filteredReports = useMemo(() => {
+    const activeBrgy = selectedBarangay?.toLowerCase();
+    if (!activeBrgy || activeBrgy === "all") return reports;
+    return reports.filter(
+      (r) => r.barangay?.toLowerCase() === activeBrgy
+    );
+  }, [reports, selectedBarangay]);
+
+  // Filter routes by selected Barangay
+  const visibleRoutes = useMemo(() => {
+    const activeBrgy = selectedBarangay?.toLowerCase();
+    if (!activeBrgy || activeBrgy === "all") return routes;
+    return routes.filter(
+      (r) => r.barangay?.toLowerCase() === activeBrgy
+    );
+  }, [routes, selectedBarangay]);
 
   // Dynamic Heatmap Points calculation for report clusters & truck activity
   const heatmapPoints = useMemo(() => {
     const pts = [];
-    reports.forEach((r) => {
+    filteredReports.forEach((r) => {
       if (r.lat != null && r.lng != null && !isNaN(r.lat) && !isNaN(r.lng)) {
         const score = (r.upvotes?.length || 0) - (r.downvotes?.length || 0);
         const intensity = Math.min(1.0, Math.max(0.4, (score + 2) / 6));
@@ -609,7 +644,7 @@ export default function RouteMonitoring() {
         pts.push([t.lat, t.lng, t.status === "online" ? 0.9 : 0.4]);
       }
     });
-    routes.forEach((rt) => {
+    visibleRoutes.forEach((rt) => {
       (rt.waypoints || []).forEach((wp) => {
         if (wp.lat != null && wp.lng != null && !isNaN(wp.lat) && !isNaN(wp.lng)) {
           pts.push([wp.lat, wp.lng, 0.4]);
@@ -617,7 +652,7 @@ export default function RouteMonitoring() {
       });
     });
     return pts;
-  }, [reports, trucks, routes]);
+  }, [filteredReports, trucks, visibleRoutes]);
 
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   useEffect(() => {
@@ -782,7 +817,7 @@ export default function RouteMonitoring() {
   };
 
   // ── Computed Variables ──
-  const mappableRoutes = routes.filter((r) => r.routeCoords?.length > 0);
+  const mappableRoutes = visibleRoutes.filter((r) => r.routeCoords?.length > 0);
   const onlineCt = Object.values(trucks).filter(
     (t) => t.status === "online",
   ).length;
@@ -1077,11 +1112,34 @@ export default function RouteMonitoring() {
           {/* ── Top Navigation Bar ── */}
           <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white z-20">
             <div className="flex items-center gap-4">
-              <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-slate-50 cursor-pointer">
-                <span className="text-sm font-medium text-slate-700">
-                  Barangay: {official?.barangay || "All"}
+              <div className="relative bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-sm hover:bg-slate-50">
+                <span className="text-sm font-medium text-slate-700 shrink-0">
+                  Barangay:
                 </span>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
+                {official?.barangay && official.barangay !== 'All' ? (
+                  <span className="text-sm font-bold text-slate-800">
+                    {official.barangay}
+                  </span>
+                ) : (
+                  <select
+                    value={selectedBarangay}
+                    onChange={(e) => setSelectedBarangay(e.target.value)}
+                    className="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer pr-4 appearance-none"
+                  >
+                    <option value="All">All Barangays</option>
+                    {(barangayList.length > 0
+                      ? barangayList
+                      : Array.from(new Set(reports.map((r) => r.barangay).filter(Boolean)))
+                    ).map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {(!official?.barangay || official.barangay === 'All') && (
+                  <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2" />
+                )}
               </div>
             </div>
 
@@ -1155,7 +1213,7 @@ export default function RouteMonitoring() {
 
                 {/* Zone Polygons & Numbered Centroid Badges */}
                 {showZones &&
-                  routes.map((route, rIdx) => {
+                  visibleRoutes.map((route, rIdx) => {
                     const poly = computeZonePolygon(route.waypoints);
                     if (!poly) return null;
                     const centroid = computeCentroid(poly);
@@ -1280,7 +1338,7 @@ export default function RouteMonitoring() {
 
                 {/* Overflowing Bin Markers */}
                 {showReports &&
-                  reports
+                  filteredReports
                     .filter(
                       (r) =>
                         r.lat != null &&
@@ -1371,7 +1429,7 @@ export default function RouteMonitoring() {
                 }`}
               >
                 <AlertTriangle className="w-4 h-4" />
-                Alerts ({reports.length})
+                Alerts ({filteredReports.length})
               </button>
             </div>
 

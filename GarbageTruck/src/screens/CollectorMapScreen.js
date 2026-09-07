@@ -662,6 +662,7 @@ export default function CollectorMapScreen() {
   const [showTools, setShowTools] = useState(false);
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(true);
   const [clearingSitio, setClearingSitio] = useState(null);
 
   const handleMarkStopClean = async (scheduleId, sitioName) => {
@@ -737,6 +738,11 @@ export default function CollectorMapScreen() {
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [offRouteDistance, setOffRouteDistance] = useState(0);
   const [showOffRouteModal, setShowOffRouteModal] = useState(false);
+
+  // ── GPS Resilience & Offline Buffering ──
+  const offlineGpsBufferRef = useRef([]);
+  const [bufferedGpsCount, setBufferedGpsCount] = useState(0);
+  const [isSocketConnected, setIsSocketConnected] = useState(true);
 
   const [sitioList, setSitioList] = useState([]);
 
@@ -1013,6 +1019,23 @@ export default function CollectorMapScreen() {
     const socket = io(TRACKING_SERVER, { transports: ["polling", "websocket"] });
     socketRef.current = socket;
 
+    socket.on("connect", () => {
+      setIsSocketConnected(true);
+      if (offlineGpsBufferRef.current.length > 0) {
+        const points = [...offlineGpsBufferRef.current];
+        socket.emit("truck:location:batch", { truckId: TRUCK_ID, points }, (res) => {
+          if (res?.ok) {
+            offlineGpsBufferRef.current = [];
+            setBufferedGpsCount(0);
+          }
+        });
+      }
+    });
+
+    socket.on("disconnect", () => {
+      setIsSocketConnected(false);
+    });
+
     socket.on("schedule:changed", ({ truckId }) => {
       if (truckId?.toUpperCase() === TRUCK_ID?.toUpperCase()) fetchTodaySchedules();
     });
@@ -1139,6 +1162,7 @@ export default function CollectorMapScreen() {
         const { latitude, longitude, heading } = initial.coords;
         lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
         setCurrentLocation({ lat: latitude, lng: longitude });
+        setIsLocationLoading(false);
         if (webViewReady.current) {
           webViewRef.current?.injectJavaScript(
             `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
@@ -1157,6 +1181,7 @@ export default function CollectorMapScreen() {
 
           lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
           setCurrentLocation({ lat: latitude, lng: longitude });
+          setIsLocationLoading(false);
 
           // Always draw the truck position on the map even if shift hasn't started
           if (webViewReady.current) {
@@ -1167,13 +1192,27 @@ export default function CollectorMapScreen() {
 
           if (navigationActiveRef.current) {
             setCurrentSpeed(Math.round((speed || 0) * 3.6));
-            socket.emit("truck:location", {
-              truckId: TRUCK_ID,
-              lat: latitude,
-              lng: longitude,
-              heading: heading || 0,
-              speed: speed || 0,
-            });
+            const locPoint = { lat: latitude, lng: longitude, heading: heading || 0, speed: speed || 0, timestamp: Date.now() };
+
+            if (socket.connected) {
+              socket.emit("truck:location", {
+                truckId: TRUCK_ID,
+                ...locPoint,
+              });
+
+              if (offlineGpsBufferRef.current.length > 0) {
+                const points = [...offlineGpsBufferRef.current];
+                socket.emit("truck:location:batch", { truckId: TRUCK_ID, points }, (res) => {
+                  if (res?.ok) {
+                    offlineGpsBufferRef.current = [];
+                    setBufferedGpsCount(0);
+                  }
+                });
+              }
+            } else {
+              offlineGpsBufferRef.current.push(locPoint);
+              setBufferedGpsCount(offlineGpsBufferRef.current.length);
+            }
 
             // ── Off-Route Detection & Warning Validation ──
             const routeCoords = activeRouteCoordsRef.current;
@@ -1427,6 +1466,23 @@ export default function CollectorMapScreen() {
           scrollEnabled={false}
         />
 
+        {/* GPS Location Pre-Loader Overlay */}
+        {isLocationLoading && (
+          <View style={styles.locationPreloaderOverlay} pointerEvents="none">
+            <View style={styles.locationPreloaderCard}>
+              <View style={styles.preloaderBadge}>
+                <MaterialIcons name="my-location" size={13} color="#006A3B" />
+                <Text style={styles.preloaderBadgeText}>GPS PRE-LOADER</Text>
+              </View>
+              <ActivityIndicator size="large" color="#006A3B" style={{ marginVertical: 14 }} />
+              <Text style={styles.preloaderTitle}>Acquiring Truck Location...</Text>
+              <Text style={styles.preloaderSubtitle}>
+                Connecting to GPS satellites and calibrating live positioning for Truck {TRUCK_ID}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Selected Heatmap Zone Detail Card */}
         {selectedZone && (
           <Animated.View
@@ -1546,6 +1602,19 @@ export default function CollectorMapScreen() {
                       {assignedRouteBarangay ? `${assignedRouteBarangay} Waste Collection` : 'Scheduled Collection'}
                     </Text>
                   </View>
+                </View>
+
+                {/* GPS Status & Telemetry Strip */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, paddingTop: 4, borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.25)' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSocketConnected ? '#34D399' : '#FBBF24', marginRight: 6 }} />
+                    <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                      {isSocketConnected ? 'GPS Tracking Active' : `Offline (${bufferedGpsCount} buffered)`}
+                    </Text>
+                  </View>
+                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600' }}>
+                    {currentSpeed} km/h • {elapsedDisplay}
+                  </Text>
                 </View>
 
                 {/* Embedded Off-Route Warning Alert Strip */}
@@ -3830,5 +3899,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  locationPreloaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(248, 250, 252, 0.88)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    padding: 24,
+  },
+  locationPreloaderCard: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 24,
+    paddingHorizontal: 26,
+    borderRadius: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    maxWidth: 310,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  preloaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  preloaderBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#006A3B',
+    letterSpacing: 0.5,
+  },
+  preloaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  preloaderSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 17,
   },
 });

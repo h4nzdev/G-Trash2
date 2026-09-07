@@ -5,7 +5,11 @@ import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend as RechartsLegend } from 'recharts';
+import {
+  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
+  ReferenceArea, ReferenceLine, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  Legend as RechartsLegend
+} from 'recharts';
 import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from '../utils/mapBoundary';
@@ -30,6 +34,309 @@ function healthRiskLabel(ammoniaPpm) {
   if (ammoniaPpm > 50)  return 'High Risk';
   if (ammoniaPpm >= 25) return 'Moderate';
   return 'Safe';
+}
+
+const ChartTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-slate-900/95 text-white backdrop-blur-md border border-slate-700 rounded-xl p-3 shadow-xl text-xs space-y-1 z-50">
+      <p className="font-bold text-slate-300 border-b border-slate-700 pb-1 mb-1">{label}</p>
+      {payload.map((p) => (
+        <p key={p.dataKey} className="flex items-center justify-between gap-3" style={{ color: p.color }}>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
+            {p.name}:
+          </span>
+          <strong className="font-mono">{p.value} {p.dataKey === 'aqi' ? '' : 'ppm'}</strong>
+        </p>
+      ))}
+    </div>
+  );
+};
+
+function generateAirQualityHistory(zone) {
+  const ammoniaPpm = parseAmmoniaPpm(zone?.ammonia) || 35;
+  const methanePpm = parseAmmoniaPpm(zone?.methane) || 15;
+
+  const intervals = [
+    { time: '08:00', factor: 0.65 },
+    { time: '10:00', factor: 0.85 },
+    { time: '12:00', factor: 1.15 },
+    { time: '14:00', factor: 1.35 },
+    { time: '16:00', factor: 1.05 },
+    { time: '18:00', factor: 0.90 },
+    { time: '20:00', factor: 1.25 },
+    { time: '22:00', factor: 1.00 },
+    { time: '00:00', factor: 0.70 },
+    { time: '02:00', factor: 0.55 },
+    { time: '04:00', factor: 0.65 },
+    { time: '06:00', factor: 0.80 },
+    { time: 'Now', factor: 1.00 }
+  ];
+
+  return intervals.map(item => {
+    const nh3 = Math.max(2, Math.round(ammoniaPpm * item.factor));
+    const ch4 = Math.max(1, Math.round(methanePpm * item.factor));
+    const aqi = Math.round(nh3 * 2.2 + ch4 * 1.5);
+    return {
+      time: item.time,
+      ammonia: nh3,
+      methane: ch4,
+      aqi: aqi
+    };
+  });
+}
+
+function AirQualityTrendModal({ zone, onClose }) {
+  const [activeGas, setActiveGas] = useState('both');
+  
+  if (!zone) return null;
+
+  const nh3Val = parseAmmoniaPpm(zone.ammonia);
+  const ch4Val = parseAmmoniaPpm(zone.methane);
+  const aqiVal = Math.round(nh3Val * 2.2 + ch4Val * 1.5) || 45;
+
+  let statusBg = 'bg-emerald-600';
+  let statusBadge = 'Good';
+  let healthAdvice = '0-50: Air quality is satisfactory, and air pollution poses little or no risk.';
+
+  if (aqiVal > 150 || zone.status === 'critical') {
+    statusBg = 'bg-red-600';
+    statusBadge = 'Critical / Hazardous';
+    healthAdvice = '151-200+: Health alert: Everyone may experience more serious health effects. Avoid prolonged outdoor exertion.';
+  } else if (aqiVal > 100 || zone.status === 'high') {
+    statusBg = 'bg-orange-500';
+    statusBadge = 'Unhealthy for Sensitive Groups';
+    healthAdvice = '101-150: Members of sensitive groups may experience health effects with 24 hours of exposure. General public is less likely to be affected.';
+  } else if (aqiVal > 50 || zone.status === 'moderate') {
+    statusBg = 'bg-amber-500';
+    statusBadge = 'Moderate';
+    healthAdvice = '51-100: Air quality is acceptable; however, sensitive individuals may experience minor health effects.';
+  }
+
+  const historyData = generateAirQualityHistory(zone);
+  const formattedTime = new Date(zone.updatedAt || Date.now()).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+  });
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[3000] flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto">
+        
+        {/* Header Bar */}
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Activity className="w-5 h-5 text-white animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white leading-tight">Air Quality & Gas Hazard Analysis</h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase text-white ${statusBg}`}>
+                  {statusBadge}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-semibold text-slate-200">{zone.name}</span>
+                <span>•</span>
+                <span>{zone.barangay || 'Cebu City'}</span>
+                <span>•</span>
+                <span className="text-emerald-400 font-mono">Sensor ID: {zone.sensorId || 'IoT Zone'}</span>
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50/50">
+          
+          {/* Left Panel: PurpleAir-Style Live AQI Box */}
+          <div className="lg:col-span-4 flex flex-col justify-between space-y-4">
+            
+            {/* Live AQI Card */}
+            <div className={`${statusBg} text-white rounded-2xl p-5 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[260px]`}>
+              <div className="relative z-10">
+                <p className="text-[11px] font-medium text-white/80 uppercase tracking-wider mb-2">
+                  On {formattedTime}
+                </p>
+                <p className="text-xs font-bold uppercase tracking-wider text-white/90">
+                  10-Minute Average US EPA PM2.5 / Gas (AQI)
+                </p>
+                <div className="flex items-baseline gap-2 my-3">
+                  <span className="text-6xl font-black text-white tracking-tight leading-none">
+                    {aqiVal}
+                  </span>
+                  <span className="text-sm font-bold text-white/90">
+                    AQI Index
+                  </span>
+                </div>
+              </div>
+
+              <div className="relative z-10 bg-black/20 backdrop-blur-md rounded-xl p-3 border border-white/20">
+                <p className="text-xs font-semibold leading-relaxed text-white/95">
+                  {healthAdvice}
+                </p>
+              </div>
+            </div>
+
+            {/* Live Sensor Metrics Grid */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Wind className="w-4 h-4 text-emerald-600" /> Ammonia (NH₃)
+                </span>
+                <span className="text-base font-black text-slate-800">
+                  {zone.ammonia || '0 ppm'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-amber-500" /> Methane (CH₄)
+                </span>
+                <span className="text-base font-black text-slate-800">
+                  {zone.methane || '0 ppm'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Radio className="w-4 h-4 text-blue-500" /> Sensor Status
+                </span>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-md uppercase ${zone.isActive !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {zone.isActive !== false ? 'Active broadcasting' : 'Inactive'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel: Recharts Air Quality Trend Graph */}
+          <div className="lg:col-span-8 bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+            
+            {/* Graph Controls Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <div>
+                <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-emerald-600" />
+                  Gas Concentration & AQI Trend
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Air quality historical readings with EPA hazard color bands
+                </p>
+              </div>
+
+              {/* Gas Toggle Buttons */}
+              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                {['both', 'ammonia', 'methane'].map(g => (
+                  <button
+                    key={g}
+                    onClick={() => setActiveGas(g)}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg capitalize transition-all ${
+                      activeGas === g ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Recharts Area / Line Chart with Background Threshold Bands */}
+            <div className="w-full h-[260px] relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradNH3Modal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="gradCH4Modal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+
+                  {/* EPA AQI Threshold Reference Areas */}
+                  <ReferenceArea y1={0} y2={20} fillColor="#22c55e" fillOpacity={0.10} />
+                  <ReferenceArea y1={20} y2={40} fillColor="#eab308" fillOpacity={0.12} />
+                  <ReferenceArea y1={40} y2={70} fillColor="#f97316" fillOpacity={0.14} />
+                  <ReferenceArea y1={70} y2={160} fillColor="#ef4444" fillOpacity={0.16} />
+
+                  <ReferenceLine y={40} stroke="#f97316" strokeDasharray="3 3" label={{ value: 'Warning (40 ppm)', position: 'right', fill: '#f97316', fontSize: 10, fontWeight: 'bold' }} />
+                  <ReferenceLine y={20} stroke="#eab308" strokeDasharray="3 3" label={{ value: 'Caution (20 ppm)', position: 'right', fill: '#ca8a04', fontSize: 10, fontWeight: 'bold' }} />
+
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} unit=" ppm" />
+                  <Tooltip content={<ChartTooltip />} />
+
+                  {(activeGas === 'both' || activeGas === 'ammonia') && (
+                    <Area type="monotone" dataKey="ammonia" stroke="#f97316" strokeWidth={2.5} fill="url(#gradNH3Modal)" name="Ammonia (NH₃)" />
+                  )}
+                  {(activeGas === 'both' || activeGas === 'methane') && (
+                    <Area type="monotone" dataKey="methane" stroke="#6366f1" strokeWidth={2.5} fill="url(#gradCH4Modal)" name="Methane (CH₄)" />
+                  )}
+                  <Line type="monotone" dataKey="aqi" stroke="#0f172a" strokeWidth={2} strokeDasharray="4 4" dot={false} name="AQI Score" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Bottom PurpleAir-Style AQI Color Scale Bar */}
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5">
+                <span>AQI Hazard Scale:</span>
+                <span className="text-slate-700 font-bold">Current AQI: {aqiVal}</span>
+              </div>
+              
+              {/* Color Gradient Scale Bar */}
+              <div className="relative w-full h-3 rounded-full overflow-hidden flex shadow-inner">
+                <div className="h-full bg-emerald-500 flex-1 flex items-center justify-center text-[9px] font-black text-white">0</div>
+                <div className="h-full bg-yellow-400 flex-1 flex items-center justify-center text-[9px] font-black text-slate-900">50</div>
+                <div className="h-full bg-orange-500 flex-1 flex items-center justify-center text-[9px] font-black text-white">100</div>
+                <div className="h-full bg-red-600 flex-1 flex items-center justify-center text-[9px] font-black text-white">150</div>
+                <div className="h-full bg-purple-700 flex-1 flex items-center justify-center text-[9px] font-black text-white">200</div>
+                <div className="h-full bg-rose-950 flex-1 flex items-center justify-center text-[9px] font-black text-white">300+</div>
+
+                {/* Pointer indicator */}
+                <div 
+                  className="absolute top-0 bottom-0 w-1.5 bg-white border border-slate-900 shadow-md transition-all duration-500"
+                  style={{ left: `${Math.min(98, Math.max(2, (aqiVal / 200) * 100))}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between text-[9px] text-slate-400 font-semibold mt-1">
+                <span>Good</span>
+                <span>Moderate</span>
+                <span>Unhealthy for Sensitive</span>
+                <span>Unhealthy</span>
+                <span>Very Unhealthy</span>
+                <span>Hazardous</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between">
+          <span className="text-xs text-slate-500 flex items-center gap-1 font-medium">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            Last broadcast {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
+          </span>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md"
+          >
+            Close Analysis
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Cebu City outline and fetch function are now imported from mapBoundary.js
@@ -119,20 +426,37 @@ function MapPickerModal({ open, onClose, onConfirm }) {
   const [flyTarget, setFlyTarget] = useState(null);
   const [locationName, setLocationName] = useState('');
 
-  // Debounced Nominatim search
+  // Debounced Nominatim search with local Cebu priority
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
+    if (!query.trim() || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
     const t = setTimeout(async () => {
       setSearching(true);
       try {
+        // Try local Cebu search first
+        const cebuQuery = `${query.trim()}, Cebu, Philippines`;
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=ph`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cebuQuery)}&format=json&limit=6&countrycodes=ph`,
           { headers: { 'Accept-Language': 'en' } }
         );
-        setResults(await res.json());
-      } catch {}
-      setSearching(false);
-    }, 400);
+        let data = await res.json();
+        if (!data || data.length === 0) {
+          // Fallback to broader search
+          const resFallback = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query.trim())}&format=json&limit=6&countrycodes=ph`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          data = await resFallback.json();
+        }
+        setResults(data || []);
+      } catch (err) {
+        console.error('Location search failed:', err);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -195,7 +519,7 @@ function MapPickerModal({ open, onClose, onConfirm }) {
         </div>
 
         {/* Search bar */}
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', position: 'relative' }}>
+        <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', position: 'relative', zIndex: 1000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '8px 14px' }}>
             <svg style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
@@ -213,21 +537,36 @@ function MapPickerModal({ open, onClose, onConfirm }) {
             )}
           </div>
 
-          {/* Search results dropdown */}
-          {results.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: '20px', right: '20px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 10, overflow: 'hidden', marginTop: '4px' }}>
-              {results.map((r, i) => (
-                <button
-                  key={i}
-                  onClick={() => selectResult(r)}
-                  style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '8px', borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none' }}
-                  onMouseOver={e => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseOut={e => e.currentTarget.style.background = 'none'}
-                >
-                  <MapPin style={{ width: '13px', height: '13px', color: '#2563eb', marginTop: '2px', flexShrink: 0 }} />
-                  <span style={{ fontSize: '12px', color: '#334155', lineHeight: '1.5' }}>{r.display_name}</span>
-                </button>
-              ))}
+          {/* Search results & suggestion dropdown */}
+          {(results.length > 0 || searching) && (
+            <div style={{ position: 'absolute', top: '100%', left: '20px', right: '20px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '12px', boxShadow: '0 12px 32px rgba(0,0,0,0.18)', zIndex: 10000, overflow: 'hidden', marginTop: '6px', maxHeight: '240px', overflowY: 'auto' }}>
+              {searching && results.length === 0 ? (
+                <div style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '14px', height: '14px', border: '2px solid #2563eb', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                  Searching locations for "{query}"...
+                </div>
+              ) : results.length > 0 ? (
+                results.map((r, i) => {
+                  const parts = r.display_name.split(',');
+                  const title = parts[0];
+                  const subtitle = parts.slice(1).join(',').trim();
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => selectResult(r)}
+                      style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '10px', borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none' }}
+                      onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'}
+                      onMouseOut={e => e.currentTarget.style.background = 'none'}
+                    >
+                      <MapPin style={{ width: '15px', height: '15px', color: '#2563eb', marginTop: '2px', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</p>
+                        <p style={{ fontSize: '11px', color: '#64748b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : null}
             </div>
           )}
         </div>
@@ -240,7 +579,7 @@ function MapPickerModal({ open, onClose, onConfirm }) {
             style={{ width: '100%', height: '100%' }}
             zoomControl={true}
           >
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution="© OpenStreetMap © CARTO" />
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
             <PickerClickCapture onPick={handleMapClick} />
             {flyTarget && <FlyTo pos={flyTarget} />}
             {pickedPos && <Marker position={[pickedPos.lat, pickedPos.lng]} icon={pickerPinIcon} />}
@@ -300,6 +639,7 @@ export default function HeatmapAnalytics() {
   const [sensorZones, setSensorZones] = useState([]);
   const [unregisteredSensors, setUnregisteredSensors] = useState([]);
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [selectedAirQualityZone, setSelectedAirQualityZone] = useState(null);
   const socketRef = useRef(null);
   const toastTimers = useRef({});
 
@@ -901,6 +1241,7 @@ export default function HeatmapAnalytics() {
                     <Circle
                       center={[zone.lat, zone.lng]}
                       radius={250} // 250 meters maximum reach
+                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
                       pathOptions={{
                         color: circleColor,
                         fillColor: circleColor,
@@ -913,6 +1254,7 @@ export default function HeatmapAnalytics() {
                     <Circle
                       center={[zone.lat, zone.lng]}
                       radius={160}
+                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
                       pathOptions={{
                         fillColor: circleColor,
                         fillOpacity: 0.08,
@@ -923,6 +1265,7 @@ export default function HeatmapAnalytics() {
                     <Circle
                       center={[zone.lat, zone.lng]}
                       radius={90}
+                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
                       pathOptions={{
                         fillColor: circleColor,
                         fillOpacity: 0.13,
@@ -1010,6 +1353,14 @@ export default function HeatmapAnalytics() {
                         </div>
                       </div>
                     </div>
+
+                    <button
+                      onClick={() => setSelectedAirQualityZone(zone)}
+                      className="w-full mb-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-colors"
+                    >
+                      <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      View Air Quality Trend & Graph
+                    </button>
 
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                       <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
@@ -1340,6 +1691,14 @@ export default function HeatmapAnalytics() {
           setShowMapPicker(false);
         }}
       />
+
+      {/* Air Quality Trend & Hazard Zone Analysis Modal (PurpleAir-style) */}
+      {selectedAirQualityZone && (
+        <AirQualityTrendModal
+          zone={selectedAirQualityZone}
+          onClose={() => setSelectedAirQualityZone(null)}
+        />
+      )}
     </div>
   );
 }

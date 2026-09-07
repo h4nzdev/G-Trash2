@@ -16,6 +16,7 @@ import ScheduleRoute from './pages/ScheduleRoute';
 import DriverAnalytics from './pages/DriverAnalytics';
 import RewardsManagement from './pages/RewardsManagement';
 import DriverView from './pages/DriverView';
+import DisposalVerifications from './pages/DisposalVerifications';
 
 function ProtectedLayout() {
   const { official, loading } = useAuth();
@@ -62,6 +63,7 @@ export default function App() {
 
             <Route path="fleet/:truckId" element={<ChdGuard><DriverAnalytics /></ChdGuard>} />
             <Route path="rewards" element={<ChdGuard><RewardsManagement /></ChdGuard>} />
+            <Route path="disposals" element={<DisposalVerifications />} />
           </Route>
         </Routes>
       </AuthProvider>

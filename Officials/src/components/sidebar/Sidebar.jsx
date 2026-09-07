@@ -21,6 +21,7 @@ import {
   Gift,
   PieChart,
   AlertTriangle,
+  Camera,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -38,6 +39,7 @@ const navGroups = [
       { path: "/routes", icon: Activity, label: "Fleet Tracking" },
       { path: "/fleet", icon: Truck, label: "Fleet Management" },
       { path: "/schedule", icon: CalendarDays, label: "Schedule Collection" },
+      { path: "/disposals", icon: Camera, label: "Disposal Photos" },
     ],
   },
   {
