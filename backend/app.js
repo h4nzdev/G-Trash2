@@ -5731,6 +5731,23 @@ app.get("/api/disposal/photos", async (req, res) => {
   }
 });
 
+app.get("/api/resident/:id", async (req, res) => {
+  try {
+    const resident = await Resident.findById(req.params.id);
+    if (!resident) return res.status(404).json({ error: "Resident not found" });
+    res.json({
+      id: resident._id,
+      name: `${resident.firstName} ${resident.lastName}`,
+      barangay: resident.barangay,
+      disposalStreak: resident.disposalStreak || 0,
+      totalPoints: resident.totalPoints || 0,
+      monthlyPoints: resident.monthlyPoints || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete("/api/disposal/photos/:id", async (req, res) => {
   try {
     const verification = await DisposalVerification.findByIdAndUpdate(

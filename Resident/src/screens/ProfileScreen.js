@@ -201,7 +201,45 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── White sheet (covers everything below cover) ── */}
         <View style={styles.whiteSheet}>
+          {!user ? (
+            <View style={{ paddingHorizontal: 24, paddingVertical: 32, alignItems: 'center' }}>
+              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                <Ionicons name="person-circle-outline" size={56} color="#006A3B" />
+              </View>
 
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center' }}>
+                Guest Mode Active
+              </Text>
+              <Text style={{ fontSize: 13, color: '#6B7280', textAlign: 'center', marginTop: 8, lineHeight: 19, marginBottom: 24 }}>
+                You are currently exploring G-Trash as a guest. You can track garbage trucks, view barangay schedules, and check air quality maps freely!
+              </Text>
+
+              <View style={{ width: '100%', backgroundColor: '#F9FAFB', borderRadius: 20, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#F3F4F6', gap: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Live GPS Garbage Truck Tracking</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Barangay Route Schedules</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Air Quality & Hazard Sensor Maps</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={{ width: '100%', backgroundColor: '#006A3B', paddingVertical: 16, borderRadius: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 }}
+                onPress={() => navigation.navigate("Login")}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Sign In / Register Account</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
           {/* Avatar section */}
           <View style={styles.avatarSection}>
             <View style={styles.avatarRing}>
@@ -538,8 +576,10 @@ export default function ProfileScreen({ navigation }) {
 
             <View style={{ height: 48 }} />
           </View>
-        </View>
-      </ScrollView>
+        </>
+        )}
+      </View>
+    </ScrollView>
 
         {/* Language Modal */}
         <Modal

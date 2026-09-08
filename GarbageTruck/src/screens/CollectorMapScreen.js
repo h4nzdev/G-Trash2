@@ -138,258 +138,136 @@ function formatGarbageArea(area) {
   };
 }
 
-// ── Leaflet HTML ───────────────────────────────────────────
+// ── MapLibre GL 3D Map HTML (100% Free Open-Source Vector Map) ──
 function buildLeafletHTML(truckB64) {
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { height:100%; width:100%; overflow:hidden; }
-    #map-perspective {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #e8ede8;
-    }
-    #map {
-      width: 100%;
-      height: 100%;
-    }
-    @keyframes pulse-red {
-      0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
-      70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-    }
+    html, body, #map { height:100%; width:100%; overflow:hidden; background: #e8ede8; }
+    .maplibregl-popup-content { padding: 8px 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .maplibregl-popup-close-button { display: none; }
   </style>
 </head>
 <body>
-  <div id="map-perspective">
-    <div id="map"></div>
-  </div>
+  <div id="map"></div>
   <script>
     (function() {
-      var map, routeLayer, currentMarker;
+      var map, currentMarker = null;
+      var followMode = false;
+      var stopMarkers = [];
+      var reportMarkers = [];
 
-      var southWest = new L.LatLng(10.275, 123.845);
-      var northEast = new L.LatLng(10.355, 123.925);
-      var cebuBounds = new L.LatLngBounds(southWest, northEast);
-
-      map = new L.Map('map', {
-        zoomControl: false, attributionControl: false, dragging: true,
-        scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true,
-        minZoom: 10, maxZoom: 18,
-        inertia: true, inertiaDeceleration: 3000,
-      });
-      map.setView([10.325, 123.893], 14);
-
-      var tileLayer, hillshadeLayer, labelsLayer;
-      function setTileLayer(style) {
-        if (tileLayer) map.removeLayer(tileLayer);
-        if (hillshadeLayer) map.removeLayer(hillshadeLayer);
-        if (labelsLayer) map.removeLayer(labelsLayer);
-
-        if (style === 'satellite') {
-          tileLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 18, minZoom: 10, attribution: '' }
-          );
-        } else if (style === 'topographic') {
-          tileLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 18, minZoom: 10, attribution: '' }
-          );
-          hillshadeLayer = L.tileLayer(
-            'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
-            { opacity: 0.25, maxZoom: 18 }
-          ).addTo(map);
-          labelsLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-            { opacity: 0.7, maxZoom: 18 }
-          ).addTo(map);
-        } else {
-          tileLayer = L.tileLayer(
-            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            { opacity: 0.9, maxZoom: 17, minZoom: 13 }
-          );
-        }
-        tileLayer.addTo(map);
-      }
-      setTileLayer('topographic');
-      window.setMapStyle = setTileLayer;
-
-      // Cebu City boundary — traced clockwise from the north-west coast
       var CEBU_OUTLINE = [
-        // North border (shared with Consolacion), west coast start
         [10.3565,123.8808],[10.3592,123.8842],[10.3610,123.8882],[10.3620,123.8925],
         [10.3624,123.8972],[10.3618,123.9018],[10.3600,123.9065],[10.3568,123.9112],
-        // NE — descending eastern mountain ridge
         [10.3525,123.9158],[10.3475,123.9200],[10.3420,123.9235],[10.3362,123.9262],
         [10.3302,123.9278],[10.3242,123.9284],[10.3182,123.9278],[10.3124,123.9260],
         [10.3068,123.9234],[10.3015,123.9202],[10.2965,123.9165],[10.2918,123.9124],
         [10.2874,123.9080],[10.2834,123.9032],[10.2798,123.8982],[10.2766,123.8928],
-        // SE — southern boundary (with Talisay)
         [10.2740,123.8868],[10.2720,123.8805],[10.2708,123.8740],[10.2703,123.8675],
-        [10.2706,123.8612],[10.2718,123.8555],
-        // SW corner
-        [10.2738,123.8508],[10.2770,123.8472],[10.2806,123.8452],[10.2844,123.8445],
-        [10.2878,123.8452],[10.2908,123.8465],[10.2936,123.8480],
-        // West coast going north — reclamation area creates a near-straight run
-        [10.2965,123.8488],[10.2995,123.8493],[10.3025,123.8496],[10.3055,123.8500],
-        [10.3085,123.8506],[10.3115,123.8515],[10.3145,123.8528],[10.3172,123.8545],
-        // North Reclamation Area / port zone
-        [10.3196,123.8558],[10.3220,123.8568],[10.3246,123.8573],[10.3272,123.8576],
-        [10.3300,123.8580],[10.3328,123.8588],[10.3358,123.8600],[10.3388,123.8616],
-        [10.3415,123.8636],[10.3440,123.8660],[10.3464,123.8686],[10.3487,123.8714],
-        [10.3508,123.8742],[10.3526,123.8770],[10.3544,123.8792],[10.3558,123.8802],
-        [10.3565,123.8808]
+        [10.2706,123.8612],[10.2718,123.8555],[10.2738,123.8508],[10.2770,123.8472],
+        [10.2806,123.8452],[10.2844,123.8445],[10.2878,123.8452],[10.2908,123.8465],
+        [10.2936,123.8480],[10.2965,123.8488],[10.2995,123.8493],[10.3025,123.8496],
+        [10.3055,123.8500],[10.3085,123.8506],[10.3115,123.8515],[10.3145,123.8528],
+        [10.3172,123.8545],[10.3196,123.8558],[10.3220,123.8568],[10.3246,123.8573],
+        [10.3272,123.8576],[10.3300,123.8580],[10.3328,123.8588],[10.3358,123.8600],
+        [10.3388,123.8616],[10.3415,123.8636],[10.3440,123.8660],[10.3464,123.8686],
+        [10.3487,123.8714],[10.3508,123.8742],[10.3526,123.8770],[10.3544,123.8792],
+        [10.3558,123.8802],[10.3565,123.8808]
       ];
-      var cityOutlineLayer = null;
-      window.toggleCityOutline = function(show) {
-        if (show && !cityOutlineLayer) {
-          cityOutlineLayer = L.polyline(CEBU_OUTLINE, { color: '#2563EB', weight: 2.5, opacity: 0.65, dashArray: '12, 6', lineJoin: 'round', interactive: false }).addTo(map);
-        } else if (!show && cityOutlineLayer) {
-          map.removeLayer(cityOutlineLayer);
-          cityOutlineLayer = null;
-        }
-      };
-      window.toggleCityOutline(true);
+      var CEBU_OUTLINE_LNGLAT = CEBU_OUTLINE.map(function(c) { return [c[1], c[0]]; });
 
-      // Report marker icons
-      function makeBinHtml(score) {
-        var isHigh = score >= 5;
-        var color = isHigh ? '#EF4444' : '#F59E0B';
-        return '<div style="position:relative;display:flex;flex-direction:column;align-items:center;">' +
-          '<div style="background:#fff;padding:2px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid #e2e8f0;'+(isHigh ? 'animation:pulse-red 2s infinite;' : '')+'">' +
-            '<div style="background:'+color+';width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 -1px 0 rgba(0,0,0,0.15);">' +
-              '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></svg>' +
-            '</div>' +
-          '</div>' +
-          '<div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #fff;margin-top:-2px;"></div>' +
-          (isHigh ? '<div style="position:absolute;top:-4px;right:-4px;background:#EF4444;color:#fff;width:14px;height:14px;border-radius:7px;font-size:7px;font-weight:900;display:flex;align-items:center;justify-content:center;border:1px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);z-index:2;">' + score + '</div>' : '') +
-        '</div>';
-      }
- 
-      var reportMarkers = [];
-      window.clearReportMarkers = function() {
-        reportMarkers.forEach(function(m) { map.removeLayer(m); });
-        reportMarkers = [];
-      };
-      window.addReportMarkers = function(reportsJson) {
-        window.clearReportMarkers();
-        var arr = JSON.parse(reportsJson);
-        arr.forEach(function(r) {
-          var icon = L.divIcon({ html: makeBinHtml(r.score), iconSize:[20,26], iconAnchor:[10,26], className:'' });
-          var m = L.marker([r.lat, r.lng], { icon: icon });
-          m.on('click', function() { window.ReactNativeWebView.postMessage('report:' + r.id); });
-          m.addTo(map);
-          reportMarkers.push(m);
-        });
-      };
-
-      // ── Dynamic heatmap zones (injected from React Native) ──
-      var heatmapLayers = [];
-
-      window.clearHeatmapZones = function() {
-        heatmapLayers.forEach(function(l) { map.removeLayer(l); });
-        heatmapLayers = [];
-      };
-
-      var sensorIcon = L.divIcon({
-        html: '<div style="display:flex;align-items:center;justify-content:center;background:#0F172A;width:24px;height:24px;border-radius:50%;border:2px solid #38BDF8;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' +
-              '<span style="font-size:11px;line-height:24px;">📡</span>' +
-              '</div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-        className: ''
+      map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        center: [123.893, 10.325],
+        zoom: 14,
+        pitch: 0,
+        bearing: 0,
+        attributionControl: false
       });
 
-      window.updateHeatmapZones = function(zonesJson) {
-        window.clearHeatmapZones();
-        var zones;
-        try { zones = JSON.parse(zonesJson); } catch(e) { return; }
-        zones.forEach(function(zone) {
-          if (zone.lat == null || zone.lng == null) return;
-          var color = zone.status === 'critical' ? '#E53935'
-                    : zone.status === 'moderate'  ? '#FDD835'
-                    : '#4CAF50';
-          var fillOpacity = zone.status === 'critical' ? 0.38
-                          : zone.status === 'moderate'  ? 0.28
-                          : 0.2;
-          var radius = Math.max(80, Math.min(450, (zone.intensity || 0.5) * 450));
-          var circle = L.circle([zone.lat, zone.lng], {
-            radius: radius,
-            color: color,
-            fillColor: color,
-            fillOpacity: fillOpacity,
-            weight: 2,
-            opacity: 0.9,
-            interactive: true,
-          });
-          circle.on('click', function() {
-            window.ReactNativeWebView.postMessage('heatmap:' + zone.id);
-          });
-          circle.addTo(map);
-          heatmapLayers.push(circle);
-
-          // Add a marker showing the physical location where the IoT sensor is integrated
-          if (zone.sensorId) {
-            var sensorMarker = L.marker([zone.lat, zone.lng], { icon: sensorIcon });
-            sensorMarker.bindPopup(
-              '<div style="font-family:sans-serif;min-width:130px;padding:2px;">' +
-              '<b style="font-size:12px;color:#0F172A;">📡 IoT Waste Sensor</b><br>' +
-              '<span style="font-size:10px;color:#64748B;">Zone: ' + (zone.name || zone.id) + '</span><br>' +
-              '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
-              (zone.status === 'critical' ? '🔴 Critical' : zone.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
-              '</div>'
-            );
-            sensorMarker.addTo(map);
-            heatmapLayers.push(sensorMarker);
+      map.on('load', function() {
+        map.addSource('cebu-outline', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: CEBU_OUTLINE_LNGLAT }
           }
         });
+        map.addLayer({
+          id: 'cebu-outline-layer',
+          type: 'line',
+          source: 'cebu-outline',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#2563EB',
+            'line-width': 2.5,
+            'line-opacity': 0.65,
+            'line-dasharray': [3, 2]
+          }
+        });
+
+        setTimeout(function() {
+          map.resize();
+          window.ReactNativeWebView.postMessage('map_ready');
+        }, 200);
+      });
+
+      // True Native 3D Camera Pitch
+      window.setPerspective3D = function(enable3d) {
+        if (!map) return;
+        map.easeTo({
+          pitch: enable3d ? 55 : 0,
+          duration: 600
+        });
       };
 
-      // Stop marker icons
-      var completedIcon = L.divIcon({
-        html:'<div style="position:relative;display:flex;flex-direction:column;align-items:center;">' +
-             '<div style="background:#059669;width:24px;height:24px;border-radius:12px;border:2.5px solid white;box-shadow:0 3px 8px rgba(5,150,105,0.4);display:flex;align-items:center;justify-content:center;">' +
-               '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' +
-             '</div>' +
-             '<div style="background:#065F46;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;margin-top:2px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);">CLEAN</div>' +
-             '</div>',
-        iconSize:[40,40],
-        iconAnchor:[20,12],
-        className:''
-      });
-      var activeIcon = L.divIcon({
-        html:'<div style="background:#2563EB;width:22px;height:22px;border-radius:11px;border:3px solid white;box-shadow:0 2px 8px rgba(37,99,235,0.4);"></div>',
-        iconSize:[22,22],
-        iconAnchor:[11,11],
-        className:''
-      });
-      var upcomingIcon = L.divIcon({
-        html:'<div style="background:#94A3B8;width:14px;height:14px;border-radius:7px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.15);"></div>',
-        iconSize:[14,14],
-        iconAnchor:[7,7],
-        className:''
-      });
+      window.setMapStyle = function(style) {};
+      window.toggleCityOutline = function(show) {
+        if (map && map.getLayer('cebu-outline-layer')) {
+          map.setLayoutProperty('cebu-outline-layer', 'visibility', show ? 'visible' : 'none');
+        }
+      };
 
-      // Dynamic stop markers — injected from React Native when route loads
-      var stopMarkers = [];
+      // Disabling yellow heatmap legend & circles as requested
+      window.clearHeatmapZones = function() {};
+      window.updateHeatmapZones = function() {};
+
+      // Stop markers
       window.clearStopMarkers = function() {
-        stopMarkers.forEach(function(m) { map.removeLayer(m); });
+        stopMarkers.forEach(function(m) { m.remove(); });
         stopMarkers = [];
       };
+
+      function createStopMarkerEl(status, name) {
+        var el = document.createElement('div');
+        if (status === 'completed') {
+          el.innerHTML = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;">' +
+            '<div style="background:#059669;width:24px;height:24px;border-radius:12px;border:2.5px solid white;box-shadow:0 3px 8px rgba(5,150,105,0.4);display:flex;align-items:center;justify-content:center;">' +
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' +
+            '</div>' +
+            '<div style="background:#065F46;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;margin-top:2px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);">CLEAN</div>' +
+            '</div>';
+        } else if (status === 'in-progress') {
+          el.innerHTML = '<div style="background:#2563EB;width:22px;height:22px;border-radius:11px;border:3px solid white;box-shadow:0 2px 8px rgba(37,99,235,0.4);"></div>';
+        } else {
+          el.innerHTML = '<div style="background:#94A3B8;width:14px;height:14px;border-radius:7px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.15);"></div>';
+        }
+        return el;
+      }
+
       window.addStopMarkers = function(stopsJson) {
         window.clearStopMarkers();
         var arr = JSON.parse(stopsJson);
         arr.forEach(function(s) {
-          var icon = s.status === 'completed' ? completedIcon : s.status === 'in-progress' ? activeIcon : upcomingIcon;
-          var m = L.marker([s.lat, s.lng], { icon: icon });
-          m.bindPopup(
+          var el = createStopMarkerEl(s.status, s.name);
+          var popup = new maplibregl.Popup({ offset: 15 }).setHTML(
             '<div style="font-family:sans-serif;padding:3px;text-align:center;">' +
             '<b style="font-size:12px;color:#0F172A;">' + (s.status === 'completed' ? '✨ ' : '📍 ') + s.name + '</b><br>' +
             '<span style="font-size:11px;font-weight:700;color:' + (s.status === 'completed' ? '#059669' : '#2563EB') + ';">' +
@@ -397,113 +275,214 @@ function buildLeafletHTML(truckB64) {
             '</span>' +
             '</div>'
           );
-          m.addTo(map);
+          var m = new maplibregl.Marker({ element: el })
+            .setLngLat([s.lng, s.lat])
+            .setPopup(popup)
+            .addTo(map);
           stopMarkers.push(m);
         });
       };
 
-      // Dynamic route layer
+      // Report markers
+      window.clearReportMarkers = function() {
+        reportMarkers.forEach(function(m) { m.remove(); });
+        reportMarkers = [];
+      };
+
+      function makeBinHtml(score) {
+        var isHigh = score >= 5;
+        var color = isHigh ? '#EF4444' : '#F59E0B';
+        return '<div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">' +
+          '<div style="background:#fff;padding:2px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid #e2e8f0;">' +
+            '<div style="background:'+color+';width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></svg>' +
+            '</div>' +
+          '</div>' +
+          '<div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #fff;margin-top:-2px;"></div>' +
+          (isHigh ? '<div style="position:absolute;top:-4px;right:-4px;background:#EF4444;color:#fff;width:14px;height:14px;border-radius:7px;font-size:7px;font-weight:900;display:flex;align-items:center;justify-content:center;border:1px solid #fff;z-index:2;">' + score + '</div>' : '') +
+        '</div>';
+      }
+
+      window.addReportMarkers = function(reportsJson) {
+        window.clearReportMarkers();
+        var arr = JSON.parse(reportsJson);
+        arr.forEach(function(r) {
+          var el = document.createElement('div');
+          el.innerHTML = makeBinHtml(r.score);
+          el.addEventListener('click', function() {
+            window.ReactNativeWebView.postMessage('report:' + r.id);
+          });
+          var m = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat([r.lng, r.lat])
+            .addTo(map);
+          reportMarkers.push(m);
+        });
+      };
+
+      // Route layers
       window.updateTruckRoute = function(coordsJson) {
-        if (routeLayer) { map.removeLayer(routeLayer); }
         var coords = JSON.parse(coordsJson);
-        if (coords && coords.length > 0) {
-          routeLayer = L.polyline(coords, {
-            color: '#006A3B',
-            weight: 5,
-            opacity: 0.85,
-            lineCap: 'round',
-            lineJoin: 'round',
-          }).addTo(map);
-          map.fitBounds(routeLayer.getBounds().pad(0.1));
+        if (!coords || coords.length === 0) return;
+        var geojsonCoords = coords.map(function(c) { return [c[1], c[0]]; });
+        
+        if (map.getSource('route')) {
+          map.getSource('route').setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: geojsonCoords }
+          });
+        } else {
+          map.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: geojsonCoords }
+            }
+          });
+          map.addLayer({
+            id: 'route',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#006A3B',
+              'line-width': 5,
+              'line-opacity': 0.85
+            }
+          });
+        }
+
+        var bounds = new maplibregl.LngLatBounds();
+        geojsonCoords.forEach(function(c) { bounds.extend(c); });
+        map.fitBounds(bounds, { padding: 40 });
+      };
+
+      window.updateReroutePath = function(coordsJson) {
+        var coords = JSON.parse(coordsJson);
+        if (!coords || coords.length === 0) return;
+        var geojsonCoords = coords.map(function(c) { return [c[1], c[0]]; });
+
+        if (map.getSource('reroute')) {
+          map.getSource('reroute').setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: geojsonCoords }
+          });
+        } else {
+          map.addSource('reroute', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: geojsonCoords }
+            }
+          });
+          map.addLayer({
+            id: 'reroute',
+            type: 'line',
+            source: 'reroute',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#DC2626',
+              'line-width': 6,
+              'line-dasharray': [2, 2],
+              'line-opacity': 0.9
+            }
+          });
         }
       };
 
-      var TB = '${truckB64}';
+      window.clearReroutePath = function() {
+        if (map.getSource('reroute')) {
+          map.getSource('reroute').setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [] }
+          });
+        }
+      };
 
-      // Navigation Arrow (Directional Triangle)
-      function createArrowMarker(lat, lng, bearing) {
-        var arrowHtml =
+      window.fitRerouteBounds = function() {
+        var bounds = new maplibregl.LngLatBounds();
+        var hasBounds = false;
+        if (map.getSource('route')) {
+          var data = map.getSource('route')._data;
+          if (data && data.geometry && data.geometry.coordinates) {
+            data.geometry.coordinates.forEach(function(c) { bounds.extend(c); hasBounds = true; });
+          }
+        }
+        if (map.getSource('reroute')) {
+          var rdata = map.getSource('reroute')._data;
+          if (rdata && rdata.geometry && rdata.geometry.coordinates) {
+            rdata.geometry.coordinates.forEach(function(c) { bounds.extend(c); hasBounds = true; });
+          }
+        }
+        if (currentMarker) {
+          bounds.extend(currentMarker.getLngLat());
+          hasBounds = true;
+        }
+        if (hasBounds) {
+          map.fitBounds(bounds, { padding: 50 });
+        }
+      };
+
+      function createArrowEl(bearing) {
+        var el = document.createElement('div');
+        el.innerHTML =
           '<div style="transform: rotate(' + (bearing || 0) + 'deg); filter: drop-shadow(0 4px 10px rgba(0,106,59,0.3));">' +
             '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
               '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#2196F3" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
             '</svg>' +
           '</div>';
-        var navIcon = L.divIcon({
-          html: arrowHtml,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
-          className: ''
-        });
-        return L.marker([lat, lng], { icon: navIcon, zIndexOffset: 2000 });
+        return el;
       }
 
-      function getBearing(lat1, lng1, lat2, lng2) {
-        var dLon = (lng2 - lng1) * Math.PI / 180;
-        var y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-        var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-                Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-        var brng = Math.atan2(y, x) * 180 / Math.PI;
-        return (brng + 360) % 360;
-      }
-
-      var followMode = false;
-
-      // Moves the arrow to the driver's real GPS position
       window.updateDriverPosition = function(lat, lng, bearing) {
-        if (currentMarker) { map.removeLayer(currentMarker); }
-        currentMarker = createArrowMarker(lat, lng, bearing || 0);
-        currentMarker.addTo(map);
+        if (currentMarker) { currentMarker.remove(); }
+        var el = createArrowEl(bearing || 0);
+        currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(map);
         if (followMode) {
-          map.panTo([lat, lng], { animate: true, duration: 0.5 });
+          map.panTo([lng, lat], { duration: 500 });
         }
       };
 
-      // Called when navigation starts — zooms in and enables auto-follow
       window.startFollow = function(lat, lng, heading) {
         followMode = true;
-        if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
-        currentMarker = createArrowMarker(lat, lng, heading || 0);
-        currentMarker.addTo(map);
-        map.flyTo([lat, lng], 17, { duration: 1.2, easeLinearity: 0.25 });
+        if (currentMarker) { currentMarker.remove(); }
+        var el = createArrowEl(heading || 0);
+        currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        map.flyTo({ center: [lng, lat], zoom: 17, duration: 1200 });
       };
 
-      // Called when navigation ends — disables auto-follow
       window.stopFollow = function() {
         followMode = false;
       };
 
-      // Gray idle navigation arrow
       window.showIdleTruck = function(lat, lng) {
-        if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
-        var idleHtml =
+        if (currentMarker) { currentMarker.remove(); }
+        var el = document.createElement('div');
+        el.innerHTML =
           '<div style="opacity:0.6; filter: grayscale(100%);">' +
             '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
               '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#9CA3AF" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
             '</svg>' +
           '</div>';
-        var idleIcon = L.divIcon({ html: idleHtml, iconSize: [40, 40], iconAnchor: [20, 20], className: '' });
-        currentMarker = L.marker([lat, lng], { icon: idleIcon, zIndexOffset: 2000 });
-        currentMarker.addTo(map);
+        currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(map);
       };
 
       window.centerMap = function(lat, lng) {
-        map.flyTo([lat, lng], 16, {
-          duration: 1.5,
-          easeLinearity: 0.25
-        });
+        map.flyTo({ center: [lng, lat], zoom: 16, duration: 1500 });
       };
 
       window.stopNavigation = function(lat, lng) {
-        if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+        if (currentMarker) { currentMarker.remove(); currentMarker = null; }
         if (lat !== undefined && lng !== undefined) {
           window.showIdleTruck(lat, lng);
         }
       };
 
-      setTimeout(function() { 
-        map.invalidateSize(); 
-        window.ReactNativeWebView.postMessage('map_ready');
-      }, 200);
     })();
   </script>
 </body>
@@ -540,6 +519,32 @@ function minDistToPolyline(lat, lng, coords) {
   return min;
 }
 
+function getClosestPointOnPolyline(pLat, pLng, coords) {
+  if (!coords || coords.length === 0) return null;
+  if (coords.length === 1) return { lat: coords[0][0], lng: coords[0][1] };
+  let min = Infinity;
+  let closestPoint = { lat: coords[0][0], lng: coords[0][1] };
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const aLat = coords[i][0], aLng = coords[i][1];
+    const bLat = coords[i + 1][0], bLng = coords[i + 1][1];
+    const dx = bLat - aLat, dy = bLng - aLng;
+    let projLat = aLat, projLng = aLng;
+    if (dx !== 0 || dy !== 0) {
+      const t = Math.max(0, Math.min(1,
+        ((pLat - aLat) * dx + (pLng - aLng) * dy) / (dx * dx + dy * dy)));
+      projLat = aLat + t * dx;
+      projLng = aLng + t * dy;
+    }
+    const dist = haversineM(pLat, pLng, projLat, projLng);
+    if (dist < min) {
+      min = dist;
+      closestPoint = { lat: projLat, lng: projLng };
+    }
+  }
+  return closestPoint;
+}
+
 // ── ORS fetch helper (unchanged) ──────────────────────────
 async function fetchORSRoute(waypoints) {
   if (!ORS_API_KEY || ORS_API_KEY === "YOUR_ORS_API_KEY") return null;
@@ -566,6 +571,28 @@ async function fetchORSRoute(waypoints) {
     console.warn("ORS fetch failed:", e.message);
     return null;
   }
+}
+
+// ── OSRM / ORS Road Routing Helper (Snaps waypoints to actual streets) ──
+async function fetchRoadRoutePolyline(waypoints) {
+  if (!waypoints || waypoints.length < 2) return waypoints || [];
+  try {
+    const locStr = waypoints.map(p => `${p[1]},${p[0]}`).join(';');
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.routes?.[0]?.geometry?.coordinates) {
+        return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      }
+    }
+  } catch (e) {
+    console.warn("OSRM routing failed:", e.message);
+  }
+  try {
+    const orsResult = await fetchORSRoute(waypoints.map(p => [p[1], p[0]]));
+    if (orsResult && orsResult.length > 0) return orsResult;
+  } catch (_) {}
+  return waypoints;
 }
 
 // ── Main Component ──────────────────────────────────────
@@ -653,6 +680,7 @@ export default function CollectorMapScreen() {
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [mapStyle, setMapStyle] = useState('topographic');
+  const [is3DPerspective, setIs3DPerspective] = useState(true);
   const [selectedZone, setSelectedZone] = useState(null);
   const [heatmapZones, setHeatmapZones] = useState([]); // live from /api/garbage-areas
   const [reports, setReports] = useState([]);
@@ -750,6 +778,7 @@ export default function CollectorMapScreen() {
   const navigationActiveRef = useRef(false);
   const lastGpsRef = useRef(null);
   const lastOffRouteAlertRef = useRef(0);
+  const lastRerouteFetchRef = useRef(0);
   const activeRouteCoordsRef = useRef([]);
   const shiftStartRef = useRef(null);
   const zoneCardAnim = useRef(new Animated.Value(0)).current;
@@ -881,21 +910,30 @@ export default function CollectorMapScreen() {
     webViewRef.current?.injectJavaScript(`window.addStopMarkers('${markersJson}'); true;`);
 
     // Draw route polyline connecting selected sequential sitios in order
-    let routeCoords = [];
+    let waypoints = [];
     for (const sched of todaySchedules || []) {
       if (sched.routeCoords && sched.routeCoords.length > 0) {
-        routeCoords = [...routeCoords, ...sched.routeCoords];
+        waypoints = [...waypoints, ...sched.routeCoords];
       } else if (sched.sitioTasks && sched.sitioTasks.length > 1) {
         const coords = sched.sitioTasks.filter(t => t.lat && t.lng).map(t => [t.lat, t.lng]);
-        routeCoords = [...routeCoords, ...coords];
+        waypoints = [...waypoints, ...coords];
       }
     }
-    if (routeCoords.length === 0 && allStops && allStops.length > 1) {
-      routeCoords = allStops.filter(s => s.lat && s.lng).map(s => [s.lat, s.lng]);
+    if (waypoints.length === 0 && allStops && allStops.length > 1) {
+      waypoints = allStops.filter(s => s.lat && s.lng).map(s => [s.lat, s.lng]);
     }
-    activeRouteCoordsRef.current = routeCoords;
-    const routeCoordsJson = JSON.stringify(routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+
+    if (waypoints.length >= 2) {
+      fetchRoadRoutePolyline(waypoints).then((roadCoords) => {
+        activeRouteCoordsRef.current = roadCoords;
+        const routeCoordsJson = JSON.stringify(roadCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+      });
+    } else {
+      activeRouteCoordsRef.current = waypoints;
+      const routeCoordsJson = JSON.stringify(waypoints).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+    }
   }, [sitioList, todaySchedules, allStops, webViewReady.current]);
 
   // Fetch overflowing bin reports
@@ -1235,8 +1273,25 @@ export default function CollectorMapScreen() {
                   lastOffRouteAlertRef.current = Date.now();
                   setShowOffRouteModal(true);
                 }
+
+                // Compute shortest road return route from current location back to assigned route
+                if (Date.now() - lastRerouteFetchRef.current > 4000) {
+                  lastRerouteFetchRef.current = Date.now();
+                  const closest = getClosestPointOnPolyline(latitude, longitude, routeCoords);
+                  if (closest) {
+                    fetchRoadRoutePolyline([[latitude, longitude], [closest.lat, closest.lng]]).then((rerouteCoords) => {
+                      if (webViewReady.current && rerouteCoords && rerouteCoords.length > 0) {
+                        const json = JSON.stringify(rerouteCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        webViewRef.current?.injectJavaScript(`window.updateReroutePath('${json}'); true;`);
+                      }
+                    });
+                  }
+                }
               } else {
                 setIsOffRoute(false);
+                if (webViewReady.current) {
+                  webViewRef.current?.injectJavaScript(`window.clearReroutePath(); true;`);
+                }
               }
             }
           }
@@ -1395,13 +1450,16 @@ export default function CollectorMapScreen() {
     // Update local schedule status immediately to accepted
     setTodaySchedules(prev => Array.isArray(prev) ? prev.map(s => ({ ...s, status: s.status === 'pending' ? 'accepted' : s.status })) : prev);
 
+    // Auto collapse bottom sheet so driver has full map view
+    collapseSheet();
+
     const pos = lastGpsRef.current;
     const lat = pos?.lat ?? 10.325;
     const lng = pos?.lng ?? 123.893;
     const heading = pos?.heading ?? 0;
 
     webViewRef.current?.injectJavaScript(
-      `window.startFollow(${lat}, ${lng}, ${heading}); true;`,
+      `window.startFollow(${lat}, ${lng}, ${heading}); window.centerMap(${lat}, ${lng}); true;`,
     );
 
     const xhr = new XMLHttpRequest();
@@ -1624,28 +1682,13 @@ export default function CollectorMapScreen() {
                     onPress={() => setShowOffRouteModal(true)}
                     activeOpacity={0.85}
                   >
-                    <MaterialIcons name="warning" size={14} color="#FFFFFF" />
+                    <MaterialIcons name="alt-route" size={14} color="#FFFFFF" />
                     <Text style={styles.bannerOffRouteText} numberOfLines={1}>
-                      OFF ROUTE WARNING (~{offRouteDistance}m away) — Tap for info
+                      OFF ROUTE (~{offRouteDistance}m) — Return route shown on map
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
-
-              {/* MAP > Tag Pill Button */}
-              <TouchableOpacity
-                style={[styles.mapPillBtn, { top: Math.max(10, topInset) + (isOffRoute ? 114 : 76) }]}
-                onPress={() => {
-                  if (currentLocation && webViewRef.current) {
-                    webViewRef.current?.injectJavaScript(
-                      `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
-                    );
-                  }
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.mapPillText}>MAP ›</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -1655,9 +1698,29 @@ export default function CollectorMapScreen() {
           <View style={[
             styles.floatingActions,
             navigationActive
-              ? { left: 14, top: Math.max(10, topInset) + (isOffRoute ? 160 : 125) }
+              ? { left: 14, top: Math.max(10, topInset) + (isOffRoute ? 168 : 108) }
               : { right: 16, top: Math.max(16, topInset) }
           ]}>
+            {/* 3D Perspective Toggle Button */}
+            <TouchableOpacity
+              style={[
+                styles.floatingBtn,
+                is3DPerspective ? { backgroundColor: "#006A3B" } : { backgroundColor: "#FFFFFF" }
+              ]}
+              onPress={() => {
+                const nextVal = !is3DPerspective;
+                setIs3DPerspective(nextVal);
+                webViewRef.current?.injectJavaScript(
+                  `window.setPerspective3D(${nextVal}); true;`
+                );
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 12, fontWeight: "900", color: is3DPerspective ? "#FFFFFF" : "#006A3B" }}>
+                3D
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.floatingBtn,
@@ -2167,23 +2230,23 @@ export default function CollectorMapScreen() {
 
             <Text style={styles.deviationTitle}>Off Route Warning</Text>
             <Text style={styles.deviationBody}>
-              You are currently <Text style={{ fontWeight: '800', color: '#DC2626' }}>~{offRouteDistance}m away</Text> from your assigned collection route. Please return to your route to ensure scheduled barangay stops are collected.
+              You are currently <Text style={{ fontWeight: '800', color: '#DC2626' }}>~{offRouteDistance}m away</Text> from your assigned collection route. A return route guiding your truck back to your admin-assigned route has been mapped below.
             </Text>
 
             <TouchableOpacity
               style={styles.deviationBtnPrimary}
               onPress={() => {
                 setShowOffRouteModal(false);
-                if (currentLocation && webViewRef.current) {
+                if (webViewRef.current) {
                   webViewRef.current?.injectJavaScript(
-                    `window.centerMap(${currentLocation.lat}, ${currentLocation.lng}); true;`
+                    `window.fitRerouteBounds(); true;`
                   );
                 }
               }}
               activeOpacity={0.85}
             >
-              <MaterialIcons name="my-location" size={18} color="#FFFFFF" />
-              <Text style={styles.deviationBtnPrimaryText}>Re-Center Route Map</Text>
+              <MaterialIcons name="alt-route" size={18} color="#FFFFFF" />
+              <Text style={styles.deviationBtnPrimaryText}>View Return Route to Assigned Path</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

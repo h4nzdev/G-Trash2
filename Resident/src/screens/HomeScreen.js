@@ -23,6 +23,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
+import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
@@ -96,6 +97,101 @@ function getTodayYMD() {
   return `${y}-${m}-${day}`;
 }
 
+function ConfettiExplosion({ visible }) {
+  const confettiAnims = useRef(
+    Array.from({ length: 24 }).map(() => ({
+      x: new Animated.Value(0),
+      y: new Animated.Value(0),
+      scale: new Animated.Value(0),
+      opacity: new Animated.Value(1),
+    }))
+  ).current;
+
+  useEffect(() => {
+    if (visible) {
+      confettiAnims.forEach((anim) => {
+        anim.x.setValue(0);
+        anim.y.setValue(0);
+        anim.scale.setValue(0.2);
+        anim.opacity.setValue(1);
+
+        const targetX = (Math.random() - 0.5) * 260;
+        const targetY = (Math.random() - 0.7) * 300;
+
+        Animated.parallel([
+          Animated.timing(anim.x, {
+            toValue: targetX,
+            duration: 1100 + Math.random() * 500,
+            useNativeDriver: true,
+          }),
+          Animated.sequence([
+            Animated.timing(anim.y, {
+              toValue: targetY,
+              duration: 600 + Math.random() * 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anim.y, {
+              toValue: targetY + 120,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.timing(anim.scale, {
+            toValue: 0.8 + Math.random() * 0.5,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.sequence([
+            Animated.delay(900),
+            Animated.timing(anim.opacity, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]).start();
+      });
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const COLORS = ["#10B981", "#3B82F6", "#F59E0B", "#EC4899", "#8B5CF6", "#14B8A6"];
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {confettiAnims.map((anim, i) => {
+        const color = COLORS[i % COLORS.length];
+        const size = 10 + (i % 3) * 4;
+        const isCircle = i % 2 === 0;
+
+        return (
+          <Animated.View
+            key={i}
+            style={[
+              {
+                position: "absolute",
+                top: "45%",
+                left: "48%",
+                width: size,
+                height: size,
+                borderRadius: isCircle ? size / 2 : 3,
+                backgroundColor: color,
+                transform: [
+                  { translateX: anim.x },
+                  { translateY: anim.y },
+                  { scale: anim.scale },
+                ],
+                opacity: anim.opacity,
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -142,6 +238,118 @@ export default function HomeScreen({ navigation }) {
 
   const [pointsToast, setPointsToast] = useState(null);
   const pointsToastTimerRef = useRef(null);
+
+  const [disposalStreak, setDisposalStreak] = useState(user?.disposalStreak || 0);
+  const [userPoints, setUserPoints] = useState(user?.totalPoints || user?.points || 0);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`${API_URL}/api/resident/${user.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data) {
+          if (data.disposalStreak != null) setDisposalStreak(data.disposalStreak);
+          if (data.totalPoints != null) setUserPoints(data.totalPoints);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+  const [proximityModalVisible, setProximityModalVisible] = useState(false);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [submittingPhoto, setSubmittingPhoto] = useState(false);
+  const [celebrationVisible, setCelebrationVisible] = useState(false);
+  const [celebrationData, setCelebrationData] = useState(null);
+  const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
+  const [officialNoticeText, setOfficialNoticeText] = useState("");
+  const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
+
+  const handleTakePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission Needed", "Camera permission is required to capture trash disposal photos.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.6,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const photoUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setSelectedPhoto(photoUri);
+        setProximityModalVisible(false);
+        setPhotoPreviewVisible(true);
+      }
+    } catch (err) {
+      Alert.alert("Camera Error", "Could not launch camera.");
+    }
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission Needed", "Photo library access is required to select trash disposal photos.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.6,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const photoUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setSelectedPhoto(photoUri);
+        setProximityModalVisible(false);
+        setPhotoPreviewVisible(true);
+      }
+    } catch (err) {
+      Alert.alert("Gallery Error", "Could not launch photo library.");
+    }
+  };
+
+  const handleSubmitDisposal = async () => {
+    if (!selectedPhoto) return;
+    setSubmittingPhoto(true);
+    try {
+      const nextStreak = disposalStreak + 1;
+      const res = await fetch(`${API_URL}/api/disposal/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          residentId: user?.id,
+          residentName: user?.name || "Resident",
+          barangay: user?.barangay || "General",
+          photoUrl: selectedPhoto,
+          streak: nextStreak,
+          truckId: activeTruckId,
+          locationName: `${user?.barangay || "Community"} Curb`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDisposalStreak(data.newStreak);
+        setCelebrationData(data);
+        setPhotoPreviewVisible(false);
+        setCelebrationVisible(true);
+        setBinReady(true);
+        const today = getTodayYMD();
+        AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
+      } else {
+        Alert.alert("Notice", data.message || "Failed to submit disposal photo.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Network error submitting disposal verification photo.");
+    } finally {
+      setSubmittingPhoto(false);
+    }
+  };
 
   // Fetch barangay IoT areas on mount
   useEffect(() => {
@@ -426,6 +634,15 @@ export default function HomeScreen({ navigation }) {
 
     socket.on("collection:new", () => {
       fetchDashboard();
+    });
+
+    socket.on("resident:photo:deleted", ({ residentId, message }) => {
+      if (residentId === userIdRef.current) {
+        setOfficialNoticeText(
+          message || "LGU Official reviewed & cleared your disposal photo validation. Your streak & earned points remain completely safe!"
+        );
+        setOfficialNoticeVisible(true);
+      }
     });
 
     socket.on("task:completed", () => {
@@ -813,7 +1030,7 @@ export default function HomeScreen({ navigation }) {
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
-            {getGreeting(t)}, {firstName}!
+            {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash! 🚚"}
           </Text>
           <Text style={styles.subtitle}>
             {onlineTrucks.length > 0
@@ -822,11 +1039,126 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* Tarsi mascot assistant — anchored to a green divider, contextual insight */}
-        <TarsiAssistant
-          insight={tarsiData.insight}
-          variant={tarsiData.variant}
-        />
+        {/* Soft UI Resident Streaks & Eco Points Hero Banner */}
+        <View style={styles.streaksHeroCard}>
+          {user ? (
+            <>
+              <View style={styles.streaksHeroItem}>
+                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FFF7ED" }]}>
+                  <Text style={{ fontSize: 20 }}>🔥</Text>
+                </View>
+                <View>
+                  <Text style={styles.streaksHeroValue}>{disposalStreak} Days</Text>
+                  <Text style={styles.streaksHeroLabel}>Disposal Streak</Text>
+                </View>
+              </View>
+
+              <View style={styles.streaksHeroDivider} />
+
+              <View style={styles.streaksHeroItem}>
+                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <Text style={{ fontSize: 20 }}>🌟</Text>
+                </View>
+                <View>
+                  <Text style={styles.streaksHeroValue}>{userPoints} Pts</Text>
+                  <Text style={styles.streaksHeroLabel}>Eco Points</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.streaksSnapBtn}
+                onPress={() => setProximityModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                <Text style={styles.streaksSnapBtnText}>Dispose</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.streaksHeroItem}>
+                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#ECFDF5" }]}>
+                  <Text style={{ fontSize: 20 }}>🚚</Text>
+                </View>
+                <View>
+                  <Text style={styles.streaksHeroValue}>Guest Mode</Text>
+                  <Text style={styles.streaksHeroLabel}>Live GPS Tracking</Text>
+                </View>
+              </View>
+
+              <View style={styles.streaksHeroDivider} />
+
+              <View style={styles.streaksHeroItem}>
+                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <Text style={{ fontSize: 20 }}>🌟</Text>
+                </View>
+                <View>
+                  <Text style={styles.streaksHeroValue}>Eco Rewards</Text>
+                  <Text style={styles.streaksHeroLabel}>Sign in to earn</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.streaksSnapBtn}
+                onPress={() => navigation.navigate("Login")}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="login" size={16} color="#FFFFFF" />
+                <Text style={styles.streaksSnapBtnText}>Sign In</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* Status and Analysis Card */}
+        <View style={styles.statusAnalysisCard}>
+          <View style={styles.statusAnalysisHeader}>
+            <View style={styles.statusAnalysisIconWrap}>
+              <MaterialIcons name="analytics" size={22} color="#006A3B" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusAnalysisTitle}>Status & Analysis</Text>
+              <Text style={styles.statusAnalysisSub}>Live Neighborhood Waste Analytics</Text>
+            </View>
+            <View style={[styles.livePillBadge, {
+              backgroundColor: onlineTrucks.length > 0 ? "#ECFDF5" : "#F3F4F6",
+              borderColor: onlineTrucks.length > 0 ? "#A7F3D0" : "#E5E7EB",
+            }]}>
+              <View style={[styles.liveDot, {
+                backgroundColor: onlineTrucks.length > 0 ? "#10B981" : "#9CA3AF"
+              }]} />
+              <Text style={[styles.livePillText, {
+                color: onlineTrucks.length > 0 ? "#047857" : "#6B7280"
+              }]}>
+                {onlineTrucks.length > 0 ? "Active" : "Scheduled"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Contextual Analysis Insight Box */}
+          <View style={styles.insightBox}>
+            <MaterialIcons name="info-outline" size={18} color="#006A3B" />
+            <Text style={styles.insightText}>
+              {tarsiData.insight}
+            </Text>
+          </View>
+
+          {/* Analytics Grid */}
+          <View style={styles.analysisGrid}>
+            <View style={styles.analysisStatItem}>
+              <Text style={styles.analysisStatLabel}>Truck Proximity</Text>
+              <Text style={styles.analysisStatValue}>
+                {distToTruck !== null ? (distToTruck < 350 ? "<350m (Close)" : `${distToTruck}m`) : (onlineTrucks.length > 0 ? "Active in City" : "On Schedule")}
+              </Text>
+            </View>
+            <View style={[styles.analysisStatItem, styles.analysisStatDivider]}>
+              <Text style={styles.analysisStatLabel}>Street Bin Prep</Text>
+              <Text style={styles.analysisStatValue}>
+                {binReady ? "100% Prepared ✓" : "85% Prepared"}
+              </Text>
+            </View>
+          </View>
+        </View>
 
         {/* Pickup completion congratulation banner */}
         {todayPickupDone && (
@@ -840,6 +1172,57 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
         )}
+
+        {/* Proximity Disposal Card */}
+        <View style={styles.proximityCard}>
+          <View style={styles.proximityCardHeader}>
+            <View style={styles.proximityBadgePill}>
+              <View style={styles.livePulseDot} />
+              <Text style={styles.proximityBadgeText}>
+                {distToTruck !== null && distToTruck < 350
+                  ? "TRUCK VERY CLOSE"
+                  : distToTruck !== null && distToTruck < 1050
+                  ? "TRUCK APPROACHING"
+                  : onlineTrucks.length > 0
+                  ? "TRUCK ACTIVE"
+                  : "COLLECTION SCHEDULED"}
+              </Text>
+            </View>
+            <View style={styles.streakTagPill}>
+              <Text style={styles.streakTagIcon}>🔥</Text>
+              <Text style={styles.streakTagText}>{disposalStreak}-Day Streak</Text>
+            </View>
+          </View>
+
+          <Text style={styles.proximityCardTitle}>Garbage Disposal & Verification</Text>
+          <Text style={styles.proximityCardSub}>
+            Confirm your trash is at the curb with a Strava-style photo badge to earn +10 Eco Points and build your streak!
+          </Text>
+
+          <View style={styles.proximityActionsRow}>
+            <TouchableOpacity
+              style={styles.proximityBtnSecondary}
+              onPress={() => setModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="checklist" size={16} color="#006A3B" />
+              <Text style={styles.proximityBtnSecondaryText} numberOfLines={1} adjustsFontSizeToFit>
+                Prepare Bin
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.proximityBtnPrimary}
+              onPress={() => setProximityModalVisible(true)}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+              <Text style={styles.proximityBtnPrimaryText} numberOfLines={1} adjustsFontSizeToFit>
+                Snap & Dispose
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Bento Grid Cards */}
         <View style={styles.cardGrid}>
@@ -1103,6 +1486,275 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Proximity Choice Modal */}
+      <Modal
+        visible={proximityModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProximityModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setProximityModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalTitleRow}>
+              <View style={[styles.modalIconWrap, { backgroundColor: "#E6F4EA" }]}>
+                <MaterialIcons name="local-shipping" size={22} color="#006A3B" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Garbage Disposal</Text>
+                <Text style={styles.modalSubtitle}>Choose how you want to prepare or submit</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.choiceOptionCard}
+              onPress={() => {
+                setProximityModalVisible(false);
+                setModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.choiceIconWrap, { backgroundColor: "#EEF2FF" }]}>
+                <MaterialIcons name="format-list-bulleted" size={22} color="#4F46E5" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.choiceOptionTitle}>Prepare My Bin</Text>
+                <Text style={styles.choiceOptionSub}>5-step bin sorting & placement checklist</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.choiceOptionCard}
+              onPress={handleTakePhoto}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.choiceIconWrap, { backgroundColor: "#ECFDF5" }]}>
+                <MaterialIcons name="photo-camera" size={22} color="#059669" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.choiceOptionTitle}>Take Trash Photo</Text>
+                <Text style={styles.choiceOptionSub}>Snap curb photo with Strava overlay badge</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.choiceOptionCard}
+              onPress={handlePickPhoto}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.choiceIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                <MaterialIcons name="photo-library" size={22} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.choiceOptionTitle}>Upload from Gallery</Text>
+                <Text style={styles.choiceOptionSub}>Select existing photo from device</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Strava-Style Photo Overlay Preview Modal */}
+      <Modal
+        visible={photoPreviewVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoPreviewVisible(false)}
+      >
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.stravaPreviewContainer}>
+            <Text style={styles.stravaHeaderTitle}>Disposal Verification</Text>
+            <Text style={styles.stravaHeaderSub}>Strava-style photo badge overlay</Text>
+
+            {selectedPhoto && (
+              <View style={styles.stravaCardWrap}>
+                <Image source={{ uri: selectedPhoto }} style={styles.stravaImage} resizeMode="cover" />
+
+                {/* Top Glass Badges */}
+                <View style={styles.stravaOverlayTop}>
+                  <View style={styles.glassPill}>
+                    <MaterialIcons name="location-on" size={13} color="#10B981" />
+                    <Text style={styles.glassPillText} numberOfLines={1}>
+                      {user?.barangay || "Community Curb"} • Just Now
+                    </Text>
+                  </View>
+                  <View style={styles.verifiedPill}>
+                    <MaterialIcons name="verified" size={13} color="#FFFFFF" />
+                    <Text style={styles.verifiedPillText}>{activeTruckId}</Text>
+                  </View>
+                </View>
+
+                {/* Bottom Glass Badges */}
+                <View style={styles.stravaOverlayBottom}>
+                  <View style={styles.streakOverlayBadge}>
+                    <Text style={styles.overlayIcon}>🔥</Text>
+                    <View>
+                      <Text style={styles.overlayLabel}>STREAK</Text>
+                      <Text style={styles.overlayValue}>{disposalStreak + 1} Days</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.pointsOverlayBadge}>
+                    <Text style={styles.overlayIcon}>🌟</Text>
+                    <View>
+                      <Text style={styles.overlayLabel}>ECO REWARD</Text>
+                      <Text style={styles.overlayValue}>+10 Points</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.stravaActionsRow}>
+              <TouchableOpacity
+                style={styles.retakeBtn}
+                onPress={() => {
+                  setPhotoPreviewVisible(false);
+                  setProximityModalVisible(true);
+                }}
+                disabled={submittingPhoto}
+              >
+                <MaterialIcons name="refresh" size={18} color="#4B5563" />
+                <Text style={styles.retakeBtnText}>Retake</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitDisposalBtn}
+                onPress={handleSubmitDisposal}
+                disabled={submittingPhoto}
+                activeOpacity={0.85}
+              >
+                {submittingPhoto ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.submitDisposalBtnText}>Submit Photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Celebration Modal */}
+      <Modal
+        visible={celebrationVisible}
+        transparent
+        animationType="bounce"
+        onRequestClose={() => setCelebrationVisible(false)}
+      >
+        <View style={styles.modalOverlayDark}>
+          <ConfettiExplosion visible={celebrationVisible} />
+          <View style={styles.celebrationCard}>
+            <View style={styles.celebrationTrophyWrap}>
+              <Text style={{ fontSize: 44 }}>🏆</Text>
+            </View>
+            <Text style={styles.celebrationTitle}>Trash Disposed!</Text>
+            <Text style={styles.celebrationMessage}>
+              {celebrationData?.message || `Awesome job! Your trash disposal is verified and your ${disposalStreak}-day streak is active!`}
+            </Text>
+
+            <View style={styles.rewardSummaryBox}>
+              <View style={styles.rewardSummaryItem}>
+                <Text style={styles.rewardSummaryIcon}>🔥</Text>
+                <Text style={styles.rewardSummaryValue}>{disposalStreak} Days</Text>
+                <Text style={styles.rewardSummaryLabel}>Disposal Streak</Text>
+              </View>
+              <View style={styles.rewardSummaryDivider} />
+              <View style={styles.rewardSummaryItem}>
+                <Text style={styles.rewardSummaryIcon}>🌟</Text>
+                <Text style={styles.rewardSummaryValue}>
+                  {celebrationData?.awardPoints ? `+${celebrationData.awardPoints}` : "Verified"}
+                </Text>
+                <Text style={styles.rewardSummaryLabel}>Eco Points</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.celebrationCloseBtn}
+              onPress={() => setCelebrationVisible(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.celebrationCloseBtnText}>Awesome! 🌟</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* LGU Official Clearance Notice Modal */}
+      <Modal
+        visible={officialNoticeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOfficialNoticeVisible(false)}
+      >
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.officialNoticeCard}>
+            <View style={styles.officialNoticeIconWrap}>
+              <MaterialIcons name="verified-user" size={32} color="#006A3B" />
+            </View>
+            <Text style={styles.officialNoticeTitle}>Photo Review Updated</Text>
+            <Text style={styles.officialNoticeMessage}>
+              {officialNoticeText || "LGU Official reviewed & cleared your disposal photo validation. Your streak & earned points remain safe!"}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.officialNoticeCloseBtn}
+              onPress={() => setOfficialNoticeVisible(false)}
+            >
+              <Text style={styles.officialNoticeCloseBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Guest Sign-In Notice Modal */}
+      <Modal
+        visible={guestNoticeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGuestNoticeVisible(false)}
+      >
+        <View style={styles.modalOverlayDark}>
+          <View style={styles.officialNoticeCard}>
+            <View style={[styles.officialNoticeIconWrap, { backgroundColor: "#FEF3C7" }]}>
+              <MaterialIcons name="stars" size={32} color="#D97706" />
+            </View>
+            <Text style={styles.officialNoticeTitle}>Sign In to Earn Eco Points</Text>
+            <Text style={styles.officialNoticeMessage}>
+              You are currently in Guest Mode. Sign in or create an account to verify garbage disposal, build your daily streak, and earn +10 Eco Points per pickup!
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.officialNoticeCloseBtn, { marginBottom: 10 }]}
+              onPress={() => {
+                setGuestNoticeVisible(false);
+                navigation.navigate("Login");
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.officialNoticeCloseBtnText}>Sign In / Register</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.retakeBtn}
+              onPress={() => setGuestNoticeVisible(false)}
+            >
+              <Text style={styles.retakeBtnText}>Continue Tracking as Guest</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1873,5 +2525,575 @@ const styles = StyleSheet.create({
   },
   pickedUpBtnTextDisabled: {
     color: "#9CA3AF",
+  },
+
+  // Proximity Card Styles
+  proximityCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E6F4EA",
+  },
+  proximityCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  proximityBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 6,
+  },
+  livePulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#10B981",
+  },
+  proximityBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#047857",
+    letterSpacing: 0.5,
+  },
+  streakTagPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 4,
+  },
+  streakTagIcon: {
+    fontSize: 12,
+  },
+  streakTagText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#C2410C",
+  },
+  proximityCardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  proximityCardSub: {
+    fontSize: 13,
+    color: "#6B7280",
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  proximityActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  proximityBtnSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  proximityBtnSecondaryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#006A3B",
+  },
+  proximityBtnPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  proximityBtnPrimaryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+
+  // Modal Choice Option Cards
+  choiceOptionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  choiceIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  choiceOptionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  choiceOptionSub: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+
+  // Dark Overlay & Strava Preview
+  modalOverlayDark: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  stravaPreviewContainer: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 20,
+    alignItems: "center",
+  },
+  stravaHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  stravaHeaderSub: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  stravaCardWrap: {
+    width: "100%",
+    height: 260,
+    borderRadius: 20,
+    overflow: "hidden",
+    position: "relative",
+  },
+  stravaImage: {
+    width: "100%",
+    height: "100%",
+  },
+  stravaOverlayTop: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  glassPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 4,
+    maxWidth: "65%",
+  },
+  glassPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  verifiedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#10B981",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 4,
+  },
+  verifiedPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  stravaOverlayBottom: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  streakOverlayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(234, 88, 12, 0.9)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 8,
+  },
+  pointsOverlayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.9)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 8,
+  },
+  overlayIcon: {
+    fontSize: 18,
+  },
+  overlayLabel: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "rgba(255, 255, 255, 0.8)",
+    letterSpacing: 0.5,
+  },
+  overlayValue: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  stravaActionsRow: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 12,
+    marginTop: 18,
+  },
+  retakeBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 14,
+    borderRadius: 18,
+    gap: 6,
+  },
+  retakeBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#4B5563",
+  },
+  submitDisposalBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 14,
+    borderRadius: 18,
+    gap: 6,
+  },
+  submitDisposalBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Celebration Modal Styles
+  celebrationCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 24,
+    alignItems: "center",
+  },
+  celebrationTrophyWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#FEF3C7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  celebrationTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  celebrationMessage: {
+    fontSize: 14,
+    color: "#4B5563",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  rewardSummaryBox: {
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    width: "100%",
+    marginTop: 16,
+    marginBottom: 20,
+    alignItems: "center",
+    justifyContent: "space-around",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  rewardSummaryItem: {
+    alignItems: "center",
+  },
+  rewardSummaryIcon: {
+    fontSize: 20,
+  },
+  rewardSummaryValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginTop: 2,
+  },
+  rewardSummaryLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1,
+  },
+  rewardSummaryDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#E5E7EB",
+  },
+  celebrationCloseBtn: {
+    width: "100%",
+    backgroundColor: "#006A3B",
+    paddingVertical: 14,
+    borderRadius: 18,
+    alignItems: "center",
+  },
+  celebrationCloseBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Official Notice Modal
+  officialNoticeCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 24,
+    alignItems: "center",
+  },
+  officialNoticeIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  officialNoticeTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  officialNoticeMessage: {
+    fontSize: 13,
+    color: "#4B5563",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  officialNoticeCloseBtn: {
+    width: "100%",
+    backgroundColor: "#006A3B",
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  officialNoticeCloseBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+
+  // Soft UI Streaks & Eco Points Hero Banner Styles
+  streaksHeroCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  streaksHeroItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  streaksHeroIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  streaksHeroValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  streaksHeroLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1,
+  },
+  streaksHeroDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 12,
+  },
+  streaksSnapBtn: {
+    marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#006A3B",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    gap: 6,
+  },
+  streaksSnapBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Status and Analysis Card Styles
+  statusAnalysisCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E6F4EA",
+  },
+  statusAnalysisHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  statusAnalysisIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statusAnalysisTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  statusAnalysisSub: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1,
+  },
+  livePillBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    gap: 5,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  livePillText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  insightBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F0FFF4",
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    gap: 10,
+    marginBottom: 14,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#065F46",
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  analysisGrid: {
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  analysisStatItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  analysisStatDivider: {
+    borderLeftWidth: 1,
+    borderLeftColor: "#E5E7EB",
+  },
+  analysisStatLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  analysisStatValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: 2,
   },
 });

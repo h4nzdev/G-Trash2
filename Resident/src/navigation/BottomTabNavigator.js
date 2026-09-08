@@ -8,12 +8,16 @@ import CalendarScreen from '../screens/CalendarScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CommunityFeedScreen from '../screens/CommunityFeedScreen';
 import colors from '../constants/colors';
+import { useAuth } from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 
 export default function BottomTabNavigator() {
+  const { user } = useAuth();
+
   return (
     <Tab.Navigator
+      initialRouteName={!user ? "Map" : "Home"}
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
           let iconName;
@@ -28,7 +32,7 @@ export default function BottomTabNavigator() {
         },
         tabBarActiveTintColor: colors.primaryGreen,
         tabBarInactiveTintColor: 'grey',
-        tabBarStyle: {
+        tabBarStyle: !user ? { display: 'none' } : {
           backgroundColor: colors.white,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },

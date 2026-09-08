@@ -190,30 +190,15 @@ function AppNavigator() {
 
   return (
     <>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <>
-            <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
-            <Stack.Screen name="Report" component={ReportIssueScreen} />
-            <Stack.Screen name="Notifications" component={NotificationScreen} />
-            <Stack.Screen name="BugReport" component={BugReportScreen} />
-            <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
-            <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
-          </>
-        ) : (
-          <>
-            {!hasSeenTour ? (
-              <Stack.Screen name="Onboarding">
-                {(props) => <OnboardingScreen {...props} onFinish={() => setHasSeenTour(true)} />}
-              </Stack.Screen>
-            ) : (
-              <>
-                <Stack.Screen name="Login" component={LoginScreen} />
-                <Stack.Screen name="Register" component={RegisterScreen} />
-              </>
-            )}
-          </>
-        )}
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
+        <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="Report" component={ReportIssueScreen} />
+        <Stack.Screen name="Notifications" component={NotificationScreen} />
+        <Stack.Screen name="BugReport" component={BugReportScreen} />
+        <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
+        <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
       </Stack.Navigator>
 
       {/* Truck proximity banner — floats over every screen */}
