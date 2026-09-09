@@ -58,6 +58,21 @@ body {
 .custom-green-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #047857;
 }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 .custom-green-scrollbar::-webkit-scrollbar-button {
   display: none;
   width: 0;

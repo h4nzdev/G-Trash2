@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { io } from "socket.io-client";
@@ -41,6 +41,15 @@ function SkeletonBlock({ width = "100%", height = 16, radius = 8, style }) {
   );
 }
 
+// Formats a stop schedule time from a zero-based index (08:00, 08:45, 09:30, …)
+function formatStopTime(index) {
+  const totalMinutes = 8 * 60 + index * 45;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CollectorHomeScreen() {
   const { user, unreadCount, clearUnread } = useAuth();
@@ -53,6 +62,7 @@ export default function CollectorHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [shiftActive, setShiftActive] = useState(false);
+  const [showFinishModal, setShowFinishModal] = useState(false);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [aiMessages, setAiMessages] = useState([]);
   const [aiInput, setAiInput] = useState("");
@@ -282,6 +292,23 @@ export default function CollectorHomeScreen() {
     }));
   };
 
+  const notifyClearingStatus = (sitioName, status = 'clearing') => {
+    if (!sitioName) return;
+    fetch(`${API_URL}/api/schedules/clearing-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        truckId: TRUCK_ID,
+        driverName: driverName || 'Collector',
+        barangay: activeFlowTask?.barangay || assignedBarangay || 'Apas',
+        sitioName,
+        status,
+        lat: currentLocation?.latitude || null,
+        lng: currentLocation?.longitude || null,
+      }),
+    }).catch(() => {});
+  };
+
   // Helper to complete the cleaning flow and submit to backend
   const submitCleaningFlow = async () => {
     if (!activeFlowTask || isSubmittingFlow) return;
@@ -319,6 +346,9 @@ export default function CollectorHomeScreen() {
           finalAfterUrl = MOCK_AFTER_IMAGE;
         }
       }
+
+      if (!finalBeforeUrl) finalBeforeUrl = MOCK_BEFORE_IMAGE;
+      if (!finalAfterUrl) finalAfterUrl = MOCK_AFTER_IMAGE;
 
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -415,9 +445,104 @@ export default function CollectorHomeScreen() {
     }
   };
 
+  // Dynamic Shift Analytics Calculations
+  const analyticsStats = useMemo(() => {
+    let totalStops = 0;
+    let completedStops = 0;
+
+    todaySchedules.forEach((sched) => {
+      if (sched.sitioTasks && sched.sitioTasks.length > 0) {
+        totalStops += sched.sitioTasks.length;
+        completedStops += sched.sitioTasks.filter((t) => t.completed).length;
+      } else if (sched.sitio) {
+        totalStops += 1;
+        if (sched.status === "completed") completedStops += 1;
+      }
+    });
+
+    const stopsLeft = Math.max(0, totalStops - completedStops);
+    const progressPercent = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
+    const estimatedBins = completedStops * 4;
+
+    return {
+      totalStops,
+      completedStops,
+      stopsLeft,
+      progressPercent,
+      estimatedBins,
+    };
+  }, [todaySchedules]);
+
+  const isRouteCompleted = useMemo(() => {
+    if (!todaySchedules || todaySchedules.length === 0) return false;
+    if (analyticsStats.totalStops > 0 && analyticsStats.stopsLeft === 0) return true;
+    return todaySchedules.every((sched) => sched.status === "completed");
+  }, [todaySchedules, analyticsStats]);
+
+  // Broadcast shift completion to Officials app
+  useEffect(() => {
+    if (isRouteCompleted && todaySchedules.length > 0) {
+      const socket = io(API_URL, { transports: ["websocket", "polling"] });
+      socket.emit("truck:shift-completed", {
+        truckId: TRUCK_ID,
+        driverName,
+        routeName: formattedAssignedRoute || "Collection Duty",
+        completedStops: analyticsStats.completedStops,
+        totalStops: analyticsStats.totalStops,
+        timestamp: new Date().toISOString(),
+      });
+      return () => socket.disconnect();
+    }
+  }, [isRouteCompleted, todaySchedules.length, TRUCK_ID, driverName, formattedAssignedRoute, analyticsStats]);
+
   // Greeting based on time of day
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  // Dynamic route arrow string for header & schedule items
+  const formatRouteArrowString = useCallback((sched) => {
+    if (!sched) return "No schedule assigned today";
+    
+    // Priority 1: If sitioTasks is present, use barangay + sitioTask names
+    if (sched.sitioTasks && sched.sitioTasks.length > 0) {
+      const bgy = (sched.barangay || (sched.routeName ? sched.routeName.split(/[\s\u2014\u2013\u2794\u2192\u279c>:;\-]+/u)[0] : "") || "Apas").trim();
+      const sitioNames = sched.sitioTasks.map(t => (typeof t === 'string' ? t : t.name).trim()).filter(Boolean);
+      
+      const rawList = [bgy, ...sitioNames];
+      const uniqueList = [];
+      const seen = new Set();
+      for (const item of rawList) {
+        const lower = item.toLowerCase();
+        if (item && !seen.has(lower)) {
+          seen.add(lower);
+          uniqueList.push(item);
+        }
+      }
+      return uniqueList.join(" ➔ ");
+    }
+
+    // Priority 2: Parse routeName with comprehensive unicode arrow regex
+    if (sched.routeName) {
+      const parts = sched.routeName.split(/\s*[\u2014\u2013\u2794\u2192\u279c>:;\-]+\s*/u).map(p => p.trim()).filter(Boolean);
+      const uniqueParts = [];
+      const seen = new Set();
+      for (const part of parts) {
+        const lower = part.toLowerCase();
+        if (part && !seen.has(lower)) {
+          seen.add(lower);
+          uniqueParts.push(part);
+        }
+      }
+      if (uniqueParts.length > 0) return uniqueParts.join(" ➔ ");
+    }
+
+    return sched.sitio ? `${sched.barangay || 'Apas'} ➔ ${sched.sitio}` : "Collection Duty";
+  }, []);
+
+  const formattedAssignedRoute = useMemo(() => {
+    if (!todaySchedules || todaySchedules.length === 0) return "No schedule assigned today";
+    return formatRouteArrowString(todaySchedules[0]);
+  }, [todaySchedules, formatRouteArrowString]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -428,21 +553,18 @@ export default function CollectorHomeScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Image
-            source={require("../../assets/logo.png")}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
-          <View style={styles.collectorBadge}>
-            <Text style={styles.collectorBadgeText}>Collector</Text>
+          <View style={styles.leafIconCircle}>
+            <MaterialIcons name="eco" size={18} color="#059669" />
           </View>
-        </View>
-        <View style={styles.headerCenter}>
+          <View style={styles.collectorBadge}>
+            <Text style={styles.collectorBadgeText}>COLLECTOR</Text>
+          </View>
           <Text style={styles.truckIdText}>TRUCK-{TRUCK_ID}</Text>
         </View>
+
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.headerBtn} onPress={fetchScheduleData} activeOpacity={0.7}>
-            <MaterialIcons name="refresh" size={20} color="#374151" />
+            <MaterialIcons name="refresh" size={20} color="#475569" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerBtn}
@@ -452,7 +574,7 @@ export default function CollectorHomeScreen() {
             <MaterialIcons
               name={unreadCount > 0 ? "notifications" : "notifications-none"}
               size={22}
-              color={unreadCount > 0 ? "#006A3B" : "#374151"}
+              color={unreadCount > 0 ? "#059669" : "#475569"}
             />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
@@ -464,16 +586,75 @@ export default function CollectorHomeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        {/* ── Hero ── */}
+        {/* ── Hero Greeting & Single Assigned Route Display ── */}
         <View style={styles.hero}>
           <Text style={styles.heroGreeting}>{greeting},</Text>
           <Text style={styles.heroName}>{driverName.split(" ")[0]}!</Text>
-          <Text style={styles.heroRoute}>
-            {todaySchedules.length > 0
-              ? `Assigned: ${todaySchedules[0].routeName || "Collection duty"}`
-              : "No schedule assigned today"}
-          </Text>
+
+          {/* Single Assigned Route Card (SHOWN ONLY ONCE) */}
+          <View style={styles.heroRouteCard}>
+            <View style={styles.heroRouteHeader}>
+              <MaterialIcons name="alt-route" size={18} color="#059669" />
+              <Text style={styles.heroRouteHeaderTitle}>TODAY'S ASSIGNED ROUTE</Text>
+            </View>
+            <Text style={styles.heroRouteText}>{formattedAssignedRoute}</Text>
+          </View>
         </View>
+
+        {/* ── Route & Shift Completed Banner ── */}
+        {!isLoading && isRouteCompleted && (
+          <View style={styles.shiftCompletedBanner}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={styles.shiftCompletedBadgeIcon}>
+                <MaterialIcons name="emoji-events" size={24} color="#059669" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.shiftCompletedBannerTitle}>Shift & Pickups Completed</Text>
+                <Text style={styles.shiftCompletedBannerSub}>
+                  Truck {TRUCK_ID} ({driverName}) has completed all scheduled waste collections for today.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.shiftCompletedBannerFooter}>
+              <Text style={styles.shiftCompletedFooterStat}>
+                {analyticsStats.completedStops} / {analyticsStats.totalStops} Stops Cleared
+              </Text>
+              <Text style={styles.shiftCompletedFooterStat}>
+                ~{analyticsStats.estimatedBins} Bins Volume
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Primary Map Action Button ── */}
+        {!isLoading && !hasError && (
+          <TouchableOpacity
+            style={[
+              styles.primaryLaunchMapBtn,
+              isRouteCompleted && styles.disabledLaunchMapBtn,
+            ]}
+            onPress={() => {
+              if (isRouteCompleted) {
+                setShowFinishModal(true);
+              } else {
+                goToMap();
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons
+              name={isRouteCompleted ? "check-circle" : "map"}
+              size={22}
+              color="#FFFFFF"
+            />
+            <Text style={styles.primaryLaunchMapBtnText}>
+              {isRouteCompleted ? "Route Completed ✓ (View Summary)" : "Launch Live Map & Navigation"}
+            </Text>
+            {!isRouteCompleted && (
+              <MaterialIcons name="arrow-forward" size={18} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* ── Loading ── */}
         {isLoading ? (
@@ -501,193 +682,187 @@ export default function CollectorHomeScreen() {
           </View>
         ) : null}
 
-        {/* ── Shift Status & Route Overview ── */}
+        {/* ── Shift Analytics Grid ── */}
         {!isLoading && !hasError ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Shift Status</Text>
-            <View style={styles.surface}>
-              <View style={styles.shiftCard}>
+            <Text style={styles.sectionLabel}>SHIFT ANALYTICS</Text>
+            <View style={styles.analyticsGrid}>
+              {/* Card 1: Stops Left */}
+              <View style={styles.analyticsCard}>
+                <View style={[styles.analyticsIconBox, { backgroundColor: "#FEE2E2" }]}>
+                  <MaterialIcons name="location-on" size={20} color="#DC2626" />
+                </View>
+                <Text style={styles.analyticsValue}>{analyticsStats.stopsLeft}</Text>
+                <Text style={styles.analyticsLabel}>Stops Remaining</Text>
+              </View>
+
+              {/* Card 2: Cleared / Complete */}
+              <View style={styles.analyticsCard}>
+                <View style={[styles.analyticsIconBox, { backgroundColor: "#ECFDF5" }]}>
+                  <MaterialIcons name="check-circle" size={20} color="#059669" />
+                </View>
+                <Text style={styles.analyticsValue}>
+                  {analyticsStats.completedStops} / {analyticsStats.totalStops}
+                </Text>
+                <Text style={styles.analyticsLabel}>Stops Cleared ({analyticsStats.progressPercent}%)</Text>
+              </View>
+
+              {/* Card 3: Bins Volume */}
+              <View style={styles.analyticsCard}>
+                <View style={[styles.analyticsIconBox, { backgroundColor: "#FEF3C7" }]}>
+                  <MaterialIcons name="delete-outline" size={20} color="#D97706" />
+                </View>
+                <Text style={styles.analyticsValue}>{analyticsStats.estimatedBins} Bins</Text>
+                <Text style={styles.analyticsLabel}>Estimated Volume</Text>
+              </View>
+
+              {/* Card 4: Shift Status */}
+              <View style={styles.analyticsCard}>
                 <View style={[
-                  styles.shiftIndicator,
-                  shiftActive ? styles.shiftIndicatorActive : todaySchedules.length > 0 ? styles.shiftIndicatorReady : styles.shiftIndicatorWaiting
+                  styles.analyticsIconBox,
+                  isRouteCompleted
+                    ? { backgroundColor: "#DCFCE7" }
+                    : shiftActive
+                    ? { backgroundColor: "#DCFCE7" }
+                    : todaySchedules.length > 0
+                    ? { backgroundColor: "#FEF3C7" }
+                    : { backgroundColor: "#F1F5F9" }
                 ]}>
                   <MaterialIcons
-                    name={shiftActive ? "gps-fixed" : todaySchedules.length > 0 ? "local-shipping" : "hourglass-empty"}
-                    size={28}
-                    color={shiftActive ? "#FFFFFF" : todaySchedules.length > 0 ? "#D97706" : "#6B7280"}
+                    name={isRouteCompleted ? "check-circle" : shiftActive ? "gps-fixed" : todaySchedules.length > 0 ? "hourglass-top" : "event-busy"}
+                    size={20}
+                    color={isRouteCompleted ? "#166534" : shiftActive ? "#166534" : todaySchedules.length > 0 ? "#B45309" : "#64748B"}
                   />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.shiftTitle}>
-                    {shiftActive
-                      ? "On Duty — Streaming GPS"
-                      : todaySchedules.length > 0
-                      ? "Waiting — Ready to Start"
-                      : "Waiting for Schedule"}
-                  </Text>
-                  <Text style={styles.shiftSub}>
-                    {shiftActive
-                      ? "Live tracking active. Residents can see your truck."
-                      : todaySchedules.length > 0
-                      ? `Assigned to ${todaySchedules[0]?.routeName || "collection route"}. Start shift in Map.`
-                      : "No collection schedule assigned for today yet."}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.shiftBtn,
-                    shiftActive ? styles.shiftBtnActive : todaySchedules.length > 0 ? styles.shiftBtnStart : styles.shiftBtnMuted
-                  ]}
-                  onPress={goToMap}
-                  activeOpacity={0.8}
-                >
-                  <MaterialIcons
-                    name={shiftActive ? "map" : todaySchedules.length > 0 ? "play-arrow" : "map"}
-                    size={18}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.shiftBtnText}>
-                    {shiftActive ? "Live Map" : todaySchedules.length > 0 ? "Go to Map" : "View Map"}
-                  </Text>
-                </TouchableOpacity>
+                <Text style={[styles.analyticsValue, { fontSize: 14 }]} numberOfLines={1}>
+                  {isRouteCompleted ? "Completed ✓" : shiftActive ? "On Duty" : todaySchedules.length > 0 ? "Ready to Start" : "No Schedule"}
+                </Text>
+                <Text style={styles.analyticsLabel}>Shift Status</Text>
               </View>
             </View>
           </View>
         ) : null}
 
-        {/* ── Today's Schedule ── */}
-        {!isLoading && !hasError ? (
+        {/* ── Route Progress Bar ── */}
+        {!isLoading && !hasError && todaySchedules.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Today's Schedule</Text>
-            <View style={styles.surface}>
-              {todaySchedules.length > 0 ? (
-                todaySchedules.map((sched, i) => (
-                  <View key={sched._id || i} style={[styles.schedItem, { flexDirection: 'column', alignItems: 'stretch' }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{ padding: 4 }}>
-                        <MaterialIcons
-                          name="local-shipping"
-                          size={24}
-                          color={sched.status === "completed" ? "#006A3B" : "#9CA3AF"}
-                        />
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                          <Text style={[
-                            styles.schedTitle,
-                            sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
-                          ]}>
-                            {sched.routeName || "Collection Duty"}
-                          </Text>
-                          {sched.isPriority && (
-                            <View style={{
-                              backgroundColor: sched.priorityLevel === 'Critical' ? '#FEE2E2' : '#FEF3C7',
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderRadius: 4,
-                              marginLeft: 6,
-                              borderWidth: 1,
-                              borderColor: sched.priorityLevel === 'Critical' ? '#F87171' : '#FBBF24'
-                            }}>
-                              <Text style={{
-                                fontSize: 10,
-                                fontWeight: '700',
-                                color: sched.priorityLevel === 'Critical' ? '#991B1B' : '#92400E'
-                              }}>
-                                ⚡ {sched.priorityLevel ? sched.priorityLevel.toUpperCase() : 'PRIORITY'}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.schedMeta}>
-                          {sched.startTime ? `${sched.startTime}` : "Time TBD"}
-                          {sched.endTime ? ` — ${sched.endTime}` : ""}
-                        </Text>
-                        {sched.isPriority && sched.priorityReason ? (
-                          <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '600', marginTop: 2 }}>
-                            Priority Note: {sched.priorityReason}
-                          </Text>
-                        ) : null}
-                        {sched.notes ? <Text style={styles.schedNotes}>{sched.notes}</Text> : null}
-                      </View>
-                      <View style={[
-                        styles.schedStatus,
-                        sched.status === "completed" && styles.schedStatusDone,
-                        sched.status === "accepted" && styles.schedStatusAccepted,
-                        sched.status === "missed" && styles.schedStatusMissed,
-                      ]}>
-                        <Text style={[
-                          styles.schedStatusText,
-                          sched.status === "completed" && styles.schedStatusTextDone,
-                          sched.status === "accepted" && styles.schedStatusTextAccepted,
-                          sched.status === "missed" && styles.schedStatusTextMissed,
-                        ]}>
-                          {sched.status === "completed" ? "Done" : sched.status === "accepted" ? "Accepted" : sched.status === "missed" ? "Missed" : "Pending"}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    {/* Render Sitio Checklist Tasks */}
-                    {sched.sitioTasks && sched.sitioTasks.length > 0 ? (
-                      <View style={{ marginTop: 8, paddingLeft: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 6 }}>
-                        {sched.sitioTasks.map((task, idx) => (
-                          <View key={task._id || idx} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6 }}>
-                            <TouchableOpacity
-                              onPress={() => toggleTaskComplete(sched._id, task.name, task.completed, sched.routeName || "Collection Duty")}
-                              activeOpacity={task.completed ? 1 : 0.7}
-                              style={{ padding: 4 }}
-                            >
-                              <MaterialIcons
-                                name={task.completed ? "check-box" : "check-box-outline-blank"}
-                                size={22}
-                                color={task.completed ? "#006A3B" : "#9CA3AF"}
-                              />
-                            </TouchableOpacity>
-                            <Text style={[
-                              { fontSize: 13, marginLeft: 6, fontWeight: '500', color: '#374151' },
-                              task.completed && { textDecorationLine: "line-through", color: "#9CA3AF" }
-                            ]}>
-                              {task.name}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    ) : sched.sitio ? (
-                      // Legacy single-sitio schedule manual completion fallback
-                      <View style={{ marginTop: 4, paddingLeft: 12 }}>
-                        <TouchableOpacity
-                          onPress={() => toggleScheduleComplete(sched._id, sched.status, sched.routeName || "Collection Duty", sched.sitio || "Depot")}
-                          activeOpacity={sched.status === "completed" ? 1 : 0.7}
-                          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}
-                        >
-                          <MaterialIcons
-                            name={sched.status === "completed" ? "check-box" : "check-box-outline-blank"}
-                            size={22}
-                            color={sched.status === "completed" ? "#006A3B" : "#9CA3AF"}
-                          />
-                          <Text style={[
-                            { fontSize: 13, marginLeft: 6, fontWeight: '500', color: '#374151' },
-                            sched.status === "completed" && { textDecorationLine: "line-through", color: "#9CA3AF" }
-                          ]}>
-                            {sched.sitio}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : null}
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptySchedule}>
-                  <MaterialIcons name="event-busy" size={36} color="#D1D5DB" />
-                  <Text style={styles.emptyScheduleText}>No collections scheduled today</Text>
-                  <Text style={styles.emptyScheduleSub}>Check back later or contact dispatch</Text>
-                </View>
-              )}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8, paddingHorizontal: 4 }}>
+              <Text style={styles.sectionLabel}>ROUTE PROGRESS</Text>
+              <Text style={styles.progressPercentText}>{analyticsStats.progressPercent}% Complete</Text>
+            </View>
+            <View style={styles.progressBarTrack}>
+              <View style={[styles.progressBarFill, { width: `${analyticsStats.progressPercent}%` }]} />
             </View>
           </View>
         ) : null}
 
-        <View style={{ height: 100 }} />
+        {/* ── Today's Duty Checklist ── */}
+        {!isLoading && !hasError ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>TODAY'S DUTY CHECKLIST</Text>
+
+            {todaySchedules.length > 0 ? (
+              todaySchedules.map((sched, i) => (
+                <View key={sched._id || i} style={styles.checklistCard}>
+                  {sched.sitioTasks && sched.sitioTasks.length > 0 ? (
+                    sched.sitioTasks.map((task, idx) => (
+                      <TouchableOpacity
+                        key={task._id || idx}
+                        style={[
+                          styles.checklistItem,
+                          task.completed && styles.checklistItemCompleted
+                        ]}
+                        onPress={() => toggleTaskComplete(sched._id, task.name, task.completed, sched.routeName || "Collection Duty")}
+                        activeOpacity={task.completed ? 1 : 0.75}
+                      >
+                        <View style={[
+                          styles.checkboxSquare,
+                          task.completed && styles.checkboxSquareChecked
+                        ]}>
+                          {task.completed && (
+                            <MaterialIcons name="check" size={15} color="#FFFFFF" />
+                          )}
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <Text style={[
+                            styles.checklistItemTitle,
+                            task.completed && styles.checklistItemTitleCompleted
+                          ]}>
+                            {task.name}
+                          </Text>
+                          <Text style={styles.checklistItemTime}>
+                            Scheduled: {formatStopTime(idx)}
+                          </Text>
+                        </View>
+
+                        <View style={[
+                          styles.sitioStatusBadge,
+                          task.completed ? styles.sitioBadgeDone : styles.sitioBadgePending
+                        ]}>
+                          <Text style={[
+                            styles.sitioStatusBadgeText,
+                            task.completed ? styles.sitioBadgeTextDone : styles.sitioBadgeTextPending
+                          ]}>
+                            {task.completed ? "CLEARED" : "PENDING"}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.checklistItem,
+                        sched.status === "completed" && styles.checklistItemCompleted
+                      ]}
+                      onPress={() => toggleScheduleComplete(sched._id, sched.status, sched.routeName || "Collection Duty", sched.sitio || "Depot")}
+                      activeOpacity={sched.status === "completed" ? 1 : 0.75}
+                    >
+                      <View style={[
+                        styles.checkboxSquare,
+                        sched.status === "completed" && styles.checkboxSquareChecked
+                      ]}>
+                        {sched.status === "completed" && (
+                          <MaterialIcons name="check" size={15} color="#FFFFFF" />
+                        )}
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={[
+                          styles.checklistItemTitle,
+                          sched.status === "completed" && styles.checklistItemTitleCompleted
+                        ]}>
+                          {sched.sitio || "Collection Duty"}
+                        </Text>
+                        <Text style={styles.checklistItemTime}>Scheduled Duty</Text>
+                      </View>
+
+                      <View style={[
+                        styles.sitioStatusBadge,
+                        sched.status === "completed" ? styles.sitioBadgeDone : styles.sitioBadgePending
+                      ]}>
+                        <Text style={[
+                          styles.sitioStatusBadgeText,
+                          sched.status === "completed" ? styles.sitioBadgeTextDone : styles.sitioBadgeTextPending
+                        ]}>
+                          {sched.status === "completed" ? "CLEARED" : "PENDING"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCard}>
+                <MaterialIcons name="event-busy" size={36} color="#CBD5E1" />
+                <Text style={styles.emptyCardTitle}>No collections scheduled today</Text>
+                <Text style={styles.emptyCardSub}>Check back later or contact dispatch</Text>
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Clearance Flow Modal */}
@@ -785,214 +960,148 @@ export default function CollectorHomeScreen() {
               )}
 
               {activeFlowTask?.step === 'before_photo' && (
-                <View style={{ alignItems: 'center', width: '100%' }}>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Please capture the accumulation levels BEFORE you start cleaning.
+                <View style={{ gap: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' }}>
+                    Capture photo BEFORE waste collection at {activeFlowTask.sitioName}
                   </Text>
-
                   {beforeImage ? (
-                    <View style={{ width: '100%', alignItems: 'center' }}>
-                      <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
-                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-                        <TouchableOpacity
-                          onPress={() => takePhotoStep('before')}
-                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }))}
-                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 240, borderRadius: 16 }} resizeMode="cover" />
                   ) : (
-                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
-                      <TouchableOpacity
-                        onPress={() => takePhotoStep('before')}
-                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap Before Photo</Text>
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Permission prompt will open. Fallback to sample photo on simulators.</Text>
+                    <View style={{ width: '100%', height: 200, backgroundColor: '#1E293B', borderRadius: 16, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <MaterialIcons name="photo-camera" size={48} color="#64748B" />
+                      <Text style={{ color: '#94A3B8', fontSize: 13 }}>No photo captured yet</Text>
                     </View>
                   )}
+                  <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                    <TouchableOpacity
+                      onPress={() => takePhotoStep('before')}
+                      style={{ flex: 1, backgroundColor: '#334155', paddingVertical: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                    >
+                      <MaterialIcons name="photo-camera" size={20} color="#F8FAFC" />
+                      <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{beforeImage ? "Retake Photo" : "Take Photo"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        notifyClearingStatus(activeFlowTask.sitioName, 'clearing');
+                        setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
+                      }}
+                      style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Next Step</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
               {activeFlowTask?.step === 'cleaning' && (
-                <View style={{ alignItems: 'center', width: '100%', gap: 24 }}>
-                  <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#E2E8F0' }}>
-                    <MaterialIcons name="cleaning-services" size={54} color="#10B981" />
+                <View style={{ gap: 24, alignItems: 'center', paddingHorizontal: 12 }}>
+                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#064E3B', alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="cleaning-services" size={44} color="#34D399" />
                   </View>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' }}>
-                    Clean the Area Now
-                  </Text>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', lineHeight: 22 }}>
-                    Begin collecting waste bins and sweeping the surroundings at <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{activeFlowTask.sitioName}</Text>.
-                  </Text>
+                  <View style={{ alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' }}>
+                      Clearing In Progress
+                    </Text>
+                    <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', lineHeight: 20 }}>
+                      Live broom animation is broadcasting on Officials & Resident maps for <Text style={{ color: '#34D399', fontWeight: '700' }}>{activeFlowTask.sitioName}</Text>.
+                    </Text>
+                  </View>
                   <TouchableOpacity
                     onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }))}
-                    style={{ backgroundColor: '#10B981', width: '100%', height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
+                    style={{ width: '100%', backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginTop: 12 }}
                   >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Mark as Cleared</Text>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Finish Clearing & Take After Photo</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {activeFlowTask?.step === 'after_photo' && (
-                <View style={{ alignItems: 'center', width: '100%' }}>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Please capture the final cleared area AFTER cleaning is done.
+                <View style={{ gap: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' }}>
+                    Capture photo AFTER waste collection at {activeFlowTask.sitioName}
                   </Text>
-
                   {afterImage ? (
-                    <View style={{ width: '100%', alignItems: 'center' }}>
-                      <Image source={{ uri: afterImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
-                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-                        <TouchableOpacity
-                          onPress={() => takePhotoStep('after')}
-                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
-                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    <Image source={{ uri: afterImage }} style={{ width: '100%', height: 240, borderRadius: 16 }} resizeMode="cover" />
                   ) : (
-                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
-                      <TouchableOpacity
-                        onPress={() => takePhotoStep('after')}
-                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap After Photo</Text>
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Verify that the site is completely empty and clean.</Text>
+                    <View style={{ width: '100%', height: 200, backgroundColor: '#1E293B', borderRadius: 16, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <MaterialIcons name="photo-camera" size={48} color="#64748B" />
+                      <Text style={{ color: '#94A3B8', fontSize: 13 }}>No photo captured yet</Text>
                     </View>
                   )}
+                  <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                    <TouchableOpacity
+                      onPress={() => takePhotoStep('after')}
+                      style={{ flex: 1, backgroundColor: '#334155', paddingVertical: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                    >
+                      <MaterialIcons name="photo-camera" size={20} color="#F8FAFC" />
+                      <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{afterImage ? "Retake Photo" : "Take Photo"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
+                      style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Next Step</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
               {activeFlowTask?.step === 'details' && (
-                <View style={{ width: '100%' }}>
-                  {/* Photo Thumbnails */}
-                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
-                    <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>BEFORE</Text>
-                      {beforeImage ? (
-                        <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
-                      ) : (
-                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
-                      )}
+                <View style={{ gap: 16 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 }}>
+                    Log Verification Details
+                  </Text>
+                  <View>
+                    <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Waste Type</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {['General', 'Recyclable', 'Organic', 'Hazardous'].map(type => (
+                        <TouchableOpacity
+                          key={type}
+                          onPress={() => setFlowWasteType(type)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            backgroundColor: flowWasteType === type ? '#10B981' : '#1E293B',
+                            borderWidth: 1,
+                            borderColor: flowWasteType === type ? '#10B981' : '#334155'
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: flowWasteType === type ? '#FFFFFF' : '#94A3B8' }}>{type}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>AFTER</Text>
-                      {afterImage ? (
-                        <Image source={{ uri: afterImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
-                      ) : (
-                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
-                      )}
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Bins Collected</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                      <TouchableOpacity
+                        onPress={() => setFlowBins(prev => Math.max(1, prev - 1))}
+                        style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <MaterialIcons name="remove" size={20} color="#F8FAFC" />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC' }}>{flowBins}</Text>
+                      <TouchableOpacity
+                        onPress={() => setFlowBins(prev => prev + 1)}
+                        style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <MaterialIcons name="add" size={20} color="#F8FAFC" />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
-                  {/* Form */}
-                  <View style={{ gap: 16 }}>
-                    {/* Status */}
-                    <View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Area Status</Text>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        {[
-                          { label: 'Clean', value: 'clean', color: '#10B981', bg: 'rgba(16,185,129,0.1)' },
-                          { label: 'Moderate', value: 'moderate', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
-                          { label: 'Critical', value: 'critical', color: '#EF4444', bg: 'rgba(239,68,68,0.1)' }
-                        ].map(st => {
-                          const isSelected = flowStatus === st.value;
-                          return (
-                            <TouchableOpacity
-                              key={st.value}
-                              onPress={() => setFlowStatus(st.value)}
-                              style={{ flex: 1, height: 40, borderRadius: 10, borderWidth: 1.5, borderColor: isSelected ? st.color : '#334155', backgroundColor: isSelected ? st.bg : 'transparent', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? st.color : '#94A3B8' }}>{st.label}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-
-                    {/* Location Description */}
-                    <View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 6 }}>Location Reference</Text>
-                      <TextInput
-                        style={{ borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, fontSize: 14, color: '#F8FAFC', backgroundColor: '#1E293B', height: 44 }}
-                        value={flowLocation}
-                        onChangeText={setFlowLocation}
-                        placeholder="e.g. Sitio Sudlon near court"
-                        placeholderTextColor="#64748B"
-                      />
-                    </View>
-
-                    {/* Waste Type */}
-                    <View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Waste Classification</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                        {['General', 'Organic', 'Recyclable', 'Hazardous', 'Bulky'].map(wt => {
-                          const isSelected = flowWasteType === wt;
-                          return (
-                            <TouchableOpacity
-                              key={wt}
-                              onPress={() => setFlowWasteType(wt)}
-                              style={{ height: 36, borderRadius: 18, paddingHorizontal: 16, borderWidth: 1.5, borderColor: isSelected ? '#10B981' : '#334155', backgroundColor: isSelected ? 'rgba(16,185,129,0.1)' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                              <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? '#10B981' : '#94A3B8' }}>{wt}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    </View>
-
-                    {/* Bins Cleared */}
-                    <View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Number of Bins Cleared</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                        <TouchableOpacity
-                          onPress={() => setFlowBins(b => Math.max(1, b - 1))}
-                          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <MaterialIcons name="remove" size={20} color="#F8FAFC" />
-                        </TouchableOpacity>
-                        <Text style={{ fontSize: 18, fontWeight: '800', color: '#F8FAFC', minWidth: 30, textAlign: 'center' }}>{flowBins}</Text>
-                        <TouchableOpacity
-                          onPress={() => setFlowBins(b => b + 1)}
-                          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <MaterialIcons name="add" size={20} color="#F8FAFC" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {/* Submit Button */}
-                    <TouchableOpacity
-                      onPress={submitCleaningFlow}
-                      disabled={isSubmittingFlow}
-                      style={{ backgroundColor: '#10B981', height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
-                    >
-                      {isSubmittingFlow ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Submit Collection Proof</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    onPress={submitCleaningFlow}
+                    disabled={isSubmittingFlow}
+                    style={{ backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 }}
+                  >
+                    {isSubmittingFlow ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Submit Verification Log</Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
               )}
             </ScrollView>
@@ -1000,93 +1109,104 @@ export default function CollectorHomeScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Basic Report Sub-Modal inside Flow */}
+      {/* Basic Report Modal */}
       <Modal
         visible={showBasicReportModal}
         transparent
         animationType="slide"
-        statusBarTranslucent
-        onRequestClose={() => {
-          if (!submittingBasicReport) setShowBasicReportModal(false);
-        }}
+        onRequestClose={() => setShowBasicReportModal(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1E293B', width: '100%', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#334155' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#F8FAFC' }}>File Incident Report</Text>
-              <TouchableOpacity onPress={() => setShowBasicReportModal(false)}>
-                <MaterialIcons name="close" size={24} color="#94A3B8" />
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
+          <View style={{ flex: 1, padding: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC' }}>File Basic Report</Text>
+              <TouchableOpacity onPress={() => setShowBasicReportModal(false)} style={{ padding: 4 }}>
+                <MaterialIcons name="close" size={24} color="#F8FAFC" />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Incident Category</Text>
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
-              {['Blocked Road', 'Hazard', 'Other'].map(cat => {
-                const isSelected = basicReportCategory === cat;
-                return (
-                  <TouchableOpacity
-                    key={cat}
-                    onPress={() => setBasicReportCategory(cat)}
-                    style={{ flex: 1, height: 38, borderRadius: 8, borderWidth: 1.5, borderColor: isSelected ? '#10B981' : '#334155', backgroundColor: isSelected ? 'rgba(16,185,129,0.1)' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#10B981' : '#94A3B8' }}>{cat}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <ScrollView contentContainerStyle={{ gap: 16 }}>
+              <Text style={{ fontSize: 14, color: '#94A3B8' }}>
+                Select issue type for <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{activeFlowTask?.sitioName}</Text>:
+              </Text>
 
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 6 }}>Notes / Description</Text>
-            <TextInput
-              style={{ borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#F8FAFC', backgroundColor: '#0F172A', height: 80, textAlignVertical: 'top', marginBottom: 20 }}
-              value={basicReportNotes}
-              onChangeText={setBasicReportNotes}
-              placeholder="e.g. Blocked street due to parked truck"
-              placeholderTextColor="#475569"
-              multiline
-            />
+              {['Blocked Road', 'Overflow Hazard', 'Vehicle Obstruction', 'Other'].map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  onPress={() => setBasicReportCategory(cat)}
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: basicReportCategory === cat ? '#1E293B' : '#0F172A',
+                    borderWidth: 1.5,
+                    borderColor: basicReportCategory === cat ? '#EF4444' : '#334155',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: basicReportCategory === cat ? '#EF4444' : '#F8FAFC' }}>{cat}</Text>
+                  {basicReportCategory === cat && <MaterialIcons name="check-circle" size={20} color="#EF4444" />}
+                </TouchableOpacity>
+              ))}
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity
-                onPress={() => setShowBasicReportModal(false)}
-                style={{ flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Text style={{ color: '#94A3B8', fontWeight: '700' }}>Cancel</Text>
-              </TouchableOpacity>
+              <Text style={{ fontSize: 14, color: '#94A3B8', marginTop: 8 }}>Additional Notes:</Text>
+              <TextInput
+                value={basicReportNotes}
+                onChangeText={setBasicReportNotes}
+                placeholder="Describe details for LGU Officials..."
+                placeholderTextColor="#64748B"
+                multiline
+                numberOfLines={4}
+                style={{
+                  backgroundColor: '#1E293B',
+                  borderRadius: 12,
+                  padding: 14,
+                  color: '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: '#334155',
+                  textAlignVertical: 'top',
+                  minHeight: 100
+                }}
+              />
+
               <TouchableOpacity
                 onPress={submitBasicReportFlow}
                 disabled={submittingBasicReport}
-                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                style={{ backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 12 }}
               >
                 {submittingBasicReport ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Submit Report</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Submit Incident Report</Text>
                 )}
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
-      {/* EcoAssist AI Chat Modal */}
+      {/* AI Assistant Chat Modal */}
       <Modal
         visible={showAiAssistant}
         transparent
         animationType="slide"
-        statusBarTranslucent
         onRequestClose={() => setShowAiAssistant(false)}
       >
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.aiModalOverlay}>
-            <TouchableOpacity style={styles.aiModalCloseArea} onPress={() => setShowAiAssistant(false)} />
+            <TouchableOpacity style={styles.aiModalCloseArea} activeOpacity={1} onPress={() => setShowAiAssistant(false)} />
             <View style={styles.aiModalContent}>
               <View style={styles.aiHeader}>
                 <View style={styles.aiIconCircle}>
-                  <MaterialIcons name="psychology" size={28} color="#006A3B" />
+                  <MaterialIcons name="psychology" size={26} color="#047857" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.aiTitle}>EcoAssist AI</Text>
-                  <Text style={styles.aiSubtitle}>Powered by Groq · llama-3.1-8b</Text>
+                  <Text style={styles.aiSubtitle}>Driver Assistant • Powered by Gemini</Text>
                 </View>
                 <TouchableOpacity style={styles.aiCloseBtn} onPress={() => setShowAiAssistant(false)}>
                   <MaterialIcons name="close" size={24} color="#6F7A70" />
@@ -1106,7 +1226,7 @@ export default function CollectorHomeScreen() {
                 ))}
                 {aiLoading && (
                   <View style={[styles.aiBubble, styles.aiBubbleAI, { paddingVertical: 14 }]}>
-                    <ActivityIndicator size="small" color="#006A3B" />
+                    <ActivityIndicator size="small" color="#047857" />
                   </View>
                 )}
               </ScrollView>
@@ -1145,134 +1265,218 @@ export default function CollectorHomeScreen() {
       {/* AI Assistant FAB */}
       {!isLoading && !hasError ? (
         <TouchableOpacity style={styles.fab} onPress={openAiModal} activeOpacity={0.85}>
-          <MaterialIcons name="psychology" size={24} color="#FFFFFF" />
+          <MaterialIcons name="lightbulb" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       ) : null}
+
+      {/* Finish Summary Modal */}
+      <Modal
+        visible={showFinishModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFinishModal(false)}
+      >
+        <View style={styles.finishModalBackdrop}>
+          <View style={styles.finishModalCard}>
+            <View style={styles.finishHeaderIconCircle}>
+              <MaterialIcons name="emoji-events" size={42} color="#059669" />
+            </View>
+
+            <Text style={styles.finishModalTitle}>Shift & Pickups Completed</Text>
+            <Text style={styles.finishModalSub}>
+              Truck <Text style={{ fontWeight: "800", color: "#059669" }}>{TRUCK_ID}</Text> ({driverName}) has completed all assigned waste collection stops for today.
+            </Text>
+
+            {/* Summary Stats Grid */}
+            <View style={styles.finishStatsContainer}>
+              <View style={styles.finishStatBox}>
+                <MaterialIcons name="check-circle" size={20} color="#059669" />
+                <Text style={styles.finishStatValue}>
+                  {analyticsStats.completedStops} / {analyticsStats.totalStops}
+                </Text>
+                <Text style={styles.finishStatLabel}>Stops Cleared</Text>
+              </View>
+
+              <View style={styles.finishStatBox}>
+                <MaterialIcons name="delete" size={20} color="#D97706" />
+                <Text style={styles.finishStatValue}>{analyticsStats.estimatedBins} Bins</Text>
+                <Text style={styles.finishStatLabel}>Est. Volume</Text>
+              </View>
+
+              <View style={styles.finishStatBox}>
+                <MaterialIcons name="verified" size={20} color="#2563EB" />
+                <Text style={styles.finishStatValue}>100%</Text>
+                <Text style={styles.finishStatLabel}>Route Done</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.finishModalBtnPrimary}
+              onPress={() => setShowFinishModal(false)}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="check" size={20} color="#FFFFFF" />
+              <Text style={styles.finishModalBtnText}>Close & Return</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
-  scrollContainer: { paddingBottom: 24 },
+  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  scrollContainer: { paddingHorizontal: 16, paddingBottom: 110, paddingTop: 8 },
 
   // ── Header ─────────────────────────────────────────────────────────────────
   header: {
-    height: 52, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
-    backgroundColor: "#FFFFFF", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#E5E7EB",
+    height: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1, borderBottomColor: "#F1F5F9",
   },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
-  headerCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
-  headerRight: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
-  headerLogo: { width: 72, height: 26 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+  leafIconCircle: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: "#ECFDF5",
+    justifyContent: "center", alignItems: "center",
+  },
   collectorBadge: {
-    backgroundColor: "#ECFDF5", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-    borderWidth: 1, borderColor: "#D1FAE5",
+    backgroundColor: "#E6F4EA", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4,
   },
-  collectorBadgeText: { fontSize: 9, fontWeight: "800", color: "#059669", textTransform: "uppercase", letterSpacing: 0.5 },
-  truckIdText: { fontSize: 12, fontWeight: "700", color: "#6B7280", letterSpacing: 0.3, textAlign: "center" },
-  headerBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  collectorBadgeText: { fontSize: 10, fontWeight: "800", color: "#059669", letterSpacing: 0.6 },
+  truckIdText: { fontSize: 13, fontWeight: "600", color: "#475569", marginLeft: 2 },
+  headerBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   notifBadge: {
-    position: "absolute", top: 7, right: 7, minWidth: 14, height: 14, borderRadius: 7,
-    backgroundColor: "#006A3B", justifyContent: "center", alignItems: "center", paddingHorizontal: 2,
+    position: "absolute", top: 4, right: 4, minWidth: 14, height: 14, borderRadius: 7,
+    backgroundColor: "#EF4444", justifyContent: "center", alignItems: "center", paddingHorizontal: 2,
   },
   notifBadgeText: { fontSize: 8, fontWeight: "800", color: "#FFFFFF" },
 
-  // ── Hero ────────────────────────────────────────────────────────────────────
+  // ── Hero & Single Route Display ─────────────────────────────────────────────
   hero: {
-    backgroundColor: "#FFFFFF", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#E5E7EB", marginBottom: 16,
+    paddingVertical: 14, paddingHorizontal: 2, marginBottom: 8,
   },
-  heroGreeting: { fontSize: 13, color: "#9CA3AF", fontWeight: "500" },
-  heroName: { fontSize: 26, fontWeight: "800", color: "#111827", letterSpacing: -0.5, lineHeight: 32 },
-  heroRoute: { fontSize: 13, color: "#6B7280", fontWeight: "500", marginTop: 6 },
+  heroGreeting: { fontSize: 14, color: "#64748B", fontWeight: "500" },
+  heroName: { fontSize: 30, fontWeight: "800", color: "#0F172A", letterSpacing: -0.6, lineHeight: 36, marginVertical: 2 },
+  
+  heroRouteCard: {
+    backgroundColor: "#ECFDF5", borderRadius: 16, padding: 14, marginTop: 12,
+    borderWidth: 1, borderColor: "#A7F3D0",
+  },
+  heroRouteHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  heroRouteHeaderTitle: { fontSize: 10, fontWeight: "800", color: "#047857", letterSpacing: 0.8 },
+  heroRouteText: { fontSize: 14, fontWeight: "700", color: "#065F46", lineHeight: 20 },
 
-  // ── Sections ────────────────────────────────────────────────────────────────
-  section: { marginBottom: 0 },
+  // ── Primary Map Action Button ──────────────────────────────────────────────
+  primaryLaunchMapBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: "#059669", paddingVertical: 15, borderRadius: 16, marginBottom: 18,
+    shadowColor: "#059669", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
+  },
+  disabledLaunchMapBtn: {
+    backgroundColor: "#94A3B8",
+    shadowColor: "transparent",
+    elevation: 0,
+  },
+  primaryLaunchMapBtnText: { fontSize: 15, fontWeight: "800", color: "#FFFFFF" },
+
+  // ── Section & Cards ────────────────────────────────────────────────────────
+  section: { marginBottom: 20 },
   sectionLabel: {
-    fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.8,
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
-  },
-  surface: {
-    backgroundColor: "#FFFFFF", borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB", paddingHorizontal: 16, paddingVertical: 16, marginBottom: 16,
+    fontSize: 11, fontWeight: "800", color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1,
+    marginBottom: 10, paddingLeft: 4,
   },
 
-  // ── Shift Toggle ──────────────────────────────────────────────────────────
-  // ── Shift Status & Route Overview ──────────────────────────────────────────
-  shiftCard: { flexDirection: "row", alignItems: "center", gap: 14 },
-  shiftIndicator: {
-    width: 54, height: 54, borderRadius: 27, backgroundColor: "#F3F4F6",
-    justifyContent: "center", alignItems: "center",
+  // ── Analytics Grid ─────────────────────────────────────────────────────────
+  analyticsGrid: {
+    flexDirection: "row", flexWrap: "wrap", gap: 12,
   },
-  shiftIndicatorActive: { backgroundColor: "#006A3B" },
-  shiftIndicatorReady: { backgroundColor: "#FEF3C7" },
-  shiftIndicatorWaiting: { backgroundColor: "#F3F4F6" },
-  shiftTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
-  shiftSub: { fontSize: 12, color: "#6B7280", marginTop: 2, lineHeight: 16 },
-  shiftBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#006A3B",
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
+  analyticsCard: {
+    width: "48%", backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: "#F1F5F9", gap: 6,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 2,
   },
-  shiftBtnActive: { backgroundColor: "#006A3B" },
-  shiftBtnStart: { backgroundColor: "#006A3B" },
-  shiftBtnMuted: { backgroundColor: "#6B7280" },
-  shiftBtnStop: { backgroundColor: "#DC2626" },
-  shiftBtnText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  analyticsIconBox: {
+    width: 38, height: 38, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 2,
+  },
+  analyticsValue: { fontSize: 18, fontWeight: "800", color: "#0F172A" },
+  analyticsLabel: { fontSize: 11, fontWeight: "600", color: "#64748B" },
 
-  // ── Schedule Items ──────────────────────────────────────────────────────────
-  schedItem: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
-  schedIcon: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: "#ECFDF5",
-    justifyContent: "center", alignItems: "center",
+  // ── Route Progress Bar ──────────────────────────────────────────────────────
+  progressPercentText: { fontSize: 12, fontWeight: "800", color: "#059669" },
+  progressBarTrack: {
+    height: 12, backgroundColor: "#E2E8F0", borderRadius: 6, overflow: "hidden",
   },
-  schedTitle: { fontSize: 15, fontWeight: "600", color: "#111827" },
-  schedMeta: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  schedNotes: { fontSize: 11, color: "#9CA3AF", fontStyle: "italic", marginTop: 2 },
-  schedStatus: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "#FEF3C7",
+  progressBarFill: {
+    height: "100%", backgroundColor: "#059669", borderRadius: 6,
   },
-  schedStatusDone: { backgroundColor: "#D1FAE5" },
-  schedStatusAccepted: { backgroundColor: "#DBEAFE" },
-  schedStatusMissed: { backgroundColor: "#FEE2E2" },
-  schedStatusText: { fontSize: 10, fontWeight: "700", color: "#92400E", textTransform: "uppercase" },
-  schedStatusTextDone: { color: "#065F46" },
-  schedStatusTextAccepted: { color: "#1D4ED8" },
-  schedStatusTextMissed: { color: "#B91C1C" },
 
-  emptySchedule: { alignItems: "center", paddingVertical: 28, gap: 6 },
-  emptyScheduleText: { fontSize: 15, fontWeight: "600", color: "#9CA3AF" },
-  emptyScheduleSub: { fontSize: 12, color: "#D1D5DB" },
+  // ── Today's Duty Checklist Card ────────────────────────────────────────────
+  checklistCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 16, marginBottom: 14,
+    borderWidth: 1, borderColor: "#F1F5F9", gap: 10,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 10, elevation: 2,
+  },
+  checklistItem: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 12, gap: 12,
+  },
+  checklistItemCompleted: { backgroundColor: "#F8FAFC", borderColor: "#CBD5E1" },
+  checkboxSquare: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: "#CBD5E1",
+    alignItems: "center", justifyContent: "center",
+  },
+  checkboxSquareChecked: { backgroundColor: "#059669", borderColor: "#059669" },
+  checklistItemTitle: { fontSize: 14, fontWeight: "700", color: "#0F172A" },
+  checklistItemTitleCompleted: { textDecorationLine: "line-through", color: "#94A3B8" },
+  checklistItemTime: { fontSize: 11, color: "#64748B", marginTop: 2 },
+  
+  sitioStatusBadge: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  },
+  sitioBadgeDone: { backgroundColor: "#DCFCE7" },
+  sitioBadgePending: { backgroundColor: "#FEF3C7" },
+  sitioStatusBadgeText: { fontSize: 9, fontWeight: "800" },
+  sitioBadgeTextDone: { color: "#15803D" },
+  sitioBadgeTextPending: { color: "#B45309" },
+
+  emptyCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 32, alignItems: "center", gap: 6,
+    borderWidth: 1, borderColor: "#F1F5F9",
+  },
+  emptyCardTitle: { fontSize: 15, fontWeight: "700", color: "#64748B" },
+  emptyCardSub: { fontSize: 12, color: "#94A3B8" },
 
   // ── State cards ─────────────────────────────────────────────────────────────
   stateCard: {
-    backgroundColor: "#FFFFFF", borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB", padding: 36, alignItems: "center", gap: 8, marginBottom: 16,
+    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 32, alignItems: "center", gap: 8, marginBottom: 16,
+    borderWidth: 1, borderColor: "#F1F5F9",
   },
-  stateTitle: { fontSize: 16, fontWeight: "700", color: "#111827", textAlign: "center", marginTop: 4 },
-  stateSub: { fontSize: 13, color: "#9CA3AF", lineHeight: 19, textAlign: "center" },
+  stateTitle: { fontSize: 16, fontWeight: "700", color: "#0F172A", textAlign: "center", marginTop: 4 },
+  stateSub: { fontSize: 13, color: "#64748B", lineHeight: 19, textAlign: "center" },
   errorIconWrap: {
     width: 56, height: 56, borderRadius: 28, backgroundColor: "#FEE2E2",
     justifyContent: "center", alignItems: "center", marginBottom: 4,
   },
   retryBtn: {
     flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8,
-    backgroundColor: "#006A3B", paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10,
+    backgroundColor: "#059669", paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10,
   },
   retryBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
 
   // ── Skeleton ─────────────────────────────────────────────────────────────────
   skeletonHero: {
-    backgroundColor: "#FFFFFF", paddingHorizontal: 20, paddingVertical: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#E5E7EB", marginBottom: 16,
+    backgroundColor: "#FFFFFF", borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: "#F1F5F9",
   },
 
   // ── FAB ──────────────────────────────────────────────────────────────────────
   fab: {
-    position: "absolute", right: 20, bottom: 20, width: 52, height: 52, borderRadius: 26,
-    backgroundColor: "#006A3B", justifyContent: "center", alignItems: "center",
-    shadowColor: "#006A3B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 8, zIndex: 50,
+    position: "absolute", right: 20, bottom: 24, width: 54, height: 54, borderRadius: 27,
+    backgroundColor: "#047857", justifyContent: "center", alignItems: "center",
+    shadowColor: "#047857", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 8, zIndex: 50,
   },
 
   // ── AI Modal ────────────────────────────────────────────────────────────────
@@ -1297,16 +1501,62 @@ const styles = StyleSheet.create({
   aiChatContent: { padding: 16, gap: 10, flexGrow: 1 },
   aiBubble: { maxWidth: "82%", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
   aiBubbleAI: { alignSelf: "flex-start", backgroundColor: "#F1F5F1", borderBottomLeftRadius: 4 },
-  aiBubbleUser: { alignSelf: "flex-end", backgroundColor: "#006A3B", borderBottomRightRadius: 4 },
+  aiBubbleUser: { alignSelf: "flex-end", backgroundColor: "#047857", borderBottomRightRadius: 4 },
   aiBubbleText: { fontSize: 14, color: "#1B1C1C", lineHeight: 20 },
   aiBubbleTextUser: { color: "#FFFFFF" },
   aiChipsRow: { maxHeight: 44, marginVertical: 8 },
   aiChip: { backgroundColor: "#F1F5F1", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: "#D4EAD9" },
-  aiChipText: { fontSize: 12, color: "#006A3B", fontWeight: "600" },
+  aiChipText: { fontSize: 12, color: "#047857", fontWeight: "600" },
   aiInputRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, gap: 10, paddingTop: 4 },
   aiTextInput: {
     flex: 1, backgroundColor: "#F8FAF8", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12,
     fontSize: 14, color: "#1B1C1C", borderWidth: 1, borderColor: "#E8EDE8",
   },
-  aiSendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#006A3B", justifyContent: "center", alignItems: "center" },
+  aiSendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#047857", justifyContent: "center", alignItems: "center" },
+
+  // ── Shift Completed Banner ──────────────────────────────────────────────────
+  shiftCompletedBanner: {
+    backgroundColor: "#ECFDF5", borderRadius: 20, padding: 18, marginBottom: 16,
+    borderWidth: 1.5, borderColor: "#A7F3D0", gap: 12,
+    shadowColor: "#059669", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
+  },
+  shiftCompletedBadgeIcon: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: "#D1FAE5",
+    alignItems: "center", justifyContent: "center",
+  },
+  shiftCompletedBannerTitle: { fontSize: 16, fontWeight: "800", color: "#065F46" },
+  shiftCompletedBannerSub: { fontSize: 12, color: "#047857", marginTop: 2, lineHeight: 17 },
+  shiftCompletedBannerFooter: {
+    flexDirection: "row", justifyContent: "space-between", paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: "#A7F3D0",
+  },
+  shiftCompletedFooterStat: { fontSize: 12, fontWeight: "700", color: "#065F46" },
+
+  // ── Finish Summary Modal ─────────────────────────────────────────────────────
+  finishModalBackdrop: {
+    flex: 1, backgroundColor: "rgba(15, 23, 42, 0.75)", justifyContent: "center", alignItems: "center", padding: 20,
+  },
+  finishModalCard: {
+    width: "100%", backgroundColor: "#FFFFFF", borderRadius: 28, padding: 24, alignItems: "center", gap: 14,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 10,
+  },
+  finishHeaderIconCircle: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: "#ECFDF5",
+    alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#A7F3D0",
+  },
+  finishModalTitle: { fontSize: 20, fontWeight: "800", color: "#0F172A", textAlign: "center" },
+  finishModalSub: { fontSize: 13, color: "#64748B", textAlign: "center", lineHeight: 19 },
+  finishStatsContainer: {
+    flexDirection: "row", width: "100%", justifyContent: "space-between", gap: 8, marginVertical: 8,
+  },
+  finishStatBox: {
+    flex: 1, backgroundColor: "#F8FAFC", borderRadius: 16, padding: 12, alignItems: "center", borderWidth: 1, borderColor: "#E2E8F0", gap: 4,
+  },
+  finishStatValue: { fontSize: 15, fontWeight: "800", color: "#0F172A" },
+  finishStatLabel: { fontSize: 10, color: "#64748B", fontWeight: "600" },
+  finishModalBtnPrimary: {
+    width: "100%", backgroundColor: "#059669", borderRadius: 16, paddingVertical: 14,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+  },
+  finishModalBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
 });

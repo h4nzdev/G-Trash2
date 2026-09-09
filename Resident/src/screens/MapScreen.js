@@ -459,6 +459,7 @@ export default function MapScreen() {
   const [proximityToast, setProximityToast] = useState(null);
   const [hazardModalVisible, setHazardModalVisible] = useState(false);
   const [selectedHazardArea, setSelectedHazardArea] = useState(null);
+  const [clearingNotif, setClearingNotif] = useState(null);
 
   const [sitioList, setSitioList] = useState([]);
   const [todaySchedules, setTodaySchedules] = useState([]);
@@ -829,7 +830,42 @@ export default function MapScreen() {
       }
     });
 
+    socket.on("truck:clearing:update", (data) => {
+      if (data.status === "clearing") {
+        setClearingNotif(data);
+        clearTimeout(toastTimerRef.current);
+        setProximityToast(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
+        toastTimerRef.current = setTimeout(() => setProximityToast(null), 10000);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🧹 Waste Clearing in Progress!",
+            body: `Truck ${data.truckId} is actively clearing waste bins at ${data.sitioName}.`,
+            sound: true,
+          },
+          trigger: null,
+        }).catch(() => {});
+      } else {
+        setClearingNotif((prev) => (prev?.sitioName === data.sitioName ? null : prev));
+      }
+    });
+
+    socket.on("schedule:task:completed", (data) => {
+      setClearingNotif((prev) => (prev?.sitioName === data.sitioName ? null : prev));
+    });
+
     socket.on("schedule:changed", () => {
+      fetchSitiosAndSchedules();
+    });
+
+    socket.on("route:completed", (data) => {
+      setClearingNotif(null);
+      setCleanedNotif({
+        name: `${data.barangay || 'Area'} Collection Route Completed 🎉`,
+        barangay: data.barangay,
+        collectedBy: `Truck ${data.truckId} (${data.driverName || 'Collector'})`,
+        weight: '100% Cleared',
+      });
+      setTimeout(() => setCleanedNotif(null), 8000);
       fetchSitiosAndSchedules();
     });
 
@@ -1275,6 +1311,21 @@ export default function MapScreen() {
                   {cleanedNotif.name}
                   {cleanedNotif.collectedBy ? ` · ${cleanedNotif.collectedBy}` : ''}
                   {cleanedNotif.weight ? ` · ${cleanedNotif.weight}` : ''}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Clearing In Progress Banner Notification */}
+        {clearingNotif && (
+          <View style={styles.cleanedNotifWrapper} pointerEvents="none">
+            <View style={[styles.cleanedNotif, { backgroundColor: '#ECFDF5', borderColor: '#10B981' }]}>
+              <Text style={styles.cleanedNotifEmoji}>🧹</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cleanedNotifTitle, { color: '#065F46' }]}>Clearing In Progress</Text>
+                <Text style={[styles.cleanedNotifSub, { color: '#047857' }]} numberOfLines={2}>
+                  Waste collection active at {clearingNotif.sitioName} (Truck {clearingNotif.truckId})
                 </Text>
               </View>
             </View>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone } from 'lucide-react';
+import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone, CheckCircle } from 'lucide-react';
 import Sidebar from '../components/sidebar/Sidebar';
 import TopBar from '../components/shared/TopBar';
 import API from '../config';
@@ -13,14 +13,29 @@ export default function DashboardLayout() {
   useEffect(() => {
     const socket = io(API, { transports: ['websocket', 'polling'] });
 
-    // Truck off-route alerts
-    socket.on('truck:off-route', (data) => {
-      const id = Date.now();
-      const newAlert = { ...data, id, type: 'truck-off-route' };
-      setAlerts(prev => [newAlert, ...prev]);
+    // Truck shift completion toast notification
+    socket.on('truck:shift-completed', (data) => {
+      const alertId = `truck_completed_${data.truckId}_${Date.now()}`;
+      setAlerts(prev => {
+        const filtered = prev.filter(a => !(a.type === 'truck-completed' && a.truckId === data.truckId));
+        return [{ ...data, id: alertId, type: 'truck-completed', ts: Date.now() }, ...filtered].slice(0, 5);
+      });
       setTimeout(() => {
-        setAlerts(prev => prev.filter(a => a.id !== id));
-      }, 10000);
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
+      }, 15000);
+    });
+
+    // Truck off-route alerts (Deduplicated per truck)
+    socket.on('truck:off-route', (data) => {
+      const alertId = `truck_off_route_${data.truckId}`;
+      setAlerts(prev => {
+        const filtered = prev.filter(a => a.id !== alertId && !(a.type === 'truck-off-route' && a.truckId === data.truckId));
+        const updatedAlert = { ...data, id: alertId, type: 'truck-off-route', ts: Date.now() };
+        return [updatedAlert, ...filtered].slice(0, 3);
+      });
+      setTimeout(() => {
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
+      }, 12000);
     });
 
     // IoT sensor alerts (critical/moderate threshold breaches)
@@ -69,6 +84,39 @@ export default function DashboardLayout() {
   };
 
   const renderAlert = (alert) => {
+    if (alert.type === 'truck-completed') {
+      return (
+        <div
+          key={alert.id}
+          className="bg-white border-l-4 border-emerald-500 rounded-xl shadow-2xl p-4 flex gap-4 pointer-events-auto"
+          style={{ animation: 'slideInRight 0.3s ease-out' }}
+        >
+          <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <CheckCircle className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-slate-900">Shift & Pickups Completed</h4>
+            <p className="text-xs text-slate-600 mt-1">
+              Truck <span className="font-bold text-emerald-700">{alert.truckId}</span> completes shift / pick up.
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Driver: {alert.driverName || 'Collector'} • Route: {alert.routeName || 'Assigned Area'}
+            </p>
+            <button
+              onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
+              className="mt-2.5 flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-wider"
+            >
+              <MapIcon className="w-3 h-3" />
+              View Route Monitoring
+            </button>
+          </div>
+          <button onClick={() => dismissAlert(alert.id)} className="text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }
+
     if (alert.type === 'truck-off-route') {
       return (
         <div

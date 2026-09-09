@@ -61,20 +61,25 @@ import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCit
  * - Rotates based on the map heading (offset by -90 degrees to align North).
  * - Pulse effect appears when the truck status is 'online'.
  */
-function makeTruckIcon(status, heading = 0) {
+function makeTruckIcon(status, heading = 0, isOffRoute = false) {
   const isOnline = status === "online";
-  const pinColor = isOnline ? "#059669" : "#475569"; // Emerald green if online, Slate grey if offline
-  const pulseColor = isOnline ? "rgba(16, 185, 129, 0.4)" : "rgba(100, 116, 139, 0.2)";
+  const pinColor = isOffRoute ? "#dc2626" : isOnline ? "#059669" : "#475569";
+  const pulseColor = isOffRoute ? "rgba(220, 38, 38, 0.6)" : isOnline ? "rgba(16, 185, 129, 0.4)" : "rgba(100, 116, 139, 0.2)";
   const isMovingWest = heading > 180 && heading < 360;
   const flipStyle = isMovingWest ? 'transform: scaleX(-1);' : '';
 
   return L.divIcon({
     html: `
       <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
-        <!-- Pulsing Aura Ring for Online Truck -->
         ${
-          isOnline
-            ? `<div class="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>`
+          isOffRoute
+            ? `<div class="absolute -top-4 px-1.5 py-0.5 rounded bg-red-600 text-white text-[8px] font-black tracking-wider uppercase border border-white shadow-xl z-30 animate-bounce">OFF ROUTE</div>`
+            : ''
+        }
+        <!-- Pulsing Aura Ring for Online / Off-Route Truck -->
+        ${
+          isOnline || isOffRoute
+            ? `<div class="absolute top-1 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>`
             : ""
         }
 
@@ -96,10 +101,10 @@ function makeTruckIcon(status, heading = 0) {
         </div>
 
         <!-- Status Dot Badge -->
-        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white shadow-md z-20"></div>
+        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOffRoute ? 'bg-red-600' : isOnline ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white shadow-md z-20"></div>
 
         <!-- Pinpoint Target Dot on Road Ground -->
-        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-emerald-600/30 border border-emerald-600 animate-pulse"></div>
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full ${isOffRoute ? 'bg-red-600/40 border-red-600' : 'bg-emerald-600/30 border-emerald-600'} border animate-pulse"></div>
       </div>
     `,
     iconSize: [48, 56],
@@ -238,6 +243,46 @@ function makePickupCheckpointIcon() {
     `,
     iconSize: [40, 48],
     iconAnchor: [20, 48],
+    className: "",
+  });
+}
+
+/**
+ * Creates an animated, fade-in clearing broom pin icon for sitios in active clearing progress.
+ */
+function makeClearingIcon(sitioName, truckId) {
+  return L.divIcon({
+    html: `
+      <div class="relative flex flex-col items-center w-12 h-14 justify-end group transition-all duration-500 ease-out animate-fadeIn">
+        <!-- Pulsing Aura Ring -->
+        <div class="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-emerald-500/40 animate-ping pointer-events-none"></div>
+
+        <!-- Teardrop Pin Container -->
+        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_8px_16px_rgba(16,185,129,0.5)]">
+          <div class="w-10 h-10 rounded-full border-[2.5px] border-white bg-emerald-600 shadow-2xl flex items-center justify-center text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </div>
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-emerald-600 -mt-[1px]"></div>
+        </div>
+
+        <!-- Live Status Pill Badge -->
+        <div class="absolute -top-2 px-1.5 py-0.5 rounded-full bg-slate-900 text-emerald-300 text-[9px] font-black tracking-wider uppercase border border-emerald-500/60 shadow-lg z-20 flex items-center gap-1 whitespace-nowrap">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+          Clearing
+        </div>
+
+        <!-- Ground Shadow -->
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-1 bg-black/40 rounded-full blur-[1px]"></div>
+      </div>
+    `,
+    iconSize: [48, 56],
+    iconAnchor: [24, 56],
     className: "",
   });
 }
@@ -729,6 +774,8 @@ export default function RouteMonitoring() {
   const [selectedColorHex, setSelectedColorHex] = useState("#059669");
   const [selectedBarangay, setSelectedBarangay] = useState(official?.barangay || "All");
   const [barangayList, setBarangayList] = useState([]);
+  const [clearingSites, setClearingSites] = useState({});
+  const [completedRouteAlert, setCompletedRouteAlert] = useState(null);
   const socketRef = useRef(null);
 
   // Sync selectedBarangay with official's barangay restriction
@@ -903,14 +950,19 @@ export default function RouteMonitoring() {
     socketRef.current = socket;
 
     socket.on("truck:location:update", (data) => {
-      setTrucks((prev) => ({
-        ...prev,
-        [data.truckId]: {
-          ...prev[data.truckId],
-          ...data,
-          updatedAt: new Date(),
-        },
-      }));
+      setTrucks((prev) => {
+        const existing = prev[data.truckId] || {};
+        const isOff = data.isOffRoute !== undefined ? data.isOffRoute : existing.isOffRoute;
+        return {
+          ...prev,
+          [data.truckId]: {
+            ...existing,
+            ...data,
+            isOffRoute: isOff,
+            updatedAt: new Date(),
+          },
+        };
+      });
     });
     socket.on("truck:status", (data) => {
       setTrucks((prev) => ({
@@ -947,6 +999,26 @@ export default function RouteMonitoring() {
           ...prev,
         ]);
       }
+      setClearingSites((prev) => {
+        const next = { ...prev };
+        delete next[data.sitioName];
+        return next;
+      });
+    });
+    socket.on("truck:clearing:update", (data) => {
+      setClearingSites((prev) => {
+        const next = { ...prev };
+        if (data.status === "clearing") {
+          next[data.sitioName] = data;
+        } else {
+          delete next[data.sitioName];
+        }
+        return next;
+      });
+    });
+    socket.on("route:completed", (data) => {
+      setCompletedRouteAlert(data);
+      fetchData();
     });
     socket.on("report:new", (newReport) => {
       if (newReport.category === "Overflowing Bin")
@@ -961,14 +1033,40 @@ export default function RouteMonitoring() {
         );
     });
     socket.on("truck:off-route", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: {
+          ...prev[data.truckId],
+          isOffRoute: true,
+          offRouteDistance: data.distanceM,
+          driverName: data.driverName || prev[data.truckId]?.driverName,
+          lat: data.lat || prev[data.truckId]?.lat,
+          lng: data.lng || prev[data.truckId]?.lng,
+        },
+      }));
       setDeviationAlerts((prev) => {
-        if (
-          prev.some((a) => a.truckId === data.truckId && a.type === "off-route")
-        )
-          return prev;
+        const filtered = prev.filter((a) => a.truckId !== data.truckId || a.type !== "off-route");
         return [
-          { ...data, id: Date.now(), ts: new Date(), type: "off-route" },
-          ...prev,
+          { ...data, id: `offroute_${data.truckId}`, ts: new Date(), type: "off-route" },
+          ...filtered,
+        ].slice(0, 3);
+      });
+    });
+    socket.on("truck:shift-completed", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: {
+          ...prev[data.truckId],
+          status: "completed",
+          isShiftCompleted: true,
+          driverName: data.driverName || prev[data.truckId]?.driverName,
+        },
+      }));
+      setDeviationAlerts((prev) => {
+        const filtered = prev.filter((a) => a.truckId !== data.truckId || a.type !== "completed");
+        return [
+          { ...data, id: `completed_${data.truckId}`, ts: new Date(), type: "completed" },
+          ...filtered,
         ].slice(0, 5);
       });
     });
@@ -1032,35 +1130,58 @@ export default function RouteMonitoring() {
     <div className="flex flex-col h-screen bg-[#f0f4f8] overflow-hidden relative">
       <style>{animationStyles}</style>
 
-      {/* ── Deviation Alerts (Floating Overlay) ── */}
+      {/* ── Deviation & Off-Route Banner Alerts (Floating Header Overlay) ── */}
       {deviationAlerts.length > 0 && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[999] w-full max-w-2xl space-y-2">
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1500] w-full max-w-xl space-y-2 px-4 pointer-events-auto">
           {deviationAlerts.map((alert) => {
+            const isCompleted = alert.type === "completed";
             const isContact = alert.type === "contact";
             return (
               <div
                 key={alert.id}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 border shadow-lg bg-white/95 backdrop-blur-sm ${isContact ? "border-emerald-200" : "border-amber-200"}`}
+                className={`flex items-center gap-3.5 rounded-2xl p-3.5 border-2 shadow-2xl backdrop-blur-md transition-all ${
+                  isCompleted || isContact
+                    ? "bg-emerald-950/95 border-emerald-400 text-white"
+                    : "bg-red-950/95 border-red-500 text-white animate-pulse"
+                }`}
               >
-                {isContact ? (
-                  <Phone className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                )}
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    isCompleted || isContact
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : "bg-red-500/30 text-red-400 animate-bounce"
+                  }`}
+                >
+                  {isCompleted ? (
+                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  ) : isContact ? (
+                    <Phone className="w-5 h-5" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5" />
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm font-bold ${isContact ? "text-emerald-800" : "text-amber-800"}`}
-                  >
-                    {isContact ? "Dispatch Request" : "Off Route Alert"} —{" "}
-                    {alert.truckId}
-                  </p>
-                  <p
-                    className={`text-xs ${isContact ? "text-emerald-600" : "text-amber-600"}`}
-                  >
-                    {alert.driverName && `${alert.driverName} · `}
-                    {isContact
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        isCompleted || isContact
+                          ? "bg-emerald-500/30 text-emerald-200"
+                          : "bg-red-500/40 text-red-200"
+                      }`}
+                    >
+                      {isCompleted ? "SHIFT & PICKUP COMPLETED" : isContact ? "📞 DISPATCH REQUEST" : "⚠️ DRIVER NOT ON ROUTE"}
+                    </span>
+                    <span className="text-xs font-bold text-slate-200 truncate">
+                      Truck {alert.truckId}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-100 mt-1 truncate">
+                    {alert.driverName ? `${alert.driverName} · ` : ""}
+                    {isCompleted
+                      ? `Completed shift & waste pickups for ${alert.routeName || "the route"}`
+                      : isContact
                       ? alert.message
-                      : `~${alert.distanceM}m from assigned route`}
+                      : `Deviated ~${alert.distanceM || 100}m away from assigned path`}
                     {" · "}
                     {new Date(alert.ts).toLocaleTimeString([], {
                       hour: "2-digit",
@@ -1074,7 +1195,7 @@ export default function RouteMonitoring() {
                       prev.filter((a) => a.id !== alert.id),
                     )
                   }
-                  className={`flex-shrink-0 ${isContact ? "text-emerald-400 hover:text-emerald-600" : "text-amber-400 hover:text-amber-600"}`}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1106,8 +1227,8 @@ export default function RouteMonitoring() {
           <div className="p-5 border-b border-slate-100 pb-4">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
-                  <Truck className="w-5 h-5 text-emerald-600" />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${activeTruck?.isOffRoute ? 'bg-red-100 text-red-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
+                  <Truck className="w-5 h-5" />
                 </div>
                 <div>
                   <h2 className="text-[17px] font-bold text-slate-900 leading-tight">
@@ -1116,18 +1237,42 @@ export default function RouteMonitoring() {
                       : "No Route Selected"}
                   </h2>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${activeTruck?.status === "online" ? "bg-emerald-500" : "bg-slate-400"}`}
-                    ></span>
-                    <span className="text-xs font-semibold text-slate-500">
-                      {activeTruck?.status === "online"
-                        ? "Collecting"
-                        : activeTruck?.status || "Offline"}
-                    </span>
+                    {activeTruck?.isOffRoute ? (
+                      <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-black tracking-wider uppercase flex items-center gap-1 animate-pulse shadow-sm">
+                        <AlertTriangle className="w-3 h-3 text-white" />
+                        OFF ROUTE
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`w-2 h-2 rounded-full ${activeTruck?.status === "online" ? "bg-emerald-500" : "bg-slate-400"}`}
+                        ></span>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {activeTruck?.status === "online"
+                            ? "Collecting"
+                            : activeTruck?.status || "Offline"}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Off-Route Alert Card in Sidebar */}
+            {activeTruck?.isOffRoute && (
+              <div className="mb-4 p-3 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-2.5 animate-pulse shadow-sm">
+                <AlertTriangle className="w-4.5 h-4.5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-red-800 tracking-wide uppercase">
+                    DRIVER NOT ON ROUTE
+                  </p>
+                  <p className="text-[11px] font-semibold text-red-600 mt-0.5 leading-snug">
+                    Truck has deviated ~{activeTruck.offRouteDistance || 100}m away from the assigned collection path!
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 2. Progress Bar */}
             <div className="mb-4">
@@ -1506,11 +1651,37 @@ export default function RouteMonitoring() {
                     <Marker
                       key={truck.truckId}
                       position={[truck.lat, truck.lng]}
-                      icon={makeTruckIcon(truck.status, truck.heading || 0)}
+                      icon={makeTruckIcon(truck.status, truck.heading || 0, truck.isOffRoute)}
                     >
+                      <Popup className="custom-report-popup" minWidth={240}>
+                        <div className="p-3 bg-white rounded-xl text-slate-800 space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                            <span className="font-bold text-sm text-slate-900">{truck.truckId}</span>
+                            {truck.isOffRoute ? (
+                              <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-black animate-pulse border border-red-200">
+                                ⚠️ OFF ROUTE
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                {truck.status === 'online' ? 'Online' : truck.status || 'Active'}
+                              </span>
+                            )}
+                          </div>
+                          {truck.driverName && (
+                            <p className="text-xs text-slate-600">
+                              Driver: <strong className="text-slate-900">{truck.driverName}</strong>
+                            </p>
+                          )}
+                          {truck.isOffRoute && (
+                            <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700">
+                              ⚠️ Deviated ~{truck.offRouteDistance || 100}m from assigned collection path!
+                            </div>
+                          )}
+                        </div>
+                      </Popup>
                       <Tooltip direction="top" offset={[0, -20]}>
-                        <span className="font-bold text-sm">
-                          {truck.truckId}
+                        <span className={`font-bold text-xs ${truck.isOffRoute ? 'text-red-600 font-black' : 'text-slate-800'}`}>
+                          {truck.truckId} {truck.isOffRoute ? '⚠️ (OFF ROUTE)' : ''}
                         </span>
                       </Tooltip>
                     </Marker>
@@ -1576,10 +1747,81 @@ export default function RouteMonitoring() {
                       </Tooltip>
                     </Marker>
                   ))}
+
+                {/* Live Clearing In Progress Markers */}
+                {Object.values(clearingSites)
+                  .filter((cs) => cs.lat != null && cs.lng != null && !isNaN(cs.lat) && !isNaN(cs.lng))
+                  .map((cs) => (
+                    <Marker
+                      key={`clearing-${cs.sitioName}-${cs.truckId}`}
+                      position={[cs.lat, cs.lng]}
+                      icon={makeClearingIcon(cs.sitioName, cs.truckId)}
+                    >
+                      <Popup minWidth={220}>
+                        <div className="p-2.5 bg-slate-900 text-white rounded-xl space-y-1">
+                          <div className="flex items-center justify-between border-b border-slate-700/60 pb-1.5">
+                            <span className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                              Clearing In Progress
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400">{cs.truckId}</span>
+                          </div>
+                          <p className="text-xs font-extrabold text-slate-100">{cs.sitioName}</p>
+                          <p className="text-[10px] text-slate-400">Driver: {cs.driverName || 'Collector'}</p>
+                        </div>
+                      </Popup>
+                      <Tooltip direction="top" offset={[0, -20]}>
+                        <span className="font-bold text-xs text-emerald-700">
+                          🧹 Clearing: {cs.sitioName} ({cs.truckId})
+                        </span>
+                      </Tooltip>
+                    </Marker>
+                  ))}
               </MapContainer>
             )}
 
             {/* ── MAP OVERLAYS ── */}
+
+            {/* Live Clearing In Progress Banner Alert */}
+            {Object.keys(clearingSites).length > 0 && (
+              <div className="absolute top-3 right-3 z-[1000] bg-slate-900/95 backdrop-blur-md text-slate-100 px-4 py-2.5 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 animate-fadeIn">
+                <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-black text-emerald-400 uppercase tracking-wider">
+                    🧹 Clearing In Progress
+                  </p>
+                  <p className="text-xs font-bold text-slate-200">
+                    {Object.values(clearingSites).map(c => `${c.sitioName} (${c.truckId})`).join(', ')}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Live Route Completed Banner Alert */}
+            {completedRouteAlert && (
+              <div className="absolute top-3 right-3 z-[1000] bg-emerald-950/95 backdrop-blur-md text-slate-100 px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500 flex items-center gap-3 animate-fadeIn">
+                <div className="w-8 h-8 rounded-full bg-emerald-600/40 border border-emerald-400 flex items-center justify-center flex-shrink-0 text-emerald-300">
+                  <Check className="w-5 h-5 stroke-[3]" />
+                </div>
+                <div className="pr-2">
+                  <p className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    Route Completed 100%
+                  </p>
+                  <p className="text-xs font-bold text-slate-100">
+                    {completedRouteAlert.routeName || `${completedRouteAlert.barangay} Collection Route`}
+                  </p>
+                  <p className="text-[10px] text-emerald-300/80">
+                    Truck: {completedRouteAlert.truckId} · Driver: {completedRouteAlert.driverName || 'Collector'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setCompletedRouteAlert(null)}
+                  className="text-slate-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Top-Left Floating Map Control Bar (Matching Reference UI) */}
             <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-xl border border-slate-200/90">

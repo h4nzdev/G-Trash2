@@ -83,6 +83,7 @@ mongoose
     console.log("OK: MongoDB connected ->", MONGO_URI);
     loadBoundaries();
     seedSitios();
+    seedDriverAnalytics();
     startSLAChecker();
     startScheduleMonitor();
     startRewardExpirer();
@@ -953,6 +954,164 @@ async function seedSitios() {
     console.log(`[Backend] Seeded ${defaultSitios.length} default verified sitios`);
   } catch (err) {
     console.error("[Backend] Failed to seed sitios:", err.message);
+  }
+}
+
+async function seedDriverAnalytics() {
+  try {
+    // 1. Ensure Fleet record for GT-QSO exists
+    let qsoFleet = await Fleet.findOne({ truckId: /GT-QSO/i });
+    if (!qsoFleet) {
+      qsoFleet = await Fleet.create({
+        truckId: "GT-QSO",
+        driverName: "Xherdone James",
+        driverId: "DRV-1298",
+        driverPhone: "09927870100",
+        driverImage: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80",
+        barangay: "Apas",
+        type: "shared",
+        serviceBarangays: ["Apas", "Lahug"],
+        route: "Apas — 5th Street ➔ 6th Street ➔ 7th Street",
+        createdAt: new Date("2026-09-01"),
+      });
+      console.log("[Backend] Created Fleet entry for GT-QSO.");
+    }
+
+    // 2. Ensure Schedule exists for GT-QSO
+    const today = new Date().toLocaleDateString("en-CA");
+    let qsoSchedule = await Schedule.findOne({ truckId: /GT-QSO/i, date: today });
+    if (!qsoSchedule) {
+      await Schedule.create({
+        date: today,
+        truckId: "GT-QSO",
+        driverName: "Xherdone James",
+        driverPhone: "09927870100",
+        routeName: "Apas — 5th Street ➔ 6th Street ➔ 7th Street",
+        barangay: "Apas",
+        sitioTasks: [
+          { name: "5th Street", lat: 10.3340, lng: 123.9030, completed: false },
+          { name: "6th Street", lat: 10.3350, lng: 123.9040, completed: false },
+          { name: "7th Street", lat: 10.3360, lng: 123.9050, completed: false },
+        ],
+        startTime: "08:00 AM",
+        status: "accepted",
+        notes: "Regular scheduled waste collection for Apas sitio stops."
+      });
+    }
+
+    // 3. Ensure Collection Logs & Pickup Runs exist for GT-QSO & GT-SAJ
+    const qsoLogsCount = await CollectionLog.countDocuments({ truckId: /GT-QSO/i });
+    if (qsoLogsCount === 0) {
+      const sampleSitios = ["5th Street", "6th Street", "7th Street", "Lower Apas", "Upper Apas"];
+      const sampleLogs = [];
+      const sampleRuns = [];
+      const now = new Date();
+
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split("T")[0];
+        const numStops = 3 + (i % 2);
+
+        for (let s = 0; s < numStops; s++) {
+          const completedAt = new Date(`${dateStr}T08:${15 + s * 30}:00.000Z`);
+          sampleLogs.push({
+            truckId: "GT-QSO",
+            date: dateStr,
+            stopName: sampleSitios[s % sampleSitios.length],
+            stopAddress: `${sampleSitios[s % sampleSitios.length]}, Apas, Cebu City`,
+            wasteType: s % 2 === 0 ? "General" : "Recyclable",
+            weight: 45 + (i * 2) + (s * 4),
+            bins: 2 + (s % 3),
+            routeName: "Apas — 5th Street ➔ 6th Street ➔ 7th Street",
+            driverName: "Xherdone James",
+            beforeImage: "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80",
+            afterImage: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80",
+            status: "clean",
+            completedAt,
+          });
+        }
+
+        const runCompletedAt = new Date(`${dateStr}T11:00:00.000Z`);
+        sampleRuns.push({
+          truckId: "GT-QSO",
+          driverName: "Xherdone James",
+          barangay: "Apas",
+          routeName: "Apas — 5th Street ➔ 6th Street ➔ 7th Street",
+          totalStops: numStops,
+          stopsCompleted: sampleSitios.slice(0, numStops),
+          binsCollected: numStops * 2 + 2,
+          createdAt: runCompletedAt,
+          completedAt: runCompletedAt,
+        });
+      }
+
+      await CollectionLog.insertMany(sampleLogs);
+      await PickupRun.insertMany(sampleRuns);
+      console.log(`[Backend] Seeded ${sampleLogs.length} collection logs and ${sampleRuns.length} pickup runs for GT-QSO.`);
+    }
+
+    // Backfill photos for any existing collection logs without images
+    await CollectionLog.updateMany(
+      { $or: [{ beforeImage: "" }, { beforeImage: { $exists: false } }] },
+      {
+        $set: {
+          beforeImage: "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80",
+          afterImage: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80"
+        }
+      }
+    );
+
+    const sajLogsCount = await CollectionLog.countDocuments({ truckId: /GT-SAJ/i });
+    if (sajLogsCount === 0) {
+      const sampleSitios = ["Salinas Drive", "Nivel Hills", "Lahug Central", "Gorordo Ave"];
+      const sampleLogs = [];
+      const sampleRuns = [];
+      const now = new Date();
+
+      for (let i = 1; i <= 10; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split("T")[0];
+        const numStops = 4;
+
+        for (let s = 0; s < numStops; s++) {
+          const completedAt = new Date(`${dateStr}T09:${10 + s * 25}:00.000Z`);
+          sampleLogs.push({
+            truckId: "GT-SAJ",
+            date: dateStr,
+            stopName: sampleSitios[s % sampleSitios.length],
+            stopAddress: `${sampleSitios[s % sampleSitios.length]}, Lahug, Cebu City`,
+            wasteType: s % 2 === 0 ? "General" : "Organic",
+            weight: 50 + (i * 3),
+            bins: 3 + (s % 2),
+            routeName: "Lahug Priority Route",
+            driverName: "Xherdone James Erivera",
+            status: "clean",
+            completedAt,
+          });
+        }
+
+        const runCompletedAt = new Date(`${dateStr}T11:45:00.000Z`);
+        sampleRuns.push({
+          truckId: "GT-SAJ",
+          driverName: "Xherdone James Erivera",
+          barangay: "Lahug",
+          routeName: "Lahug Priority Route",
+          totalStops: numStops,
+          stopsCompleted: sampleSitios.slice(0, numStops),
+          binsCollected: numStops * 3,
+          createdAt: runCompletedAt,
+          completedAt: runCompletedAt,
+        });
+      }
+
+      await CollectionLog.insertMany(sampleLogs);
+      await PickupRun.insertMany(sampleRuns);
+      console.log(`[Backend] Seeded ${sampleLogs.length} collection logs and ${sampleRuns.length} pickup runs for GT-SAJ.`);
+    }
+  } catch (err) {
+    console.error("[Backend] Error seeding driver analytics:", err.message);
   }
 }
 
@@ -4126,6 +4285,31 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
       `Schedule ${schedule._id} completed`);
 
     io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
+    io.emit("route:completed", {
+      scheduleId: schedule._id,
+      truckId: schedule.truckId,
+      driverName: schedule.driverName,
+      barangay: schedule.barangay,
+      routeName: schedule.routeName,
+      totalSitios: schedule.sitioTasks?.length || 1,
+      completedAt: new Date(),
+    });
+
+    try {
+      const residents = await Resident.find({ barangay: schedule.barangay });
+      for (const resDoc of residents) {
+        resDoc.totalPoints = (resDoc.totalPoints || 0) + 10;
+        await resDoc.save();
+        if (global._io) {
+          global._io.to(`resident:${resDoc._id}`).emit("resident:points:update", {
+            pointsEarned: 10,
+            description: `Route completed in ${schedule.barangay}!`,
+            newTotal: resDoc.totalPoints,
+          });
+        }
+      }
+    } catch (_) {}
+
     res.json(schedule);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4175,6 +4359,31 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
       const POINTS_PER_SCHEDULE = 10;
       await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null,
         `Schedule ${schedule._id} auto-completed`);
+
+      io.emit("route:completed", {
+        scheduleId: schedule._id,
+        truckId: schedule.truckId,
+        driverName: schedule.driverName,
+        barangay: schedule.barangay,
+        routeName: schedule.routeName,
+        totalSitios: schedule.sitioTasks?.length || 1,
+        completedAt: new Date(),
+      });
+
+      try {
+        const residents = await Resident.find({ barangay: schedule.barangay });
+        for (const resDoc of residents) {
+          resDoc.totalPoints = (resDoc.totalPoints || 0) + 10;
+          await resDoc.save();
+          if (global._io) {
+            global._io.to(`resident:${resDoc._id}`).emit("resident:points:update", {
+              pointsEarned: 10,
+              description: `Route completed in ${schedule.barangay}!`,
+              newTotal: resDoc.totalPoints,
+            });
+          }
+        }
+      } catch (_) {}
     }
 
     await schedule.save();
@@ -4196,6 +4405,29 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
     });
 
     res.json(schedule);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Broadcast real-time truck clearing status (e.g. driver in clearing progress step)
+app.post("/api/schedules/clearing-status", async (req, res) => {
+  const { truckId, driverName, barangay, sitioName, status, lat, lng } = req.body;
+  if (!sitioName) return res.status(400).json({ error: "sitioName is required" });
+  try {
+    const clearingData = {
+      truckId: truckId || "TRUCK-01",
+      driverName: driverName || "Driver",
+      barangay: barangay || "Apas",
+      sitioName,
+      status: status || "clearing",
+      lat: lat != null ? Number(lat) : null,
+      lng: lng != null ? Number(lng) : null,
+      timestamp: new Date().toISOString(),
+    };
+
+    io.emit("truck:clearing:update", clearingData);
+    res.json({ ok: true, clearingData });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

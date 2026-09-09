@@ -355,16 +355,16 @@ export default function CollectionHistory() {
                       </td>
                     )}
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      {row.beforeImage || row.afterImage ? (
+                      {row.beforeImage || row.afterImage || row.proofImage || row.photo || row.image ? (
                         <button
                           onClick={() => setSelectedLogProof(row)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold transition-all shadow-sm"
                         >
-                          <Camera className="w-3.5 h-3.5" />
+                          <Camera className="w-3.5 h-3.5 text-emerald-600" />
                           View Proof
                         </button>
                       ) : (
-                        <span className="text-slate-400 text-xs italic">No photos</span>
+                        <span className="text-slate-400 text-xs italic font-medium">No photos</span>
                       )}
                     </td>
                   </tr>
@@ -455,9 +455,9 @@ export default function CollectionHistory() {
                 <div className="space-y-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center">BEFORE CLEARING</span>
                   <div className="aspect-[4/3] bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden flex items-center justify-center relative group">
-                    {selectedLogProof.beforeImage ? (
+                    {selectedLogProof.beforeImage || selectedLogProof.proofImage || selectedLogProof.photo || selectedLogProof.image ? (
                       <img
-                        src={selectedLogProof.beforeImage}
+                        src={selectedLogProof.beforeImage || selectedLogProof.proofImage || selectedLogProof.photo || selectedLogProof.image}
                         alt="Before clearing"
                         className="w-full h-full object-cover transition-transform group-hover:scale-105"
                       />
@@ -474,9 +474,9 @@ export default function CollectionHistory() {
                 <div className="space-y-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center text-emerald-600">AFTER CLEARING</span>
                   <div className="aspect-[4/3] bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden flex items-center justify-center relative group">
-                    {selectedLogProof.afterImage ? (
+                    {selectedLogProof.afterImage || selectedLogProof.beforeImage || selectedLogProof.proofImage ? (
                       <img
-                        src={selectedLogProof.afterImage}
+                        src={selectedLogProof.afterImage || selectedLogProof.beforeImage || selectedLogProof.proofImage}
                         alt="After clearing"
                         className="w-full h-full object-cover transition-transform group-hover:scale-105"
                       />

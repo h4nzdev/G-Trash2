@@ -619,6 +619,39 @@ export default function HomeScreen({ navigation }) {
       }
     });
 
+    socket.on("truck:clearing:update", (data) => {
+      if (data.status === "clearing") {
+        clearTimeout(toastTimerRef.current);
+        setToastMsg(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
+        toastTimerRef.current = setTimeout(() => setToastMsg(null), 10000);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🧹 Waste Clearing in Progress!",
+            body: `Truck ${data.truckId} is actively clearing waste bins at ${data.sitioName}.`,
+            sound: true,
+          },
+          trigger: null,
+        }).catch(() => {});
+      }
+    });
+
+    socket.on("route:completed", (data) => {
+      if (userBarangayRef.current && data.barangay?.toLowerCase() === userBarangayRef.current.toLowerCase()) {
+        setTodayPickupDone(true);
+        clearTimeout(toastTimerRef.current);
+        setToastMsg(`🎉 Route Finished! Waste collection complete for today in ${data.barangay}. +10 Eco-Points earned!`);
+        toastTimerRef.current = setTimeout(() => setToastMsg(null), 12000);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🎉 Waste Collection Route Complete!",
+            body: `Truck ${data.truckId} has finished all collection stops in ${data.barangay}. Thank you for keeping our community clean!`,
+            sound: true,
+          },
+          trigger: null,
+        }).catch(() => {});
+      }
+    });
+
     socket.on("pickup:completed", (run) => {
       if (userBarangayRef.current && run.barangay === userBarangayRef.current) {
         setTodayPickupDone(true);
