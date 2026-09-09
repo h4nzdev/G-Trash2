@@ -4133,7 +4133,7 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
 });
 
 app.post("/api/schedules/:id/complete-task", async (req, res) => {
-  const { sitioName } = req.body;
+  const { sitioName, lat, lng, completedAt } = req.body;
   if (!sitioName) return res.status(400).json({ error: "sitioName is required" });
   try {
     const schedule = await Schedule.findById(req.params.id);
@@ -4142,11 +4142,15 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
     }
 
     let matched = false;
+    let taskCompletedAt = completedAt ? new Date(completedAt) : new Date();
     if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach(t => {
         if (t.name.toLowerCase() === sitioName.toLowerCase()) {
           t.completed = true;
-          if (!t.completedAt) t.completedAt = new Date();
+          t.completedAt = taskCompletedAt;
+          if (lat != null && lng != null) {
+            t.pickupLocation = { lat: Number(lat), lng: Number(lng) };
+          }
           matched = true;
         }
       });
@@ -4178,6 +4182,17 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
     io.emit("schedule:changed", {
       truckId: schedule.truckId,
       date: schedule.date,
+    });
+
+    io.emit("schedule:task:completed", {
+      scheduleId: schedule._id,
+      truckId: schedule.truckId,
+      driverName: schedule.driverName,
+      barangay: schedule.barangay,
+      sitioName,
+      lat: lat != null ? Number(lat) : null,
+      lng: lng != null ? Number(lng) : null,
+      completedAt: taskCompletedAt,
     });
 
     res.json(schedule);
@@ -4353,7 +4368,7 @@ app.get("/api/collections/truck/:truckId", async (req, res) => {
 app.post("/api/collections", async (req, res) => {
   const {
     truckId,
-    date,
+    date: rawDate,
     stopName,
     stopAddress,
     wasteType,
@@ -4367,10 +4382,12 @@ app.post("/api/collections", async (req, res) => {
     beforeImage,
     afterImage,
     status,
+    completedAt,
   } = req.body;
-  if (!truckId || !date) {
-    return res.status(400).json({ error: "truckId and date are required" });
+  if (!truckId) {
+    return res.status(400).json({ error: "truckId is required" });
   }
+  const date = rawDate || new Date().toLocaleDateString("en-CA");
   try {
     const log = await CollectionLog.create({
       truckId,
@@ -4388,6 +4405,7 @@ app.post("/api/collections", async (req, res) => {
       beforeImage: beforeImage || "",
       afterImage: afterImage || "",
       status: status || "clean",
+      completedAt: completedAt ? new Date(completedAt) : new Date(),
     });
     io.emit("collection:new", log);
 

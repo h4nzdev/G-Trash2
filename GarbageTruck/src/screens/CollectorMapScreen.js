@@ -382,7 +382,6 @@ function buildLeafletHTML(truckB64) {
             paint: {
               'line-color': '#DC2626',
               'line-width': 6,
-              'line-dasharray': [2, 2],
               'line-opacity': 0.9
             }
           });
@@ -697,11 +696,15 @@ export default function CollectorMapScreen() {
     if (!scheduleId || !sitioName) return;
     setClearingSitio(sitioName);
     try {
+      const lat = currentLocation?.latitude || lastGpsRef.current?.lat || null;
+      const lng = currentLocation?.longitude || lastGpsRef.current?.lng || null;
+      const completedAt = new Date().toISOString();
+
       // 1. Mark task as complete on backend schedule
       await fetch(`${TRACKING_SERVER}/api/schedules/${scheduleId}/complete-task`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sitioName }),
+        body: JSON.stringify({ sitioName, lat, lng, completedAt }),
       });
 
       // 2. Also register collection log
@@ -719,6 +722,9 @@ export default function CollectorMapScreen() {
           bins: 1,
           barangay,
           status: 'verified',
+          lat,
+          lng,
+          completedAt,
         }),
       }).catch(() => {});
 

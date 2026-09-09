@@ -10,10 +10,11 @@ import {
   ReferenceArea, ReferenceLine, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend
 } from 'recharts';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock } from 'lucide-react';
+import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from '../utils/mapBoundary';
 import API from '../config';
+import html2canvas from 'html2canvas';
 
 const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981', inactive: '#94a3b8' };
 
@@ -89,7 +90,9 @@ function generateAirQualityHistory(zone) {
 
 function AirQualityTrendModal({ zone, onClose }) {
   const [activeGas, setActiveGas] = useState('both');
-  
+  const [isExporting, setIsExporting] = useState(false);
+  const modalCardRef = useRef(null);
+
   if (!zone) return null;
 
   const nh3Val = parseAmmoniaPpm(zone.ammonia);
@@ -119,9 +122,30 @@ function AirQualityTrendModal({ zone, onClose }) {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
   });
 
+  const handleExportPNG = async () => {
+    if (!modalCardRef.current || isExporting) return;
+    setIsExporting(true);
+    try {
+      const canvas = await html2canvas(modalCardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+      const link = document.createElement('a');
+      link.download = `Air_Quality_Analysis_${(zone?.name || 'Zone').replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Failed to export graph image:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[3000] flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto">
+      <div ref={modalCardRef} className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto">
         
         {/* Header Bar */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
@@ -147,12 +171,26 @@ function AirQualityTrendModal({ zone, onClose }) {
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportPNG}
+              disabled={isExporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50"
+            >
+              {isExporting ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              {isExporting ? 'Exporting...' : 'Export PNG'}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -231,19 +269,35 @@ function AirQualityTrendModal({ zone, onClose }) {
                 </p>
               </div>
 
-              {/* Gas Toggle Buttons */}
-              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                {['both', 'ammonia', 'methane'].map(g => (
-                  <button
-                    key={g}
-                    onClick={() => setActiveGas(g)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg capitalize transition-all ${
-                      activeGas === g ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {g}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Gas Toggle Buttons */}
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                  {['both', 'ammonia', 'methane'].map(g => (
+                    <button
+                      key={g}
+                      onClick={() => setActiveGas(g)}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg capitalize transition-all ${
+                        activeGas === g ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Export PNG Button on Graph Header */}
+                <button
+                  onClick={handleExportPNG}
+                  disabled={isExporting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50"
+                >
+                  {isExporting ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  {isExporting ? 'Exporting...' : 'Export PNG'}
+                </button>
               </div>
             </div>
 
@@ -327,12 +381,26 @@ function AirQualityTrendModal({ zone, onClose }) {
             <Clock className="w-3.5 h-3.5 text-slate-400" />
             Last broadcast {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
           </span>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md"
-          >
-            Close Analysis
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportPNG}
+              disabled={isExporting}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50"
+            >
+              {isExporting ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              {isExporting ? 'Exporting PNG...' : 'Export PNG Sheet'}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors shadow-md"
+            >
+              Close Analysis
+            </button>
+          </div>
         </div>
       </div>
     </div>

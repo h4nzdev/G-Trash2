@@ -218,6 +218,78 @@ function HeatmapLayer({ points, options }) {
 }
 
 /**
+ * Creates a distinct green pin icon for completed truck pickup locations.
+ */
+function makePickupCheckpointIcon() {
+  return L.divIcon({
+    html: `
+      <div class="relative flex flex-col items-center w-10 h-12 justify-end group">
+        <div class="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-emerald-500/30 animate-ping pointer-events-none"></div>
+        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.3)]">
+          <div class="w-8 h-8 rounded-full border-2 border-white bg-emerald-600 shadow-xl flex items-center justify-center text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+          <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[7px] border-t-emerald-600 -mt-[1px]"></div>
+        </div>
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-black/30 rounded-full blur-[1px]"></div>
+      </div>
+    `,
+    iconSize: [40, 48],
+    iconAnchor: [20, 48],
+    className: "",
+  });
+}
+
+function PickupCheckpointPopupContent({ pickup }) {
+  const timeFormatted = pickup.completedAt
+    ? new Date(pickup.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'Recently';
+
+  return (
+    <div className="p-3 bg-white rounded-xl w-[260px] text-slate-800 space-y-2">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+            <Check className="w-3.5 h-3.5 stroke-[3]" />
+          </div>
+          <span className="text-xs font-bold text-slate-900 truncate">
+            {pickup.stopName || pickup.sitioName || 'Waste Pickup Location'}
+          </span>
+        </div>
+        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex-shrink-0">
+          Picked Up
+        </span>
+      </div>
+
+      <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1 text-xs">
+        <div className="flex items-center justify-between text-slate-600">
+          <span className="font-semibold text-slate-500">Truck ID:</span>
+          <span className="font-bold text-slate-800">{pickup.truckId}</span>
+        </div>
+        {pickup.driverName && (
+          <div className="flex items-center justify-between text-slate-600">
+            <span className="font-semibold text-slate-500">Driver:</span>
+            <span className="font-semibold text-slate-800">{pickup.driverName}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between text-slate-600">
+          <span className="font-semibold text-slate-500">Arrival Time:</span>
+          <span className="font-bold text-emerald-700">{timeFormatted}</span>
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-200/60">
+          <span>{timeAgo(pickup.completedAt)}</span>
+          {pickup.lat && pickup.lng && (
+            <span>{pickup.lat.toFixed(4)}, {pickup.lng.toFixed(4)}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Computes polygon coordinates for a group of route waypoints.
  */
 function computeZonePolygon(waypoints) {
@@ -269,17 +341,18 @@ function computeCentroid(coords) {
  * Creates numbered zone badge pin icons matching the reference screenshot.
  */
 function makeZoneBadgeIcon(number, color = "#059669") {
+  const label = typeof number === 'number' ? `Z${number}` : number;
   return L.divIcon({
     html: `
       <div class="relative flex items-center justify-center filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]">
-        <div class="w-8 h-8 rounded-full border-2 border-white shadow-2xl flex items-center justify-center font-black text-xs text-white" style="background:${color}; text-shadow:0 1px 2px rgba(0,0,0,0.6);">
-          <div class="absolute -inset-1 rounded-full border border-emerald-400/40 animate-pulse pointer-events-none"></div>
-          ${number}
+        <div class="px-2 py-0.5 rounded-lg border-2 border-white shadow-2xl flex items-center justify-center font-black text-[11px] text-white tracking-wider" style="background:${color}; text-shadow:0 1px 2px rgba(0,0,0,0.6);">
+          <div class="absolute -inset-1 rounded-lg border border-emerald-400/40 animate-pulse pointer-events-none"></div>
+          ${label}
         </div>
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconSize: [38, 24],
+    iconAnchor: [19, 12],
     className: "",
   });
 }
@@ -324,73 +397,135 @@ function AddressPopup({ wp }) {
   );
 }
 
-// ── Report Details Modal ──
-function ReportModal({ report, onClose }) {
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ── Inline Report Leaflet Popup Content ──
+function ReportPopupContent({ report, onStatusUpdate }) {
+  const [updating, setUpdating] = useState(false);
   const score = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = score >= 5;
+  const status = report.status?.toLowerCase() || "pending";
+
+  const handleAction = async (newStatus) => {
+    setUpdating(true);
+    try {
+      await onStatusUpdate(report._id, newStatus);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center ${isHighUrgency ? "bg-red-100" : "bg-amber-100"}`}
-            >
-              <AlertTriangle
-                className={`w-4 h-4 ${isHighUrgency ? "text-red-600" : "text-amber-600"}`}
-              />
-            </div>
-            <h3 className="text-base font-bold text-slate-900">
-              Overflowing Bin
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+    <div className="p-4 bg-white rounded-2xl w-[310px] sm:w-[330px] text-slate-800">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              isHighUrgency ? "bg-rose-100 text-rose-600" : "bg-amber-100 text-amber-600"
+            }`}
           >
-            <X className="w-4 h-4" />
-          </button>
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-slate-900 leading-tight truncate">
+              {report.title || "Overflowing Bin"}
+            </h4>
+            <span className="text-[10px] text-slate-500 font-medium block truncate">
+              {report.category || "Waste Report"}
+            </span>
+          </div>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Community Urgency
+
+        {/* Urgency Score Badge */}
+        <span
+          className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold flex-shrink-0 ${
+            isHighUrgency
+              ? "bg-rose-600 text-white animate-pulse shadow-sm shadow-rose-600/30"
+              : "bg-amber-100 text-amber-800 border border-amber-200"
+          }`}
+        >
+          Score: {score}
+        </span>
+      </div>
+
+      {/* Description & Location */}
+      <div className="bg-slate-50 rounded-xl p-3 mb-3 border border-slate-100 space-y-1.5">
+        <p className="text-xs font-semibold text-slate-800 leading-relaxed">
+          {report.description}
+        </p>
+        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 flex-wrap gap-1">
+          <span className="flex items-center gap-1 font-medium truncate max-w-[170px]">
+            <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            {report.sitio ? `Sitio ${report.sitio}` : (report.location || report.barangay || "Barangay Area")}
+          </span>
+          <span className="text-[10px] text-slate-400 font-medium flex-shrink-0">
+            {timeAgo(report.createdAt)}
+          </span>
+        </div>
+      </div>
+
+      {/* Image Evidence Preview if present */}
+      {report.reportImage && (
+        <div className="mb-3 rounded-xl overflow-hidden border border-slate-100 bg-slate-100">
+          <img
+            src={report.reportImage}
+            alt="Report Evidence"
+            className="w-full h-32 object-cover hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+      )}
+
+      {/* Status Badge & Official Quick Actions */}
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 mt-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+          {status === "acknowledged" ? (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+              Acknowledged
             </span>
-            <span
-              className={`px-2 py-1 rounded-full text-xs font-bold ${isHighUrgency ? "bg-red-600 text-white animate-pulse" : "bg-amber-100 text-amber-700"}`}
-            >
-              Score: {score}
+          ) : status === "in_progress" || status === "in-progress" ? (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+              In Progress
             </span>
-          </div>
-          <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-sm font-semibold text-slate-800 mb-1">
-              {report.description}
-            </p>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <MapPin className="w-3.5 h-3.5" />
-              <span>{report.location || report.barangay}</span>
-            </div>
-          </div>
-          {report.reportImage && (
-            <img
-              src={report.reportImage}
-              className="w-full h-40 object-cover rounded-xl border border-slate-100"
-              alt="Evidence"
-            />
+          ) : (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+              Pending
+            </span>
           )}
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span>Reported by {report.reportedBy}</span>
-            <span>{new Date(report.createdAt).toLocaleString()}</span>
-          </div>
         </div>
-        <div className="px-5 pb-5">
+
+        {/* Quick Action Button */}
+        {status === "pending" ? (
           <button
-            onClick={onClose}
-            className="w-full py-2.5 text-sm font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-xl transition-colors"
+            onClick={() => handleAction("acknowledged")}
+            disabled={updating}
+            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            Close
+            {updating ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+            Acknowledge
           </button>
-        </div>
+        ) : status === "acknowledged" || status === "in_progress" || status === "in-progress" ? (
+          <button
+            onClick={() => handleAction("resolved")}
+            disabled={updating}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {updating ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Mark Resolved
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-2 text-[10px] text-slate-400 text-right font-medium">
+        Reported by {report.reportedBy || "Resident"}
       </div>
     </div>
   );
@@ -582,8 +717,8 @@ export default function RouteMonitoring() {
   const [trucks, setTrucks] = useState({});
   const [fleet, setFleet] = useState([]);
   const [reports, setReports] = useState([]);
+  const [collections, setCollections] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
-  const [selectedReport, setSelectedReport] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deviationAlerts, setDeviationAlerts] = useState([]);
@@ -664,12 +799,14 @@ export default function RouteMonitoring() {
   // ── API Data Fetching ──
   const fetchData = async () => {
     setLoading(true);
+    setLoading(true);
     try {
-      const [schedulesRes, trucksRes, fleetRes, reportsRes] = await Promise.all([
+      const [schedulesRes, trucksRes, fleetRes, reportsRes, collectionsRes] = await Promise.all([
         axios.get(`${API}/api/schedules/today`),
         axios.get(`${API}/api/trucks`),
         axios.get(`${API}/api/fleet`),
         axios.get(`${API}/api/reports?category=Overflowing Bin`),
+        axios.get(`${API}/api/collections?period=today`),
       ]);
 
       // Map dynamic scheduled sitio sequences as routes
@@ -731,10 +868,31 @@ export default function RouteMonitoring() {
       });
       setTrucks(truckMap);
       setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
+      setCollections((collectionsRes.data || []).filter((c) => c.lat != null && c.lng != null));
     } catch (err) {
       console.error("Failed to load route monitoring data:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReportStatusUpdate = async (reportId, newStatus) => {
+    try {
+      const headers = { Authorization: `Bearer ${localStorage.getItem("gtrash_token")}` };
+      const { data } = await axios.patch(
+        `${API}/api/reports/${reportId}`,
+        { status: newStatus },
+        { headers }
+      );
+      if (newStatus === "resolved") {
+        setReports((prev) => prev.filter((r) => r._id !== reportId));
+      } else {
+        setReports((prev) =>
+          prev.map((r) => (r._id === reportId ? { ...r, status: newStatus, ...data } : r))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to update report status:", err);
     }
   };
 
@@ -767,6 +925,28 @@ export default function RouteMonitoring() {
     });
     socket.on("schedule:changed", () => {
       fetchData();
+    });
+    socket.on("collection:new", (newLog) => {
+      if (newLog.lat != null && newLog.lng != null) {
+        setCollections((prev) => [newLog, ...prev]);
+      }
+    });
+    socket.on("schedule:task:completed", (data) => {
+      if (data.lat != null && data.lng != null) {
+        setCollections((prev) => [
+          {
+            _id: `${data.scheduleId}_${Date.now()}`,
+            truckId: data.truckId,
+            driverName: data.driverName,
+            stopName: data.sitioName,
+            lat: data.lat,
+            lng: data.lng,
+            completedAt: data.completedAt,
+            barangay: data.barangay,
+          },
+          ...prev,
+        ]);
+      }
     });
     socket.on("report:new", (newReport) => {
       if (newReport.category === "Overflowing Bin")
@@ -1353,8 +1533,13 @@ export default function RouteMonitoring() {
                         icon={makeBinIcon(
                           (r.upvotes?.length || 0) - (r.downvotes?.length || 0),
                         )}
-                        eventHandlers={{ click: () => setSelectedReport(r) }}
                       >
+                        <Popup className="custom-report-popup" minWidth={310} maxWidth={340}>
+                          <ReportPopupContent
+                            report={r}
+                            onStatusUpdate={handleReportStatusUpdate}
+                          />
+                        </Popup>
                         <Tooltip direction="top" offset={[0, -20]}>
                           <span className="font-bold text-sm">
                             Overflowing Bin
@@ -1362,6 +1547,35 @@ export default function RouteMonitoring() {
                         </Tooltip>
                       </Marker>
                     ))}
+
+                {/* Completed Pickup Location Checkpoints */}
+                {collections
+                  .filter(
+                    (c) =>
+                      c.lat != null &&
+                      c.lng != null &&
+                      !isNaN(c.lat) &&
+                      !isNaN(c.lng) &&
+                      (!selectedBarangay ||
+                        selectedBarangay.toLowerCase() === "all" ||
+                        c.barangay?.toLowerCase() === selectedBarangay.toLowerCase()),
+                  )
+                  .map((c) => (
+                    <Marker
+                      key={c._id || `${c.truckId}-${c.stopName}-${c.completedAt}`}
+                      position={[c.lat, c.lng]}
+                      icon={makePickupCheckpointIcon()}
+                    >
+                      <Popup className="custom-report-popup" minWidth={260} maxWidth={280}>
+                        <PickupCheckpointPopupContent pickup={c} />
+                      </Popup>
+                      <Tooltip direction="top" offset={[0, -20]}>
+                        <span className="font-bold text-xs text-emerald-800">
+                          ✓ Pickup: {c.stopName || "Cleaned"} ({c.truckId})
+                        </span>
+                      </Tooltip>
+                    </Marker>
+                  ))}
               </MapContainer>
             )}
 
@@ -1489,12 +1703,6 @@ export default function RouteMonitoring() {
           fleet={fleet}
           onClose={() => setAssignTarget(null)}
           onSave={handleAssignSave}
-        />
-      )}
-      {selectedReport && (
-        <ReportModal
-          report={selectedReport}
-          onClose={() => setSelectedReport(null)}
         />
       )}
     </div>

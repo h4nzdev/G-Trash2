@@ -228,6 +228,7 @@ export default function HomeScreen({ navigation }) {
   const [iotAreas, setIotAreas] = useState([]);
   const [latestIotReading, setLatestIotReading] = useState(null);
   const [todayPickupDone, setTodayPickupDone] = useState(false);
+  const [latestPickupFeed, setLatestPickupFeed] = useState(null);
 
   const userBarangayRef = useRef(user?.barangay);
   const userIdRef = useRef(user?.id);
@@ -632,8 +633,30 @@ export default function HomeScreen({ navigation }) {
       fetchDashboard();
     });
 
-    socket.on("collection:new", () => {
+    socket.on("collection:new", (newLog) => {
       fetchDashboard();
+      if (newLog && (newLog.stopName || newLog.sitioName)) {
+        setLatestPickupFeed({
+          sitioName: newLog.stopName || newLog.sitioName,
+          truckId: newLog.truckId,
+          driverName: newLog.driverName,
+          barangay: newLog.barangay,
+          time: new Date(newLog.completedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+      }
+    });
+
+    socket.on("schedule:task:completed", (data) => {
+      fetchDashboard();
+      if (data && data.sitioName) {
+        setLatestPickupFeed({
+          sitioName: data.sitioName,
+          truckId: data.truckId,
+          driverName: data.driverName,
+          barangay: data.barangay,
+          time: new Date(data.completedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+      }
     });
 
     socket.on("resident:photo:deleted", ({ residentId, message }) => {
@@ -1109,6 +1132,28 @@ export default function HomeScreen({ navigation }) {
             </>
           )}
         </View>
+
+        {/* Pre-Information Live Pickup Feed Banner */}
+        {latestPickupFeed && (
+          <View style={styles.pickupPreInfoCard}>
+            <View style={styles.pickupPreInfoHeader}>
+              <View style={styles.pickupPreInfoIconWrap}>
+                <MaterialIcons name="check-circle" size={20} color="#006A3B" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickupPreInfoTitle}>
+                  Waste Collected — Sitio {latestPickupFeed.sitioName}
+                </Text>
+                <Text style={styles.pickupPreInfoSub}>
+                  Truck {latestPickupFeed.truckId} completed pickup at {latestPickupFeed.time}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setLatestPickupFeed(null)}>
+                <Ionicons name="close" size={18} color="#6F7A70" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Status and Analysis Card */}
         <View style={styles.statusAnalysisCard}>
@@ -3094,6 +3139,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#111827",
+    marginTop: 2,
+  },
+  pickupPreInfoCard: {
+    backgroundColor: "#EBF3EE",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#C8DDD4",
+  },
+  pickupPreInfoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  pickupPreInfoIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#D5E7DD",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pickupPreInfoTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  pickupPreInfoSub: {
+    fontSize: 12,
+    color: "#404943",
     marginTop: 2,
   },
 });

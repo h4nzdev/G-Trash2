@@ -67,3 +67,21 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #059669 #E2E8F0;
 }
+
+/* Custom Leaflet Popup for Fleet Tracking Waste Reports */
+.custom-report-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.2), 0 8px 10px -6px rgba(15, 23, 42, 0.1);
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+.custom-report-popup .leaflet-popup-content {
+  margin: 0;
+  width: 100% !important;
+}
+.custom-report-popup .leaflet-popup-tip-container {
+  margin-top: -1px;
+}
+
