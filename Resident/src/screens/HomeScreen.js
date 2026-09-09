@@ -274,6 +274,13 @@ export default function HomeScreen({ navigation }) {
   const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
 
   const handleTakePhoto = async () => {
+    if (!isTruckCollecting) {
+      Alert.alert(
+        "Truck Not Active",
+        "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+      );
+      return;
+    }
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
@@ -299,6 +306,13 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handlePickPhoto = async () => {
+    if (!isTruckCollecting) {
+      Alert.alert(
+        "Truck Not Active",
+        "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+      );
+      return;
+    }
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -969,10 +983,34 @@ export default function HomeScreen({ navigation }) {
   // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
-  const isTruckActiveNearby = useMemo(() => {
-    if (todayPickupDone) return false;
-    return onlineTrucks.length > 0 || nearestTruck != null || distToTruck != null;
-  }, [todayPickupDone, onlineTrucks.length, nearestTruck, distToTruck]);
+  const isRouteCompleted = useMemo(() => {
+    if (todayPickupDone) return true;
+    const brgy = user?.barangay;
+    if (firstSchedule && firstSchedule.status === 'completed') return true;
+    if (brgy && todaySchedules.length > 0) {
+      const userScheds = todaySchedules.filter(
+        (s) => s.barangay?.toLowerCase() === brgy.toLowerCase()
+      );
+      if (
+        userScheds.length > 0 &&
+        userScheds.every(
+          (s) =>
+            s.status === 'completed' ||
+            (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed))
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [todayPickupDone, firstSchedule, todaySchedules, user?.barangay]);
+
+  const isTruckCollecting = useMemo(() => {
+    if (isRouteCompleted) return false;
+    return onlineTrucks.length > 0;
+  }, [isRouteCompleted, onlineTrucks.length]);
+
+  const isTruckActiveNearby = isTruckCollecting;
 
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
@@ -1074,22 +1112,38 @@ export default function HomeScreen({ navigation }) {
             style={styles.headerLogo}
             resizeMode="contain"
           />
+          <View style={{ marginLeft: 8 }}>
+            <Text style={styles.headerTitleText}>G-TRASH</Text>
+            <Text style={styles.headerSubTitleText}>CLEANER CEBU, GREENER TOMORROW</Text>
+          </View>
         </View>
-        <TouchableOpacity
-          style={styles.notificationBtn}
-          onPress={() => navigation.navigate("Notifications")}
-        >
-          <Ionicons name="notifications-outline" size={24} color="#6B7280" />
-          {pendingCount + truckAlertCount > 0 && (
-            <View style={styles.badge}>
-              {pendingCount + truckAlertCount <= 9 && (
-                <Text style={styles.badgeText}>
-                  {pendingCount + truckAlertCount}
-                </Text>
-              )}
-            </View>
-          )}
-        </TouchableOpacity>
+
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={styles.notificationBtn}
+            onPress={() => navigation.navigate("Notifications")}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#1E293B" />
+            {pendingCount + truckAlertCount > 0 && (
+              <View style={styles.badge}>
+                {pendingCount + truckAlertCount <= 9 && (
+                  <Text style={styles.badgeText}>
+                    {pendingCount + truckAlertCount}
+                  </Text>
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.avatarBtn}
+            onPress={() => navigation.navigate("Profile")}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="person" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -1259,9 +1313,21 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.proximityBtnPrimary}
-                onPress={() => setProximityModalVisible(true)}
-                activeOpacity={0.85}
+                style={[
+                  styles.proximityBtnPrimary,
+                  !isTruckCollecting && { backgroundColor: "#9CA3AF" }
+                ]}
+                onPress={() => {
+                  if (!isTruckCollecting) {
+                    Alert.alert(
+                      "Truck Not Active",
+                      "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+                    );
+                    return;
+                  }
+                  setProximityModalVisible(true);
+                }}
+                activeOpacity={isTruckCollecting ? 0.85 : 0.6}
               >
                 <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
                 <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
@@ -1828,8 +1894,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerLogo: {
-    width: 90,
+    width: 32,
+    height: 32,
+  },
+  headerTitleText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#006A3B",
+    letterSpacing: 0.5,
+    lineHeight: 18,
+  },
+  headerSubTitleText: {
+    fontSize: 8,
+    fontWeight: "700",
+    color: "#475569",
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  avatarBtn: {
+    width: 36,
     height: 36,
+    borderRadius: 18,
+    backgroundColor: "#006A3B",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   notificationBtn: {
     width: 40,

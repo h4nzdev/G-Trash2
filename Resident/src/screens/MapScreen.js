@@ -182,12 +182,12 @@ function buildLeafletHTML(truckB64) {
         className: ''
       });
 
-      // IoT air quality heatmap circles — barangay-filtered
+      // IoT air quality & hazard callouts
       var heatmapCircles = {};
       window.updateHeatmapArea = function(area) {
         var id = area._id;
-        var color = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#FDD835' : '#4CAF50';
-        var fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.15;
+        var color = area.status === 'critical' ? '#EF4444' : area.status === 'moderate' ? '#F59E0B' : '#10B981';
+        var fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.18;
         if (heatmapCircles[id]) { map.removeLayer(heatmapCircles[id]); }
         
         var group = L.layerGroup();
@@ -210,25 +210,6 @@ function buildLeafletHTML(truckB64) {
           try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hazard_click', area: area })); } catch(e) {}
         });
         circle.addTo(group);
-
-        if (area.sensorId) {
-          var sensorMarker = L.marker([area.lat, area.lng], { icon: sensorIcon });
-          sensorMarker.bindPopup(
-            '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
-            '<b style="font-size:12px;">📡 IoT Waste Sensor</b><br/>' +
-            '<span style="font-size:10px;color:#64748B;">Zone: ' + (area.name || 'Sensor') + '</span><br/>' +
-            '<span style="font-size:11px;color:#1E293B;font-weight:600;display:inline-block;margin-top:4px;">Status: ' + 
-            (area.status === 'critical' ? '🔴 Critical' : area.status === 'moderate' ? '🟡 Moderate' : '🟢 Clean') + '</span>' +
-            '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
-            'NH₃: ' + (area.ammonia || 'N/A') + ' ppm<br/>' +
-            'CH₄: ' + (area.methane || 'N/A') + ' ppm' +
-            '</div></div>'
-          );
-          sensorMarker.on('click', function() {
-            try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hazard_click', area: area })); } catch(e) {}
-          });
-          sensorMarker.addTo(group);
-        }
 
         group.addTo(map);
         heatmapCircles[id] = group;
@@ -254,30 +235,38 @@ function buildLeafletHTML(truckB64) {
       function drawUserRadius(lat, lng) {
         radiusCircles.forEach(function(c) { map.removeLayer(c); });
         radiusCircles = [];
-        // Tight notification radius boundary (50m)
-        radiusCircles.push(L.circle([lat, lng], {
-          radius: 50,
-          color: '#059669',
-          fillColor: '#059669',
-          fillOpacity: 0.1,
-          weight: 1.5,
-          dashArray: '5 4',
-          opacity: 0.8,
-          interactive: false,
-        }).addTo(map));
+        // 3-layer alert radius around resident pinpoint (Outer: 150m, Mid: 80m, Inner: 30m)
+        var layers = [
+          { radius: 150, color: '#10B981', fillColor: '#10B981', fillOpacity: 0.07, weight: 1, dashArray: '4 4' },
+          { radius: 80,  color: '#059669', fillColor: '#059669', fillOpacity: 0.14, weight: 1.2, dashArray: '3 3' },
+          { radius: 30,  color: '#047857', fillColor: '#047857', fillOpacity: 0.24, weight: 1.5, dashArray: null }
+        ];
+        layers.forEach(function(l) {
+          var c = L.circle([lat, lng], {
+            radius: l.radius,
+            color: l.color,
+            fillColor: l.fillColor,
+            fillOpacity: l.fillOpacity,
+            weight: l.weight,
+            dashArray: l.dashArray,
+            opacity: 0.85,
+            interactive: false,
+          }).addTo(map);
+          radiusCircles.push(c);
+        });
       }
 
       function makeTruckIcon(truckId, heading) {
         return L.divIcon({
           html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
+                  '<div style="background:#006A3B;color:#ffffff;font-size:10px;font-weight:800;padding:3px 10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.25);margin-bottom:4px;white-space:nowrap;letter-spacing:0.3px;">ETA: 8 min</div>' +
                   '<div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 4px 15px rgba(0,106,59,0.4);border:2.5px solid #006A3B;position:relative;z-index:2;">' +
                     '<img src="data:image/png;base64,' + TB + '" style="width:36px;height:36px;object-fit:contain;display:block;" />' +
                   '</div>' +
-                  '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #006A3B;margin-top:-3px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2));"></div>' +
-                  '<div style="background:#006A3B;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;white-space:nowrap;margin-top:2px;box-shadow:0 2px 8px rgba(0,0,0,0.15);"> ' + (truckId || 'GT') + ' </div>' +
+                  '<div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #006A3B;margin-top:-3px;"></div>' +
                 '</div>',
-          iconSize: [50, 90],
-          iconAnchor: [25, 60],
+          iconSize: [80, 85],
+          iconAnchor: [40, 75],
           className: '',
         });
       }
@@ -327,7 +316,7 @@ function buildLeafletHTML(truckB64) {
         routesPayload.forEach(function(r) {
           if (!r.coords || r.coords.length < 2) return;
           var layer = L.polyline(r.coords, {
-            color: r.color || '#006A3B', weight: 3, opacity: 0.45,
+            color: r.color || '#006A3B', weight: 4, opacity: 0.85,
             lineCap: 'round', lineJoin: 'round',
           });
           layer.on('click', function() {
@@ -351,7 +340,7 @@ function buildLeafletHTML(truckB64) {
         });
       };
 
-      // Resident route stop markers — verified sitios
+      // Resident route stop markers — verified sitios with dark green trash bin icon
       var residentStopMarkers = [];
       window.clearResidentStops = function() {
         residentStopMarkers.forEach(function(m) { map.removeLayer(m); });
@@ -360,24 +349,27 @@ function buildLeafletHTML(truckB64) {
       window.addResidentStops = function(stopsJson) {
         window.clearResidentStops();
         var arr = JSON.parse(stopsJson);
+        var trashSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+        var checkSvg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
         arr.forEach(function(s) {
           var status = s.status || 'upcoming';
-          var bg = status === 'completed' ? '#006E1C' : status === 'in-progress' ? '#F59E0B' : '#9CA3AF';
-          var inner = status === 'completed' ? '✓' : status === 'in-progress' ? '🚛' : '●';
+          var isDone = status === 'completed';
+          var bg = isDone ? '#10B981' : status === 'in-progress' ? '#F59E0B' : '#006A3B';
+          var iconContent = isDone ? checkSvg : trashSvg;
           var icon = L.divIcon({
             html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
-                  '<div style="background:' + bg + ';color:#fff;width:24px;height:24px;border-radius:50%;' +
-                  'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;' +
-                  'border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">' + inner + '</div>' +
-                  '<span style="position:absolute;top:-18px;background:rgba(255,255,255,0.95);color:#1B1C1C;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;border:1px solid #ccc;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + s.name + '</span>' +
+                  '<div style="background:' + bg + ';color:#fff;width:28px;height:28px;border-radius:50%;' +
+                  'display:flex;align-items:center;justify-content:center;' +
+                  'border:2px solid white;box-shadow:0 3px 8px rgba(0,106,59,0.35);">' + iconContent + '</div>' +
+                  '<span style="position:absolute;top:-18px;background:rgba(255,255,255,0.95);color:#1B1C1C;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;border:1px solid #ccc;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + s.name + (isDone ? ' ✓' : '') + '</span>' +
                   '</div>',
-            iconSize: [24, 24], iconAnchor: [12, 12], className: '',
+            iconSize: [28, 28], iconAnchor: [14, 14], className: '',
           });
           var m = L.marker([s.lat, s.lng], { icon: icon });
           m.bindPopup(
             '<div style="font-family:sans-serif;min-width:100px;">' +
             '<b style="font-size:11px;">Sitio ' + s.name + '</b><br>' +
-            '<span style="font-size:10px;color:#555;">Status: ' + (status === 'completed' ? 'Cleaned' : status === 'in-progress' ? 'Scheduled Today' : 'Not Scheduled') + '</span>' +
+            '<span style="font-size:10px;color:' + (isDone ? '#059669' : '#555') + ';font-weight:700;">Status: ' + (isDone ? 'Collection Completed ✓' : status === 'in-progress' ? 'Scheduled Today' : 'Drop-off Point') + '</span>' +
             '</div>'
           );
           m.addTo(map);
@@ -406,10 +398,10 @@ function buildLeafletHTML(truckB64) {
           icon: L.divIcon({
             html: '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:36px; height:44px;">' +
                   '<svg viewBox="0 0 36 44" width="36" height="44" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));">' +
-                  '<path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 26 18 26s18-13.5 18-26C36 8.06 27.94 0 18 0z" fill="#1B1C1C" />' +
+                  '<path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 26 18 26s18-13.5 18-26C36 8.06 27.94 0 18 0z" fill="#006A3B" />' +
                   '<circle cx="18" cy="16.5" r="10.5" fill="#FFFFFF" />' +
-                  '<circle cx="18" cy="13" r="3.8" fill="#1B1C1C" />' +
-                  '<path d="M11.8 23c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2v0.8h-12.4V23z" fill="#1B1C1C" />' +
+                  '<circle cx="18" cy="13" r="3.8" fill="#006A3B" />' +
+                  '<path d="M11.8 23c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2v0.8h-12.4V23z" fill="#006A3B" />' +
                   '</svg>' +
                   '</div>',
             iconSize: [36, 44], iconAnchor: [18, 44], className: '',
@@ -442,6 +434,7 @@ export default function MapScreen() {
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [userLocation, setUserLocation] = useState(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(true);
   const [locationPermission, setLocationPermission] = useState(null);
   const [liveTruckOnline, setLiveTruckOnline] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
@@ -449,6 +442,7 @@ export default function MapScreen() {
   const [isFollowing, setIsFollowing] = useState(!!focusTruck);
   const [isAutoCenterUser, setIsAutoCenterUser] = useState(true);
   const [showCityOutline, setShowCityOutline] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('trucks');
   const [iotAreas, setIotAreas] = useState([]);
   const [truckPosState, setTruckPosState] = useState(null); // UI-reactive truck position
   const [cleanedNotif, setCleanedNotif] = useState(null);
@@ -524,13 +518,6 @@ export default function MapScreen() {
     Alert.alert("Bin Prepared! ✓", "Your garbage bin is marked as prepared for active collection. +2 Points earned!");
   };
 
-  const aqStatus = useMemo(() => {
-    if (!iotAreas.length) return null;
-    if (iotAreas.some((a) => a.status === 'critical')) return 'critical';
-    if (iotAreas.some((a) => a.status === 'moderate')) return 'moderate';
-    return 'clean';
-  }, [iotAreas]);
-
   const activeSchedule = useMemo(() => {
     if (liveTruckOnline && liveTruckPos.current?.truckId) {
       const match = todaySchedules.find(s => s.truckId === liveTruckPos.current.truckId);
@@ -538,6 +525,82 @@ export default function MapScreen() {
     }
     return todaySchedules.find(s => s.barangay?.toLowerCase() === userBarangay.toLowerCase());
   }, [todaySchedules, liveTruckPos.current, liveTruckOnline, userBarangay]);
+
+  const hasScheduleToday = useMemo(() => {
+    if (!todaySchedules || todaySchedules.length === 0) return false;
+    const brgy = activeBarangay || userBarangay;
+    if (!brgy) return todaySchedules.length > 0;
+    return todaySchedules.some(
+      (s) =>
+        !s.barangay ||
+        s.barangay.toLowerCase() === brgy.toLowerCase() ||
+        s.routeName?.toLowerCase().includes(brgy.toLowerCase())
+    );
+  }, [todaySchedules, activeBarangay, userBarangay]);
+
+  const isTruckActiveForBarangay = useMemo(() => {
+    return liveTruckOnline && hasScheduleToday;
+  }, [liveTruckOnline, hasScheduleToday]);
+
+  const isRouteCompleted = useMemo(() => {
+    if (!hasScheduleToday) return false;
+    if (activeSchedule?.status === 'completed') return true;
+    if (todaySchedules.length > 0 && todaySchedules.every(s => s.status === 'completed')) return true;
+    if (cleanedNotif) return true;
+    return false;
+  }, [hasScheduleToday, activeSchedule, todaySchedules, cleanedNotif]);
+
+  const missedBannerData = useMemo(() => {
+    if (binReady) return null;
+    if (!hasScheduleToday) return null;
+
+    if (isRouteCompleted || cleanedNotif) {
+      return {
+        type: 'missed_full',
+        title: "You Missed Today's Collection ⚠️",
+        message: "The garbage truck completed collection in your area and your bin was not marked ready. Please prepare for the next pickup schedule.",
+        icon: "event-busy",
+        color: "#D97706",
+        bgColor: "#FFFBEB",
+        borderColor: "#FDE68A",
+      };
+    }
+
+    const completedStops = activeSchedule?.sitioTasks?.filter(t => t.completed) || [];
+    if (isTruckActiveForBarangay && completedStops.length > 0) {
+      const isUserSitioDone = completedStops.some(t =>
+        t.name?.toLowerCase().includes(userBarangay?.toLowerCase()) ||
+        (user?.sitio && t.name?.toLowerCase().includes(user.sitio.toLowerCase()))
+      );
+      if (isUserSitioDone) {
+        return {
+          type: 'missed_sitio',
+          title: "Missed Area Collection ⚠️",
+          message: "The truck already completed collection at your sitio/area today. Make sure to mark your bin ready in advance next time!",
+          icon: "warning",
+          color: "#D97706",
+          bgColor: "#FFFBEB",
+          borderColor: "#FDE68A",
+        };
+      }
+    }
+
+    if (isTruckActiveForBarangay) {
+      return {
+        type: 'unprepared',
+        title: "Bin Not Prepared Yet ⚠️",
+        message: `The collection truck is currently active on route in ${activeBarangay || 'your area'}! Tap 'Prepare Bin' below to notify the driver to stop at your location.`,
+        icon: "delete-outline",
+        color: "#B45309",
+        bgColor: "#FEF3C7",
+        borderColor: "#FDE68A",
+      };
+    }
+
+    return null;
+  }, [binReady, hasScheduleToday, isRouteCompleted, cleanedNotif, isTruckActiveForBarangay, activeSchedule, userBarangay, activeBarangay, user]);
+
+  const hasMissedTruck = !!missedBannerData;
 
   const distToUser = useMemo(() => {
     if (!truckPosState?.lat || !userLocation?.lat) return null;
@@ -588,6 +651,13 @@ export default function MapScreen() {
   const [calendarLoading, setCalendarLoading] = useState(false);
 
   const activeBarangay = selectedBarangay || user?.barangay || 'Apas';
+
+  const aqStatus = useMemo(() => {
+    if (!iotAreas || iotAreas.length === 0) return 'moderate';
+    if (iotAreas.some(a => a.status === 'critical')) return 'critical';
+    if (iotAreas.some(a => a.status === 'moderate')) return 'moderate';
+    return 'clean';
+  }, [iotAreas]);
 
   // Fetch barangay-specific IoT garbage areas
   useEffect(() => {
@@ -726,7 +796,7 @@ export default function MapScreen() {
       const loc = userLocationRef.current;
       if (loc) {
         const distM = getDistanceM(loc.lat, loc.lng, lat, lng);
-        if (distM < 50 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
+        if (distM < 25 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
           truckAlertFiredRef.current.add(`near-${truckId}`);
           clearTimeout(toastTimerRef.current);
           setProximityToast(`🚚 Truck ${truckId} is right at your location (~${Math.round(distM)}m) — prepare your bin!`);
@@ -739,7 +809,7 @@ export default function MapScreen() {
             },
             trigger: null,
           }).catch(() => {});
-        } else if (distM < 200 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
+        } else if (distM < 100 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
           truckAlertFiredRef.current.add(`approach-${truckId}`);
           clearTimeout(toastTimerRef.current);
           setProximityToast(`🚚 Truck ${truckId} is approaching your area (~${Math.round(distM)}m).`);
@@ -924,6 +994,7 @@ export default function MapScreen() {
     let subscription = null;
     (async () => {
       try {
+        setIsLocationLoading(true);
         const { status } = await Location.requestForegroundPermissionsAsync();
         setLocationPermission(status);
         if (status === "granted") {
@@ -962,6 +1033,8 @@ export default function MapScreen() {
         }
       } catch (e) {
         console.warn("Location error:", e);
+      } finally {
+        setIsLocationLoading(false);
       }
     })();
 
@@ -1048,8 +1121,8 @@ export default function MapScreen() {
             }}
           >
             <MaterialIcons
-              name={isFollowing ? "gps-fixed" : "gps-not-fixed"}
-              size={22}
+              name="navigation"
+              size={20}
               color={isFollowing ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
@@ -1073,14 +1146,8 @@ export default function MapScreen() {
             }}
           >
             <MaterialIcons
-              name={
-                mapStyle === "satellite"
-                  ? "map"
-                  : mapStyle === "topographic"
-                    ? "satellite-alt"
-                    : "terrain"
-              }
-              size={22}
+              name="layers"
+              size={20}
               color={mapStyle !== "voyager" ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
@@ -1098,11 +1165,13 @@ export default function MapScreen() {
                 isFollowingRef.current = false;
               }
 
+              setIsLocationLoading(true);
               if (userLocationRef.current) {
                 const { lat, lng } = userLocationRef.current;
                 webViewRef.current?.injectJavaScript(
                   `window.gotoLocation(${lat}, ${lng}, 16); true;`,
                 );
+                setTimeout(() => setIsLocationLoading(false), 400);
               } else {
                 Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
                   .then((loc) => {
@@ -1114,15 +1183,20 @@ export default function MapScreen() {
                       `window.updateUserLocation(${latitude}, ${longitude}, true); true;`,
                     );
                   })
-                  .catch((err) => console.warn("Recenter error:", err));
+                  .catch((err) => console.warn("Recenter error:", err))
+                  .finally(() => setIsLocationLoading(false));
               }
             }}
           >
-            <MaterialIcons
-              name="my-location"
-              size={22}
-              color={isAutoCenterUser ? "#006A3B" : "#1B1C1C"}
-            />
+            {isLocationLoading ? (
+              <ActivityIndicator size="small" color="#006A3B" />
+            ) : (
+              <MaterialIcons
+                name="my-location"
+                size={20}
+                color={isAutoCenterUser ? "#006A3B" : "#1B1C1C"}
+              />
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.floatingButton, showCityOutline && styles.floatingButtonActive]}
@@ -1134,7 +1208,7 @@ export default function MapScreen() {
               );
             }}
           >
-            <MaterialIcons name="crop-free" size={22} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
+            <MaterialIcons name="crop-free" size={20} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.floatingButton, isExpanded && styles.floatingButtonActive]}
@@ -1146,9 +1220,52 @@ export default function MapScreen() {
               }
             }}
           >
-            <MaterialIcons name="directions-bus" size={22} color={isExpanded ? "#006A3B" : "#1B1C1C"} />
+            <MaterialIcons name="directions-bus" size={20} color={isExpanded ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
         </View>
+
+        {/* Floating Air Quality Capsule Banner */}
+        {activeBarangay && (
+          <View style={styles.aqPillWrapper} pointerEvents="none">
+            <View
+              style={[
+                styles.aqPillBanner,
+                aqStatus === 'critical' && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+                aqStatus === 'moderate' && { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+                aqStatus === 'clean' && { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+              ]}
+            >
+              <View
+                style={[
+                  styles.aqPillDot,
+                  aqStatus === 'critical' && { backgroundColor: '#EF4444' },
+                  aqStatus === 'moderate' && { backgroundColor: '#F59E0B' },
+                  aqStatus === 'clean' && { backgroundColor: '#10B981' },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.aqPillText,
+                  aqStatus === 'critical' && { color: '#B91C1C' },
+                  aqStatus === 'moderate' && { color: '#D97706' },
+                  aqStatus === 'clean' && { color: '#047857' },
+                ]}
+              >
+                {activeBarangay} · {aqStatus === 'critical' ? 'Poor Air Quality' : aqStatus === 'moderate' ? 'Moderate Air Quality' : 'Clean Air Quality'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Location Loading Banner Overlay */}
+        {isLocationLoading && (
+          <View style={styles.locationLoadingWrapper} pointerEvents="none">
+            <View style={styles.locationLoadingBanner}>
+              <ActivityIndicator size="small" color="#006A3B" />
+              <Text style={styles.locationLoadingText}>Locating your position...</Text>
+            </View>
+          </View>
+        )}
 
         {/* Proximity Approaching Truck Toast */}
         {proximityToast && (
@@ -1194,31 +1311,6 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Barangay Air Quality Status Banner */}
-        {aqStatus && (
-          <View style={styles.aqBannerWrapper} pointerEvents="none">
-            <View style={[
-              styles.aqBanner,
-              aqStatus === 'critical' && { backgroundColor: '#FFF1F0', borderColor: '#FECACA' },
-              aqStatus === 'moderate' && { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-              aqStatus === 'clean'    && { backgroundColor: '#F0FFF4', borderColor: '#BBF7D0' },
-            ]}>
-              <View style={[
-                styles.aqDot,
-                { backgroundColor: aqStatus === 'critical' ? '#E53935' : aqStatus === 'moderate' ? '#F59E0B' : '#4CAF50' },
-              ]} />
-              <Text style={[
-                styles.aqBannerText,
-                { color: aqStatus === 'critical' ? '#DC2626' : aqStatus === 'moderate' ? '#D97706' : '#059669' },
-              ]}>
-                {userBarangay} · {aqStatus === 'critical' ? 'Poor Air Quality' : aqStatus === 'moderate' ? 'Moderate Air Quality' : 'Good Air Quality'}
-              </Text>
-              {aqStatus === 'critical' && (
-                <MaterialIcons name="warning" size={12} color="#DC2626" />
-              )}
-            </View>
-          </View>
-        )}
       </View>
 
       {user && (
@@ -1232,15 +1324,19 @@ export default function MapScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: liveTruckOnline ? '#059669' : '#6B7280' }} />
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: liveTruckOnline ? '#006A3B' : '#374151' }}>
-                      {liveTruckOnline
-                        ? (distToUser != null && distToUser < 50
-                            ? 'Truck Passing Near You!'
-                            : distToUser != null && distToUser < 200
-                              ? 'Truck Approaching Area'
-                              : 'Driver is Active on Route')
-                        : 'Scheduled · Collection Standby'}
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isRouteCompleted ? '#10B981' : isTruckActiveForBarangay ? '#059669' : '#6B7280' }} />
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: isRouteCompleted ? '#059669' : isTruckActiveForBarangay ? '#006A3B' : '#374151' }}>
+                      {isRouteCompleted
+                        ? 'Route Collection Completed ✓'
+                        : isTruckActiveForBarangay
+                          ? (distToUser != null && distToUser < 50
+                              ? 'Truck Passing Near You!'
+                              : distToUser != null && distToUser < 200
+                                ? 'Truck Approaching Area'
+                                : 'Driver is Active on Route')
+                          : hasScheduleToday
+                            ? 'Scheduled · Collection Standby'
+                            : 'No Collection Scheduled Today'}
                     </Text>
                   </View>
                   <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
@@ -1249,6 +1345,25 @@ export default function MapScreen() {
                 </View>
                 {/* Remaining stops pill */}
                 {(() => {
+                  if (isRouteCompleted) {
+                    return (
+                      <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <MaterialIcons name="check-circle" size={14} color="#059669" />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#059669' }}>
+                          Completed ✓
+                        </Text>
+                      </View>
+                    );
+                  }
+                  if (!hasScheduleToday) {
+                    return (
+                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>
+                          No schedule
+                        </Text>
+                      </View>
+                    );
+                  }
                   const remaining = activeSchedule?.sitioTasks
                     ? activeSchedule.sitioTasks.filter(t => !t.completed).length
                     : (sitioList.length || 0);
@@ -1263,34 +1378,71 @@ export default function MapScreen() {
               </View>
 
               {/* Driver & Truck Info Section */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 6, backgroundColor: '#F8FAFC', padding: 10, borderRadius: 14, borderWidth: 1, borderColor: '#F1F5F9' }}>
-                {/* Avatar Icon */}
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <MaterialIcons name="person" size={22} color="#006A3B" />
+              <View style={styles.driverCard}>
+                {/* Truck Avatar Icon */}
+                <View style={styles.driverAvatarBg}>
+                  <MaterialIcons name="local-shipping" size={24} color="#006A3B" />
                 </View>
 
-                {/* Driver Details */}
+                {/* Driver & Truck Details */}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>
-                    {activeSchedule?.driverName || "Driver Assigned"}
+                  <Text style={styles.truckName}>
+                    {activeSchedule?.truckId || "Truck 2"}
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1, fontWeight: '500' }}>
-                    {distToUser != null
-                      ? (distToUser < 1000 ? `~${distToUser}m from you` : `~${(distToUser/1000).toFixed(1)}km from you`)
-                      : (liveTruckOnline ? 'Active on map' : 'Standby / Waiting')}
+                  <Text style={styles.driverName}>
+                    {activeSchedule?.driverName || "Xherdone James"}
+                  </Text>
+                  <Text style={styles.driverSub}>
+                    {isRouteCompleted
+                      ? 'Route collection completed for today'
+                      : isTruckActiveForBarangay
+                        ? `Collecting waste in ${activeBarangay || 'Apas'}`
+                        : hasScheduleToday
+                          ? 'Scheduled for collection'
+                          : 'No collection schedule today'}
                   </Text>
                 </View>
 
                 {/* Truck Badge */}
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#111827', letterSpacing: 0.5 }}>
-                    {activeSchedule?.truckId || 'GT-001'}
+                  <Text style={styles.truckPlate}>
+                    {activeSchedule?.truckPlate || activeSchedule?.truckId || 'GT-QSO'}
                   </Text>
-                  <Text style={{ fontSize: 10, color: liveTruckOnline ? '#059669' : '#6B7280', fontWeight: '700', textTransform: 'uppercase' }}>
-                    {liveTruckOnline ? 'Live Tracking' : 'Standby'}
-                  </Text>
+                  <View style={styles.liveBadgeRow}>
+                    <View style={[styles.liveDot, isRouteCompleted ? { backgroundColor: '#10B981' } : isTruckActiveForBarangay ? { backgroundColor: '#059669' } : { backgroundColor: '#9CA3AF' }]} />
+                    <Text style={[styles.liveBadgeText, isRouteCompleted ? { color: '#059669' } : isTruckActiveForBarangay ? { color: '#059669' } : { color: '#6B7280' }]}>
+                      {isRouteCompleted ? 'COMPLETED ✓' : isTruckActiveForBarangay ? 'LIVE TRACKING' : 'STANDBY'}
+                    </Text>
+                  </View>
                 </View>
               </View>
+
+              {/* Missed / Unprepared Waste Collection Warning Banner */}
+              {missedBannerData && (
+                <View style={{
+                  backgroundColor: missedBannerData.bgColor,
+                  borderColor: missedBannerData.borderColor,
+                  borderWidth: 1.5,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginVertical: 4,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name={missedBannerData.icon} size={22} color={missedBannerData.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400E' }}>
+                      {missedBannerData.title}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#B45309', marginTop: 2, lineHeight: 15, fontWeight: '500' }}>
+                      {missedBannerData.message}
+                    </Text>
+                  </View>
+                </View>
+              )}
 
               {/* Resident Action Shortcuts */}
               <ScrollView
@@ -1306,9 +1458,21 @@ export default function MapScreen() {
                     paddingVertical: 10,
                     paddingHorizontal: 14,
                     borderRadius: 12,
-                    backgroundColor: binReady ? '#ECFDF5' : liveTruckOnline ? '#006A3B' : '#F3F4F6',
+                    backgroundColor: binReady
+                      ? '#ECFDF5'
+                      : hasMissedTruck
+                        ? '#FFFBEB'
+                        : liveTruckOnline
+                          ? '#006A3B'
+                          : '#F3F4F6',
                     borderWidth: 1,
-                    borderColor: binReady ? '#A7F3D0' : liveTruckOnline ? '#006A3B' : '#E5E7EB',
+                    borderColor: binReady
+                      ? '#A7F3D0'
+                      : hasMissedTruck
+                        ? '#FDE68A'
+                        : liveTruckOnline
+                          ? '#006A3B'
+                          : '#E5E7EB',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexDirection: 'row',
@@ -1316,16 +1480,16 @@ export default function MapScreen() {
                   }}
                 >
                   <MaterialIcons
-                    name={binReady ? 'check-circle' : 'delete-outline'}
+                    name={binReady ? 'check-circle' : hasMissedTruck ? 'event-busy' : 'delete-outline'}
                     size={16}
-                    color={binReady ? '#006A3B' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF'}
+                    color={binReady ? '#006A3B' : hasMissedTruck ? '#D97706' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF'}
                   />
                   <Text style={{
                     fontSize: 12,
                     fontWeight: '700',
-                    color: binReady ? '#006A3B' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF',
+                    color: binReady ? '#006A3B' : hasMissedTruck ? '#D97706' : liveTruckOnline ? '#FFFFFF' : '#9CA3AF',
                   }}>
-                    {binReady ? 'Bin Ready ✓' : 'Prepare Bin'}
+                    {binReady ? 'Bin Ready ✓' : hasMissedTruck ? 'Missed Pickup ⚠️' : 'Prepare Bin'}
                   </Text>
                 </TouchableOpacity>
 
@@ -2182,5 +2346,263 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+  locationLoadingWrapper: {
+    position: "absolute",
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 30,
+  },
+  locationLoadingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  locationLoadingText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+
+  // Top App Header & Filter Bar Styles
+  topHeader: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === "android" ? 12 : 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    zIndex: 10,
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  logoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  leafIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#006A3B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#006A3B",
+    letterSpacing: 0.5,
+    lineHeight: 20,
+  },
+  headerSubTitle: {
+    fontSize: 8,
+    fontWeight: "700",
+    color: "#475569",
+    letterSpacing: 0.6,
+    marginTop: 1,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    position: "relative",
+  },
+  notifDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+    position: "absolute",
+    top: 7,
+    right: 7,
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+  },
+  avatarBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#006A3B",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchBarContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
+    marginBottom: 10,
+  },
+  searchPlaceholder: {
+    fontSize: 13,
+    color: "#94A3B8",
+    fontWeight: "500",
+    flex: 1,
+  },
+  filterChipScroll: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  filterChipActive: {
+    backgroundColor: "#006A3B",
+    borderColor: "#006A3B",
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+  },
+
+  // Bottom Sheet Driver & Truck Card
+  driverCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 6,
+    backgroundColor: "#F8FAFC",
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  driverAvatarBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#D1FAE5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  truckName: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#1F2937",
+    lineHeight: 18,
+  },
+  driverName: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 2,
+  },
+  driverSub: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  truckPlate: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+    letterSpacing: 0.5,
+  },
+  liveBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#059669",
+  },
+  liveBadgeText: {
+    fontSize: 10,
+    color: "#059669",
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  aqPillWrapper: {
+    position: "absolute",
+    top: 14,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 30,
+  },
+  aqPillBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+    borderWidth: 1.5,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  aqPillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#F59E0B",
+  },
+  aqPillText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#D97706",
   },
 });

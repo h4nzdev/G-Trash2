@@ -13,7 +13,7 @@ import {
   Platform,
   FlatList,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useCameraPermissions, CameraView } from "expo-camera";
@@ -492,6 +492,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // ── MAIN COMPONENT ─────────────────────────────
 export default function ScannerScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   // State management
   const [permissionMessage, setPermissionMessage] = useState(
@@ -1137,7 +1138,7 @@ export default function ScannerScreen() {
             </View>
 
             {/* Bottom Controls Area */}
-            <View style={styles.bottomControls}>
+            <View style={[styles.bottomControls, { marginBottom: Math.max(insets.bottom + 48, 56) }]}>
               {/* Manual select shortcut */}
               <TouchableOpacity
                 style={styles.secondaryControlBtn}

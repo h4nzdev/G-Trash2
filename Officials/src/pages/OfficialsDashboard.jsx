@@ -87,7 +87,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-red-600">{loading ? '–' : riskCounts.high}</p>
             <p className="text-xs font-semibold text-slate-700">High Risk Zones</p>
-            <p className="text-[10px] text-slate-400">NH₃ &gt;50ppm or CH₄ &gt;25% LEL</p>
+            <p className="text-[10px] text-slate-400">Raw ADC &ge; 700</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-amber-200 p-5 flex items-center gap-4">
@@ -97,7 +97,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-amber-600">{loading ? '–' : riskCounts.moderate}</p>
             <p className="text-xs font-semibold text-slate-700">Moderate Risk Zones</p>
-            <p className="text-[10px] text-slate-400">NH₃ 25–50ppm or CH₄ 10–25%</p>
+            <p className="text-[10px] text-slate-400">Raw ADC 400 – 699</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-emerald-100 p-5 flex items-center gap-4">
@@ -107,7 +107,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-emerald-600">{loading ? '–' : riskCounts.low}</p>
             <p className="text-xs font-semibold text-slate-700">Low Risk Zones</p>
-            <p className="text-[10px] text-slate-400">NH₃ &lt;25ppm — Safe levels</p>
+            <p className="text-[10px] text-slate-400">Raw ADC &lt; 400 — Clean air</p>
           </div>
         </div>
       </div>
@@ -184,15 +184,17 @@ function ChdDashboard() {
           ) : (
             <div className="space-y-2">
               {barangaysAtRisk.map((b, i) => {
-                const isHigh = b.maxAmmonia > 50 || b.maxMethane > 25;
+                const isHigh = b.maxRawValue !== undefined ? b.maxRawValue >= 700 : (b.maxAmmonia > 50 || b.maxMethane > 25);
+                const rawVal = b.maxRawValue ?? 0;
+                const voltageVal = (rawVal * 3.3) / 4095.0;
                 return (
                   <div key={b.name} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${isHigh ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
                     <span className="text-sm w-6 text-center font-bold text-slate-500">#{i + 1}</span>
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-slate-800">{b.name}</p>
                       <p className="text-[10px] text-slate-500">
-                        NH₃: <span className={`font-bold ${b.maxAmmonia > 50 ? 'text-red-600' : 'text-amber-600'}`}>{b.maxAmmonia.toFixed(1)} ppm</span>
-                        {' · '}CH₄: <span className={`font-bold ${b.maxMethane > 25 ? 'text-red-600' : 'text-amber-600'}`}>{b.maxMethane.toFixed(1)}%</span>
+                        Raw ADC: <span className={`font-bold ${isHigh ? 'text-red-600' : 'text-amber-600'}`}>{rawVal}</span>
+                        {' · '}Voltage: <span className={`font-bold ${isHigh ? 'text-red-600' : 'text-amber-600'}`}>{voltageVal.toFixed(2)}V</span>
                       </p>
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isHigh ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -375,6 +377,111 @@ function SurveyResultsCard({ data, period, context, onPeriodChange, onContextCha
   );
 }
 
+function ChdDashboardSkeleton() {
+  return (
+    <div className="p-6 space-y-6 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-6 w-56 bg-slate-200 rounded-lg" />
+          <div className="h-3 w-48 bg-slate-100 rounded" />
+        </div>
+        <div className="h-8 w-24 bg-slate-200 rounded-lg" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-slate-200" />
+            <div className="space-y-2 flex-1">
+              <div className="h-6 w-12 bg-slate-200 rounded" />
+              <div className="h-4 w-24 bg-slate-200 rounded" />
+              <div className="h-3 w-32 bg-slate-100 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {[1, 2].map(i => (
+          <div key={i} className="bg-white p-6 rounded-2xl border border-slate-100 space-y-4">
+            <div className="h-5 w-44 bg-slate-200 rounded" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(j => (
+                <div key={j} className="h-12 bg-slate-50 rounded-xl border border-slate-100" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="p-6 space-y-6 animate-pulse">
+      {/* Header Skeleton */}
+      <div className="flex items-center justify-between flex-wrap gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="space-y-2">
+          <div className="h-5 w-72 bg-slate-200 rounded-lg" />
+          <div className="h-3 w-44 bg-slate-100 rounded" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-28 bg-slate-200 rounded-xl" />
+          <div className="h-8 w-32 bg-slate-200 rounded-xl" />
+        </div>
+      </div>
+
+      {/* KPI Cards Skeleton */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-3.5 w-24 bg-slate-200 rounded" />
+              <div className="w-8 h-8 bg-slate-100 rounded-xl" />
+            </div>
+            <div className="h-7 w-24 bg-slate-200 rounded-lg" />
+            <div className="h-3 w-36 bg-slate-100 rounded" />
+          </div>
+        ))}
+      </div>
+
+      {/* Main Grid Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column */}
+        <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <div className="flex justify-between items-center mb-2">
+            <div className="h-5 w-44 bg-slate-200 rounded" />
+            <div className="h-4 w-16 bg-slate-100 rounded" />
+          </div>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center p-3 gap-3">
+              <div className="w-10 h-10 bg-slate-200 rounded-xl flex-shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-3/4 bg-slate-200 rounded" />
+                <div className="h-3 w-1/2 bg-slate-100 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Right Column */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+            <div className="h-4 w-36 bg-slate-200 rounded" />
+            <div className="h-6 w-48 bg-slate-200 rounded" />
+            <div className="h-10 bg-slate-100 rounded-xl" />
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+            <div className="h-5 w-40 bg-slate-200 rounded" />
+            <div className="h-32 bg-slate-50 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OfficialsDashboard() {
   const { official } = useAuth();
   const location = useLocation();
@@ -445,13 +552,21 @@ export default function OfficialsDashboard() {
 
       setIotSummary(summaryRes || {});
       setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);
-      setIotAlerts(Array.isArray(alertsRes) ? alertsRes : []);
-      setLatestReadings(Array.isArray(latestRes) ? latestRes : []);
       setRankings(Array.isArray(rankingsRes) ? rankingsRes : []);
 
       // Calculate scoped & accurate stats
       const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
-      const userBrgy = official?.barangay?.toLowerCase();
+      const userBrgy = official?.barangay?.toLowerCase()?.trim();
+
+      // Scoped IoT Readings & Alerts
+      let scopedReadings = Array.isArray(latestRes) ? latestRes : [];
+      let scopedAlerts = Array.isArray(alertsRes) ? alertsRes : [];
+      if (isScoped && userBrgy) {
+        scopedReadings = scopedReadings.filter(r => r.barangay && r.barangay.toLowerCase().trim() === userBrgy);
+        scopedAlerts = scopedAlerts.filter(a => a.barangay && a.barangay.toLowerCase().trim() === userBrgy);
+      }
+      setLatestReadings(scopedReadings);
+      setIotAlerts(scopedAlerts);
 
       // Scoped resident reports
       let allReports = Array.isArray(reportsRes) ? reportsRes : [];
@@ -593,6 +708,11 @@ export default function OfficialsDashboard() {
     socketRef.current = socket;
 
     socket.on('iot:reading', (reading) => {
+      const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
+      const userBrgy = official?.barangay?.toLowerCase()?.trim();
+      if (isScoped && userBrgy && reading.barangay && reading.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
       setLatestReadings(prev => {
         const filtered = prev.filter(r => r.sensorId !== reading.sensorId);
         return [reading, ...filtered];
@@ -601,6 +721,11 @@ export default function OfficialsDashboard() {
     });
 
     socket.on('iot:alert', (alert) => {
+      const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
+      const userBrgy = official?.barangay?.toLowerCase()?.trim();
+      if (isScoped && userBrgy && alert.barangay && alert.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
       setIotAlerts(prev => [alert, ...prev].slice(0, 10));
       setIotSummary(prev => ({
         ...prev,
@@ -629,10 +754,27 @@ export default function OfficialsDashboard() {
   );
 
   if (isChd) {
+    if (loading) {
+      return (
+        <>
+          {accessDeniedBanner}
+          <ChdDashboardSkeleton />
+        </>
+      );
+    }
     return (
       <>
         {accessDeniedBanner}
         <ChdDashboard />
+      </>
+    );
+  }
+
+  if (loading && !reportsList.length && !collectionStats.length) {
+    return (
+      <>
+        {accessDeniedBanner}
+        <DashboardSkeleton />
       </>
     );
   }
@@ -782,7 +924,7 @@ export default function OfficialsDashboard() {
       {activeTab === 'operations' ? (
         <>
           {/* Main Operational 2-Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Left Column (7/12): Live Resident Reports Widget */}
             <div className="lg:col-span-7">
               <RecentReportsWidget reports={reportsList} onReportUpdated={fetchAll} />
@@ -974,7 +1116,7 @@ export default function OfficialsDashboard() {
                       </span>
                     )}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Ammonia & methane levels from IoT sensors</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Air quality raw ADC & voltage levels from IoT sensors</p>
                 </div>
               </div>
               {pollutionData.length > 0 ? (

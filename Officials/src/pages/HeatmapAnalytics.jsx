@@ -1,54 +1,127 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Popup, useMapEvents, Polygon, Polyline, Marker, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet.heat';
-import 'leaflet/dist/leaflet.css';
-import axios from 'axios';
-import { io } from 'socket.io-client';
+import { useState, useEffect, useRef, Fragment } from "react";
 import {
-  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area,
-  ReferenceArea, ReferenceLine, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Legend as RechartsLegend
-} from 'recharts';
-import { Calendar, AlertTriangle, Wind, Zap, RefreshCw, Plus, Save, X, Trash2, MapPin, ShieldAlert, Radio, Thermometer, Droplets, Gauge, Heart, Cpu, Activity, LayoutDashboard, Settings, CheckCircle2, BarChart2, FileText, Info, Clock, Download } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from '../utils/mapBoundary';
-import API from '../config';
-import html2canvas from 'html2canvas';
+  MapContainer,
+  TileLayer,
+  Circle,
+  CircleMarker,
+  Popup,
+  useMapEvents,
+  Polygon,
+  Polyline,
+  Marker,
+  useMap,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet.heat";
+import "leaflet/dist/leaflet.css";
+import axios from "axios";
+import { io } from "socket.io-client";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  ReferenceArea,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend as RechartsLegend,
+} from "recharts";
+import {
+  Calendar,
+  AlertTriangle,
+  Wind,
+  Zap,
+  RefreshCw,
+  Plus,
+  Save,
+  X,
+  Trash2,
+  MapPin,
+  ShieldAlert,
+  Radio,
+  Thermometer,
+  Droplets,
+  Gauge,
+  Heart,
+  Cpu,
+  Activity,
+  LayoutDashboard,
+  Settings,
+  CheckCircle2,
+  BarChart2,
+  FileText,
+  Info,
+  Clock,
+  Download,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import {
+  CEBU_CENTER,
+  WORLD_BOUNDS,
+  CEBU_BOUNDS,
+  CEBU_CITY_OUTLINE,
+  fetchCebuCityBoundary,
+} from "../utils/mapBoundary";
+import API from "../config";
+import html2canvas from "html2canvas";
 
-const zoneColor = { critical: '#ef4444', moderate: '#f59e0b', clean: '#10b981', inactive: '#94a3b8' };
+const zoneColor = {
+  critical: "#ef4444",
+  moderate: "#f59e0b",
+  clean: "#10b981",
+  inactive: "#94a3b8",
+};
 
-function parseAmmoniaPpm(ammoniaStr) {
-  if (!ammoniaStr) return 0;
-  return parseFloat(String(ammoniaStr).replace(/[^0-9.]/g, '')) || 0;
+function parseRawValue(val) {
+  if (val == null) return 0;
+  return parseFloat(String(val).replace(/[^0-9.]/g, "")) || 0;
 }
 
-function healthRiskColor(ammoniaPpm) {
-  if (ammoniaPpm > 100) return '#ef4444'; // Critical — red
-  if (ammoniaPpm > 50)  return '#f97316'; // High — orange
-  if (ammoniaPpm >= 25) return '#f59e0b'; // Moderate — yellow
-  return '#10b981';                       // Safe — green
+function healthRiskColor(rawValue) {
+  const raw = Number(rawValue) || 0;
+  if (raw >= 700) return "#ef4444"; // Critical — red
+  if (raw >= 400) return "#f59e0b"; // Moderate — yellow
+  return "#10b981"; // Safe — green
 }
 
-function healthRiskLabel(ammoniaPpm) {
-  if (ammoniaPpm > 100) return 'Critical';
-  if (ammoniaPpm > 50)  return 'High Risk';
-  if (ammoniaPpm >= 25) return 'Moderate';
-  return 'Safe';
+function healthRiskLabel(rawValue) {
+  const raw = Number(rawValue) || 0;
+  if (raw >= 700) return "Critical";
+  if (raw >= 400) return "Moderate";
+  return "Clean";
 }
 
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-slate-900/95 text-white backdrop-blur-md border border-slate-700 rounded-xl p-3 shadow-xl text-xs space-y-1 z-50">
-      <p className="font-bold text-slate-300 border-b border-slate-700 pb-1 mb-1">{label}</p>
+      <p className="font-bold text-slate-300 border-b border-slate-700 pb-1 mb-1">
+        {label}
+      </p>
       {payload.map((p) => (
-        <p key={p.dataKey} className="flex items-center justify-between gap-3" style={{ color: p.color }}>
+        <p
+          key={p.dataKey}
+          className="flex items-center justify-between gap-3"
+          style={{ color: p.color }}
+        >
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{ backgroundColor: p.color }}
+            />
             {p.name}:
           </span>
-          <strong className="font-mono">{p.value} {p.dataKey === 'aqi' ? '' : 'ppm'}</strong>
+          <strong className="font-mono">
+            {p.value} {p.dataKey === "aqi" ? "" : "ppm"}
+          </strong>
         </p>
       ))}
     </div>
@@ -56,71 +129,73 @@ const ChartTooltip = ({ active, payload, label }) => {
 };
 
 function generateAirQualityHistory(zone) {
-  const ammoniaPpm = parseAmmoniaPpm(zone?.ammonia) || 35;
-  const methanePpm = parseAmmoniaPpm(zone?.methane) || 15;
+  const baseRaw = Number(zone?.rawValue) || 350;
 
   const intervals = [
-    { time: '08:00', factor: 0.65 },
-    { time: '10:00', factor: 0.85 },
-    { time: '12:00', factor: 1.15 },
-    { time: '14:00', factor: 1.35 },
-    { time: '16:00', factor: 1.05 },
-    { time: '18:00', factor: 0.90 },
-    { time: '20:00', factor: 1.25 },
-    { time: '22:00', factor: 1.00 },
-    { time: '00:00', factor: 0.70 },
-    { time: '02:00', factor: 0.55 },
-    { time: '04:00', factor: 0.65 },
-    { time: '06:00', factor: 0.80 },
-    { time: 'Now', factor: 1.00 }
+    { time: "08:00", factor: 0.7 },
+    { time: "10:00", factor: 0.85 },
+    { time: "12:00", factor: 1.15 },
+    { time: "14:00", factor: 1.3 },
+    { time: "16:00", factor: 1.05 },
+    { time: "18:00", factor: 0.9 },
+    { time: "20:00", factor: 1.2 },
+    { time: "22:00", factor: 1.0 },
+    { time: "00:00", factor: 0.75 },
+    { time: "02:00", factor: 0.6 },
+    { time: "04:00", factor: 0.7 },
+    { time: "06:00", factor: 0.85 },
+    { time: "Now", factor: 1.0 },
   ];
 
-  return intervals.map(item => {
-    const nh3 = Math.max(2, Math.round(ammoniaPpm * item.factor));
-    const ch4 = Math.max(1, Math.round(methanePpm * item.factor));
-    const aqi = Math.round(nh3 * 2.2 + ch4 * 1.5);
+  return intervals.map((item) => {
+    const raw = Math.min(4095, Math.max(50, Math.round(baseRaw * item.factor)));
+    const voltage = parseFloat(((raw * 3.3) / 4095.0).toFixed(2));
     return {
       time: item.time,
-      ammonia: nh3,
-      methane: ch4,
-      aqi: aqi
+      rawValue: raw,
+      voltage: voltage,
     };
   });
 }
 
 function AirQualityTrendModal({ zone, onClose }) {
-  const [activeGas, setActiveGas] = useState('both');
   const [isExporting, setIsExporting] = useState(false);
   const modalCardRef = useRef(null);
 
   if (!zone) return null;
 
-  const nh3Val = parseAmmoniaPpm(zone.ammonia);
-  const ch4Val = parseAmmoniaPpm(zone.methane);
-  const aqiVal = Math.round(nh3Val * 2.2 + ch4Val * 1.5) || 45;
+  const rawVal = Number(zone.rawValue) || 0;
+  const voltageVal = ((rawVal * 3.3) / 4095.0).toFixed(2);
 
-  let statusBg = 'bg-emerald-600';
-  let statusBadge = 'Good';
-  let healthAdvice = '0-50: Air quality is satisfactory, and air pollution poses little or no risk.';
+  let statusBg = "bg-emerald-600";
+  let statusBadge = "Clean";
+  let healthAdvice =
+    "Raw ADC < 400: Air quality is safe with normal background environmental readings.";
 
-  if (aqiVal > 150 || zone.status === 'critical') {
-    statusBg = 'bg-red-600';
-    statusBadge = 'Critical / Hazardous';
-    healthAdvice = '151-200+: Health alert: Everyone may experience more serious health effects. Avoid prolonged outdoor exertion.';
-  } else if (aqiVal > 100 || zone.status === 'high') {
-    statusBg = 'bg-orange-500';
-    statusBadge = 'Unhealthy for Sensitive Groups';
-    healthAdvice = '101-150: Members of sensitive groups may experience health effects with 24 hours of exposure. General public is less likely to be affected.';
-  } else if (aqiVal > 50 || zone.status === 'moderate') {
-    statusBg = 'bg-amber-500';
-    statusBadge = 'Moderate';
-    healthAdvice = '51-100: Air quality is acceptable; however, sensitive individuals may experience minor health effects.';
+  if (rawVal >= 700 || zone.status === "critical") {
+    statusBg = "bg-red-600";
+    statusBadge = "Critical Risk (700+ ADC)";
+    healthAdvice =
+      "Raw ADC >= 700: High decomposition gas concentration detected. Priority waste collection required.";
+  } else if (rawVal >= 400 || zone.status === "moderate") {
+    statusBg = "bg-amber-500";
+    statusBadge = "Moderate (400-699 ADC)";
+    healthAdvice =
+      "Raw ADC 400-699: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
   }
 
   const historyData = generateAirQualityHistory(zone);
-  const formattedTime = new Date(zone.updatedAt || Date.now()).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
-  });
+  const formattedTime = new Date(zone.updatedAt || Date.now()).toLocaleString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    },
+  );
 
   const handleExportPNG = async () => {
     if (!modalCardRef.current || isExporting) return;
@@ -129,15 +204,15 @@ function AirQualityTrendModal({ zone, onClose }) {
       const canvas = await html2canvas(modalCardRef.current, {
         scale: 2,
         useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false
+        backgroundColor: "#ffffff",
+        logging: false,
       });
-      const link = document.createElement('a');
-      link.download = `Air_Quality_Analysis_${(zone?.name || 'Zone').replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png');
+      const link = document.createElement("a");
+      link.download = `Air_Quality_Analysis_${(zone?.name || "Zone").replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (err) {
-      console.error('Failed to export graph image:', err);
+      console.error("Failed to export graph image:", err);
     } finally {
       setIsExporting(false);
     }
@@ -145,8 +220,10 @@ function AirQualityTrendModal({ zone, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[3000] flex items-center justify-center p-4 overflow-y-auto">
-      <div ref={modalCardRef} className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto">
-        
+      <div
+        ref={modalCardRef}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto"
+      >
         {/* Header Bar */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -155,18 +232,26 @@ function AirQualityTrendModal({ zone, onClose }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold text-white leading-tight">Air Quality & Gas Hazard Analysis</h3>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase text-white ${statusBg}`}>
+                <h3 className="text-lg font-bold text-white leading-tight">
+                  Raw ADC & Sensor Telemetry Analysis
+                </h3>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase text-white ${statusBg}`}
+                >
                   {statusBadge}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="font-semibold text-slate-200">{zone.name}</span>
+                <span className="font-semibold text-slate-200">
+                  {zone.name}
+                </span>
                 <span>•</span>
-                <span>{zone.barangay || 'Cebu City'}</span>
+                <span>{zone.barangay || "Cebu City"}</span>
                 <span>•</span>
-                <span className="text-emerald-400 font-mono">Sensor ID: {zone.sensorId || 'IoT Zone'}</span>
+                <span className="text-emerald-400 font-mono">
+                  Sensor ID: {zone.sensorId || "IoT Zone"}
+                </span>
               </p>
             </div>
           </div>
@@ -182,7 +267,7 @@ function AirQualityTrendModal({ zone, onClose }) {
               ) : (
                 <Download className="w-3.5 h-3.5" />
               )}
-              {isExporting ? 'Exporting...' : 'Export PNG'}
+              {isExporting ? "Exporting..." : "Export PNG"}
             </button>
             <button
               onClick={onClose}
@@ -195,76 +280,54 @@ function AirQualityTrendModal({ zone, onClose }) {
 
         {/* Modal Body */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50/50">
-          
-          {/* Left Panel: PurpleAir-Style Live AQI Box */}
+          {/* Left Panel: Live Sensor Value Card */}
           <div className="lg:col-span-4 flex flex-col justify-between space-y-4">
-            
-            {/* Live AQI Card */}
-            <div className={`${statusBg} text-white rounded-2xl p-5 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[260px]`}>
-              <div className="relative z-10">
-                <p className="text-[11px] font-medium text-white/80 uppercase tracking-wider mb-2">
-                  On {formattedTime}
-                </p>
-                <p className="text-xs font-bold uppercase tracking-wider text-white/90">
-                  10-Minute Average US EPA PM2.5 / Gas (AQI)
-                </p>
-                <div className="flex items-baseline gap-2 my-3">
-                  <span className="text-6xl font-black text-white tracking-tight leading-none">
-                    {aqiVal}
-                  </span>
-                  <span className="text-sm font-bold text-white/90">
-                    AQI Index
-                  </span>
-                </div>
+            <div
+              className={`p-5 rounded-2xl border flex flex-col items-center justify-center text-center relative overflow-hidden shadow-lg ${statusBg}`}
+            >
+              <span className="text-[10px] font-black tracking-widest text-white/80 uppercase mb-1">
+                Raw Sensor Telemetry
+              </span>
+              <div className="text-5xl font-black text-white tracking-tight my-1">
+                {rawVal}
               </div>
-
-              <div className="relative z-10 bg-black/20 backdrop-blur-md rounded-xl p-3 border border-white/20">
-                <p className="text-xs font-semibold leading-relaxed text-white/95">
-                  {healthAdvice}
-                </p>
-              </div>
+              <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider bg-black/20 px-3 py-1 rounded-full backdrop-blur-sm mt-1">
+                {statusBadge}
+              </span>
             </div>
 
-            {/* Live Sensor Metrics Grid */}
+            {/* Sensor Specifications Card */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Gauge className="w-4 h-4 text-blue-500" /> Raw ADC Value
                 </span>
-                <span className={`text-base font-black ${zone.status === 'critical' ? 'text-red-600' : 'text-slate-800'}`}>
-                  {zone.rawValue || 0} <span className="text-[10px] font-medium text-slate-400">/ 4095</span>
+                <span
+                  className={`text-base font-black ${rawVal >= 700 ? "text-red-600" : "text-slate-800"}`}
+                >
+                  {rawVal}{" "}
+                  <span className="text-[10px] font-medium text-slate-400">
+                    / 4095
+                  </span>
                 </span>
               </div>
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-indigo-500" /> Sensor Voltage
+                  <Activity className="w-4 h-4 text-indigo-500" /> Sensor
+                  Voltage
                 </span>
                 <span className="text-base font-black text-slate-800">
-                  {((zone.rawValue || 0) * (3.3 / 4095.0)).toFixed(2)} V
-                </span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Wind className="w-4 h-4 text-emerald-600" /> Ammonia (NH₃)
-                </span>
-                <span className="text-base font-black text-slate-800">
-                  {zone.ammonia || '0 ppm'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Zap className="w-4 h-4 text-amber-500" /> Methane (CH₄)
-                </span>
-                <span className="text-base font-black text-slate-800">
-                  {zone.methane || '0 ppm'}
+                  {voltageVal} V
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Radio className="w-4 h-4 text-blue-500" /> Sensor Status
                 </span>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-md uppercase ${zone.isActive !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {zone.isActive !== false ? 'Active broadcasting' : 'Inactive'}
+                <span
+                  className={`text-xs font-bold px-2 py-0.5 rounded-md uppercase ${zone.isActive !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
+                >
+                  {zone.isActive !== false ? "Active broadcasting" : "Inactive"}
                 </span>
               </div>
             </div>
@@ -272,36 +335,20 @@ function AirQualityTrendModal({ zone, onClose }) {
 
           {/* Right Panel: Recharts Air Quality Trend Graph */}
           <div className="lg:col-span-8 bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
-            
             {/* Graph Controls Header */}
             <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
               <div>
                 <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <BarChart2 className="w-4 h-4 text-emerald-600" />
-                  Gas Concentration & AQI Trend
+                  Raw ADC Telemetry Trend
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Air quality historical readings with EPA hazard color bands
+                  Real-time raw analog-to-digital converter readings over 24
+                  hours
                 </p>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Gas Toggle Buttons */}
-                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                  {['both', 'ammonia', 'methane'].map(g => (
-                    <button
-                      key={g}
-                      onClick={() => setActiveGas(g)}
-                      className={`px-3 py-1 text-xs font-bold rounded-lg capitalize transition-all ${
-                        activeGas === g ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Export PNG Button on Graph Header */}
                 <button
                   onClick={handleExportPNG}
                   disabled={isExporting}
@@ -312,80 +359,140 @@ function AirQualityTrendModal({ zone, onClose }) {
                   ) : (
                     <Download className="w-3.5 h-3.5" />
                   )}
-                  {isExporting ? 'Exporting...' : 'Export PNG'}
+                  {isExporting ? "Exporting..." : "Export PNG"}
                 </button>
               </div>
             </div>
 
-            {/* Recharts Area / Line Chart with Background Threshold Bands */}
+            {/* Recharts Area Chart */}
             <div className="w-full h-[260px] relative">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart
+                  data={historyData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
                   <defs>
-                    <linearGradient id="gradNH3Modal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#f97316" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="gradCH4Modal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                    <linearGradient
+                      id="gradRawModal"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#006A3B" stopOpacity={0.4} />
+                      <stop
+                        offset="95%"
+                        stopColor="#006A3B"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
                   </defs>
 
-                  {/* EPA AQI Threshold Reference Areas */}
-                  <ReferenceArea y1={0} y2={20} fillColor="#22c55e" fillOpacity={0.10} />
-                  <ReferenceArea y1={20} y2={40} fillColor="#eab308" fillOpacity={0.12} />
-                  <ReferenceArea y1={40} y2={70} fillColor="#f97316" fillOpacity={0.14} />
-                  <ReferenceArea y1={70} y2={160} fillColor="#ef4444" fillOpacity={0.16} />
+                  <ReferenceArea
+                    y1={0}
+                    y2={400}
+                    fillColor="#10b981"
+                    fillOpacity={0.08}
+                  />
+                  <ReferenceArea
+                    y1={400}
+                    y2={700}
+                    fillColor="#f59e0b"
+                    fillOpacity={0.1}
+                  />
+                  <ReferenceArea
+                    y1={700}
+                    y2={4095}
+                    fillColor="#ef4444"
+                    fillOpacity={0.12}
+                  />
 
-                  <ReferenceLine y={40} stroke="#f97316" strokeDasharray="3 3" label={{ value: 'Warning (40 ppm)', position: 'right', fill: '#f97316', fontSize: 10, fontWeight: 'bold' }} />
-                  <ReferenceLine y={20} stroke="#eab308" strokeDasharray="3 3" label={{ value: 'Caution (20 ppm)', position: 'right', fill: '#ca8a04', fontSize: 10, fontWeight: 'bold' }} />
+                  <ReferenceLine
+                    y={700}
+                    stroke="#ef4444"
+                    strokeDasharray="3 3"
+                    label={{
+                      value: "Critical (700 ADC)",
+                      position: "right",
+                      fill: "#ef4444",
+                      fontSize: 10,
+                      fontWeight: "bold",
+                    }}
+                  />
+                  <ReferenceLine
+                    y={400}
+                    stroke="#f59e0b"
+                    strokeDasharray="3 3"
+                    label={{
+                      value: "Moderate (400 ADC)",
+                      position: "right",
+                      fill: "#d97706",
+                      fontSize: 10,
+                      fontWeight: "bold",
+                    }}
+                  />
 
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} unit=" ppm" />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fontSize: 10, fill: "#64748b" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "#64748b" }}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[0, "dataMax + 100"]}
+                  />
                   <Tooltip content={<ChartTooltip />} />
 
-                  {(activeGas === 'both' || activeGas === 'ammonia') && (
-                    <Area type="monotone" dataKey="ammonia" stroke="#f97316" strokeWidth={2.5} fill="url(#gradNH3Modal)" name="Ammonia (NH₃)" />
-                  )}
-                  {(activeGas === 'both' || activeGas === 'methane') && (
-                    <Area type="monotone" dataKey="methane" stroke="#6366f1" strokeWidth={2.5} fill="url(#gradCH4Modal)" name="Methane (CH₄)" />
-                  )}
-                  <Line type="monotone" dataKey="aqi" stroke="#0f172a" strokeWidth={2} strokeDasharray="4 4" dot={false} name="AQI Score" />
+                  <Area
+                    type="monotone"
+                    dataKey="rawValue"
+                    stroke="#006A3B"
+                    strokeWidth={2.5}
+                    fill="url(#gradRawModal)"
+                    name="Raw ADC Value"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
-            {/* Bottom PurpleAir-Style AQI Color Scale Bar */}
+            {/* Bottom Air Quality Scale Bar */}
             <div className="mt-4 pt-3 border-t border-slate-100">
               <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5">
-                <span>AQI Hazard Scale:</span>
-                <span className="text-slate-700 font-bold">Current AQI: {aqiVal}</span>
+                <span>Raw ADC Air Quality Scale:</span>
+                <span className="text-slate-700 font-bold">
+                  Current Raw ADC: {rawVal}
+                </span>
               </div>
-              
-              {/* Color Gradient Scale Bar */}
+
+              {/* Color Scale Bar */}
               <div className="relative w-full h-3 rounded-full overflow-hidden flex shadow-inner">
-                <div className="h-full bg-emerald-500 flex-1 flex items-center justify-center text-[9px] font-black text-white">0</div>
-                <div className="h-full bg-yellow-400 flex-1 flex items-center justify-center text-[9px] font-black text-slate-900">50</div>
-                <div className="h-full bg-orange-500 flex-1 flex items-center justify-center text-[9px] font-black text-white">100</div>
-                <div className="h-full bg-red-600 flex-1 flex items-center justify-center text-[9px] font-black text-white">150</div>
-                <div className="h-full bg-purple-700 flex-1 flex items-center justify-center text-[9px] font-black text-white">200</div>
-                <div className="h-full bg-rose-950 flex-1 flex items-center justify-center text-[9px] font-black text-white">300+</div>
+                <div className="h-full bg-emerald-500 w-[40%] flex items-center justify-center text-[9px] font-black text-white">
+                  Clean (&lt;400)
+                </div>
+                <div className="h-full bg-amber-500 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
+                  Moderate (400-699)
+                </div>
+                <div className="h-full bg-red-600 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
+                  Critical (700+)
+                </div>
 
                 {/* Pointer indicator */}
-                <div 
+                <div
                   className="absolute top-0 bottom-0 w-1.5 bg-white border border-slate-900 shadow-md transition-all duration-500"
-                  style={{ left: `${Math.min(98, Math.max(2, (aqiVal / 200) * 100))}%` }}
+                  style={{
+                    left: `${Math.min(98, Math.max(2, (rawVal / 1000) * 100))}%`,
+                  }}
                 />
               </div>
 
               <div className="flex justify-between text-[9px] text-slate-400 font-semibold mt-1">
-                <span>Good</span>
-                <span>Moderate</span>
-                <span>Unhealthy for Sensitive</span>
-                <span>Unhealthy</span>
-                <span>Very Unhealthy</span>
-                <span>Hazardous</span>
+                <span>0 ADC</span>
+                <span>400 ADC</span>
+                <span>700 ADC</span>
+                <span>1000+ ADC</span>
               </div>
             </div>
           </div>
@@ -395,7 +502,8 @@ function AirQualityTrendModal({ zone, onClose }) {
         <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between">
           <span className="text-xs text-slate-500 flex items-center gap-1 font-medium">
             <Clock className="w-3.5 h-3.5 text-slate-400" />
-            Last broadcast {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
+            Last broadcast{" "}
+            {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -408,7 +516,7 @@ function AirQualityTrendModal({ zone, onClose }) {
               ) : (
                 <Download className="w-3.5 h-3.5" />
               )}
-              {isExporting ? 'Exporting PNG...' : 'Export PNG Sheet'}
+              {isExporting ? "Exporting PNG..." : "Export PNG Sheet"}
             </button>
             <button
               onClick={onClose}
@@ -450,12 +558,16 @@ function HeatmapLayer({ data, options }) {
 }
 
 function isPointInPolygon(point, vs) {
-  const x = point.lat, y = point.lng;
+  const x = point.lat,
+    y = point.lng;
   let inside = false;
   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    const xi = vs[i][0], yi = vs[i][1];
-    const xj = vs[j][0], yj = vs[j][1];
-    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    const xi = vs[i][0],
+      yi = vs[i][1];
+    const xj = vs[j][0],
+      yj = vs[j][1];
+    const intersect =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
@@ -473,7 +585,7 @@ function MapClickHandler({ onMapClick }) {
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
+  if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
@@ -483,7 +595,7 @@ function timeAgo(dateStr) {
 // ─── Blue pin icon for the map picker ───────────────────────────────────────
 const pickerPinIcon = L.divIcon({
   html: `<div style="width:22px;height:22px;background:#2563eb;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div>`,
-  className: '',
+  className: "",
   iconSize: [22, 22],
   iconAnchor: [11, 11],
 });
@@ -491,24 +603,26 @@ const pickerPinIcon = L.divIcon({
 // Flies the map to a new position (used inside MapPickerModal)
 function FlyTo({ pos }) {
   const map = useMap();
-  useEffect(() => { if (pos) map.flyTo([pos.lat, pos.lng], 17, { animate: true }); }, [pos?.lat, pos?.lng]);
+  useEffect(() => {
+    if (pos) map.flyTo([pos.lat, pos.lng], 17, { animate: true });
+  }, [pos?.lat, pos?.lng]);
   return null;
 }
 
 // Captures clicks on the picker map
 function PickerClickCapture({ onPick }) {
-  useMapEvents({ click: e => onPick(e.latlng) });
+  useMapEvents({ click: (e) => onPick(e.latlng) });
   return null;
 }
 
 // ─── Map Picker Modal ────────────────────────────────────────────────────────
 function MapPickerModal({ open, onClose, onConfirm }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [pickedPos, setPickedPos] = useState(null);
   const [flyTarget, setFlyTarget] = useState(null);
-  const [locationName, setLocationName] = useState('');
+  const [locationName, setLocationName] = useState("");
 
   // Debounced Nominatim search with local Cebu priority
   useEffect(() => {
@@ -523,20 +637,20 @@ function MapPickerModal({ open, onClose, onConfirm }) {
         const cebuQuery = `${query.trim()}, Cebu, Philippines`;
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cebuQuery)}&format=json&limit=6&countrycodes=ph`,
-          { headers: { 'Accept-Language': 'en' } }
+          { headers: { "Accept-Language": "en" } },
         );
         let data = await res.json();
         if (!data || data.length === 0) {
           // Fallback to broader search
           const resFallback = await fetch(
             `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query.trim())}&format=json&limit=6&countrycodes=ph`,
-            { headers: { 'Accept-Language': 'en' } }
+            { headers: { "Accept-Language": "en" } },
           );
           data = await resFallback.json();
         }
         setResults(data || []);
       } catch (err) {
-        console.error('Location search failed:', err);
+        console.error("Location search failed:", err);
       } finally {
         setSearching(false);
       }
@@ -551,10 +665,14 @@ function MapPickerModal({ open, onClose, onConfirm }) {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=json`,
-        { headers: { 'Accept-Language': 'en' } }
+        { headers: { "Accept-Language": "en" } },
       );
       const data = await res.json();
-      const name = data.name || data.address?.road || data.display_name?.split(',')[0] || '';
+      const name =
+        data.name ||
+        data.address?.road ||
+        data.display_name?.split(",")[0] ||
+        "";
       setLocationName(name);
     } catch {}
   };
@@ -563,7 +681,7 @@ function MapPickerModal({ open, onClose, onConfirm }) {
     const pos = { lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
     setPickedPos(pos);
     setFlyTarget(pos);
-    const name = r.name || r.display_name?.split(',')[0] || '';
+    const name = r.name || r.display_name?.split(",")[0] || "";
     setLocationName(name);
     setQuery(name);
     setResults([]);
@@ -574,78 +692,285 @@ function MapPickerModal({ open, onClose, onConfirm }) {
     onConfirm({ lat: pickedPos.lat, lng: pickedPos.lng, locationName });
     setPickedPos(null);
     setFlyTarget(null);
-    setQuery('');
-    setLocationName('');
+    setQuery("");
+    setLocationName("");
   };
 
   if (!open) return null;
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '640px', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "20px",
+          width: "100%",
+          maxWidth: "640px",
+          boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '32px', height: '32px', background: '#dbeafe', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MapPin style={{ width: '16px', height: '16px', color: '#2563eb' }} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 20px",
+            borderBottom: "1px solid #f1f5f9",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div
+              style={{
+                width: "32px",
+                height: "32px",
+                background: "#dbeafe",
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MapPin
+                style={{ width: "16px", height: "16px", color: "#2563eb" }}
+              />
             </div>
             <div>
-              <p style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Pick Sensor Location</p>
-              <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>Search or click on the map</p>
+              <p
+                style={{
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  color: "#0f172a",
+                  margin: 0,
+                }}
+              >
+                Pick Sensor Location
+              </p>
+              <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>
+                Search or click on the map
+              </p>
             </div>
           </div>
-          <button onClick={onClose} style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', borderRadius: '8px' }}>
-            <X style={{ width: '18px', height: '18px' }} />
+          <button
+            onClick={onClose}
+            style={{
+              padding: "6px",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#94a3b8",
+              borderRadius: "8px",
+            }}
+          >
+            <X style={{ width: "18px", height: "18px" }} />
           </button>
         </div>
 
         {/* Search bar */}
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', position: 'relative', zIndex: 1000 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '8px 14px' }}>
-            <svg style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <div
+          style={{
+            padding: "12px 20px",
+            borderBottom: "1px solid #f1f5f9",
+            position: "relative",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "8px 14px",
+            }}
+          >
+            <svg
+              style={{
+                width: "14px",
+                height: "14px",
+                color: "#94a3b8",
+                flexShrink: 0,
+              }}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
             <input
               autoFocus
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="Search for a street, barangay, or place..."
-              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: '#0f172a' }}
+              style={{
+                flex: 1,
+                border: "none",
+                background: "none",
+                outline: "none",
+                fontSize: "13px",
+                color: "#0f172a",
+              }}
             />
-            {searching && <div style={{ width: '14px', height: '14px', border: '2px solid #2563eb', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
+            {searching && (
+              <div
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  border: "2px solid #2563eb",
+                  borderTop: "2px solid transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.7s linear infinite",
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {query && !searching && (
-              <button onClick={() => { setQuery(''); setResults([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>
-                <X style={{ width: '13px', height: '13px' }} />
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setResults([]);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  padding: 0,
+                  lineHeight: 1,
+                }}
+              >
+                <X style={{ width: "13px", height: "13px" }} />
               </button>
             )}
           </div>
 
           {/* Search results & suggestion dropdown */}
           {(results.length > 0 || searching) && (
-            <div style={{ position: 'absolute', top: '100%', left: '20px', right: '20px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '12px', boxShadow: '0 12px 32px rgba(0,0,0,0.18)', zIndex: 10000, overflow: 'hidden', marginTop: '6px', maxHeight: '240px', overflowY: 'auto' }}>
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: "20px",
+                right: "20px",
+                background: "#fff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "12px",
+                boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+                zIndex: 10000,
+                overflow: "hidden",
+                marginTop: "6px",
+                maxHeight: "240px",
+                overflowY: "auto",
+              }}
+            >
               {searching && results.length === 0 ? (
-                <div style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '14px', height: '14px', border: '2px solid #2563eb', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    fontSize: "12px",
+                    color: "#64748b",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      border: "2px solid #2563eb",
+                      borderTop: "2px solid transparent",
+                      borderRadius: "50%",
+                      animation: "spin 0.7s linear infinite",
+                    }}
+                  />
                   Searching locations for "{query}"...
                 </div>
               ) : results.length > 0 ? (
                 results.map((r, i) => {
-                  const parts = r.display_name.split(',');
+                  const parts = r.display_name.split(",");
                   const title = parts[0];
-                  const subtitle = parts.slice(1).join(',').trim();
+                  const subtitle = parts.slice(1).join(",").trim();
                   return (
                     <button
                       key={i}
                       onClick={() => selectResult(r)}
-                      style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '10px', borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none' }}
-                      onMouseOver={e => e.currentTarget.style.background = '#f1f5f9'}
-                      onMouseOut={e => e.currentTarget.style.background = 'none'}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 14px",
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "10px",
+                        borderBottom:
+                          i < results.length - 1 ? "1px solid #f1f5f9" : "none",
+                      }}
+                      onMouseOver={(e) =>
+                        (e.currentTarget.style.background = "#f1f5f9")
+                      }
+                      onMouseOut={(e) =>
+                        (e.currentTarget.style.background = "none")
+                      }
                     >
-                      <MapPin style={{ width: '15px', height: '15px', color: '#2563eb', marginTop: '2px', flexShrink: 0 }} />
+                      <MapPin
+                        style={{
+                          width: "15px",
+                          height: "15px",
+                          color: "#2563eb",
+                          marginTop: "2px",
+                          flexShrink: 0,
+                        }}
+                      />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</p>
-                        <p style={{ fontSize: '11px', color: '#64748b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>
+                        <p
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            color: "#0f172a",
+                            margin: "0 0 2px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {title}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: "11px",
+                            color: "#64748b",
+                            margin: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {subtitle}
+                        </p>
                       </div>
                     </button>
                   );
@@ -656,43 +981,127 @@ function MapPickerModal({ open, onClose, onConfirm }) {
         </div>
 
         {/* Map */}
-        <div style={{ height: '360px', position: 'relative' }}>
+        <div style={{ height: "360px", position: "relative" }}>
           <MapContainer
             center={CEBU_CENTER}
             zoom={13}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: "100%", height: "100%" }}
             zoomControl={true}
           >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
             <PickerClickCapture onPick={handleMapClick} />
             {flyTarget && <FlyTo pos={flyTarget} />}
-            {pickedPos && <Marker position={[pickedPos.lat, pickedPos.lng]} icon={pickerPinIcon} />}
+            {pickedPos && (
+              <Marker
+                position={[pickedPos.lat, pickedPos.lng]}
+                icon={pickerPinIcon}
+              />
+            )}
           </MapContainer>
           {!pickedPos && (
-            <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(15,23,42,0.8)', color: '#fff', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', pointerEvents: 'none', zIndex: 1000, whiteSpace: 'nowrap' }}>
+            <div
+              style={{
+                position: "absolute",
+                top: "12px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "rgba(15,23,42,0.8)",
+                color: "#fff",
+                padding: "6px 14px",
+                borderRadius: "20px",
+                fontSize: "11px",
+                fontWeight: "600",
+                pointerEvents: "none",
+                zIndex: 1000,
+                whiteSpace: "nowrap",
+              }}
+            >
               Click anywhere on the map to place sensor
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '12px', background: '#fafafa' }}>
+        <div
+          style={{
+            padding: "14px 20px",
+            borderTop: "1px solid #f1f5f9",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            background: "#fafafa",
+          }}
+        >
           {pickedPos ? (
             <>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#2563eb', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Selected location</p>
-                {locationName && <p style={{ fontSize: '12px', fontWeight: '600', color: '#0f172a', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{locationName}</p>}
-                <p style={{ fontSize: '11px', color: '#64748b', margin: 0, fontFamily: 'monospace' }}>{pickedPos.lat.toFixed(6)}, {pickedPos.lng.toFixed(6)}</p>
+                <p
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "700",
+                    color: "#2563eb",
+                    margin: "0 0 2px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Selected location
+                </p>
+                {locationName && (
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: "#0f172a",
+                      margin: "0 0 2px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {locationName}
+                  </p>
+                )}
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: "#64748b",
+                    margin: 0,
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {pickedPos.lat.toFixed(6)}, {pickedPos.lng.toFixed(6)}
+                </p>
               </div>
               <button
                 onClick={handleConfirm}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 18px",
+                  background: "#2563eb",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "12px",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
               >
-                <Save style={{ width: '14px', height: '14px' }} /> Use This Location
+                <Save style={{ width: "14px", height: "14px" }} /> Use This
+                Location
               </button>
             </>
           ) : (
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>Search for a place above or click on the map to select coordinates.</p>
+            <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>
+              Search for a place above or click on the map to select
+              coordinates.
+            </p>
           )}
         </div>
       </div>
@@ -703,7 +1112,7 @@ function MapPickerModal({ open, onClose, onConfirm }) {
 
 export default function HeatmapAnalytics() {
   const { official } = useAuth();
-  const isChd = official?.role === 'chd';
+  const isChd = official?.role === "chd";
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedZone, setSelectedZone] = useState(null);
@@ -717,7 +1126,13 @@ export default function HeatmapAnalytics() {
   const [showCityBoundary, setShowCityBoundary] = useState(true);
   const [healthRiskView, setHealthRiskView] = useState(false);
   const [showSensorForm, setShowSensorForm] = useState(false);
-  const [sensorForm, setSensorForm] = useState({ sensorId: '', location: '', barangay: '', lat: '', lng: '' });
+  const [sensorForm, setSensorForm] = useState({
+    sensorId: "",
+    location: "",
+    barangay: "",
+    lat: "",
+    lng: "",
+  });
   const [sensorSaving, setSensorSaving] = useState(false);
   const [sensorMsg, setSensorMsg] = useState(null);
   const [sensorZones, setSensorZones] = useState([]);
@@ -727,16 +1142,56 @@ export default function HeatmapAnalytics() {
   const socketRef = useRef(null);
   const toastTimers = useRef({});
 
+  function FitBoundsToSensors({ zones, boundary }) {
+    const map = useMap();
+
+    useEffect(() => {
+      if (!map) return;
+
+      // Collect all coordinates from zones
+      const allCoords = [];
+
+      zones.forEach((zone) => {
+        if (
+          zone.lat != null &&
+          zone.lng != null &&
+          !isNaN(zone.lat) &&
+          !isNaN(zone.lng)
+        ) {
+          allCoords.push([zone.lat, zone.lng]);
+        }
+      });
+
+      // If no zones, try to use boundary
+      if (allCoords.length === 0 && boundary && boundary.length > 0) {
+        boundary.forEach(([lat, lng]) => {
+          if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+            allCoords.push([lat, lng]);
+          }
+        });
+      }
+
+      if (allCoords.length === 0) return;
+
+      const bounds = L.latLngBounds(allCoords);
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    }, [zones, boundary, map]);
+
+    return null;
+  }
+
   const addToast = (toast) => {
     const id = `${Date.now()}-${Math.random()}`;
-    setToasts(prev => {
+    setToasts((prev) => {
       // Deduplicate: if same sensorId+status came in last 2s, skip
-      const isDup = prev.some(t => t.sensorId === toast.sensorId && t.status === toast.status);
+      const isDup = prev.some(
+        (t) => t.sensorId === toast.sensorId && t.status === toast.status,
+      );
       if (isDup) return prev;
       return [...prev.slice(-3), { ...toast, id }]; // max 4 visible
     });
     toastTimers.current[id] = setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
       delete toastTimers.current[id];
     }, 5000);
   };
@@ -744,17 +1199,19 @@ export default function HeatmapAnalytics() {
   const dismissToast = (id) => {
     clearTimeout(toastTimers.current[id]);
     delete toastTimers.current[id];
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
   useEffect(() => {
-    fetchCebuCityBoundary().then(coords => { if (coords) setCebuCityBoundary(coords); });
+    fetchCebuCityBoundary().then((coords) => {
+      if (coords) setCebuCityBoundary(coords);
+    });
     return () => Object.values(toastTimers.current).forEach(clearTimeout);
   }, []);
 
   useEffect(() => {
-    if (official?.barangay && official.barangay !== 'All') {
-      setSensorForm(f => ({ ...f, barangay: official.barangay }));
+    if (official?.barangay && official.barangay !== "All") {
+      setSensorForm((f) => ({ ...f, barangay: official.barangay }));
     }
   }, [official]);
 
@@ -763,7 +1220,9 @@ export default function HeatmapAnalytics() {
     try {
       const [zonesRes, boundaryRes, sensorRes] = await Promise.all([
         axios.get(`${API}/api/garbage-areas`),
-        official?.barangay ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`) : Promise.resolve({ data: { boundary: [] } }),
+        official?.barangay
+          ? axios.get(`${API}/api/barangays/${official.barangay}/boundary`)
+          : Promise.resolve({ data: { boundary: [] } }),
         axios.get(`${API}/api/sensor-zones`),
       ]);
       setZones(zonesRes.data);
@@ -772,16 +1231,17 @@ export default function HeatmapAnalytics() {
         setBoundary(boundaryRes.data.boundary);
       }
     } catch (err) {
-      console.error('Failed to fetch data');
+      console.error("Failed to fetch data");
     } finally {
       setLoading(false);
     }
   };
 
-  
   const toggleSensorActive = async (zone, isActive) => {
     try {
-      await axios.put(`${API}/api/garbage-areas/${zone._id}/toggle-active`, { isActive });
+      await axios.put(`${API}/api/garbage-areas/${zone._id}/toggle-active`, {
+        isActive,
+      });
       fetchZonesAndBoundary();
     } catch (e) {
       console.error(e);
@@ -802,25 +1262,38 @@ export default function HeatmapAnalytics() {
         lat: parseFloat(lat),
         lng: parseFloat(lng),
       });
-      setSensorZones(prev => {
-        const exists = prev.find(z => z.sensorId === data.sensorId);
-        return exists ? prev.map(z => z.sensorId === data.sensorId ? data : z) : [data, ...prev];
+      setSensorZones((prev) => {
+        const exists = prev.find((z) => z.sensorId === data.sensorId);
+        return exists
+          ? prev.map((z) => (z.sensorId === data.sensorId ? data : z))
+          : [data, ...prev];
       });
-      setZones(prev => {
-        const exists = prev.find(z => z._id === data._id);
-        return exists ? prev.map(z => z._id === data._id ? data : z) : [data, ...prev];
+      setZones((prev) => {
+        const exists = prev.find((z) => z._id === data._id);
+        return exists
+          ? prev.map((z) => (z._id === data._id ? data : z))
+          : [data, ...prev];
       });
-      setSensorMsg({ type: 'ok', text: `Sensor "${data.sensorId}" registered at (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})` });
+      setSensorMsg({
+        type: "ok",
+        text: `Sensor "${data.sensorId}" registered at (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`,
+      });
       setSensorForm({
-        sensorId: '',
-        location: '',
-        barangay: (official?.barangay && official.barangay !== 'All') ? official.barangay : '',
-        lat: '',
-        lng: ''
+        sensorId: "",
+        location: "",
+        barangay:
+          official?.barangay && official.barangay !== "All"
+            ? official.barangay
+            : "",
+        lat: "",
+        lng: "",
       });
       setTimeout(() => setSensorMsg(null), 5000);
     } catch (err) {
-      setSensorMsg({ type: 'err', text: err?.response?.data?.error || 'Failed to register sensor' });
+      setSensorMsg({
+        type: "err",
+        text: err?.response?.data?.error || "Failed to register sensor",
+      });
     } finally {
       setSensorSaving(false);
     }
@@ -830,43 +1303,47 @@ export default function HeatmapAnalytics() {
     fetchZonesAndBoundary();
 
     // Connect Socket.IO for live IoT heatmap updates
-    const socket = io(API, { transports: ['websocket', 'polling'] });
+    const socket = io(API, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
     // When IoT sensor updates a garbage area, update the heatmap in real-time
-    socket.on('garbage-area:updated', (updatedArea) => {
-      setZones(prev => {
-        const exists = prev.find(z => z._id === updatedArea._id);
-        if (exists) return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
+    socket.on("garbage-area:updated", (updatedArea) => {
+      setZones((prev) => {
+        const exists = prev.find((z) => z._id === updatedArea._id);
+        if (exists)
+          return prev.map((z) => (z._id === updatedArea._id ? updatedArea : z));
         return [updatedArea, ...prev];
       });
       if (updatedArea.sensorId) {
-        setSensorZones(prev => {
-          const exists = prev.find(z => z._id === updatedArea._id);
-          if (exists) return prev.map(z => z._id === updatedArea._id ? updatedArea : z);
+        setSensorZones((prev) => {
+          const exists = prev.find((z) => z._id === updatedArea._id);
+          if (exists)
+            return prev.map((z) =>
+              z._id === updatedArea._id ? updatedArea : z,
+            );
           return [updatedArea, ...prev];
         });
       }
 
       addToast({
-        type: 'iot',
+        type: "iot",
         sensorId: updatedArea.sensorId || updatedArea._id,
         status: updatedArea.status,
         title: `IoT: ${updatedArea.name}`,
-        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.rawValue ? `  ·  Raw ADC: ${updatedArea.rawValue}` : ''}${updatedArea.ammonia ? `  ·  NH₃ ${updatedArea.ammonia}` : ''}${updatedArea.airQuality ? `  ·  ${updatedArea.airQuality}` : ''}`,
+        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.rawValue ? `  ·  Raw ADC: ${updatedArea.rawValue}` : ""}${updatedArea.airQuality ? `  ·  ${updatedArea.airQuality}` : ""}`,
       });
     });
 
     // When a new IoT alert arrives, show as toast for all severities
-    socket.on('iot:alert', (alert) => {
-      const isClean = alert.severity === 'info' || alert.gasType === 'normal';
+    socket.on("iot:alert", (alert) => {
+      const isClean = alert.severity === "info" || alert.gasType === "normal";
       addToast({
-        type: isClean ? 'cleaned' : 'alert',
+        type: isClean ? "cleaned" : "alert",
         sensorId: `${alert.sensorId}-${alert.gasType}`,
-        status: isClean ? 'clean' : alert.severity,
+        status: isClean ? "clean" : alert.severity,
         title: isClean
           ? `Clean Air: ${alert.location || alert.sensorId}`
-          : alert.severity === 'critical'
+          : alert.severity === "critical"
             ? `Critical: ${alert.location || alert.sensorId}`
             : `Warning: ${alert.location || alert.sensorId}`,
         body: alert.message,
@@ -874,19 +1351,21 @@ export default function HeatmapAnalytics() {
     });
 
     // When a zone changes status (collection, IoT, report)
-    socket.on('zone:status:update', (update) => {
-      setZones(prev => prev.map(z =>
-        (z._id === String(update.areaId) || z._id === String(update.zoneId))
-          ? { ...z, status: update.newStatus }
-          : z
-      ));
-      if (update.reason === 'collection_completed') {
+    socket.on("zone:status:update", (update) => {
+      setZones((prev) =>
+        prev.map((z) =>
+          z._id === String(update.areaId) || z._id === String(update.zoneId)
+            ? { ...z, status: update.newStatus }
+            : z,
+        ),
+      );
+      if (update.reason === "collection_completed") {
         addToast({
-          type: 'cleaned',
+          type: "cleaned",
           sensorId: `cleaned-${update.areaId}`,
-          status: 'clean',
+          status: "clean",
           title: `Cleaned: ${update.name}`,
-          body: `${update.changedBy}${update.weight ? ` · ${update.weight}` : ''}${update.previousStatus ? ` · ${update.previousStatus} → ${update.newStatus}` : ''}`,
+          body: `${update.changedBy}${update.weight ? ` · ${update.weight}` : ""}${update.previousStatus ? ` · ${update.previousStatus} → ${update.newStatus}` : ""}`,
         });
       }
     });
@@ -896,7 +1375,7 @@ export default function HeatmapAnalytics() {
 
   const handleMapClick = (latlng) => {
     if (!isAdding) return;
-    
+
     // Check if within jurisdiction
     if (boundary && !isPointInPolygon(latlng, boundary)) {
       setOutOfBoundsError(true);
@@ -914,32 +1393,32 @@ export default function HeatmapAnalytics() {
     setSaving(true);
     try {
       const payload = {
-        name: `${official?.barangay || 'Area'} Hotspot ${zones.length + 1}`,
+        name: `${official?.barangay || "Area"} Hotspot ${zones.length + 1}`,
         lat: newArea.lat,
         lng: newArea.lng,
-        status: 'moderate',
+        status: "moderate",
         intensity: 0.5,
-        barangay: official?.barangay || 'Unknown'
+        barangay: official?.barangay || "Unknown",
       };
       const { data } = await axios.post(`${API}/api/garbage-areas`, payload);
       setZones([data, ...zones]);
       setNewArea(null);
       setIsAdding(false);
     } catch (err) {
-      alert('Failed to save area');
+      alert("Failed to save area");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteArea = async (id) => {
-    if (!window.confirm('Delete this garbage area?')) return;
+    if (!window.confirm("Delete this garbage area?")) return;
     try {
       await axios.delete(`${API}/api/garbage-areas/${id}`);
-      setZones(zones.filter(z => z._id !== id));
+      setZones(zones.filter((z) => z._id !== id));
       setSelectedZone(null);
     } catch (err) {
-      alert('Failed to delete');
+      alert("Failed to delete");
     }
   };
 
@@ -947,73 +1426,101 @@ export default function HeatmapAnalytics() {
     if (!window.confirm(`Delete sensor ${sensorId}?`)) return;
     try {
       await axios.delete(`${API}/api/garbage-areas/${id}`);
-      setSensorZones(sensorZones.filter(z => z._id !== id));
-      setZones(zones.filter(z => z._id !== id));
-      setSensorMsg({ type: 'ok', text: `Sensor ${sensorId} deleted successfully.` });
+      setSensorZones(sensorZones.filter((z) => z._id !== id));
+      setZones(zones.filter((z) => z._id !== id));
+      setSensorMsg({
+        type: "ok",
+        text: `Sensor ${sensorId} deleted successfully.`,
+      });
       setTimeout(() => setSensorMsg(null), 3000);
     } catch (err) {
-      setSensorMsg({ type: 'err', text: 'Failed to delete sensor' });
+      setSensorMsg({ type: "err", text: "Failed to delete sensor" });
     }
   };
 
-  const criticalCt = zones.filter((z) => z.status === 'critical').length;
-  const moderateCt = zones.filter((z) => z.status === 'moderate').length;
-  const cleanCt = zones.filter((z) => z.status === 'clean').length;
+  const criticalCt = zones.filter((z) => z.status === "critical").length;
+  const moderateCt = zones.filter((z) => z.status === "moderate").length;
+  const cleanCt = zones.filter((z) => z.status === "clean").length;
   const totalReports = zones.reduce((sum, z) => sum + (z.reportCount || 0), 0);
-  const iotSourced = zones.filter(z => z.source === 'iot').length;
-  const reportSourced = zones.filter(z => z.source === 'reports').length;
-  const bothSourced = zones.filter(z => z.source === 'both').length;
+  const iotSourced = zones.filter((z) => z.source === "iot").length;
+  const reportSourced = zones.filter((z) => z.source === "reports").length;
+  const bothSourced = zones.filter((z) => z.source === "both").length;
 
   const sourceBadge = (source) => {
-    if (source === 'iot') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 uppercase"><Zap className="w-2.5 h-2.5" />IoT</span>;
-    if (source === 'reports') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700 uppercase"><AlertTriangle className="w-2.5 h-2.5" />Reports</span>;
-    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700 uppercase"><Zap className="w-2.5 h-2.5" />IoT + Reports</span>;
+    if (source === "iot")
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 uppercase">
+          <Zap className="w-2.5 h-2.5" />
+          IoT
+        </span>
+      );
+    if (source === "reports")
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-orange-700 uppercase">
+          <AlertTriangle className="w-2.5 h-2.5" />
+          Reports
+        </span>
+      );
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700 uppercase">
+        <Zap className="w-2.5 h-2.5" />
+        IoT + Reports
+      </span>
+    );
   };
 
   const pieData = [
-    { name: 'Critical', value: criticalCt, color: '#ef4444' },
-    { name: 'Moderate', value: moderateCt, color: '#f59e0b' },
-    { name: 'Clean', value: cleanCt, color: '#10b981' },
-  ].filter(d => d.value > 0);
+    { name: "Critical", value: criticalCt, color: "#ef4444" },
+    { name: "Moderate", value: moderateCt, color: "#f59e0b" },
+    { name: "Clean", value: cleanCt, color: "#10b981" },
+  ].filter((d) => d.value > 0);
 
   const barData = zones
-    .filter(z => z.sensorId && z.ammonia)
+    .filter((z) => z.sensorId && z.rawValue !== undefined)
     .slice(0, 5)
-    .map(z => ({
+    .map((z) => ({
       name: z.sensorId,
-      NH3: parseAmmoniaPpm(z.ammonia),
-      CH4: parseFloat(String(z.methane).replace(/[^0-9.]/g, '')) || 0
+      rawValue: z.rawValue || 0,
+      voltage: Number(((z.rawValue || 0) * (3.3 / 4095.0)).toFixed(2)),
     }));
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden">
-      
       {/* Left Sidebar - Analytics (30%) */}
       <div className="w-full lg:w-[400px] xl:w-[450px] flex-shrink-0 bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto z-10 shadow-lg">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 sticky top-0 bg-white/90 backdrop-blur z-20">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">Heatmap Analytics</h1>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">
+              Heatmap Analytics
+            </h1>
             <div className="flex gap-2">
               <button
                 onClick={fetchZonesAndBoundary}
                 className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
                 title="Refresh Data"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+                />
               </button>
             </div>
           </div>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">
-            Live environmental risk monitoring powered by <span className="text-blue-600 font-bold"><Zap className="w-3 h-3 inline-block -mt-0.5" /> IoT Sensors</span> and resident reports.
+            Live environmental risk monitoring powered by{" "}
+            <span className="text-blue-600 font-bold">
+              <Zap className="w-3 h-3 inline-block -mt-0.5" /> IoT Sensors
+            </span>{" "}
+            and resident reports.
           </p>
-          
+
           <div className="flex gap-2 mt-4">
             <button
               onClick={() => setHealthRiskView(!healthRiskView)}
-              className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${healthRiskView ? 'bg-red-600 text-slate-900 border-red-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+              className={`flex-1 flex justify-center items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${healthRiskView ? "bg-red-600 text-slate-900 border-red-600 shadow-md" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"}`}
             >
-              <Heart className="w-3.5 h-3.5" /> {healthRiskView ? 'Health View Active' : 'Health Risk View'}
+              <Heart className="w-3.5 h-3.5" />{" "}
+              {healthRiskView ? "Health View Active" : "Health Risk View"}
             </button>
             <button
               onClick={() => setShowSensorForm(true)}
@@ -1024,135 +1531,241 @@ export default function HeatmapAnalytics() {
           </div>
         </div>
 
-        <div className="p-5 space-y-6">
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className={`p-4 rounded-2xl border ${healthRiskView ? 'bg-red-50/50 border-red-100' : criticalCt > 0 ? 'bg-red-50/50 border-red-100 ring-1 ring-red-500/20' : 'bg-slate-50 border-slate-100'}`}>
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className={`w-2 h-2 rounded-full ${criticalCt > 0 || healthRiskView ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Critical</span>
-              </div>
-              <p className={`text-2xl font-black ${criticalCt > 0 || healthRiskView ? 'text-red-600' : 'text-slate-700'}`}>
-                {healthRiskView ? zones.filter(z => parseAmmoniaPpm(z.ammonia) > 100).length : criticalCt}
-              </p>
+        {loading ? (
+          <div className="p-5 space-y-6 animate-pulse">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="h-20 bg-slate-50 border border-slate-100 rounded-2xl p-4" />
+              <div className="h-20 bg-slate-50 border border-slate-100 rounded-2xl p-4" />
             </div>
-            <div className={`p-4 rounded-2xl border ${healthRiskView ? 'bg-orange-50/50 border-orange-100' : 'bg-slate-50 border-slate-100'}`}>
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className="w-2 h-2 rounded-full bg-orange-500" />
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{healthRiskView ? 'High Risk' : 'Moderate'}</span>
-              </div>
-              <p className="text-2xl font-black text-slate-700">
-                {healthRiskView 
-                  ? zones.filter(z => parseAmmoniaPpm(z.ammonia) > 50 && parseAmmoniaPpm(z.ammonia) <= 100).length 
-                  : moderateCt}
-              </p>
+            <div className="h-[220px] bg-slate-50 border border-slate-100 rounded-2xl p-5 flex flex-col justify-between">
+              <div className="h-4 w-32 bg-slate-200 rounded" />
+              <div className="w-28 h-28 bg-slate-200 rounded-full mx-auto" />
+            </div>
+            <div className="h-[200px] bg-slate-50 border border-slate-100 rounded-2xl p-5 flex flex-col justify-between">
+              <div className="h-4 w-40 bg-slate-200 rounded" />
+              <div className="h-28 bg-slate-200 rounded-xl" />
             </div>
           </div>
-
-          {/* Donut Chart: Zone Status Distribution */}
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-emerald-500" /> Zone Distribution
-              </h3>
+        ) : (
+          <div className="p-5 space-y-6">
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div
+                className={`p-4 rounded-2xl border ${healthRiskView ? "bg-red-50/50 border-red-100" : criticalCt > 0 ? "bg-red-50/50 border-red-100 ring-1 ring-red-500/20" : "bg-slate-50 border-slate-100"}`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div
+                    className={`w-2 h-2 rounded-full ${criticalCt > 0 || healthRiskView ? "bg-red-500 animate-pulse" : "bg-slate-300"}`}
+                  />
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Critical
+                  </span>
+                </div>
+                <p
+                  className={`text-2xl font-black ${criticalCt > 0 || healthRiskView ? "text-red-600" : "text-slate-700"}`}
+                >
+                  {healthRiskView
+                    ? zones.filter((z) => (z.rawValue || 0) >= 700).length
+                    : criticalCt}
+                </p>
+              </div>
+              <div
+                className={`p-4 rounded-2xl border ${healthRiskView ? "bg-orange-50/50 border-orange-100" : "bg-slate-50 border-slate-100"}`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="w-2 h-2 rounded-full bg-orange-500" />
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {healthRiskView ? "High Risk" : "Moderate"}
+                  </span>
+                </div>
+                <p className="text-2xl font-black text-slate-700">
+                  {healthRiskView
+                    ? zones.filter(
+                        (z) =>
+                          (z.rawValue || 0) >= 400 && (z.rawValue || 0) < 700,
+                      ).length
+                    : moderateCt}
+                </p>
+              </div>
             </div>
-            {pieData.length > 0 ? (
-              <div className="h-[220px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="45%"
-                      innerRadius={55}
-                      outerRadius={75}
-                      paddingAngle={5}
-                      dataKey="value"
-                      stroke="none"
+
+            {/* Donut Chart: Zone Status Distribution */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-emerald-500" /> Zone
+                  Distribution
+                </h3>
+              </div>
+              {pieData.length > 0 ? (
+                <div className="h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="45%"
+                        innerRadius={55}
+                        outerRadius={75}
+                        paddingAngle={5}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+                        }}
+                        itemStyle={{ fontWeight: "bold" }}
+                      />
+                      <RechartsLegend
+                        verticalAlign="bottom"
+                        height={36}
+                        iconType="circle"
+                        wrapperStyle={{
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                          color: "#64748b",
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-[220px] flex items-center justify-center">
+                  <p className="text-xs text-slate-500 font-medium">
+                    No zones mapped yet.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Bar Chart: Top Polluted IoT Zones */}
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-blue-500" /> Top IoT Air Quality
+                  Readings
+                </h3>
+              </div>
+              {barData.length > 0 ? (
+                <div className="h-[200px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={barData}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                     >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                      itemStyle={{ fontWeight: 'bold' }}
-                    />
-                    <RechartsLegend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-[220px] flex items-center justify-center">
-                <p className="text-xs text-slate-500 font-medium">No zones mapped yet.</p>
-              </div>
-            )}
-          </div>
-
-          {/* Bar Chart: Top Polluted IoT Zones */}
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-blue-500" /> Top IoT Pollutants
-              </h3>
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 9, fill: "#94a3b8", fontWeight: 600 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 9, fill: "#94a3b8" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: "12px",
+                          border: "none",
+                          boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+                        }}
+                        labelStyle={{
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                          color: "#64748b",
+                          marginBottom: "4px",
+                        }}
+                      />
+                      <RechartsLegend
+                        verticalAlign="top"
+                        height={30}
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "10px", fontWeight: "bold" }}
+                      />
+                      <Bar
+                        dataKey="rawValue"
+                        name="Raw ADC Value"
+                        fill="#ef4444"
+                        radius={[4, 4, 0, 0]}
+                        barSize={16}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-[200px] flex flex-col items-center justify-center text-center">
+                  <Radio className="w-8 h-8 text-slate-700 mb-2" />
+                  <p className="text-xs text-slate-500 font-medium">
+                    No live IoT data available.
+                  </p>
+                </div>
+              )}
             </div>
-            {barData.length > 0 ? (
-              <div className="h-[200px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                      labelStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '4px' }}
-                    />
-                    <RechartsLegend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-                    <Bar dataKey="NH3" name="Ammonia (ppm)" fill="#f97316" radius={[4, 4, 0, 0]} barSize={12} />
-                    <Bar dataKey="CH4" name="Methane (%)" fill="#dc2626" radius={[4, 4, 0, 0]} barSize={12} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-[200px] flex flex-col items-center justify-center text-center">
-                <Radio className="w-8 h-8 text-slate-700 mb-2" />
-                <p className="text-xs text-slate-500 font-medium">No live IoT data available.</p>
-              </div>
-            )}
-          </div>
 
-          {/* Legend Details */}
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Map Legend</p>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-emerald-400/40" />
-                <span className="text-xs text-slate-600 font-medium">IoT Sensor Zone (Auto-updates)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 border-t-2 border-blue-600 border-dashed inline-block" />
-                <span className="text-xs text-slate-600 font-medium">City Boundary</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 border-t-2 border-emerald-600 border-dashed inline-block" />
-                <span className="text-xs text-slate-600 font-medium">Barangay Jurisdiction</span>
+            {/* Legend Details */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+                Map Legend
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-emerald-400/40" />
+                  <span className="text-xs text-slate-600 font-medium">
+                    IoT Sensor Zone (Auto-updates)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-4 border-t-2 border-blue-600 border-dashed inline-block" />
+                  <span className="text-xs text-slate-600 font-medium">
+                    City Boundary
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-4 border-t-2 border-emerald-600 border-dashed inline-block" />
+                  <span className="text-xs text-slate-600 font-medium">
+                    Barangay Jurisdiction
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Right Side - Massive Map (70%) */}
       <div className="flex-1 relative h-full bg-slate-200">
-        
         {/* Map Overlays & Controls */}
         <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-3 pointer-events-none">
           <div className="flex gap-2 pointer-events-auto">
             <button
               onClick={() => setShowCityBoundary(!showCityBoundary)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? 'bg-blue-600 text-slate-900' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? "bg-blue-600 text-slate-900" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="5 3"/></svg>
-              {showCityBoundary ? 'City Outline On' : 'City Outline Off'}
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect
+                  x="3"
+                  y="3"
+                  width="18"
+                  height="18"
+                  rx="2"
+                  strokeDasharray="5 3"
+                />
+              </svg>
+              {showCityBoundary ? "City Outline On" : "City Outline Off"}
             </button>
             {!isChd && (
               <button
@@ -1162,12 +1775,16 @@ export default function HeatmapAnalytics() {
                 }}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${
                   isAdding
-                    ? 'bg-red-600 text-slate-900'
-                    : 'bg-emerald-700 text-slate-900 hover:bg-emerald-800'
+                    ? "bg-red-600 text-slate-900"
+                    : "bg-emerald-700 text-slate-900 hover:bg-emerald-800"
                 }`}
               >
-                {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                {isAdding ? 'Cancel Hotspot' : 'Mark Hotspot'}
+                {isAdding ? (
+                  <X className="w-4 h-4" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                {isAdding ? "Cancel Hotspot" : "Mark Hotspot"}
               </button>
             )}
           </div>
@@ -1176,7 +1793,8 @@ export default function HeatmapAnalytics() {
         {isAdding && !newArea && !outOfBoundsError && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-emerald-950 text-slate-900 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
             <MapPin className="w-4 h-4 animate-bounce text-emerald-400" />
-            Click inside {official?.barangay || 'your barangay'} to mark a hotspot
+            Click inside {official?.barangay || "your barangay"} to mark a
+            hotspot
           </div>
         )}
 
@@ -1187,8 +1805,12 @@ export default function HeatmapAnalytics() {
               <MapPin className="w-5 h-5 text-emerald-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-900">New Hotspot Placed</p>
-              <p className="text-xs text-slate-500">{newArea.lat.toFixed(5)}, {newArea.lng.toFixed(5)}</p>
+              <p className="text-sm font-bold text-slate-900">
+                New Hotspot Placed
+              </p>
+              <p className="text-xs text-slate-500">
+                {newArea.lat.toFixed(5)}, {newArea.lng.toFixed(5)}
+              </p>
             </div>
             <button
               disabled={saving}
@@ -1200,10 +1822,12 @@ export default function HeatmapAnalytics() {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {saving ? 'Saving...' : 'Save Area'}
+              {saving ? "Saving..." : "Save Area"}
             </button>
             <button
-              onClick={() => { setNewArea(null); }}
+              onClick={() => {
+                setNewArea(null);
+              }}
               className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
             >
               <X className="w-4 h-4" />
@@ -1214,7 +1838,8 @@ export default function HeatmapAnalytics() {
         {outOfBoundsError && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-slate-900 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 animate-bounce border border-red-400">
             <ShieldAlert className="w-5 h-5" />
-            OUT OF JURISDICTION: You can only mark areas inside {official?.barangay}!
+            OUT OF JURISDICTION: You can only mark areas inside{" "}
+            {official?.barangay}!
           </div>
         )}
 
@@ -1222,31 +1847,83 @@ export default function HeatmapAnalytics() {
         <div className="absolute bottom-6 right-6 z-[1001] flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
           {toasts.map((t) => {
             const bg =
-              t.type === 'cleaned' ? '#059669'
-              : t.status === 'critical' ? '#dc2626'
-              : t.status === 'moderate' ? '#d97706'
-              : '#059669';
+              t.type === "cleaned"
+                ? "#059669"
+                : t.status === "critical"
+                  ? "#dc2626"
+                  : t.status === "moderate"
+                    ? "#d97706"
+                    : "#059669";
             const icon =
-              t.type === 'cleaned' ? <CheckCircle2 className="w-5 h-5 text-slate-900" />
-              : t.status === 'critical' ? <AlertTriangle className="w-5 h-5 text-slate-900" />
-              : t.status === 'moderate' ? <Info className="w-5 h-5 text-slate-900" />
-              : <CheckCircle2 className="w-5 h-5 text-slate-900" />;
+              t.type === "cleaned" ? (
+                <CheckCircle2 className="w-5 h-5 text-slate-900" />
+              ) : t.status === "critical" ? (
+                <AlertTriangle className="w-5 h-5 text-slate-900" />
+              ) : t.status === "moderate" ? (
+                <Info className="w-5 h-5 text-slate-900" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-slate-900" />
+              );
             return (
               <div
                 key={t.id}
                 className="pointer-events-auto"
-                style={{ background: bg, borderRadius: '14px', padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'flex-start', gap: '10px', animation: 'toastIn 0.3s ease-out' }}
+                style={{
+                  background: bg,
+                  borderRadius: "14px",
+                  padding: "10px 14px",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  animation: "toastIn 0.3s ease-out",
+                }}
               >
-                <div style={{ flexShrink: 0, marginTop: '2px' }}>{icon}</div>
+                <div style={{ flexShrink: 0, marginTop: "2px" }}>{icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: '12px', fontWeight: '700', color: '#fff', lineHeight: '16px' }}>{t.title}</p>
-                  {t.body && <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.85)', lineHeight: '15px', wordBreak: 'break-word' }}>{t.body}</p>}
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#fff",
+                      lineHeight: "16px",
+                    }}
+                  >
+                    {t.title}
+                  </p>
+                  {t.body && (
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        fontSize: "11px",
+                        color: "rgba(255,255,255,0.85)",
+                        lineHeight: "15px",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {t.body}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => dismissToast(t.id)}
-                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', padding: 0 }}
+                  style={{
+                    background: "rgba(255,255,255,0.2)",
+                    border: "none",
+                    borderRadius: "6px",
+                    width: "20px",
+                    height: "20px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    color: "#fff",
+                    padding: 0,
+                  }}
                 >
-                  <X style={{ width: '11px', height: '11px' }} />
+                  <X style={{ width: "11px", height: "11px" }} />
                 </button>
               </div>
             );
@@ -1254,12 +1931,17 @@ export default function HeatmapAnalytics() {
         </div>
 
         {/* No IoT Data Overlay */}
-        {zones.filter(z => z.sensorId).length === 0 && (
+        {zones.filter((z) => z.sensorId).length === 0 && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none">
             <div className="bg-white/90 backdrop-blur-md px-6 py-4 rounded-2xl shadow-xl border border-slate-200 flex flex-col items-center gap-2 max-w-sm text-center">
               <Radio className="w-8 h-8 text-slate-400 mb-1" />
-              <h3 className="text-sm font-bold text-slate-900">No IoT Sensor Activity</h3>
-              <p className="text-xs text-slate-500 font-medium">There are currently no active IoT sensors broadcasting air quality data on the heatmap.</p>
+              <h3 className="text-sm font-bold text-slate-900">
+                No IoT Sensor Activity
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                There are currently no active IoT sensors broadcasting air
+                quality data on the heatmap.
+              </p>
             </div>
           </div>
         )}
@@ -1267,19 +1949,18 @@ export default function HeatmapAnalytics() {
         <MapContainer
           center={CEBU_CENTER}
           zoom={14}
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: "100%", height: "100%" }}
           className="z-0"
         >
           {/* Base Layer: Esri World Topo */}
-          
-          
-          
+
+          <FitBoundsToSensors zones={zones} boundary={boundary} />
 
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
             attribution="&copy; Esri"
           />
-          
+
           <TileLayer
             url="https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png"
             opacity={0.3}
@@ -1290,23 +1971,30 @@ export default function HeatmapAnalytics() {
             url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
             opacity={0.8}
           />
-          
+
           {/* Cebu City Boundary */}
           {showCityBoundary && (
             <Polyline
               positions={cebuCityBoundary}
-              pathOptions={{ color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7' }}
+              pathOptions={{
+                color: "#2563EB",
+                weight: 2,
+                opacity: 0.55,
+                dashArray: "10, 7",
+              }}
             />
           )}
-
 
           {/* Jurisdictional Boundary */}
           {boundary && (
             <Polygon
               positions={boundary}
               pathOptions={{
-                color: '#059669', weight: 3, fillColor: '#059669', fillOpacity: 0.05,
-                dashArray: '10, 10'
+                color: "#059669",
+                weight: 3,
+                fillColor: "#059669",
+                fillOpacity: 0.05,
+                dashArray: "10, 10",
               }}
             />
           )}
@@ -1314,59 +2002,72 @@ export default function HeatmapAnalytics() {
           <MapClickHandler onMapClick={handleMapClick} />
 
           {/* Visible markers and status-colored volumetric smoke/heat circles for the IoT sensors */}
-          {zones.filter(z => z.sensorId).map(zone => {
-            const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
-            const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
-            const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
-            
-            return (
-              <Fragment key={zone._id}>
-                {/* Volumetric gas/smoke cloud - 3 concentric layers with fading opacities */}
-                {zone.isActive !== false && (
-                  <>
-                    {/* Layer 1: Outer soft halo & dashed perimeter border */}
-                    <Circle
-                      center={[zone.lat, zone.lng]}
-                      radius={250} // 250 meters maximum reach
-                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
-                      pathOptions={{
-                        color: circleColor,
-                        fillColor: circleColor,
-                        fillOpacity: 0.04,
-                        weight: 1.5,
-                        dashArray: zone.status === 'critical' ? '5, 5' : undefined
-                      }}
-                    />
-                    {/* Layer 2: Mid-level smoke thickness */}
-                    <Circle
-                      center={[zone.lat, zone.lng]}
-                      radius={160}
-                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
-                      pathOptions={{
-                        fillColor: circleColor,
-                        fillOpacity: 0.08,
-                        weight: 0
-                      }}
-                    />
-                    {/* Layer 3: Inner core dense smoke concentration */}
-                    <Circle
-                      center={[zone.lat, zone.lng]}
-                      radius={90}
-                      eventHandlers={{ click: () => setSelectedAirQualityZone(zone) }}
-                      pathOptions={{
-                        fillColor: circleColor,
-                        fillOpacity: 0.13,
-                        weight: 0
-                      }}
-                    />
-                  </>
-                )}
+          {zones
+            .filter((z) => z.sensorId)
+            .map((zone) => {
+              const rawVal = zone.rawValue || 0;
+              const riskLabel = healthRiskView
+                ? healthRiskLabel(rawVal)
+                : zone.status;
+              const circleColor = healthRiskView
+                ? healthRiskColor(rawVal)
+                : zoneColor[zone.status];
 
-                <Marker
-                  position={[zone.lat, zone.lng]}
-                  icon={L.divIcon({
-                    className: 'bg-transparent',
-                    html: `
+              return (
+                <Fragment key={zone._id}>
+                  {/* Volumetric gas/smoke cloud - 3 concentric layers with fading opacities */}
+                  {zone.isActive !== false && (
+                    <>
+                      {/* Layer 1: Outer soft halo & dashed perimeter border */}
+                      <Circle
+                        center={[zone.lat, zone.lng]}
+                        radius={250} // 250 meters maximum reach
+                        eventHandlers={{
+                          click: () => setSelectedAirQualityZone(zone),
+                        }}
+                        pathOptions={{
+                          color: circleColor,
+                          fillColor: circleColor,
+                          fillOpacity: 0.04,
+                          weight: 1.5,
+                          dashArray:
+                            zone.status === "critical" ? "5, 5" : undefined,
+                        }}
+                      />
+                      {/* Layer 2: Mid-level smoke thickness */}
+                      <Circle
+                        center={[zone.lat, zone.lng]}
+                        radius={160}
+                        eventHandlers={{
+                          click: () => setSelectedAirQualityZone(zone),
+                        }}
+                        pathOptions={{
+                          fillColor: circleColor,
+                          fillOpacity: 0.08,
+                          weight: 0,
+                        }}
+                      />
+                      {/* Layer 3: Inner core dense smoke concentration */}
+                      <Circle
+                        center={[zone.lat, zone.lng]}
+                        radius={90}
+                        eventHandlers={{
+                          click: () => setSelectedAirQualityZone(zone),
+                        }}
+                        pathOptions={{
+                          fillColor: circleColor,
+                          fillOpacity: 0.13,
+                          weight: 0,
+                        }}
+                      />
+                    </>
+                  )}
+
+                  <Marker
+                    position={[zone.lat, zone.lng]}
+                    icon={L.divIcon({
+                      className: "bg-transparent",
+                      html: `
                       <div style="
                         width: 28px; 
                         height: 28px; 
@@ -1378,125 +2079,171 @@ export default function HeatmapAnalytics() {
                         justify-content: center;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                         cursor: pointer;
-                        ${zone.status === 'critical' ? 'animation: pulseBorder 1.5s infinite;' : ''}
+                        ${zone.status === "critical" ? "animation: pulseBorder 1.5s infinite;" : ""}
                       ">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${circleColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
                       </div>
                     `,
-                    iconSize: [28, 28],
-                    iconAnchor: [14, 14]
-                  })}
-                >
-                <Popup className="custom-popup" minWidth={320}>
-                  <div className="p-1">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 shadow-sm" style={{ backgroundColor: circleColor }}>
-                        <MapPin className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-base font-bold text-slate-900 leading-tight">{zone.name}</h3>
-                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3" /> {zone.barangay || 'Unknown location'}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-wrap items-center gap-2 mb-5">
-                      
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize text-slate-900" style={{ backgroundColor: circleColor }}>
-                        {riskLabel}
-                      </span>
-                      <label className="flex items-center gap-2 cursor-pointer ml-auto">
-                        <span className="text-xs font-bold text-slate-500 uppercase">Active</span>
-                        <div className="relative inline-block w-8 h-4">
-                          <input 
-                            type="checkbox" 
-                            className="peer sr-only" 
-                            checked={zone.isActive} 
-                            onChange={(e) => toggleSensorActive(zone, e.target.checked)} 
-                          />
-                          <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-300 transition-colors"></div>
-                          <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform"></div>
+                      iconSize: [28, 28],
+                      iconAnchor: [14, 14],
+                    })}
+                  >
+                    <Popup className="custom-popup" minWidth={320}>
+                      <div className="p-1">
+                        <div className="flex items-start gap-3 mb-4">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 shadow-sm"
+                            style={{ backgroundColor: circleColor }}
+                          >
+                            <MapPin className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-base font-bold text-slate-900 leading-tight">
+                              {zone.name}
+                            </h3>
+                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3" />{" "}
+                              {zone.barangay || "Unknown location"}
+                            </p>
+                          </div>
                         </div>
-                      </label>
 
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider border border-blue-200">
-                        <Radio className="w-3.5 h-3.5" /> LIVE IOT: {zone.sensorId}
-                      </span>
-                    </div>
+                        <div className="flex flex-wrap items-center gap-2 mb-5">
+                          <span
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize text-slate-900"
+                            style={{ backgroundColor: circleColor }}
+                          >
+                            {riskLabel}
+                          </span>
+                          <label className="flex items-center gap-2 cursor-pointer ml-auto">
+                            <span className="text-xs font-bold text-slate-500 uppercase">
+                              Active
+                            </span>
+                            <div className="relative inline-block w-8 h-4">
+                              <input
+                                type="checkbox"
+                                className="peer sr-only"
+                                checked={zone.isActive}
+                                onChange={(e) =>
+                                  toggleSensorActive(zone, e.target.checked)
+                                }
+                              />
+                              <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-300 transition-colors"></div>
+                              <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform"></div>
+                            </div>
+                          </label>
 
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-4">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
-                        <BarChart2 className="w-3.5 h-3.5" /> Sensor Readings
-                      </h4>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Raw ADC Value</span>
-                          <span className={`text-lg font-black ${zone.status === 'critical' ? 'text-red-600' : 'text-slate-800'}`}>{zone.rawValue || 0} <span className="text-[10px] font-medium text-slate-400">/ 4095</span></span>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider border border-blue-200">
+                            <Radio className="w-3.5 h-3.5" /> LIVE IOT:{" "}
+                            {zone.sensorId}
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Sensor Voltage</span>
-                          <span className="text-lg font-black text-slate-800">{((zone.rawValue || 0) * (3.3 / 4095.0)).toFixed(2)} V</span>
+
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-4">
+                          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                            <BarChart2 className="w-3.5 h-3.5" /> Sensor
+                            Readings
+                          </h4>
+                          <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                                Raw ADC Value
+                              </span>
+                              <span
+                                className={`text-lg font-black ${zone.status === "critical" ? "text-red-600" : "text-slate-800"}`}
+                              >
+                                {zone.rawValue || 0}{" "}
+                                <span className="text-[10px] font-medium text-slate-400">
+                                  / 4095
+                                </span>
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                                Sensor Voltage
+                              </span>
+                              <span className="text-lg font-black text-slate-800">
+                                {(
+                                  (zone.rawValue || 0) *
+                                  (3.3 / 4095.0)
+                                ).toFixed(2)}{" "}
+                                V
+                              </span>
+                            </div>
+                          </div>
+                          {zone.airQuality && (
+                            <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">
+                                Air Quality:
+                              </span>
+                              <span
+                                className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${
+                                  zone.airQuality === "Hazardous"
+                                    ? "bg-red-100 text-red-700"
+                                    : zone.airQuality === "Unhealthy"
+                                      ? "bg-red-100 text-red-600"
+                                      : zone.airQuality === "Moderate"
+                                        ? "bg-amber-100 text-amber-700"
+                                        : "bg-emerald-100 text-emerald-700"
+                                }`}
+                              >
+                                {zone.airQuality}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => setSelectedAirQualityZone(zone)}
+                          className="w-full mb-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-colors"
+                        >
+                          <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                          View Air Quality Trend & Graph
+                        </button>
+
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
+                            <Clock className="w-3 h-3" /> Updated{" "}
+                            {new Date(
+                              zone.updatedAt || Date.now(),
+                            ).toLocaleTimeString()}
+                          </span>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Ammonia (NH₃)</span>
-                          <span className="text-lg font-black text-slate-800">{zone.ammonia || '0 ppm'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Methane (CH₄)</span>
-                          <span className="text-lg font-black text-slate-800">{zone.methane || '0 ppm'}</span>
-                        </div>
-                      </div>
-                      {zone.airQuality && (
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Air Quality:</span>
-                          <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${
-                            zone.airQuality === 'Hazardous' ? 'bg-red-100 text-red-700' :
-                            zone.airQuality === 'Unhealthy' ? 'bg-red-100 text-red-600' :
-                            zone.airQuality === 'Moderate' ? 'bg-amber-100 text-amber-700' :
-                            'bg-emerald-100 text-emerald-700'
-                          }`}>{zone.airQuality}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => setSelectedAirQualityZone(zone)}
-                      className="w-full mb-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-colors"
-                    >
-                      <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                      View Air Quality Trend & Graph
-                    </button>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
-                        <Clock className="w-3 h-3" /> Updated {new Date(zone.updatedAt || Date.now()).toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            </Fragment>
-          );
-        })}
+                    </Popup>
+                  </Marker>
+                </Fragment>
+              );
+            })}
 
           {newArea && (
             <CircleMarker
               center={[newArea.lat, newArea.lng]}
               radius={20}
-              pathOptions={{ fillColor: '#059669', fillOpacity: 0.8, color: '#fff', weight: 3 }}
+              pathOptions={{
+                fillColor: "#059669",
+                fillOpacity: 0.8,
+                color: "#fff",
+                weight: 3,
+              }}
             >
               <Popup>
                 <div className="p-2 text-center">
-                  <p className="text-xs font-bold text-slate-900 mb-2">New Garbage Area</p>
+                  <p className="text-xs font-bold text-slate-900 mb-2">
+                    New Garbage Area
+                  </p>
                   <button
                     disabled={saving}
                     onClick={handleSaveArea}
                     className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-emerald-700 text-slate-900 text-[10px] font-bold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
                   >
-                    {saving ? 'SAVING...' : <><Save className="w-3 h-3" /> SAVE AREA</>}
+                    {saving ? (
+                      "SAVING..."
+                    ) : (
+                      <>
+                        <Save className="w-3 h-3" /> SAVE AREA
+                      </>
+                    )}
                   </button>
                 </div>
               </Popup>
@@ -1515,54 +2262,86 @@ export default function HeatmapAnalytics() {
                   <Cpu className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900 leading-tight">Register IoT Sensor</h2>
-                  <p className="text-xs text-slate-500">{sensorZones.length} active sensors</p>
+                  <h2 className="text-lg font-bold text-slate-900 leading-tight">
+                    Register IoT Sensor
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    {sensorZones.length} active sensors
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setShowSensorForm(false)} className="p-2 hover:bg-white/80 rounded-xl text-slate-500">
+              <button
+                onClick={() => setShowSensorForm(false)}
+                className="p-2 hover:bg-white/80 rounded-xl text-slate-500"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6">
               <form onSubmit={handleRegisterSensor} className="space-y-4">
                 <p className="text-xs text-slate-500 font-medium leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
-                  Enter the sensor ID exactly as sent by the ESP32 hardware, then pick its physical location on the map.
-                  The heatmap circle will auto-update based on real-time gas readings.
+                  Enter the sensor ID exactly as sent by the ESP32 hardware,
+                  then pick its physical location on the map. The heatmap circle
+                  will auto-update based on real-time gas readings.
                 </p>
-                
+
                 {sensorMsg && (
-                  <div className={`px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 ${sensorMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                    {sensorMsg.type === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                  <div
+                    className={`px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 ${sensorMsg.type === "ok" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}
+                  >
+                    {sensorMsg.type === "ok" ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4" />
+                    )}
                     {sensorMsg.text}
                   </div>
                 )}
-                
+
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Sensor ID *</label>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Sensor ID *
+                    </label>
                     <input
                       required
                       placeholder="e.g. IR-SENSOR-001"
                       value={sensorForm.sensorId}
-                      onChange={e => setSensorForm(f => ({ ...f, sensorId: e.target.value }))}
+                      onChange={(e) =>
+                        setSensorForm((f) => ({
+                          ...f,
+                          sensorId: e.target.value,
+                        }))
+                      }
                       className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white shadow-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Barangay (Optional)</label>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Barangay (Optional)
+                    </label>
                     <input
                       placeholder="e.g. Lahug"
                       value={sensorForm.barangay}
-                      onChange={e => setSensorForm(f => ({ ...f, barangay: e.target.value }))}
-                      disabled={official?.barangay && official.barangay !== 'All'}
+                      onChange={(e) =>
+                        setSensorForm((f) => ({
+                          ...f,
+                          barangay: e.target.value,
+                        }))
+                      }
+                      disabled={
+                        official?.barangay && official.barangay !== "All"
+                      }
                       className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-slate-50 disabled:bg-slate-100 disabled:text-slate-500 shadow-sm"
                     />
                   </div>
                 </div>
 
                 <div className="pt-2">
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Sensor Location *</label>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Sensor Location *
+                  </label>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -1570,14 +2349,21 @@ export default function HeatmapAnalytics() {
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-blue-300 text-blue-600 text-sm font-bold rounded-xl hover:bg-blue-50 transition-colors"
                     >
                       <MapPin className="w-4 h-4" />
-                      {sensorForm.lat ? 'Change Location' : 'Pick on Map'}
+                      {sensorForm.lat ? "Change Location" : "Pick on Map"}
                     </button>
                     {sensorForm.lat && (
                       <div className="flex-[1.5] flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0 animate-pulse" />
                         <div className="min-w-0">
-                          {sensorForm.location && <p className="text-xs font-bold text-slate-700 truncate">{sensorForm.location}</p>}
-                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">{parseFloat(sensorForm.lat).toFixed(5)}, {parseFloat(sensorForm.lng).toFixed(5)}</p>
+                          {sensorForm.location && (
+                            <p className="text-xs font-bold text-slate-700 truncate">
+                              {sensorForm.location}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            {parseFloat(sensorForm.lat).toFixed(5)},{" "}
+                            {parseFloat(sensorForm.lng).toFixed(5)}
+                          </p>
                         </div>
                       </div>
                     )}
@@ -1594,11 +2380,17 @@ export default function HeatmapAnalytics() {
                   </button>
                   <button
                     type="submit"
-                    disabled={sensorSaving || !sensorForm.lat || !sensorForm.sensorId}
+                    disabled={
+                      sensorSaving || !sensorForm.lat || !sensorForm.sensorId
+                    }
                     className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-slate-900 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-lg shadow-blue-600/20 transition-all"
                   >
-                    {sensorSaving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Cpu className="w-4 h-4" />}
-                    {sensorSaving ? 'Registering...' : 'Register Sensor'}
+                    {sensorSaving ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Cpu className="w-4 h-4" />
+                    )}
+                    {sensorSaving ? "Registering..." : "Register Sensor"}
                   </button>
                 </div>
               </form>
@@ -1606,17 +2398,28 @@ export default function HeatmapAnalytics() {
               {/* Active Sensors List */}
               {sensorZones.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-slate-100">
-                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Active Sensors</h3>
+                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">
+                    Active Sensors
+                  </h3>
                   <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
-                    {sensorZones.map(zone => (
-                      <div key={zone._id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                    {sensorZones.map((zone) => (
+                      <div
+                        key={zone._id}
+                        className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl"
+                      >
                         <div>
-                          <p className="text-xs font-bold text-slate-800">{zone.sensorId}</p>
-                          <p className="text-[10px] text-slate-500">{zone.location}</p>
+                          <p className="text-xs font-bold text-slate-800">
+                            {zone.sensorId}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {zone.location}
+                          </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleDeleteSensor(zone._id, zone.sensorId)}
+                          onClick={() =>
+                            handleDeleteSensor(zone._id, zone.sensorId)
+                          }
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           title="Delete Sensor"
                         >
@@ -1655,40 +2458,60 @@ export default function HeatmapAnalytics() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
             {(() => {
               const zone = selectedZone;
-              const ammoniaPpm = parseAmmoniaPpm(zone.ammonia);
-              const circleColor = healthRiskView ? healthRiskColor(ammoniaPpm) : zoneColor[zone.status];
-              const riskLabel = healthRiskView ? healthRiskLabel(ammoniaPpm) : zone.status;
+              const rawVal = zone.rawValue || 0;
+              const circleColor = healthRiskView
+                ? healthRiskColor(rawVal)
+                : zoneColor[zone.status];
+              const riskLabel = healthRiskView
+                ? healthRiskLabel(rawVal)
+                : zone.status;
               const isIotZone = !!zone.sensorId;
               return (
                 <>
-                  <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between" style={{ backgroundColor: `${circleColor}10` }}>
+                  <div
+                    className="px-6 py-5 border-b border-slate-100 flex items-center justify-between"
+                    style={{ backgroundColor: `${circleColor}10` }}
+                  >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900" style={{ backgroundColor: circleColor }}>
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900"
+                        style={{ backgroundColor: circleColor }}
+                      >
                         <MapPin className="w-5 h-5" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-slate-900 leading-tight">{zone.name}</h2>
+                        <h2 className="text-xl font-bold text-slate-900 leading-tight">
+                          {zone.name}
+                        </h2>
                         <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3" /> {zone.barangay || 'Unknown location'}
+                          <MapPin className="w-3 h-3" />{" "}
+                          {zone.barangay || "Unknown location"}
                         </p>
                       </div>
                     </div>
-                    <button onClick={() => setSelectedZone(null)} className="p-2 hover:bg-white/60 rounded-xl text-slate-500 transition-colors">
+                    <button
+                      onClick={() => setSelectedZone(null)}
+                      className="p-2 hover:bg-white/60 rounded-xl text-slate-500 transition-colors"
+                    >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  
+
                   <div className="p-6 space-y-6">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold capitalize text-slate-900" style={{ backgroundColor: circleColor }}>
+                      <span
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold capitalize text-slate-900"
+                        style={{ backgroundColor: circleColor }}
+                      >
                         {riskLabel}
                       </span>
                       {isIotZone && (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-bold uppercase tracking-wider border border-blue-200">
-                          <Radio className="w-4 h-4" /> LIVE IoT: {zone.sensorId}
+                          <Radio className="w-4 h-4" /> LIVE IoT:{" "}
+                          {zone.sensorId}
                         </span>
                       )}
-                      {!healthRiskView && sourceBadge(zone.source || 'iot')}
+                      {!healthRiskView && sourceBadge(zone.source || "iot")}
                       {healthRiskView && (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-bold border border-red-200">
                           <Heart className="w-4 h-4" /> Health View
@@ -1699,65 +2522,113 @@ export default function HeatmapAnalytics() {
                     {healthRiskView ? (
                       <div className="p-5 bg-red-50/50 rounded-2xl border border-red-100">
                         <p className="text-xs font-bold text-red-600 flex items-center gap-2 mb-4 uppercase tracking-widest">
-                          <Activity className="w-4 h-4" /> Health Risk Assessment
+                          <Activity className="w-4 h-4" /> Health Risk
+                          Assessment
                         </p>
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm">
-                            <span className="text-xs font-medium text-slate-500 uppercase">Ammonia (NH₃)</span>
-                            <p className="text-2xl font-black mt-1" style={{ color: circleColor }}>{zone.ammonia || '0 ppm'}</p>
+                            <span className="text-xs font-medium text-slate-500 uppercase">
+                              Raw ADC Value
+                            </span>
+                            <p
+                              className="text-2xl font-black mt-1"
+                              style={{ color: circleColor }}
+                            >
+                              {zone.rawValue || 0}
+                            </p>
                           </div>
                           <div className="bg-white p-4 rounded-xl border border-red-100 shadow-sm">
-                            <span className="text-xs font-medium text-slate-500 uppercase">Methane (CH₄)</span>
-                            <p className="text-2xl font-black text-slate-700 mt-1">{zone.methane || '0 ppm'}</p>
+                            <span className="text-xs font-medium text-slate-500 uppercase">
+                              Voltage (V)
+                            </span>
+                            <p className="text-2xl font-black text-slate-700 mt-1">
+                              {((zone.rawValue || 0) * (3.3 / 4095.0)).toFixed(
+                                2,
+                              )}{" "}
+                              V
+                            </p>
                           </div>
                         </div>
-                        <div className="p-4 rounded-xl border" style={{ backgroundColor: `${circleColor}15`, borderColor: `${circleColor}40` }}>
-                          <p className="text-sm font-bold mb-1" style={{ color: circleColor }}>Risk Level: {riskLabel}</p>
+                        <div
+                          className="p-4 rounded-xl border"
+                          style={{
+                            backgroundColor: `${circleColor}15`,
+                            borderColor: `${circleColor}40`,
+                          }}
+                        >
+                          <p
+                            className="text-sm font-bold mb-1"
+                            style={{ color: circleColor }}
+                          >
+                            Risk Level: {riskLabel}
+                          </p>
                           <p className="text-xs text-slate-600 font-medium">
-                            {ammoniaPpm > 100 ? 'Immediate health intervention required. Evacuate or provide protective gear.' :
-                             ammoniaPpm > 50 ? 'High risk. Monitor closely and limit exposure time.' :
-                             ammoniaPpm >= 25 ? 'Moderate risk. Schedule inspection and cleanup soon.' :
-                             'Safe levels. No immediate health action needed.'}
+                            {rawVal >= 700
+                              ? "Critical risk level. Sensor ADC value exceeded critical threshold (700+)."
+                              : rawVal >= 400
+                                ? "Moderate risk level. Sensor ADC value in moderate range (400 - 699)."
+                                : "Clean air quality. Sensor ADC value in normal range (< 400)."}
                           </p>
                         </div>
                       </div>
                     ) : (
                       <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
                         <p className="text-xs font-bold text-slate-500 flex items-center gap-2 mb-4 uppercase tracking-widest">
-                          <BarChart2 className="w-4 h-4" /> Composite Score Details
+                          <BarChart2 className="w-4 h-4" /> Composite Score
+                          Details
                         </p>
-                        
-                        {((zone.ammonia && zone.ammonia !== '0 ppm') || (zone.methane && zone.methane !== '0 ppm')) && (
+
+                        {zone.rawValue !== undefined && (
                           <div className="mb-5 pb-5 border-b border-slate-200">
                             <p className="text-[10px] font-bold text-blue-600 flex items-center gap-1.5 mb-3 uppercase tracking-wider">
                               <Cpu className="w-3 h-3" /> IoT Sensor Readings
                             </p>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <span className="text-[11px] font-bold text-slate-500 uppercase">Ammonia (NH₃)</span>
-                                <p className="text-xl font-black text-slate-700 mt-0.5">{zone.ammonia}</p>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">
+                                  Raw ADC Value
+                                </span>
+                                <p className="text-xl font-black text-slate-700 mt-0.5">
+                                  {zone.rawValue || 0}
+                                </p>
                               </div>
                               <div>
-                                <span className="text-[11px] font-bold text-slate-500 uppercase">Methane (CH₄)</span>
-                                <p className="text-xl font-black text-slate-700 mt-0.5">{zone.methane}</p>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">
+                                  Voltage (V)
+                                </span>
+                                <p className="text-xl font-black text-slate-700 mt-0.5">
+                                  {(
+                                    (zone.rawValue || 0) *
+                                    (3.3 / 4095.0)
+                                  ).toFixed(2)}{" "}
+                                  V
+                                </p>
                               </div>
                             </div>
                           </div>
                         )}
-                        
+
                         <div>
                           <p className="text-[10px] font-bold text-orange-600 flex items-center gap-1.5 mb-3 uppercase tracking-wider">
                             <FileText className="w-3 h-3" /> Resident Reports
                           </p>
                           <div className="grid grid-cols-2 gap-4 items-center">
                             <div>
-                              <span className="text-[11px] font-bold text-slate-500 uppercase">Total Reports</span>
-                              <p className="text-xl font-black text-slate-700 mt-0.5">{zone.reportCount || 0}</p>
+                              <span className="text-[11px] font-bold text-slate-500 uppercase">
+                                Total Reports
+                              </span>
+                              <p className="text-xl font-black text-slate-700 mt-0.5">
+                                {zone.reportCount || 0}
+                              </p>
                             </div>
                             {zone.lastReportAt && (
                               <div>
-                                <span className="text-[11px] font-bold text-slate-500 uppercase">Last Reported</span>
-                                <p className="text-sm font-bold text-slate-700 mt-0.5">{timeAgo(zone.lastReportAt)}</p>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">
+                                  Last Reported
+                                </span>
+                                <p className="text-sm font-bold text-slate-700 mt-0.5">
+                                  {timeAgo(zone.lastReportAt)}
+                                </p>
                               </div>
                             )}
                           </div>
@@ -1767,9 +2638,10 @@ export default function HeatmapAnalytics() {
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                       <p className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" /> Updated {timeAgo(zone.updatedAt || zone.createdAt)}
+                        <Clock className="w-3.5 h-3.5" /> Updated{" "}
+                        {timeAgo(zone.updatedAt || zone.createdAt)}
                       </p>
-                      
+
                       {!isChd && (
                         <button
                           onClick={() => {
@@ -1795,7 +2667,12 @@ export default function HeatmapAnalytics() {
         open={showMapPicker}
         onClose={() => setShowMapPicker(false)}
         onConfirm={({ lat, lng, locationName }) => {
-          setSensorForm(f => ({ ...f, lat: String(lat), lng: String(lng), location: locationName || f.location }));
+          setSensorForm((f) => ({
+            ...f,
+            lat: String(lat),
+            lng: String(lng),
+            location: locationName || f.location,
+          }));
           setShowMapPicker(false);
         }}
       />

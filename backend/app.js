@@ -1171,10 +1171,20 @@ function optionalAuth(req, res, next) {
 }
 
 // Returns a barangay filter for superadmin/All (sees everything) vs scoped official
-function barangayFilter(official, field = "barangay") {
+function barangayFilter(reqOrOfficial, field = "barangay") {
+  const official = reqOrOfficial?.official || (reqOrOfficial?.role ? reqOrOfficial : null);
+  const queryBrgy = reqOrOfficial?.query?.barangay;
+
+  if (queryBrgy && queryBrgy !== "All") {
+    return { [field]: new RegExp(`^${queryBrgy.trim()}$`, "i") };
+  }
+
   if (!official) return {};
   if (official.barangay === "All" || official.role === "superadmin") return {};
-  return { [field]: official.barangay };
+  if (official.barangay) {
+    return { [field]: new RegExp(`^${official.barangay.trim()}$`, "i") };
+  }
+  return {};
 }
 
 // --- Cloudinary Upload ----------------------------------------
@@ -4871,11 +4881,14 @@ const IOT_THRESHOLDS = {
   binLevel: { moderate: 70, critical: 90 }, // %
 };
 
-function classifyAirQuality(ammonia) {
-  if (ammonia >= 45) return "Hazardous";
-  if (ammonia >= 25) return "Unhealthy";
-  if (ammonia >= 15) return "Moderate";
-  return "Good";
+function classifyAirQuality(rawValue, ammonia = 0) {
+  const val = Number(rawValue) || 0;
+  if (val >= 700) return "Critical";
+  if (val >= 400) return "Moderate";
+  if (val > 0) return "Clean";
+  if (ammonia >= 45) return "Critical";
+  if (ammonia >= 25) return "Moderate";
+  return "Clean";
 }
 
 function generateIoTAlerts(reading) {
@@ -4964,7 +4977,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   }
 
   try {
-    const airQuality = classifyAirQuality(ammonia, methane);
+    const airQuality = classifyAirQuality(rawValue, ammonia);
 
     // 1. Look up existing pre-registered GarbageArea from dashboard or auto-create zone
     let existingArea = await GarbageArea.findOne({ sensorId });
@@ -5015,40 +5028,37 @@ app.post("/api/iot/sensor-data", async (req, res) => {
       io.emit("iot:alert", alert); // real-time push to dashboard & other endpoints
     }
 
-    // 5. Auto-create a report when air quality is Unhealthy or Hazardous
+    // 5. Auto-create a report when air quality is Critical
     let autoReport = null;
-    if (airQuality === "Unhealthy" || airQuality === "Hazardous") {
-      const severity = airQuality === "Hazardous" ? "Critical" : "High";
+    if (airQuality === "Critical") {
       autoReport = await Report.create({
         title: `IoT Alert: ${airQuality} Air Quality at ${finalLocation || sensorId}`,
-        category: airQuality === "Hazardous" ? "Hazardous Waste" : "Overflowing Bin",
-        description: `Automated IoT detection — Ammonia: ${ammonia} ppm, Methane: ${methane}%, Bin Level: ${binLevel}%. Sensor: ${sensorId}`,
+        category: "Hazardous Waste",
+        description: `Automated IoT detection — Raw ADC: ${rawValue}, Voltage: ${((rawValue * 3.3) / 4095.0).toFixed(2)}V, Bin Level: ${binLevel}%. Sensor: ${sensorId}`,
         location: finalLocation || "",
         barangay: finalBarangay || "",
         lat: finalLat,
         lng: finalLng,
         reportedBy: `IoT Sensor ${sensorId}`,
-        priority: severity,
+        priority: "Critical",
       });
       io.emit("report:new", autoReport);
     }
 
     // 6. Update or Create garbage-area map node
     const areaStatus =
-      airQuality === "Hazardous" || airQuality === "Unhealthy"
+      airQuality === "Critical"
         ? "critical"
         : airQuality === "Moderate"
           ? "moderate"
           : "clean";
 
     const areaIntensity =
-      airQuality === "Hazardous"
-        ? 1.0
-        : airQuality === "Unhealthy"
-          ? 0.8
-          : airQuality === "Moderate"
-            ? 0.5
-            : 0.2;
+      airQuality === "Critical"
+        ? 0.9
+        : airQuality === "Moderate"
+          ? 0.5
+          : 0.2;
 
     const updatedArea = await GarbageArea.findOneAndUpdate(
       { sensorId },
@@ -5122,7 +5132,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
 app.get("/api/iot/readings", optionalAuth, async (req, res) => {
   try {
     const { sensorId, limit = 100, hours } = req.query;
-    const filter = barangayFilter(req.official);
+    const filter = barangayFilter(req);
     if (sensorId) filter.sensorId = sensorId;
     if (hours) {
       filter.timestamp = {
@@ -5141,7 +5151,7 @@ app.get("/api/iot/readings", optionalAuth, async (req, res) => {
 // GET: Latest reading per sensor
 app.get("/api/iot/readings/latest", optionalAuth, async (req, res) => {
   try {
-    const brgyFilter = barangayFilter(req.official);
+    const brgyFilter = barangayFilter(req);
     const matchStage = Object.keys(brgyFilter).length
       ? { $match: brgyFilter }
       : null;
@@ -5153,7 +5163,26 @@ app.get("/api/iot/readings/latest", optionalAuth, async (req, res) => {
       { $sort: { sensorId: 1 } },
     ];
     const latest = await SensorReading.aggregate(pipeline);
-    res.json(latest);
+
+    // Populate barangay from GarbageArea if missing on reading
+    const sensorIds = latest.map(r => r.sensorId);
+    const areas = await GarbageArea.find({ sensorId: { $in: sensorIds } });
+    const areaMap = {};
+    areas.forEach(a => { if (a.sensorId) areaMap[a.sensorId] = a.barangay; });
+
+    let result = latest.map(r => ({
+      ...r,
+      barangay: r.barangay || areaMap[r.sensorId] || ""
+    }));
+
+    // Re-apply barangay filter if scoped official or query specified
+    const targetBrgy = req.query.barangay !== 'All' ? req.query.barangay : req.official?.barangay !== 'All' ? req.official?.barangay : null;
+    if (targetBrgy && req.official?.role !== 'superadmin') {
+      const lower = targetBrgy.toLowerCase().trim();
+      result = result.filter(r => r.barangay && r.barangay.toLowerCase().trim() === lower);
+    }
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5166,7 +5195,7 @@ app.get("/api/iot/trends", optionalAuth, async (req, res) => {
     const since = new Date(Date.now() - Number(hours) * 3600 * 1000);
     const match = {
       timestamp: { $gte: since },
-      ...barangayFilter(req.official),
+      ...barangayFilter(req),
     };
     if (sensorId) match.sensorId = sensorId;
 
@@ -5219,7 +5248,7 @@ app.get("/api/iot/trends", optionalAuth, async (req, res) => {
 app.get("/api/iot/alerts", optionalAuth, async (req, res) => {
   try {
     const { limit = 50, severity, acknowledged } = req.query;
-    const filter = barangayFilter(req.official);
+    const filter = barangayFilter(req);
     if (severity) filter.severity = severity;
     if (acknowledged !== undefined)
       filter.acknowledged = acknowledged === "true";
@@ -5251,7 +5280,7 @@ app.patch("/api/iot/alerts/:id/acknowledge", async (req, res) => {
 // DELETE: Clear all IoT alerts (storage optimization)
 app.delete("/api/iot/alerts", optionalAuth, async (req, res) => {
   try {
-    const filter = barangayFilter(req.official);
+    const filter = barangayFilter(req);
     const result = await IoTAlert.deleteMany(filter);
     io.emit("iot:alerts:cleared");
     res.json({ ok: true, deletedCount: result.deletedCount });
@@ -5281,12 +5310,12 @@ app.get("/api/iot/health-summary", async (req, res) => {
       { $replaceRoot: { newRoot: "$doc" } },
     ]);
 
-    const high = latest.filter(r => r.ammonia > 50 || r.methane > 25);
+    const high = latest.filter(r => r.rawValue >= 700 || r.ammonia > 50 || r.methane > 25);
     const moderate = latest.filter(r =>
       !high.some(h => h._id?.toString() === r._id?.toString()) &&
-      (r.ammonia >= 25 || r.methane >= 10)
+      (r.rawValue >= 400 || r.ammonia >= 25 || r.methane >= 10)
     );
-    const low = latest.filter(r => r.ammonia < 25 && r.methane < 10);
+    const low = latest.filter(r => (r.rawValue || 0) < 400 && r.ammonia < 25 && r.methane < 10);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recentAlerts = await IoTAlert.find({ createdAt: { $gte: sevenDaysAgo } })
@@ -5301,14 +5330,15 @@ app.get("/api/iot/health-summary", async (req, res) => {
     });
 
     const barangaysAtRisk = Object.values(barangayMap)
-      .filter(b => b.sensors.some(s => s.ammonia > 25 || s.methane > 10))
+      .filter(b => b.sensors.some(s => (s.rawValue || 0) >= 400 || s.ammonia > 25 || s.methane > 10))
       .map(b => ({
         name: b.name,
-        maxAmmonia: Math.max(...b.sensors.map(s => s.ammonia)),
-        maxMethane: Math.max(...b.sensors.map(s => s.methane)),
+        maxRawValue: Math.max(...b.sensors.map(s => s.rawValue || 0)),
+        maxAmmonia: Math.max(...b.sensors.map(s => s.ammonia || 0)),
+        maxMethane: Math.max(...b.sensors.map(s => s.methane || 0)),
         sensorCount: b.sensors.length,
       }))
-      .sort((a, b) => b.maxAmmonia - a.maxAmmonia)
+      .sort((a, b) => b.maxRawValue - a.maxRawValue)
       .slice(0, 5);
 
     res.json({
@@ -5325,7 +5355,7 @@ app.get("/api/iot/health-summary", async (req, res) => {
 app.get("/api/iot/summary", optionalAuth, async (req, res) => {
   try {
     const oneHourAgo = new Date(Date.now() - 3600 * 1000);
-    const brgyFilter = barangayFilter(req.official);
+    const brgyFilter = barangayFilter(req);
     const [totalSensors, recentReadings, activeAlerts, criticalAlerts] =
       await Promise.all([
         GarbageArea.distinct("sensorId", { sensorId: { $ne: null }, ...brgyFilter }),

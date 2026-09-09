@@ -62,7 +62,7 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
   const pendingCount = reports.filter(r => r.status === 'pending').length;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col h-fit">
       {/* Widget Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
@@ -92,13 +92,13 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
 
       {/* Widget Content */}
       {activeReports.length === 0 ? (
-        <div className="flex-1 min-h-[220px] flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 p-6">
+        <div className="min-h-[160px] flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 p-6">
           <CheckCircle2 className="w-10 h-10 text-emerald-400 mb-2" />
           <p className="text-sm font-bold text-slate-700">All clear!</p>
           <p className="text-xs text-slate-500 mt-0.5 text-center">No active resident reports requiring official action in your barangay.</p>
         </div>
       ) : (
-        <div className="space-y-3 flex-1 overflow-y-auto">
+        <div className="space-y-3">
           {activeReports.map((report) => {
             const upvotesCount = report.upvotes?.length || report.urgency || 0;
             const isUpdating = updatingId === (report._id || report.id);

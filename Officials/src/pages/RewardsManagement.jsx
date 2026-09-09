@@ -979,8 +979,21 @@ export default function RewardsManagement() {
       <div className="flex-1 px-6 pb-6 min-h-0 overflow-auto">
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            <div className="p-6 space-y-4 animate-pulse">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between px-6 gap-4">
+                  <div className="flex items-center gap-3 w-1/3">
+                    <div className="w-10 h-10 bg-slate-200 rounded-xl flex-shrink-0" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-4 w-32 bg-slate-200 rounded" />
+                      <div className="h-3 w-20 bg-slate-100 rounded" />
+                    </div>
+                  </div>
+                  <div className="h-4 w-28 bg-slate-200 rounded" />
+                  <div className="h-6 w-20 bg-slate-100 rounded-full" />
+                  <div className="h-8 w-24 bg-slate-200 rounded-xl" />
+                </div>
+              ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">

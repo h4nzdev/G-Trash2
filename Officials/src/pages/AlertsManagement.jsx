@@ -183,9 +183,16 @@ export default function AlertsManagement() {
         {/* Table List */}
         <div className="flex-1 overflow-x-auto">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-              <RefreshCw className="w-8 h-8 animate-spin mb-3 text-emerald-600" />
-              <p className="text-sm font-semibold">Loading alerts...</p>
+            <div className="p-6 space-y-4 animate-pulse">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between px-6 gap-4">
+                  <div className="h-4 w-28 bg-slate-200 rounded" />
+                  <div className="h-6 w-20 bg-slate-100 rounded-full" />
+                  <div className="h-4 w-40 bg-slate-200 rounded" />
+                  <div className="h-4 w-48 bg-slate-100 rounded flex-1" />
+                  <div className="h-8 w-24 bg-slate-200 rounded-xl" />
+                </div>
+              ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400 text-center">

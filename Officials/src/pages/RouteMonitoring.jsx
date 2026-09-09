@@ -40,17 +40,25 @@ import {
   Grid,
   Palette,
   Eye,
-  EyeOff
+  EyeOff,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
-import MapTileControl, { GOOGLE_MAP_TILES } from "../components/route/MapTileControl";
+import MapTileControl, {
+  GOOGLE_MAP_TILES,
+} from "../components/route/MapTileControl";
 
 // === CUSTOM IMPORTED ASSETS (SVG ICONS) ===
 import gtruck from "../assets/svg/garbage-truck.svg?url";
 import trashIcon from "../assets/svg/trash.svg?url";
 
-import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCityBoundary } from "../utils/mapBoundary";
+import {
+  CEBU_CENTER,
+  WORLD_BOUNDS,
+  CEBU_BOUNDS,
+  CEBU_CITY_OUTLINE,
+  fetchCebuCityBoundary,
+} from "../utils/mapBoundary";
 
 // ============================================================
 // === 2. MAP ICON MAKERS ======================================
@@ -64,9 +72,13 @@ import { CEBU_CENTER, WORLD_BOUNDS, CEBU_BOUNDS, CEBU_CITY_OUTLINE, fetchCebuCit
 function makeTruckIcon(status, heading = 0, isOffRoute = false) {
   const isOnline = status === "online";
   const pinColor = isOffRoute ? "#dc2626" : isOnline ? "#059669" : "#475569";
-  const pulseColor = isOffRoute ? "rgba(220, 38, 38, 0.6)" : isOnline ? "rgba(16, 185, 129, 0.4)" : "rgba(100, 116, 139, 0.2)";
+  const pulseColor = isOffRoute
+    ? "rgba(220, 38, 38, 0.6)"
+    : isOnline
+      ? "rgba(16, 185, 129, 0.4)"
+      : "rgba(100, 116, 139, 0.2)";
   const isMovingWest = heading > 180 && heading < 360;
-  const flipStyle = isMovingWest ? 'transform: scaleX(-1);' : '';
+  const flipStyle = isMovingWest ? "transform: scaleX(-1);" : "";
 
   return L.divIcon({
     html: `
@@ -74,7 +86,7 @@ function makeTruckIcon(status, heading = 0, isOffRoute = false) {
         ${
           isOffRoute
             ? `<div class="absolute -top-4 px-1.5 py-0.5 rounded bg-red-600 text-white text-[8px] font-black tracking-wider uppercase border border-white shadow-xl z-30 animate-bounce">OFF ROUTE</div>`
-            : ''
+            : ""
         }
         <!-- Pulsing Aura Ring for Online / Off-Route Truck -->
         ${
@@ -101,10 +113,10 @@ function makeTruckIcon(status, heading = 0, isOffRoute = false) {
         </div>
 
         <!-- Status Dot Badge -->
-        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOffRoute ? 'bg-red-600' : isOnline ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white shadow-md z-20"></div>
+        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOffRoute ? "bg-red-600" : isOnline ? "bg-emerald-500" : "bg-slate-400"} border-2 border-white shadow-md z-20"></div>
 
         <!-- Pinpoint Target Dot on Road Ground -->
-        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full ${isOffRoute ? 'bg-red-600/40 border-red-600' : 'bg-emerald-600/30 border-emerald-600'} border animate-pulse"></div>
+        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full ${isOffRoute ? "bg-red-600/40 border-red-600" : "bg-emerald-600/30 border-emerald-600"} border animate-pulse"></div>
       </div>
     `,
     iconSize: [48, 56],
@@ -121,7 +133,9 @@ function makeTruckIcon(status, heading = 0, isOffRoute = false) {
 function makeBinIcon(score) {
   const isHighUrgency = score >= 5;
   const bgColor = isHighUrgency ? "#9f1239" : "#e11d48"; // Rose-Red (#e11d48) or Dark Crimson (#9f1239)
-  const pulseColor = isHighUrgency ? "rgba(159, 18, 57, 0.7)" : "rgba(225, 29, 72, 0.5)";
+  const pulseColor = isHighUrgency
+    ? "rgba(159, 18, 57, 0.7)"
+    : "rgba(225, 29, 72, 0.5)";
 
   return L.divIcon({
     html: `
@@ -183,7 +197,7 @@ function makeStopIcon(n, isFirst, isLast, isCompleted, isCurrent) {
   return L.divIcon({
     html: `
       <div class="relative flex items-center justify-center">
-        ${isCurrent ? '<div class="absolute -inset-1 rounded-full bg-blue-500/40 animate-ping"></div>' : ''}
+        ${isCurrent ? '<div class="absolute -inset-1 rounded-full bg-blue-500/40 animate-ping"></div>' : ""}
         <div class="relative w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-[11px] text-white shadow-lg transition-colors border-2 border-white drop-shadow-md" style="background:${bg}; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
           ${isCompleted ? "✓" : n}
         </div>
@@ -289,8 +303,11 @@ function makeClearingIcon(sitioName, truckId) {
 
 function PickupCheckpointPopupContent({ pickup }) {
   const timeFormatted = pickup.completedAt
-    ? new Date(pickup.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'Recently';
+    ? new Date(pickup.completedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "Recently";
 
   return (
     <div className="p-3 bg-white rounded-xl w-[260px] text-slate-800 space-y-2">
@@ -300,7 +317,7 @@ function PickupCheckpointPopupContent({ pickup }) {
             <Check className="w-3.5 h-3.5 stroke-[3]" />
           </div>
           <span className="text-xs font-bold text-slate-900 truncate">
-            {pickup.stopName || pickup.sitioName || 'Waste Pickup Location'}
+            {pickup.stopName || pickup.sitioName || "Waste Pickup Location"}
           </span>
         </div>
         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex-shrink-0">
@@ -316,7 +333,9 @@ function PickupCheckpointPopupContent({ pickup }) {
         {pickup.driverName && (
           <div className="flex items-center justify-between text-slate-600">
             <span className="font-semibold text-slate-500">Driver:</span>
-            <span className="font-semibold text-slate-800">{pickup.driverName}</span>
+            <span className="font-semibold text-slate-800">
+              {pickup.driverName}
+            </span>
           </div>
         )}
         <div className="flex items-center justify-between text-slate-600">
@@ -326,7 +345,9 @@ function PickupCheckpointPopupContent({ pickup }) {
         <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-200/60">
           <span>{timeAgo(pickup.completedAt)}</span>
           {pickup.lat && pickup.lng && (
-            <span>{pickup.lat.toFixed(4)}, {pickup.lng.toFixed(4)}</span>
+            <span>
+              {pickup.lat.toFixed(4)}, {pickup.lng.toFixed(4)}
+            </span>
           )}
         </div>
       </div>
@@ -339,7 +360,9 @@ function PickupCheckpointPopupContent({ pickup }) {
  */
 function computeZonePolygon(waypoints) {
   if (!waypoints || waypoints.length === 0) return null;
-  const valid = waypoints.filter((w) => w.lat != null && w.lng != null && !isNaN(w.lat) && !isNaN(w.lng));
+  const valid = waypoints.filter(
+    (w) => w.lat != null && w.lng != null && !isNaN(w.lat) && !isNaN(w.lng),
+  );
   if (valid.length === 0) return null;
 
   if (valid.length === 1) {
@@ -374,7 +397,8 @@ function computeZonePolygon(waypoints) {
  */
 function computeCentroid(coords) {
   if (!coords || coords.length === 0) return null;
-  let sumLat = 0, sumLng = 0;
+  let sumLat = 0,
+    sumLng = 0;
   coords.forEach(([lat, lng]) => {
     sumLat += lat;
     sumLng += lng;
@@ -386,7 +410,7 @@ function computeCentroid(coords) {
  * Creates numbered zone badge pin icons matching the reference screenshot.
  */
 function makeZoneBadgeIcon(number, color = "#059669") {
-  const label = typeof number === 'number' ? `Z${number}` : number;
+  const label = typeof number === "number" ? `Z${number}` : number;
   return L.divIcon({
     html: `
       <div class="relative flex items-center justify-center filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.4)]">
@@ -409,13 +433,18 @@ function makeZoneBadgeIcon(number, color = "#059669") {
 // ── Address Popup (Dynamic Reverse Geocoding) ──
 function AddressPopup({ wp }) {
   const [address, setAddress] = useState(wp.address || wp.name);
-  const [loading, setLoading] = useState(!wp.address && wp.name.startsWith("Stop"));
+  const [loading, setLoading] = useState(
+    !wp.address && wp.name.startsWith("Stop"),
+  );
 
   useEffect(() => {
     let isMounted = true;
     if (loading) {
-      axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${wp.lat}&lon=${wp.lng}&zoom=18&addressdetails=1`)
-        .then(res => {
+      axios
+        .get(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${wp.lat}&lon=${wp.lng}&zoom=18&addressdetails=1`,
+        )
+        .then((res) => {
           if (isMounted) {
             setAddress(res.data.display_name || "Unknown Address");
             setLoading(false);
@@ -428,15 +457,21 @@ function AddressPopup({ wp }) {
           }
         });
     }
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [wp, loading]);
 
   return (
     <div className="p-1 min-w-[140px] max-w-[220px] text-center">
       {loading ? (
-        <span className="text-xs text-slate-500 animate-pulse">Fetching address...</span>
+        <span className="text-xs text-slate-500 animate-pulse">
+          Fetching address...
+        </span>
       ) : (
-        <span className="text-xs font-semibold text-slate-800 leading-tight block">{address}</span>
+        <span className="text-xs font-semibold text-slate-800 leading-tight block">
+          {address}
+        </span>
       )}
     </div>
   );
@@ -474,7 +509,9 @@ function ReportPopupContent({ report, onStatusUpdate }) {
         <div className="flex items-center gap-2 min-w-0">
           <div
             className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-              isHighUrgency ? "bg-rose-100 text-rose-600" : "bg-amber-100 text-amber-600"
+              isHighUrgency
+                ? "bg-rose-100 text-rose-600"
+                : "bg-amber-100 text-amber-600"
             }`}
           >
             <AlertTriangle className="w-4 h-4" />
@@ -509,7 +546,9 @@ function ReportPopupContent({ report, onStatusUpdate }) {
         <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-200/60 flex-wrap gap-1">
           <span className="flex items-center gap-1 font-medium truncate max-w-[170px]">
             <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-            {report.sitio ? `Sitio ${report.sitio}` : (report.location || report.barangay || "Barangay Area")}
+            {report.sitio
+              ? `Sitio ${report.sitio}`
+              : report.location || report.barangay || "Barangay Area"}
           </span>
           <span className="text-[10px] text-slate-400 font-medium flex-shrink-0">
             {timeAgo(report.createdAt)}
@@ -531,7 +570,9 @@ function ReportPopupContent({ report, onStatusUpdate }) {
       {/* Status Badge & Official Quick Actions */}
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 mt-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            Status:
+          </span>
           {status === "acknowledged" ? (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
               Acknowledged
@@ -554,16 +595,26 @@ function ReportPopupContent({ report, onStatusUpdate }) {
             disabled={updating}
             className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            {updating ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+            {updating ? (
+              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <CheckCircle className="w-3.5 h-3.5" />
+            )}
             Acknowledge
           </button>
-        ) : status === "acknowledged" || status === "in_progress" || status === "in-progress" ? (
+        ) : status === "acknowledged" ||
+          status === "in_progress" ||
+          status === "in-progress" ? (
           <button
             onClick={() => handleAction("resolved")}
             disabled={updating}
             className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            {updating ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            {updating ? (
+              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Check className="w-3.5 h-3.5" />
+            )}
             Mark Resolved
           </button>
         ) : null}
@@ -772,11 +823,56 @@ export default function RouteMonitoring() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showZones, setShowZones] = useState(true);
   const [selectedColorHex, setSelectedColorHex] = useState("#059669");
-  const [selectedBarangay, setSelectedBarangay] = useState(official?.barangay || "All");
+  const [selectedBarangay, setSelectedBarangay] = useState(
+    official?.barangay || "All",
+  );
   const [barangayList, setBarangayList] = useState([]);
   const [clearingSites, setClearingSites] = useState({});
   const [completedRouteAlert, setCompletedRouteAlert] = useState(null);
   const socketRef = useRef(null);
+
+  function FitBoundsToRoutes({ routes }) {
+    const map = useMap();
+
+    useEffect(() => {
+      if (!routes || routes.length === 0) return;
+
+      // Collect all valid coordinates from routes
+      const allCoords = [];
+
+      routes.forEach((route) => {
+        // Add route waypoints
+        if (route.waypoints) {
+          route.waypoints.forEach((wp) => {
+            if (
+              wp.lat != null &&
+              wp.lng != null &&
+              !isNaN(wp.lat) &&
+              !isNaN(wp.lng)
+            ) {
+              allCoords.push([wp.lat, wp.lng]);
+            }
+          });
+        }
+
+        // Add route polyline coordinates
+        if (route.routeCoords) {
+          route.routeCoords.forEach(([lat, lng]) => {
+            if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+              allCoords.push([lat, lng]);
+            }
+          });
+        }
+      });
+
+      if (allCoords.length === 0) return;
+
+      const bounds = L.latLngBounds(allCoords);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }, [routes, map]);
+
+    return null;
+  }
 
   // Sync selectedBarangay with official's barangay restriction
   useEffect(() => {
@@ -797,18 +893,14 @@ export default function RouteMonitoring() {
   const filteredReports = useMemo(() => {
     const activeBrgy = selectedBarangay?.toLowerCase();
     if (!activeBrgy || activeBrgy === "all") return reports;
-    return reports.filter(
-      (r) => r.barangay?.toLowerCase() === activeBrgy
-    );
+    return reports.filter((r) => r.barangay?.toLowerCase() === activeBrgy);
   }, [reports, selectedBarangay]);
 
   // Filter routes by selected Barangay
   const visibleRoutes = useMemo(() => {
     const activeBrgy = selectedBarangay?.toLowerCase();
     if (!activeBrgy || activeBrgy === "all") return routes;
-    return routes.filter(
-      (r) => r.barangay?.toLowerCase() === activeBrgy
-    );
+    return routes.filter((r) => r.barangay?.toLowerCase() === activeBrgy);
   }, [routes, selectedBarangay]);
 
   // Dynamic Heatmap Points calculation for report clusters & truck activity
@@ -828,7 +920,12 @@ export default function RouteMonitoring() {
     });
     visibleRoutes.forEach((rt) => {
       (rt.waypoints || []).forEach((wp) => {
-        if (wp.lat != null && wp.lng != null && !isNaN(wp.lat) && !isNaN(wp.lng)) {
+        if (
+          wp.lat != null &&
+          wp.lng != null &&
+          !isNaN(wp.lat) &&
+          !isNaN(wp.lng)
+        ) {
           pts.push([wp.lat, wp.lng, 0.4]);
         }
       });
@@ -838,7 +935,7 @@ export default function RouteMonitoring() {
 
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   useEffect(() => {
-    fetchCebuCityBoundary().then(coords => {
+    fetchCebuCityBoundary().then((coords) => {
       if (coords) setCebuCityBoundary(coords);
     });
   }, []);
@@ -848,28 +945,32 @@ export default function RouteMonitoring() {
     setLoading(true);
     setLoading(true);
     try {
-      const [schedulesRes, trucksRes, fleetRes, reportsRes, collectionsRes] = await Promise.all([
-        axios.get(`${API}/api/schedules/today`),
-        axios.get(`${API}/api/trucks`),
-        axios.get(`${API}/api/fleet`),
-        axios.get(`${API}/api/reports?category=Overflowing Bin`),
-        axios.get(`${API}/api/collections?period=today`),
-      ]);
+      const [schedulesRes, trucksRes, fleetRes, reportsRes, collectionsRes] =
+        await Promise.all([
+          axios.get(`${API}/api/schedules/today`),
+          axios.get(`${API}/api/trucks`),
+          axios.get(`${API}/api/fleet`),
+          axios.get(`${API}/api/reports?category=Overflowing Bin`),
+          axios.get(`${API}/api/collections?period=today`),
+        ]);
 
       // Map dynamic scheduled sitio sequences as routes
       const todayScheds = schedulesRes.data.schedules || [];
-      const mappedRoutes = todayScheds.map(sched => {
-        const coords = sched.routeCoords && sched.routeCoords.length > 0
-          ? sched.routeCoords
-          : (sched.sitioTasks || []).map(t => [t.lat, t.lng]);
-        const waypoints = (sched.sitioTasks || []).map(t => ({
+      const mappedRoutes = todayScheds.map((sched) => {
+        const coords =
+          sched.routeCoords && sched.routeCoords.length > 0
+            ? sched.routeCoords
+            : (sched.sitioTasks || []).map((t) => [t.lat, t.lng]);
+        const waypoints = (sched.sitioTasks || []).map((t) => ({
           name: t.name,
           lat: t.lat,
           lng: t.lng,
-          completed: t.completed
+          completed: t.completed,
         }));
-        
-        const completedCount = (sched.sitioTasks || []).filter(t => t.completed).length;
+
+        const completedCount = (sched.sitioTasks || []).filter(
+          (t) => t.completed,
+        ).length;
 
         return {
           _id: sched._id,
@@ -884,26 +985,32 @@ export default function RouteMonitoring() {
           routeCoords: coords,
           waypoints: waypoints,
           currentStopIndex: completedCount,
-          status: sched.status
+          status: sched.status,
         };
       });
 
       // Filter routes by LGU official's barangay restriction if set
-      const filteredRoutes = (official?.barangay && official.barangay !== 'All')
-        ? mappedRoutes.filter(r => r.barangay?.toLowerCase() === official.barangay.toLowerCase())
-        : mappedRoutes;
+      const filteredRoutes =
+        official?.barangay && official.barangay !== "All"
+          ? mappedRoutes.filter(
+              (r) =>
+                r.barangay?.toLowerCase() === official.barangay.toLowerCase(),
+            )
+          : mappedRoutes;
 
       setRoutes(filteredRoutes);
       setFleet(fleetRes.data);
 
       // Filter visible trucks by official's barangay restriction
       const officialBrgy = official?.barangay?.toLowerCase();
-      const isRestricted = officialBrgy && officialBrgy !== 'all';
-      
+      const isRestricted = officialBrgy && officialBrgy !== "all";
+
       const allowedTruckIds = isRestricted
         ? new Set([
-            ...fleetRes.data.filter(f => f.barangay?.toLowerCase() === officialBrgy).map(f => f.truckId),
-            ...filteredRoutes.map(r => r.truckId).filter(Boolean)
+            ...fleetRes.data
+              .filter((f) => f.barangay?.toLowerCase() === officialBrgy)
+              .map((f) => f.truckId),
+            ...filteredRoutes.map((r) => r.truckId).filter(Boolean),
           ])
         : null;
 
@@ -915,7 +1022,11 @@ export default function RouteMonitoring() {
       });
       setTrucks(truckMap);
       setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
-      setCollections((collectionsRes.data || []).filter((c) => c.lat != null && c.lng != null));
+      setCollections(
+        (collectionsRes.data || []).filter(
+          (c) => c.lat != null && c.lng != null,
+        ),
+      );
     } catch (err) {
       console.error("Failed to load route monitoring data:", err);
     } finally {
@@ -925,17 +1036,21 @@ export default function RouteMonitoring() {
 
   const handleReportStatusUpdate = async (reportId, newStatus) => {
     try {
-      const headers = { Authorization: `Bearer ${localStorage.getItem("gtrash_token")}` };
+      const headers = {
+        Authorization: `Bearer ${localStorage.getItem("gtrash_token")}`,
+      };
       const { data } = await axios.patch(
         `${API}/api/reports/${reportId}`,
         { status: newStatus },
-        { headers }
+        { headers },
       );
       if (newStatus === "resolved") {
         setReports((prev) => prev.filter((r) => r._id !== reportId));
       } else {
         setReports((prev) =>
-          prev.map((r) => (r._id === reportId ? { ...r, status: newStatus, ...data } : r))
+          prev.map((r) =>
+            r._id === reportId ? { ...r, status: newStatus, ...data } : r,
+          ),
         );
       }
     } catch (err) {
@@ -952,7 +1067,8 @@ export default function RouteMonitoring() {
     socket.on("truck:location:update", (data) => {
       setTrucks((prev) => {
         const existing = prev[data.truckId] || {};
-        const isOff = data.isOffRoute !== undefined ? data.isOffRoute : existing.isOffRoute;
+        const isOff =
+          data.isOffRoute !== undefined ? data.isOffRoute : existing.isOffRoute;
         return {
           ...prev,
           [data.truckId]: {
@@ -1045,9 +1161,16 @@ export default function RouteMonitoring() {
         },
       }));
       setDeviationAlerts((prev) => {
-        const filtered = prev.filter((a) => a.truckId !== data.truckId || a.type !== "off-route");
+        const filtered = prev.filter(
+          (a) => a.truckId !== data.truckId || a.type !== "off-route",
+        );
         return [
-          { ...data, id: `offroute_${data.truckId}`, ts: new Date(), type: "off-route" },
+          {
+            ...data,
+            id: `offroute_${data.truckId}`,
+            ts: new Date(),
+            type: "off-route",
+          },
           ...filtered,
         ].slice(0, 3);
       });
@@ -1063,9 +1186,16 @@ export default function RouteMonitoring() {
         },
       }));
       setDeviationAlerts((prev) => {
-        const filtered = prev.filter((a) => a.truckId !== data.truckId || a.type !== "completed");
+        const filtered = prev.filter(
+          (a) => a.truckId !== data.truckId || a.type !== "completed",
+        );
         return [
-          { ...data, id: `completed_${data.truckId}`, ts: new Date(), type: "completed" },
+          {
+            ...data,
+            id: `completed_${data.truckId}`,
+            ts: new Date(),
+            type: "completed",
+          },
           ...filtered,
         ].slice(0, 5);
       });
@@ -1169,7 +1299,11 @@ export default function RouteMonitoring() {
                           : "bg-red-500/40 text-red-200"
                       }`}
                     >
-                      {isCompleted ? "SHIFT & PICKUP COMPLETED" : isContact ? "📞 DISPATCH REQUEST" : "⚠️ DRIVER NOT ON ROUTE"}
+                      {isCompleted
+                        ? "SHIFT & PICKUP COMPLETED"
+                        : isContact
+                          ? "📞 DISPATCH REQUEST"
+                          : "⚠️ DRIVER NOT ON ROUTE"}
                     </span>
                     <span className="text-xs font-bold text-slate-200 truncate">
                       Truck {alert.truckId}
@@ -1180,8 +1314,8 @@ export default function RouteMonitoring() {
                     {isCompleted
                       ? `Completed shift & waste pickups for ${alert.routeName || "the route"}`
                       : isContact
-                      ? alert.message
-                      : `Deviated ~${alert.distanceM || 100}m away from assigned path`}
+                        ? alert.message
+                        : `Deviated ~${alert.distanceM || 100}m away from assigned path`}
                     {" · "}
                     {new Date(alert.ts).toLocaleTimeString([], {
                       hour: "2-digit",
@@ -1209,12 +1343,13 @@ export default function RouteMonitoring() {
       <div className="flex flex-1 overflow-hidden gap-0 p-4 pb-0">
         {/* === LEFT SIDEBAR ================================= */}
         <div className="w-[340px] flex-shrink-0 bg-white rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-slate-200 flex flex-col overflow-hidden mr-4 pb-4">
-          
           {/* Quick Actions (Replaces original Route Builder tab) */}
           <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quick Actions</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Quick Actions
+            </span>
             <button
-              onClick={() => window.location.href = '/route-builder'}
+              onClick={() => (window.location.href = "/route-builder")}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
               title="Open Manual Route Builder"
             >
@@ -1227,7 +1362,9 @@ export default function RouteMonitoring() {
           <div className="p-5 border-b border-slate-100 pb-4">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${activeTruck?.isOffRoute ? 'bg-red-100 text-red-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
+                <div
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center ${activeTruck?.isOffRoute ? "bg-red-100 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}
+                >
                   <Truck className="w-5 h-5" />
                 </div>
                 <div>
@@ -1268,7 +1405,8 @@ export default function RouteMonitoring() {
                     DRIVER NOT ON ROUTE
                   </p>
                   <p className="text-[11px] font-semibold text-red-600 mt-0.5 leading-snug">
-                    Truck has deviated ~{activeTruck.offRouteDistance || 100}m away from the assigned collection path!
+                    Truck has deviated ~{activeTruck.offRouteDistance || 100}m
+                    away from the assigned collection path!
                   </p>
                 </div>
               </div>
@@ -1441,7 +1579,7 @@ export default function RouteMonitoring() {
                 <span className="text-sm font-medium text-slate-700 shrink-0">
                   Barangay:
                 </span>
-                {official?.barangay && official.barangay !== 'All' ? (
+                {official?.barangay && official.barangay !== "All" ? (
                   <span className="text-sm font-bold text-slate-800">
                     {official.barangay}
                   </span>
@@ -1454,7 +1592,11 @@ export default function RouteMonitoring() {
                     <option value="All">All Barangays</option>
                     {(barangayList.length > 0
                       ? barangayList
-                      : Array.from(new Set(reports.map((r) => r.barangay).filter(Boolean)))
+                      : Array.from(
+                          new Set(
+                            reports.map((r) => r.barangay).filter(Boolean),
+                          ),
+                        )
                     ).map((b) => (
                       <option key={b} value={b}>
                         {b}
@@ -1462,7 +1604,7 @@ export default function RouteMonitoring() {
                     ))}
                   </select>
                 )}
-                {(!official?.barangay || official.barangay === 'All') && (
+                {(!official?.barangay || official.barangay === "All") && (
                   <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2" />
                 )}
               </div>
@@ -1488,10 +1630,18 @@ export default function RouteMonitoring() {
           {/* ── Map Container ── */}
           <div className="flex-1 relative bg-slate-100">
             {loading ? (
-              <div className="w-full h-full flex items-center justify-center bg-white">
-                <div className="text-center">
-                  <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">Loading map data…</p>
+              <div className="w-full h-full bg-slate-100 animate-pulse flex flex-col justify-between p-6">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <div className="h-6 w-48 bg-slate-200 rounded-lg" />
+                    <div className="h-4 w-32 bg-slate-200 rounded" />
+                  </div>
+                  <div className="h-10 w-40 bg-slate-200 rounded-xl" />
+                </div>
+                <div className="h-48 w-full max-w-sm bg-white/70 backdrop-blur rounded-2xl p-4 space-y-3 self-end shadow-sm">
+                  <div className="h-5 w-36 bg-slate-200 rounded" />
+                  <div className="h-10 bg-slate-200 rounded-xl" />
+                  <div className="h-10 bg-slate-200 rounded-xl" />
                 </div>
               </div>
             ) : (
@@ -1501,6 +1651,7 @@ export default function RouteMonitoring() {
                 className="w-full h-full"
                 zoomControl={false}
               >
+                <FitBoundsToRoutes routes={mappableRoutes} />
                 <TileLayer
                   key={activeTileKey}
                   className={
@@ -1606,34 +1757,34 @@ export default function RouteMonitoring() {
                       />
                       {/* Route Waypoints (Always visible) */}
                       {route.waypoints
-                          .filter(
-                            (wp) =>
-                              wp.lat != null &&
-                              wp.lng != null &&
-                              !isNaN(wp.lat) &&
-                              !isNaN(wp.lng),
-                          )
-                          .map((wp, i) => {
-                            const isComp = i < completedStops;
-                            const isCurr = i === completedStops;
-                            return (
-                              <Marker
-                                key={i}
-                                position={[wp.lat, wp.lng]}
-                                icon={makeStopIcon(
-                                  i + 1,
-                                  i === 0,
-                                  i === route.waypoints.length - 1,
-                                  isComp,
-                                  isCurr,
-                                )}
-                              >
-                                <Popup>
-                                  <AddressPopup wp={wp} />
-                                </Popup>
-                              </Marker>
-                            );
-                          })}
+                        .filter(
+                          (wp) =>
+                            wp.lat != null &&
+                            wp.lng != null &&
+                            !isNaN(wp.lat) &&
+                            !isNaN(wp.lng),
+                        )
+                        .map((wp, i) => {
+                          const isComp = i < completedStops;
+                          const isCurr = i === completedStops;
+                          return (
+                            <Marker
+                              key={i}
+                              position={[wp.lat, wp.lng]}
+                              icon={makeStopIcon(
+                                i + 1,
+                                i === 0,
+                                i === route.waypoints.length - 1,
+                                isComp,
+                                isCurr,
+                              )}
+                            >
+                              <Popup>
+                                <AddressPopup wp={wp} />
+                              </Popup>
+                            </Marker>
+                          );
+                        })}
                     </span>
                   );
                 })}
@@ -1651,37 +1802,52 @@ export default function RouteMonitoring() {
                     <Marker
                       key={truck.truckId}
                       position={[truck.lat, truck.lng]}
-                      icon={makeTruckIcon(truck.status, truck.heading || 0, truck.isOffRoute)}
+                      icon={makeTruckIcon(
+                        truck.status,
+                        truck.heading || 0,
+                        truck.isOffRoute,
+                      )}
                     >
                       <Popup className="custom-report-popup" minWidth={240}>
                         <div className="p-3 bg-white rounded-xl text-slate-800 space-y-2">
                           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span className="font-bold text-sm text-slate-900">{truck.truckId}</span>
+                            <span className="font-bold text-sm text-slate-900">
+                              {truck.truckId}
+                            </span>
                             {truck.isOffRoute ? (
                               <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-black animate-pulse border border-red-200">
                                 ⚠️ OFF ROUTE
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                                {truck.status === 'online' ? 'Online' : truck.status || 'Active'}
+                                {truck.status === "online"
+                                  ? "Online"
+                                  : truck.status || "Active"}
                               </span>
                             )}
                           </div>
                           {truck.driverName && (
                             <p className="text-xs text-slate-600">
-                              Driver: <strong className="text-slate-900">{truck.driverName}</strong>
+                              Driver:{" "}
+                              <strong className="text-slate-900">
+                                {truck.driverName}
+                              </strong>
                             </p>
                           )}
                           {truck.isOffRoute && (
                             <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700">
-                              ⚠️ Deviated ~{truck.offRouteDistance || 100}m from assigned collection path!
+                              ⚠️ Deviated ~{truck.offRouteDistance || 100}m from
+                              assigned collection path!
                             </div>
                           )}
                         </div>
                       </Popup>
                       <Tooltip direction="top" offset={[0, -20]}>
-                        <span className={`font-bold text-xs ${truck.isOffRoute ? 'text-red-600 font-black' : 'text-slate-800'}`}>
-                          {truck.truckId} {truck.isOffRoute ? '⚠️ (OFF ROUTE)' : ''}
+                        <span
+                          className={`font-bold text-xs ${truck.isOffRoute ? "text-red-600 font-black" : "text-slate-800"}`}
+                        >
+                          {truck.truckId}{" "}
+                          {truck.isOffRoute ? "⚠️ (OFF ROUTE)" : ""}
                         </span>
                       </Tooltip>
                     </Marker>
@@ -1705,7 +1871,11 @@ export default function RouteMonitoring() {
                           (r.upvotes?.length || 0) - (r.downvotes?.length || 0),
                         )}
                       >
-                        <Popup className="custom-report-popup" minWidth={310} maxWidth={340}>
+                        <Popup
+                          className="custom-report-popup"
+                          minWidth={310}
+                          maxWidth={340}
+                        >
                           <ReportPopupContent
                             report={r}
                             onStatusUpdate={handleReportStatusUpdate}
@@ -1729,15 +1899,22 @@ export default function RouteMonitoring() {
                       !isNaN(c.lng) &&
                       (!selectedBarangay ||
                         selectedBarangay.toLowerCase() === "all" ||
-                        c.barangay?.toLowerCase() === selectedBarangay.toLowerCase()),
+                        c.barangay?.toLowerCase() ===
+                          selectedBarangay.toLowerCase()),
                   )
                   .map((c) => (
                     <Marker
-                      key={c._id || `${c.truckId}-${c.stopName}-${c.completedAt}`}
+                      key={
+                        c._id || `${c.truckId}-${c.stopName}-${c.completedAt}`
+                      }
                       position={[c.lat, c.lng]}
                       icon={makePickupCheckpointIcon()}
                     >
-                      <Popup className="custom-report-popup" minWidth={260} maxWidth={280}>
+                      <Popup
+                        className="custom-report-popup"
+                        minWidth={260}
+                        maxWidth={280}
+                      >
                         <PickupCheckpointPopupContent pickup={c} />
                       </Popup>
                       <Tooltip direction="top" offset={[0, -20]}>
@@ -1750,7 +1927,13 @@ export default function RouteMonitoring() {
 
                 {/* Live Clearing In Progress Markers */}
                 {Object.values(clearingSites)
-                  .filter((cs) => cs.lat != null && cs.lng != null && !isNaN(cs.lat) && !isNaN(cs.lng))
+                  .filter(
+                    (cs) =>
+                      cs.lat != null &&
+                      cs.lng != null &&
+                      !isNaN(cs.lat) &&
+                      !isNaN(cs.lng),
+                  )
                   .map((cs) => (
                     <Marker
                       key={`clearing-${cs.sitioName}-${cs.truckId}`}
@@ -1764,10 +1947,16 @@ export default function RouteMonitoring() {
                               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                               Clearing In Progress
                             </span>
-                            <span className="text-[10px] font-bold text-slate-400">{cs.truckId}</span>
+                            <span className="text-[10px] font-bold text-slate-400">
+                              {cs.truckId}
+                            </span>
                           </div>
-                          <p className="text-xs font-extrabold text-slate-100">{cs.sitioName}</p>
-                          <p className="text-[10px] text-slate-400">Driver: {cs.driverName || 'Collector'}</p>
+                          <p className="text-xs font-extrabold text-slate-100">
+                            {cs.sitioName}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Driver: {cs.driverName || "Collector"}
+                          </p>
                         </div>
                       </Popup>
                       <Tooltip direction="top" offset={[0, -20]}>
@@ -1791,7 +1980,9 @@ export default function RouteMonitoring() {
                     🧹 Clearing In Progress
                   </p>
                   <p className="text-xs font-bold text-slate-200">
-                    {Object.values(clearingSites).map(c => `${c.sitioName} (${c.truckId})`).join(', ')}
+                    {Object.values(clearingSites)
+                      .map((c) => `${c.sitioName} (${c.truckId})`)
+                      .join(", ")}
                   </p>
                 </div>
               </div>
@@ -1808,10 +1999,12 @@ export default function RouteMonitoring() {
                     Route Completed 100%
                   </p>
                   <p className="text-xs font-bold text-slate-100">
-                    {completedRouteAlert.routeName || `${completedRouteAlert.barangay} Collection Route`}
+                    {completedRouteAlert.routeName ||
+                      `${completedRouteAlert.barangay} Collection Route`}
                   </p>
                   <p className="text-[10px] text-emerald-300/80">
-                    Truck: {completedRouteAlert.truckId} · Driver: {completedRouteAlert.driverName || 'Collector'}
+                    Truck: {completedRouteAlert.truckId} · Driver:{" "}
+                    {completedRouteAlert.driverName || "Collector"}
                   </p>
                 </div>
                 <button
@@ -1828,7 +2021,9 @@ export default function RouteMonitoring() {
               {/* Route Color Selector Dropdown */}
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100/90 rounded-xl">
                 <Palette className="w-4 h-4 text-slate-500" />
-                <span className="text-xs font-bold text-slate-700">Route Color:</span>
+                <span className="text-xs font-bold text-slate-700">
+                  Route Color:
+                </span>
                 <div className="flex items-center gap-1.5 ml-1">
                   {[
                     { name: "Emerald", hex: "#059669" },
@@ -1858,7 +2053,9 @@ export default function RouteMonitoring() {
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                <Flame className={`w-4 h-4 ${showHeatmap ? "animate-pulse text-amber-300" : "text-slate-400"}`} />
+                <Flame
+                  className={`w-4 h-4 ${showHeatmap ? "animate-pulse text-amber-300" : "text-slate-400"}`}
+                />
                 Heatmap
               </button>
 
@@ -1902,25 +2099,42 @@ export default function RouteMonitoring() {
               </h4>
               <div className="space-y-2">
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck (Live)
+                  <Truck className="w-3.5 h-3.5 text-emerald-600" /> Truck
+                  (Live)
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-3.5 h-3.5 rounded-full border border-white flex items-center justify-center text-[9px] font-bold text-white shadow-sm" style={{ backgroundColor: selectedColorHex }}>1</div> Zone Boundary
+                  <div
+                    className="w-3.5 h-3.5 rounded-full border border-white flex items-center justify-center text-[9px] font-bold text-white shadow-sm"
+                    style={{ backgroundColor: selectedColorHex }}
+                  >
+                    1
+                  </div>{" "}
+                  Zone Boundary
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-4 h-1 rounded-full" style={{ backgroundColor: selectedColorHex }}></div> Route Path
+                  <div
+                    className="w-4 h-1 rounded-full"
+                    style={{ backgroundColor: selectedColorHex }}
+                  ></div>{" "}
+                  Route Path
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-rose-500 opacity-80"></div> Heatmap Glow
+                  <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-rose-500 opacity-80"></div>{" "}
+                  Heatmap Glow
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm flex items-center justify-center text-[8px] text-white font-bold">✓</div> Completed Stop
+                  <div className="w-3.5 h-3.5 bg-emerald-500 rounded-full border border-white shadow-sm flex items-center justify-center text-[8px] text-white font-bold">
+                    ✓
+                  </div>{" "}
+                  Completed Stop
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
-                  <div className="w-3.5 h-3.5 bg-blue-600 rounded-full border border-white shadow-sm"></div> Current Stop
+                  <div className="w-3.5 h-3.5 bg-blue-600 rounded-full border border-white shadow-sm"></div>{" "}
+                  Current Stop
                 </div>
                 <div className="flex items-center gap-2.5 text-[11px] text-rose-700 font-semibold pt-1 border-t border-slate-100 mt-1">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Waste Report Alert
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Waste
+                  Report Alert
                 </div>
               </div>
             </div>

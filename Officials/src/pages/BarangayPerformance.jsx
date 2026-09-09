@@ -118,8 +118,19 @@ function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
         {/* List */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center h-40">
-              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+            <div className="p-5 space-y-3 animate-pulse">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-14 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between px-4">
+                  <div className="flex items-center gap-3 w-1/2">
+                    <div className="w-8 h-8 bg-slate-200 rounded-full" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-3.5 w-24 bg-slate-200 rounded" />
+                      <div className="h-2.5 w-16 bg-slate-100 rounded" />
+                    </div>
+                  </div>
+                  <div className="h-4 w-16 bg-slate-200 rounded" />
+                </div>
+              ))}
             </div>
           ) : residents.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-2">

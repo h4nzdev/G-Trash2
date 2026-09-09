@@ -271,9 +271,9 @@ export default function WasteAnalytics() {
               <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold">
                 <tr>
                   <th className="px-6 py-4">Sitio</th>
-                  <th className="px-6 py-4 text-center">IoT Gas Sensor</th>
-                  <th className="px-6 py-4 text-center">Ammonia (NH₃)</th>
-                  <th className="px-6 py-4 text-center">Methane (CH₄)</th>
+                  <th className="px-6 py-4 text-center">IoT Air Quality Sensor</th>
+                  <th className="px-6 py-4 text-center">Raw ADC Value</th>
+                  <th className="px-6 py-4 text-center">Sensor Voltage</th>
                   <th className="px-6 py-4 text-center">Active Reports</th>
                   <th className="px-6 py-4 text-center">Resolved Reports</th>
                 </tr>
@@ -297,8 +297,8 @@ export default function WasteAnalytics() {
                         <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-400">No Sensor</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.ammonia}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.methane}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.rawValue !== undefined ? s.rawValue : (s.hasSensor ? 0 : '-')}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600 text-center font-semibold">{s.rawValue !== undefined ? `${((s.rawValue * 3.3) / 4095.0).toFixed(2)} V` : (s.hasSensor ? '0.00 V' : '-')}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`text-sm font-bold ${s.pendingReports > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
                         {s.pendingReports}

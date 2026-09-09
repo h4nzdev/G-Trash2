@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 
@@ -76,6 +77,18 @@ export default function CalendarScreen() {
     fetchSchedules(currentYear, currentMonth);
   }, [fetchSchedules, currentYear, currentMonth]);
 
+  useEffect(() => {
+    const socket = io(API_URL, { transports: ["polling", "websocket"] });
+    socket.on("route:completed", () => fetchSchedules(currentYear, currentMonth));
+    socket.on("schedule:task:completed", () => fetchSchedules(currentYear, currentMonth));
+    socket.on("schedules:updated", () => fetchSchedules(currentYear, currentMonth));
+    socket.on("pickup:completed", () => fetchSchedules(currentYear, currentMonth));
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [fetchSchedules, currentYear, currentMonth]);
+
   const collectionDays = useMemo(() => {
     const days = new Set();
     schedules.forEach((s) => {
@@ -109,7 +122,19 @@ export default function CalendarScreen() {
         const matchingSched = schedules.find(
           (s) => s.date === `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(upcoming[0]).padStart(2, "0")}`
         );
+        const isDone = matchingSched?.status === "completed" ||
+          (matchingSched?.sitioTasks?.length > 0 && matchingSched.sitioTasks.every((t) => t.completed));
+
         if (diff === 0) {
+          if (isDone) {
+            return {
+              label: "Completed ✓",
+              sub: matchingSched ? `Route: ${matchingSched.routeName || matchingSched.barangay}` : "Today's collection completed",
+              truck: matchingSched?.truckId,
+              urgent: false,
+              isCompleted: true,
+            };
+          }
           return {
             label: "Today!",
             sub: matchingSched ? `Route: ${matchingSched.routeName || matchingSched.barangay}` : "Collection scheduled for today",
@@ -132,7 +157,7 @@ export default function CalendarScreen() {
           urgent: false,
         };
       }
-      return { label: "Completed", sub: "No more pickups remaining this month", urgent: false };
+      return { label: "Completed ✓", sub: "No more pickups remaining this month", urgent: false, isCompleted: true };
     }
     const sorted = [...collectionDays].sort((a, b) => a - b);
     return sorted.length > 0
@@ -398,21 +423,23 @@ export default function CalendarScreen() {
                 const dayNum = sched.date?.split("-")[2] || "01";
                 const isPast = isCurrentMonth && parseInt(dayNum, 10) < today.getDate();
                 const isToday = isCurrentMonth && parseInt(dayNum, 10) === today.getDate();
+                const isDone = sched.status === "completed" ||
+                  (sched.sitioTasks && sched.sitioTasks.length > 0 && sched.sitioTasks.every(t => t.completed));
 
                 return (
                   <TouchableOpacity
                     key={sched._id || idx}
-                    style={[styles.scheduleCard, isToday && styles.scheduleCardToday]}
+                    style={[styles.scheduleCard, isToday && !isDone && styles.scheduleCardToday]}
                     onPress={() => setSelectedDay(parseInt(dayNum, 10))}
                     activeOpacity={0.8}
                   >
                     <View style={styles.scheduleCardHeader}>
                       {/* Date Stamp Pill */}
-                      <View style={[styles.dateStamp, isToday && styles.dateStampToday, isPast && styles.dateStampPast]}>
-                        <Text style={[styles.dateStampMonth, isToday && styles.dateStampMonthToday]}>
+                      <View style={[styles.dateStamp, isToday && !isDone && styles.dateStampToday, (isPast || isDone) && styles.dateStampPast]}>
+                        <Text style={[styles.dateStampMonth, isToday && !isDone && styles.dateStampMonthToday]}>
                           {MONTH_NAMES[currentMonth].slice(0, 3).toUpperCase()}
                         </Text>
-                        <Text style={[styles.dateStampDay, isToday && styles.dateStampDayToday]}>
+                        <Text style={[styles.dateStampDay, isToday && !isDone && styles.dateStampDayToday]}>
                           {dayNum}
                         </Text>
                       </View>
@@ -430,13 +457,25 @@ export default function CalendarScreen() {
 
                       <View style={[
                         styles.statusPill,
-                        isToday ? styles.statusPillToday : isPast ? styles.statusPillPast : styles.statusPillActive
+                        isDone
+                          ? styles.statusPillDone
+                          : isToday
+                            ? styles.statusPillToday
+                            : isPast
+                              ? styles.statusPillPast
+                              : styles.statusPillActive
                       ]}>
                         <Text style={[
                           styles.statusPillText,
-                          isToday ? styles.statusPillTextToday : isPast ? styles.statusPillTextPast : styles.statusPillTextActive
+                          isDone
+                            ? styles.statusPillTextDone
+                            : isToday
+                              ? styles.statusPillTextToday
+                              : isPast
+                                ? styles.statusPillTextPast
+                                : styles.statusPillTextActive
                         ]}>
-                          {isToday ? "TODAY" : isPast ? "COMPLETED" : "UPCOMING"}
+                          {isDone ? "COMPLETED" : isToday ? "TODAY" : isPast ? "COMPLETED" : "UPCOMING"}
                         </Text>
                       </View>
                     </View>

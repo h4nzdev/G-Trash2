@@ -339,9 +339,22 @@ export default function FleetManagement() {
         </div>
 
         {loading ? (
-          <div className="py-16 text-center">
-            <div className="w-7 h-7 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Loading fleet...</p>
+          <div className="p-6 space-y-4 animate-pulse">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between px-6 gap-4">
+                <div className="flex items-center gap-3 w-1/4">
+                  <div className="w-9 h-9 bg-slate-200 rounded-xl" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-4 w-20 bg-slate-200 rounded" />
+                    <div className="h-3 w-16 bg-slate-100 rounded" />
+                  </div>
+                </div>
+                <div className="h-4 w-28 bg-slate-200 rounded" />
+                <div className="h-6 w-20 bg-slate-100 rounded-full" />
+                <div className="h-4 w-24 bg-slate-200 rounded" />
+                <div className="h-8 w-24 bg-slate-100 rounded-lg" />
+              </div>
+            ))}
           </div>
         ) : fleet.length === 0 ? (
           <div className="py-16 text-center">

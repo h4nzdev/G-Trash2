@@ -428,8 +428,13 @@ export default function ScheduleRoute() {
 
           {/* Day cells */}
           {loading ? (
-            <div className="py-12 flex items-center justify-center">
-              <div className="w-6 h-6 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            <div className="grid grid-cols-7 gap-1 animate-pulse">
+              {Array.from({ length: 35 }).map((_, idx) => (
+                <div key={idx} className="h-14 bg-slate-50 border border-slate-100 rounded-xl p-1.5 flex flex-col justify-between">
+                  <div className="h-3 w-4 bg-slate-200 rounded" />
+                  <div className="h-2 w-full bg-slate-100 rounded" />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-7 gap-1">
