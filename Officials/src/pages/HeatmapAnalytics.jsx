@@ -229,6 +229,22 @@ function AirQualityTrendModal({ zone, onClose }) {
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Gauge className="w-4 h-4 text-blue-500" /> Raw ADC Value
+                </span>
+                <span className={`text-base font-black ${zone.status === 'critical' ? 'text-red-600' : 'text-slate-800'}`}>
+                  {zone.rawValue || 0} <span className="text-[10px] font-medium text-slate-400">/ 4095</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-indigo-500" /> Sensor Voltage
+                </span>
+                <span className="text-base font-black text-slate-800">
+                  {((zone.rawValue || 0) * (3.3 / 4095.0)).toFixed(2)} V
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Wind className="w-4 h-4 text-emerald-600" /> Ammonia (NH₃)
                 </span>
                 <span className="text-base font-black text-slate-800">
@@ -837,21 +853,24 @@ export default function HeatmapAnalytics() {
         sensorId: updatedArea.sensorId || updatedArea._id,
         status: updatedArea.status,
         title: `IoT: ${updatedArea.name}`,
-        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.ammonia ? `  ·  NH₃ ${updatedArea.ammonia}` : ''}`,
+        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.rawValue ? `  ·  Raw ADC: ${updatedArea.rawValue}` : ''}${updatedArea.ammonia ? `  ·  NH₃ ${updatedArea.ammonia}` : ''}${updatedArea.airQuality ? `  ·  ${updatedArea.airQuality}` : ''}`,
       });
     });
 
-    // When a new IoT alert arrives, show as toast (deduplicated — one per gas type per sensor)
+    // When a new IoT alert arrives, show as toast for all severities
     socket.on('iot:alert', (alert) => {
-      if (alert.severity === 'critical') {
-        addToast({
-          type: 'alert',
-          sensorId: `${alert.sensorId}-${alert.gasType}`,
-          status: 'critical',
-          title: `Critical: ${alert.location || alert.sensorId}`,
-          body: alert.message,
-        });
-      }
+      const isClean = alert.severity === 'info' || alert.gasType === 'normal';
+      addToast({
+        type: isClean ? 'cleaned' : 'alert',
+        sensorId: `${alert.sensorId}-${alert.gasType}`,
+        status: isClean ? 'clean' : alert.severity,
+        title: isClean
+          ? `Clean Air: ${alert.location || alert.sensorId}`
+          : alert.severity === 'critical'
+            ? `Critical: ${alert.location || alert.sensorId}`
+            : `Warning: ${alert.location || alert.sensorId}`,
+        body: alert.message,
+      });
     });
 
     // When a zone changes status (collection, IoT, report)
@@ -1410,7 +1429,17 @@ export default function HeatmapAnalytics() {
                       <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
                         <BarChart2 className="w-3.5 h-3.5" /> Sensor Readings
                       </h4>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4 mb-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Raw ADC Value</span>
+                          <span className={`text-lg font-black ${zone.status === 'critical' ? 'text-red-600' : 'text-slate-800'}`}>{zone.rawValue || 0} <span className="text-[10px] font-medium text-slate-400">/ 4095</span></span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Sensor Voltage</span>
+                          <span className="text-lg font-black text-slate-800">{((zone.rawValue || 0) * (3.3 / 4095.0)).toFixed(2)} V</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mb-3">
                         <div>
                           <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Ammonia (NH₃)</span>
                           <span className="text-lg font-black text-slate-800">{zone.ammonia || '0 ppm'}</span>
@@ -1420,6 +1449,17 @@ export default function HeatmapAnalytics() {
                           <span className="text-lg font-black text-slate-800">{zone.methane || '0 ppm'}</span>
                         </div>
                       </div>
+                      {zone.airQuality && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Air Quality:</span>
+                          <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${
+                            zone.airQuality === 'Hazardous' ? 'bg-red-100 text-red-700' :
+                            zone.airQuality === 'Unhealthy' ? 'bg-red-100 text-red-600' :
+                            zone.airQuality === 'Moderate' ? 'bg-amber-100 text-amber-700' :
+                            'bg-emerald-100 text-emerald-700'
+                          }`}>{zone.airQuality}</span>
+                        </div>
+                      )}
                     </div>
 
                     <button

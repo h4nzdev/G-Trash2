@@ -4871,10 +4871,10 @@ const IOT_THRESHOLDS = {
   binLevel: { moderate: 70, critical: 90 }, // %
 };
 
-function classifyAirQuality(ammonia, methane) {
-  if (ammonia >= 45 || methane >= 2.5) return "Hazardous";
-  if (ammonia >= 25 || methane >= 1.5) return "Unhealthy";
-  if (ammonia >= 15 || methane >= 0.8) return "Moderate";
+function classifyAirQuality(ammonia) {
+  if (ammonia >= 45) return "Hazardous";
+  if (ammonia >= 25) return "Unhealthy";
+  if (ammonia >= 15) return "Moderate";
   return "Good";
 }
 
@@ -4921,6 +4921,17 @@ function generateIoTAlerts(reading) {
       severity: "moderate",
       message: `WARNING parameters approaching limits: ${exceededModerate.join(", ")}`,
       gasType: "multiple",
+      value: reading.rawValue || 0,
+      threshold: 0,
+    });
+  } else {
+    alerts.push({
+      sensorId: reading.sensorId,
+      location: reading.location || "",
+      barangay: reading.barangay || "",
+      severity: "info",
+      message: `CLEAN AIR: Normal air quality detected at ${reading.location || reading.sensorId} (${reading.barangay || 'Apas'}). Raw ADC: ${reading.rawValue || 0}`,
+      gasType: "normal",
       value: reading.rawValue || 0,
       threshold: 0,
     });
@@ -5047,11 +5058,14 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         status: areaStatus,
         ammonia: `${ammonia} ppm`,
         methane: `${methane}%`,
+        rawValue: rawValue,
+        airQuality: airQuality,
         intensity: areaIntensity,
         barangay: finalBarangay || "",
         sensorId,
         source: "iot",
         name: finalLocation || sensorId,
+        updatedAt: new Date(),
       },
       { upsert: true, new: true },
     );
