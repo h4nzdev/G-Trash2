@@ -271,6 +271,8 @@ export default function CollectorHistoryScreen() {
                                 <Text style={styles.logMetaText}>{item.wasteType || "General"}</Text>
                                 <View style={styles.logMetaDot} />
                                 <Text style={styles.logMetaText}>{item.bins} bins</Text>
+                                <View style={styles.logMetaDot} />
+                                <Text style={styles.logMetaText}>{item.durationMinutes || item.duration || 30} mins</Text>
                               </View>
                             </View>
                             <View style={styles.logContentRight}>

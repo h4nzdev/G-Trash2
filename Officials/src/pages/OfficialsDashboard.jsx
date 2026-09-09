@@ -11,6 +11,7 @@ import PollutionChart from '../components/dashboard/PollutionChart';
 import RecentAlerts from '../components/dashboard/RecentAlerts';
 import BarangayRanking from '../components/dashboard/BarangayRanking';
 import RecentReportsWidget from '../components/dashboard/RecentReportsWidget';
+import SensorStatusWidget from '../components/dashboard/SensorStatusWidget';
 import ProgressBar from '../components/shared/ProgressBar';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -819,6 +820,9 @@ export default function OfficialsDashboard() {
                   </button>
                 </div>
               </div>
+
+              {/* Live MQ-135 Sensor Status Widget */}
+              <SensorStatusWidget readings={latestReadings} onNavigateAlerts={() => navigate('/alerts')} />
 
               {/* Active IoT Alerts */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">

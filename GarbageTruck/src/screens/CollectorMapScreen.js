@@ -883,6 +883,7 @@ export default function CollectorMapScreen() {
           beforeImage: finalBeforeUrl,
           afterImage: finalAfterUrl,
           status: 'verified',
+          durationMinutes: shiftStartRef.current ? Math.max(15, Math.floor((Date.now() - shiftStartRef.current) / 60000)) : 30,
           lat,
           lng,
           completedAt,

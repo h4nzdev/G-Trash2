@@ -367,6 +367,7 @@ export default function CollectorHomeScreen() {
         beforeImage: finalBeforeUrl,
         afterImage: finalAfterUrl,
         status: flowStatus,
+        durationMinutes: 30,
       };
 
       const submitLogPromise = new Promise((resolve, reject) => {

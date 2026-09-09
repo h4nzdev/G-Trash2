@@ -274,6 +274,7 @@ const collectionLogSchema = new mongoose.Schema({
   beforeImage: { type: String, default: "" },
   afterImage: { type: String, default: "" },
   status: { type: String, default: "clean" }, // clean, moderate, critical
+  durationMinutes: { type: Number, default: 30 },
   completedAt: { type: Date, default: Date.now },
 });
 const CollectionLog = mongoose.model("CollectionLog", collectionLogSchema);
@@ -1028,6 +1029,7 @@ async function seedDriverAnalytics() {
             beforeImage: "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80",
             afterImage: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80",
             status: "clean",
+            durationMinutes: 25 + (s * 10),
             completedAt,
           });
         }
@@ -1051,7 +1053,7 @@ async function seedDriverAnalytics() {
       console.log(`[Backend] Seeded ${sampleLogs.length} collection logs and ${sampleRuns.length} pickup runs for GT-QSO.`);
     }
 
-    // Backfill photos for any existing collection logs without images
+    // Backfill photos & duration for any existing collection logs
     await CollectionLog.updateMany(
       { $or: [{ beforeImage: "" }, { beforeImage: { $exists: false } }] },
       {
@@ -1060,6 +1062,10 @@ async function seedDriverAnalytics() {
           afterImage: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80"
         }
       }
+    );
+    await CollectionLog.updateMany(
+      { $or: [{ durationMinutes: { $exists: false } }, { durationMinutes: null }, { durationMinutes: 0 }] },
+      { $set: { durationMinutes: 35 } }
     );
 
     const sajLogsCount = await CollectionLog.countDocuments({ truckId: /GT-SAJ/i });
@@ -4614,6 +4620,8 @@ app.post("/api/collections", async (req, res) => {
     beforeImage,
     afterImage,
     status,
+    durationMinutes,
+    duration,
     completedAt,
   } = req.body;
   if (!truckId) {
@@ -4621,6 +4629,7 @@ app.post("/api/collections", async (req, res) => {
   }
   const date = rawDate || new Date().toLocaleDateString("en-CA");
   try {
+    const parsedDuration = Number(durationMinutes || duration || 30);
     const log = await CollectionLog.create({
       truckId,
       date,
@@ -4637,6 +4646,7 @@ app.post("/api/collections", async (req, res) => {
       beforeImage: beforeImage || "",
       afterImage: afterImage || "",
       status: status || "clean",
+      durationMinutes: parsedDuration,
       completedAt: completedAt ? new Date(completedAt) : new Date(),
     });
     io.emit("collection:new", log);
@@ -4945,16 +4955,26 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   try {
     const airQuality = classifyAirQuality(ammonia, methane);
 
-    // 1. Look up existing pre-registered GarbageArea from dashboard
-    const existingArea = await GarbageArea.findOne({ sensorId });
+    // 1. Look up existing pre-registered GarbageArea from dashboard or auto-create zone
+    let existingArea = await GarbageArea.findOne({ sensorId });
     if (!existingArea) {
-      return res.status(403).json({ error: `Sensor ID "${sensorId}" is not registered by officials.` });
+      existingArea = await GarbageArea.create({
+        sensorId,
+        name: location || `Sensor Area ${sensorId}`,
+        barangay: barangay || "Apas",
+        lat: lat || 10.3321,
+        lng: lng || 123.9082,
+        source: "iot",
+        status: "clean",
+        intensity: 0.2,
+      });
+      io.emit("garbage-area:updated", existingArea);
     }
 
     const finalLat = existingArea.lat;
     const finalLng = existingArea.lng;
-    const finalBarangay = existingArea.barangay;
-    const finalLocation = existingArea.name;
+    const finalBarangay = existingArea.barangay || barangay || "Apas";
+    const finalLocation = existingArea.name || location || "2nd Street";
 
     // 3. Save reading with the resolved coordinates
     const reading = await SensorReading.create({

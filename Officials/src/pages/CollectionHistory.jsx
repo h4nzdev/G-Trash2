@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X } from 'lucide-react';
+import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -20,8 +20,15 @@ const WASTE_COLORS = {
   Bulky:      'bg-amber-100 text-amber-700',
 };
 
+function formatDuration(mins) {
+  if (mins === undefined || mins === null || isNaN(mins) || mins <= 0) mins = 30;
+  if (mins < 60) return `${mins} mins`;
+  const hrs = (mins / 60).toFixed(1);
+  return `${hrs.endsWith('.0') ? Math.floor(mins / 60) : hrs} hrs`;
+}
+
 function exportCSV(data) {
-  const headers = ['Date', 'Truck ID', 'Driver Name', 'Stop Name', 'Stop Address', 'Route', 'Waste Type', 'Bins', 'Completed At'];
+  const headers = ['Date', 'Truck ID', 'Driver Name', 'Stop Name', 'Stop Address', 'Route', 'Waste Type', 'Bins', 'Duration', 'Completed At'];
   const rows = data.map((r) => [
     r.date,
     r.truckId,
@@ -31,6 +38,7 @@ function exportCSV(data) {
     r.routeName  || '',
     r.wasteType  || 'General',
     r.bins       ?? 0,
+    formatDuration(r.durationMinutes || r.duration || 30),
     new Date(r.completedAt).toLocaleString(),
   ]);
   const csv = [headers, ...rows]
@@ -118,12 +126,14 @@ export default function CollectionHistory() {
   const stats = useMemo(() => {
     const totalWeight = logs.reduce((s, r) => s + (r.weight ?? 0), 0);
     const totalBins   = logs.reduce((s, r) => s + (r.bins   ?? 0), 0);
+    const totalDurationMins = logs.reduce((s, r) => s + (r.durationMinutes || r.duration || 30), 0);
+    const avgDurationMins = logs.length > 0 ? Math.round(totalDurationMins / logs.length) : 0;
 
     const truckCounts = {};
     logs.forEach((r) => { truckCounts[r.truckId] = (truckCounts[r.truckId] || 0) + 1; });
     const mostActive = Object.entries(truckCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
 
-    return { totalWeight, totalBins, totalStops: logs.length, mostActive };
+    return { totalWeight, totalBins, totalStops: logs.length, mostActive, totalDurationMins, avgDurationMins };
   }, [logs]);
 
   const handlePeriodChange = (val) => {
@@ -140,27 +150,37 @@ export default function CollectionHistory() {
     <div className="p-6 space-y-6">
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             icon: Package,
             label: 'Total Stops',
             value: loading ? '…' : stats.totalStops.toLocaleString(),
+            sub: '',
             color: 'bg-blue-100 text-blue-700',
           },
           {
             icon: Truck,
             label: 'Most Active Truck',
             value: loading ? '…' : stats.mostActive,
+            sub: '',
             color: 'bg-purple-100 text-purple-700',
           },
           {
             icon: Archive,
             label: 'Total Bins',
             value: loading ? '…' : stats.totalBins.toLocaleString(),
+            sub: '',
             color: 'bg-amber-100 text-amber-700',
           },
-        ].map(({ icon: Icon, label, value, color }) => (
+          {
+            icon: Clock,
+            label: 'Total Collection Time',
+            value: loading ? '…' : formatDuration(stats.totalDurationMins),
+            sub: loading ? '' : `Avg ${formatDuration(stats.avgDurationMins)} / stop`,
+            color: 'bg-emerald-100 text-emerald-700',
+          },
+        ].map(({ icon: Icon, label, value, sub, color }) => (
           <div key={label} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center gap-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
               <Icon className="w-5 h-5" />
@@ -168,6 +188,7 @@ export default function CollectionHistory() {
             <div>
               <p className="text-xs text-slate-500 font-medium">{label}</p>
               <p className="text-base font-bold text-slate-900">{value}</p>
+              {sub ? <p className="text-[11px] text-slate-400 font-medium mt-0.5">{sub}</p> : null}
             </div>
           </div>
         ))}
@@ -280,7 +301,7 @@ export default function CollectionHistory() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                {['Date', 'Truck ID', 'Driver', 'Stop Name', 'Route', 'Waste Type', 'Bins', ...(isChd ? ['Days Since'] : []), 'Verification'].map((h) => (
+                {['Date', 'Truck ID', 'Driver', 'Stop Name', 'Route', 'Waste Type', 'Bins', 'Duration', ...(isChd ? ['Days Since'] : []), 'Verification'].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -291,7 +312,7 @@ export default function CollectionHistory() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    {Array.from({ length: isChd ? 9 : 8 }).map((__, j) => (
+                    {Array.from({ length: isChd ? 10 : 9 }).map((__, j) => (
                       <td key={j} className="px-5 py-4">
                         <div className="h-3 bg-slate-100 rounded w-3/4" />
                       </td>
@@ -300,7 +321,7 @@ export default function CollectionHistory() {
                 ))
               ) : paged.length === 0 ? (
                 <tr>
-                  <td colSpan={isChd ? 9 : 8} className="px-5 py-16 text-center">
+                  <td colSpan={isChd ? 10 : 9} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="w-8 h-8 text-slate-300" />
                       <p className="text-sm text-slate-400 font-medium">No collection logs found</p>
@@ -343,6 +364,12 @@ export default function CollectionHistory() {
                     </td>
                     <td className="px-5 py-3.5 text-sm font-semibold text-slate-700">
                       {row.bins ?? 0}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-semibold text-emerald-700 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>{formatDuration(row.durationMinutes || row.duration || 30)}</span>
+                      </div>
                     </td>
                     {isChd && (
                       <td className="px-5 py-3.5 text-sm font-bold whitespace-nowrap">
@@ -421,7 +448,7 @@ export default function CollectionHistory() {
             {/* Content */}
             <div className="p-6 space-y-6">
               {/* Meta information row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs font-semibold text-slate-600">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs font-semibold text-slate-600">
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Truck / Driver</span>
                   <span className="text-slate-800 font-bold">{selectedLogProof.truckId}</span>
@@ -436,6 +463,13 @@ export default function CollectionHistory() {
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Bins Cleared</span>
                   <span className="text-slate-800 font-black text-sm">{selectedLogProof.bins ?? 0} bins</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Duration</span>
+                  <span className="text-emerald-700 font-bold text-xs flex items-center gap-1 mt-0.5">
+                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                    {formatDuration(selectedLogProof.durationMinutes || selectedLogProof.duration || 30)}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Status</span>

@@ -32,7 +32,6 @@ import { io } from "socket.io-client";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import HeatmapLegend from "../components/HeatmapLegend";
 import API_URL from "../config";
 import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
@@ -82,7 +81,7 @@ const CEBU_BARANGAYS = [
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const COLLAPSED_HEIGHT = 80;
-const EXPANDED_HEIGHT = SCREEN_HEIGHT * 0.52;
+const EXPANDED_HEIGHT = SCREEN_HEIGHT * 0.44;
 
 function buildLeafletHTML(truckB64) {
   return `<!DOCTYPE html>
@@ -255,16 +254,17 @@ function buildLeafletHTML(truckB64) {
       function drawUserRadius(lat, lng) {
         radiusCircles.forEach(function(c) { map.removeLayer(c); });
         radiusCircles = [];
-        [
-          { radius: 25, color: '#E53935' },
-          { radius: 50, color: '#FDD835' },
-          { radius: 75, color: '#4CAF50' },
-        ].forEach(function(l) {
-          radiusCircles.push(L.circle([lat, lng], {
-            radius: l.radius, color: l.color,
-            fillOpacity: 0, weight: 2.5, dashArray: '6 4', opacity: 0.8, interactive: false,
-          }).addTo(map));
-        });
+        // Tight notification radius boundary (50m)
+        radiusCircles.push(L.circle([lat, lng], {
+          radius: 50,
+          color: '#059669',
+          fillColor: '#059669',
+          fillOpacity: 0.1,
+          weight: 1.5,
+          dashArray: '5 4',
+          opacity: 0.8,
+          interactive: false,
+        }).addTo(map));
       }
 
       function makeTruckIcon(truckId, heading) {
@@ -401,21 +401,19 @@ function buildLeafletHTML(truckB64) {
 
       window.updateUserLocation = function(lat, lng, autoPan) {
         if (userMarker) { map.removeLayer(userMarker); }
-        if (userPulseCircle) { map.removeLayer(userPulseCircle); }
+        if (userPulseCircle) { map.removeLayer(userPulseCircle); userPulseCircle = null; }
         userMarker = L.marker([lat, lng], {
           icon: L.divIcon({
-            html: '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:32px; height:32px;">' +
-                  '<svg viewBox="0 0 24 24" width="32" height="32" fill="#1A73E8" stroke="#FFFFFF" stroke-width="1.5" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));">' +
-                  '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />' +
+            html: '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:36px; height:44px;">' +
+                  '<svg viewBox="0 0 36 44" width="36" height="44" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));">' +
+                  '<path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 26 18 26s18-13.5 18-26C36 8.06 27.94 0 18 0z" fill="#1B1C1C" />' +
+                  '<circle cx="18" cy="16.5" r="10.5" fill="#FFFFFF" />' +
+                  '<circle cx="18" cy="13" r="3.8" fill="#1B1C1C" />' +
+                  '<path d="M11.8 23c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2v0.8h-12.4V23z" fill="#1B1C1C" />' +
                   '</svg>' +
-                  '<div class="user-pulse" style="left: -2px; top: -2px;"></div>' +
                   '</div>',
-            iconSize: [32, 32], iconAnchor: [16, 32], className: '',
+            iconSize: [36, 44], iconAnchor: [18, 44], className: '',
           })
-        }).addTo(map);
-        userPulseCircle = L.circle([lat, lng], {
-          radius: 10, color: '#1A73E8', fillColor: '#1A73E8',
-          fillOpacity: 0.08, weight: 1.5, dashArray: '4 4', interactive: false,
         }).addTo(map);
         drawUserRadius(lat, lng);
         if (autoPan) {
@@ -728,23 +726,23 @@ export default function MapScreen() {
       const loc = userLocationRef.current;
       if (loc) {
         const distM = getDistanceM(loc.lat, loc.lng, lat, lng);
-        if (distM < 350 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
+        if (distM < 50 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
           truckAlertFiredRef.current.add(`near-${truckId}`);
           clearTimeout(toastTimerRef.current);
-          setProximityToast(`🚚 Truck ${truckId} is very close to your location — prepare your bin!`);
+          setProximityToast(`🚚 Truck ${truckId} is right at your location (~${Math.round(distM)}m) — prepare your bin!`);
           toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
           Notifications.scheduleNotificationAsync({
             content: {
               title: "Garbage Truck Very Close!",
-              body: `Truck ${truckId} is passing near your location — please have your bin ready.`,
+              body: `Truck ${truckId} is passing right near your location — please have your bin ready.`,
               sound: true,
             },
             trigger: null,
           }).catch(() => {});
-        } else if (distM < 1050 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
+        } else if (distM < 200 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
           truckAlertFiredRef.current.add(`approach-${truckId}`);
           clearTimeout(toastTimerRef.current);
-          setProximityToast(`🚚 Truck ${truckId} is approaching your area.`);
+          setProximityToast(`🚚 Truck ${truckId} is approaching your area (~${Math.round(distM)}m).`);
           toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
           Notifications.scheduleNotificationAsync({
             content: {
@@ -1017,139 +1015,6 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
-      
-      {/* Top Header Control Bar */}
-      <View style={{
-        backgroundColor: '#006A3B',
-        paddingTop: Math.max(10, topInset + 4),
-        paddingBottom: 10,
-      }}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 14,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          {/* Barangay Switcher Dropdown Button */}
-          <TouchableOpacity
-            style={{
-              height: 38,
-              backgroundColor: 'rgba(255, 255, 255, 0.15)',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.25)',
-              paddingHorizontal: 14,
-              borderRadius: 19,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-            }}
-            onPress={() => setShowBarangayModal(true)}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="location-on" size={16} color="#FFFFFF" />
-            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
-              Brgy. {activeBarangay}
-            </Text>
-            <MaterialIcons name="keyboard-arrow-down" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          {/* Schedule Calendar Pill */}
-          <TouchableOpacity
-            style={{
-              height: 38,
-              backgroundColor: 'rgba(255, 255, 255, 0.15)',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.25)',
-              paddingHorizontal: 14,
-              borderRadius: 19,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 5,
-            }}
-            onPress={() => setShowCalendarModal(true)}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="calendar-today" size={15} color="#FFFFFF" />
-            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
-              Schedule
-            </Text>
-          </TouchableOpacity>
-
-        {/* Guest Sign-In or User Status */}
-          {!user ? (
-            <TouchableOpacity
-              style={{
-                height: 38,
-                backgroundColor: '#F59E0B',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.3)',
-                paddingHorizontal: 14,
-                borderRadius: 19,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 5,
-              }}
-              onPress={() => navigation.navigate("Login")}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="account-circle" size={16} color="#FFFFFF" />
-              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                Sign In
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{
-              height: 38,
-              backgroundColor: 'rgba(255, 255, 255, 0.15)',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.25)',
-              paddingHorizontal: 14,
-              borderRadius: 19,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-            }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }} />
-              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
-                {user.name || 'Resident'}
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-
-      {/* Barangay Truck Live Status Strip */}
-      <View style={{
-        backgroundColor: truckBarangay && truckBarangay === activeBarangay ? '#006A3B' : liveTruckOnline ? '#F59E0B' : '#4B5563',
-        paddingHorizontal: 16,
-        paddingVertical: 7,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-      }}>
-        <MaterialIcons
-          name={liveTruckOnline ? 'local-shipping' : 'info-outline'}
-          size={16}
-          color="#FFFFFF"
-        />
-        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600', flex: 1 }}>
-          {truckBarangay && truckBarangay === activeBarangay
-            ? `🟢 A garbage truck is active in ${activeBarangay}!`
-            : liveTruckOnline && truckBarangay
-              ? `Truck active in ${truckBarangay}`
-              : liveTruckOnline
-                ? 'A garbage truck is active nearby'
-                : `No active trucks currently in ${activeBarangay}`}
-        </Text>
-      </View>
 
       <View style={styles.mapContainer}>
         <WebView
@@ -1284,9 +1149,6 @@ export default function MapScreen() {
             <MaterialIcons name="directions-bus" size={22} color={isExpanded ? "#006A3B" : "#1B1C1C"} />
           </TouchableOpacity>
         </View>
-        <View style={styles.legendOverlay}>
-          <HeatmapLegend />
-        </View>
 
         {/* Proximity Approaching Truck Toast */}
         {proximityToast && (
@@ -1360,20 +1222,12 @@ export default function MapScreen() {
       </View>
 
       {user && (
-        <Animated.View
-          style={[
-            styles.bottomSheet,
-            { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
-          ]}
-        >
-          <TouchableOpacity activeOpacity={0.9} onPress={isExpanded ? collapseSheet : expandSheet}>
-            <View style={styles.handleBarContainer}>
-              <View style={styles.handleBar} />
-            </View>
-          </TouchableOpacity>
+        <View style={styles.bottomSheet}>
+          <View style={styles.handleBarContainer}>
+            <View style={styles.handleBar} />
+          </View>
 
-          {activeSchedule ? (
-            <View style={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
               {/* Header: Status & Stops Left */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <View style={{ flex: 1, marginRight: 8 }}>
@@ -1381,21 +1235,21 @@ export default function MapScreen() {
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: liveTruckOnline ? '#059669' : '#6B7280' }} />
                     <Text style={{ fontSize: 15, fontWeight: '800', color: liveTruckOnline ? '#006A3B' : '#374151' }}>
                       {liveTruckOnline
-                        ? (distToUser != null && distToUser < 350
+                        ? (distToUser != null && distToUser < 50
                             ? 'Truck Passing Near You!'
-                            : distToUser != null && distToUser < 1050
+                            : distToUser != null && distToUser < 200
                               ? 'Truck Approaching Area'
                               : 'Driver is Active on Route')
-                        : 'Scheduled · Shift Not Started'}
+                        : 'Scheduled · Collection Standby'}
                     </Text>
                   </View>
                   <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
-                    Route: {activeSchedule.routeName || activeSchedule.barangay || userBarangay}
+                    Route: {activeSchedule?.routeName || activeSchedule?.barangay || userBarangay || 'Collection Area'}
                   </Text>
                 </View>
                 {/* Remaining stops pill */}
                 {(() => {
-                  const remaining = activeSchedule.sitioTasks
+                  const remaining = activeSchedule?.sitioTasks
                     ? activeSchedule.sitioTasks.filter(t => !t.completed).length
                     : (sitioList.length || 0);
                   return (
@@ -1418,7 +1272,7 @@ export default function MapScreen() {
                 {/* Driver Details */}
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }}>
-                    {activeSchedule.driverName || "Driver Assigned"}
+                    {activeSchedule?.driverName || "Driver Assigned"}
                   </Text>
                   <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1, fontWeight: '500' }}>
                     {distToUser != null
@@ -1430,7 +1284,7 @@ export default function MapScreen() {
                 {/* Truck Badge */}
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#111827', letterSpacing: 0.5 }}>
-                    {activeSchedule.truckId || 'GT-001'}
+                    {activeSchedule?.truckId || 'GT-001'}
                   </Text>
                   <Text style={{ fontSize: 10, color: liveTruckOnline ? '#059669' : '#6B7280', fontWeight: '700', textTransform: 'uppercase' }}>
                     {liveTruckOnline ? 'Live Tracking' : 'Standby'}
@@ -1533,146 +1387,7 @@ export default function MapScreen() {
                 </TouchableOpacity>
               </ScrollView>
             </View>
-          ) : (
-            <View style={{ paddingHorizontal: 24, paddingVertical: 16 }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280', textAlign: 'center' }}>
-                No active collections scheduled in your area today.
-              </Text>
-            </View>
-          )}
-
-          <Animated.View
-            style={[styles.routeDetails, { opacity: routeDetailsOpacity }]}
-          >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={isExpanded}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomInset + 16 }}
-            >
-              {/* Route Stops Checklist Card */}
-              <View style={{
-                backgroundColor: '#FFFFFF',
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: '#EDF4F0',
-                padding: 14,
-                marginBottom: 16,
-                marginTop: 8,
-              }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    Today's Collection Route Stops
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '600' }}>
-                    {activeSchedule?.sitioTasks ? `${activeSchedule.sitioTasks.filter(t => t.completed).length}/${activeSchedule.sitioTasks.length} Cleaned` : ''}
-                  </Text>
-                </View>
-
-                {(() => {
-                  const stops = activeSchedule?.sitioTasks || sitioList.map(s => ({ name: s.name, completed: false }));
-                  if (stops.length === 0) {
-                    return (
-                      <Text style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>
-                        No specific stops configured for this route.
-                      </Text>
-                    );
-                  }
-                  return stops.map((stop, idx) => {
-                    const isDone = !!stop.completed;
-                    return (
-                      <View
-                        key={idx}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingVertical: 8,
-                          borderBottomWidth: idx === stops.length - 1 ? 0 : 1,
-                          borderBottomColor: '#F3F4F6',
-                          gap: 10,
-                        }}
-                      >
-                        <View style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 12,
-                          backgroundColor: isDone ? '#ECFDF5' : '#F3F4F6',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderWidth: 1,
-                          borderColor: isDone ? '#A7F3D0' : '#E5E7EB',
-                        }}>
-                          <MaterialIcons
-                            name={isDone ? 'check' : 'place'}
-                            size={14}
-                            color={isDone ? '#059669' : '#9CA3AF'}
-                          />
-                        </View>
-                        <Text style={{
-                          flex: 1,
-                          fontSize: 13,
-                          fontWeight: isDone ? '600' : '500',
-                          color: isDone ? '#065F46' : '#1F2937',
-                        }}>
-                          {stop.name}
-                        </Text>
-                        <View style={{
-                          backgroundColor: isDone ? '#ECFDF5' : '#F9FAFB',
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: isDone ? '#D1FAE5' : '#E5E7EB',
-                        }}>
-                          <Text style={{
-                            fontSize: 10,
-                            fontWeight: '700',
-                            color: isDone ? '#059669' : '#6B7280',
-                          }}>
-                            {isDone ? 'CLEANED ✓' : 'UPCOMING'}
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  });
-                })()}
-              </View>
-
-              {/* Barangay IoT Air Quality Section */}
-              {iotAreas.filter(area => area.sensorId).length > 0 && (
-                <View style={styles.aqSection}>
-                  <Text style={styles.aqSectionTitle}>
-                    Air Quality · {userBarangay}
-                  </Text>
-                  {iotAreas.filter(area => area.sensorId).map((area) => {
-                    const aColor = area.status === 'critical' ? '#E53935' : area.status === 'moderate' ? '#F59E0B' : '#4CAF50';
-                    return (
-                      <TouchableOpacity
-                        key={area._id}
-                        style={styles.aqSensorRow}
-                        onPress={() => {
-                          setSelectedHazardArea(area);
-                          setHazardModalVisible(true);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.aqSensorDot, { backgroundColor: aColor }]} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.aqSensorName}>{area.name}</Text>
-                          <Text style={styles.aqSensorVals}>
-                            NH₃: {area.ammonia || 'N/A'} · CH₄: {area.methane || 'N/A'}
-                          </Text>
-                        </View>
-                        <Text style={[styles.aqSensorStatus, { color: aColor }]}>
-                          {area.status.charAt(0).toUpperCase() + area.status.slice(1)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </ScrollView>
-          </Animated.View>
-        </Animated.View>
+        </View>
       )}
 
       {/* Air Quality & Hazard Zone Pop-Up Modal */}
@@ -1993,7 +1708,7 @@ const styles = StyleSheet.create({
   webView: { flex: 1 },
   floatingActions: {
     position: "absolute",
-    top: 60,
+    top: 16,
     right: 16,
     gap: 12,
     zIndex: 10,
@@ -2011,7 +1726,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   floatingButtonActive: { borderColor: "#006A3B", borderWidth: 2 },
-  legendOverlay: { position: "absolute", top: 60, left: 16, zIndex: 10 },
+  legendOverlay: { position: "absolute", top: 16, left: 16, zIndex: 10 },
   bottomSheet: {
     position: "absolute",
     left: 0,
@@ -2024,6 +1739,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 20,
     elevation: 10,
+    paddingBottom: 10,
   },
   handleBarContainer: { paddingVertical: 16, alignItems: "center", width: "100%" },
   handleBar: {
@@ -2061,7 +1777,7 @@ const styles = StyleSheet.create({
   },
   routeTitle: { fontSize: 20, fontWeight: "800", color: "#1F2937" },
   scheduleId: { fontSize: 13, color: "#6B7280", marginTop: 2 },
-  routeDetails: { flex: 1 },
+  routeDetails: { flex: 1, minHeight: 0 },
   timeline: { paddingHorizontal: 24, paddingTop: 8 },
   timelineStep: { flexDirection: "row", gap: 16, marginBottom: 20 },
   timelineIndicator: { alignItems: "center", width: 20 },
@@ -2086,7 +1802,7 @@ const styles = StyleSheet.create({
   // Proximity notification toast (floating top-center of map)
   proximityToastWrapper: {
     position: "absolute",
-    top: 55,
+    top: 16,
     left: 16,
     right: 16,
     zIndex: 30,
@@ -2115,7 +1831,7 @@ const styles = StyleSheet.create({
   },
   // Air quality banner (floating top-center of map)
   cleanedNotifWrapper: {
-    position: "absolute", top: 50, left: 12, right: 12, zIndex: 20,
+    position: "absolute", top: 16, left: 12, right: 12, zIndex: 20,
   },
   cleanedNotif: {
     flexDirection: "row", alignItems: "center", gap: 10,

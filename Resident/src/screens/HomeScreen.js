@@ -242,6 +242,7 @@ export default function HomeScreen({ navigation }) {
 
   const [disposalStreak, setDisposalStreak] = useState(user?.disposalStreak || 0);
   const [userPoints, setUserPoints] = useState(user?.totalPoints || user?.points || 0);
+  const [communityPostsCount, setCommunityPostsCount] = useState(0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -252,6 +253,13 @@ export default function HomeScreen({ navigation }) {
           if (data.disposalStreak != null) setDisposalStreak(data.disposalStreak);
           if (data.totalPoints != null) setUserPoints(data.totalPoints);
         }
+      })
+      .catch(() => {});
+
+    fetch(`${API_URL}/api/reports?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setCommunityPostsCount(data.length);
       })
       .catch(() => {});
   }, [user]);
@@ -961,6 +969,11 @@ export default function HomeScreen({ navigation }) {
   // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
+  const isTruckActiveNearby = useMemo(() => {
+    if (todayPickupDone) return false;
+    return onlineTrucks.length > 0 || nearestTruck != null || distToTruck != null;
+  }, [todayPickupDone, onlineTrucks.length, nearestTruck, distToTruck]);
+
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
     const duration = PULSE_DURATIONS[pulseTier];
@@ -1086,7 +1099,7 @@ export default function HomeScreen({ navigation }) {
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
-            {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash! 🚚"}
+            {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash!"}
           </Text>
           <Text style={styles.subtitle}>
             {onlineTrucks.length > 0
@@ -1095,75 +1108,48 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* Soft UI Resident Streaks & Eco Points Hero Banner */}
-        <View style={styles.streaksHeroCard}>
-          {user ? (
-            <>
-              <View style={styles.streaksHeroItem}>
-                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FFF7ED" }]}>
-                  <Text style={{ fontSize: 20 }}>🔥</Text>
-                </View>
-                <View>
-                  <Text style={styles.streaksHeroValue}>{disposalStreak} Days</Text>
-                  <Text style={styles.streaksHeroLabel}>Disposal Streak</Text>
-                </View>
-              </View>
+        {/* 3-Column Resident Status Card (Vector Icons Only) */}
+        <View style={styles.statusThreeColCard}>
+          {/* Col 1: Streak */}
+          <View style={styles.statusColItem}>
+            <View style={[styles.statusColIconWrap, { backgroundColor: "#FFF7ED" }]}>
+              <MaterialIcons name="local-fire-department" size={20} color="#F97316" />
+            </View>
+            <Text style={styles.statusColValue}>
+              {user ? `${disposalStreak} Days` : "0 Days"}
+            </Text>
+            <Text style={styles.statusColLabel}>Disposal Streak</Text>
+          </View>
 
-              <View style={styles.streaksHeroDivider} />
+          <View style={styles.statusColDivider} />
 
-              <View style={styles.streaksHeroItem}>
-                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FEF3C7" }]}>
-                  <Text style={{ fontSize: 20 }}>🌟</Text>
-                </View>
-                <View>
-                  <Text style={styles.streaksHeroValue}>{userPoints} Pts</Text>
-                  <Text style={styles.streaksHeroLabel}>Eco Points</Text>
-                </View>
-              </View>
+          {/* Col 2: Points */}
+          <View style={styles.statusColItem}>
+            <View style={[styles.statusColIconWrap, { backgroundColor: "#FEF3C7" }]}>
+              <Ionicons name="star" size={19} color="#D97706" />
+            </View>
+            <Text style={styles.statusColValue}>
+              {user ? `${userPoints} Pts` : "0 Pts"}
+            </Text>
+            <Text style={styles.statusColLabel}>Eco Points</Text>
+          </View>
 
-              <TouchableOpacity
-                style={styles.streaksSnapBtn}
-                onPress={() => setProximityModalVisible(true)}
-                activeOpacity={0.85}
-              >
-                <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
-                <Text style={styles.streaksSnapBtnText}>Dispose</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.streaksHeroItem}>
-                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#ECFDF5" }]}>
-                  <Text style={{ fontSize: 20 }}>🚚</Text>
-                </View>
-                <View>
-                  <Text style={styles.streaksHeroValue}>Guest Mode</Text>
-                  <Text style={styles.streaksHeroLabel}>Live GPS Tracking</Text>
-                </View>
-              </View>
+          <View style={styles.statusColDivider} />
 
-              <View style={styles.streaksHeroDivider} />
-
-              <View style={styles.streaksHeroItem}>
-                <View style={[styles.streaksHeroIconWrap, { backgroundColor: "#FEF3C7" }]}>
-                  <Text style={{ fontSize: 20 }}>🌟</Text>
-                </View>
-                <View>
-                  <Text style={styles.streaksHeroValue}>Eco Rewards</Text>
-                  <Text style={styles.streaksHeroLabel}>Sign in to earn</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.streaksSnapBtn}
-                onPress={() => navigation.navigate("Login")}
-                activeOpacity={0.85}
-              >
-                <MaterialIcons name="login" size={16} color="#FFFFFF" />
-                <Text style={styles.streaksSnapBtnText}>Sign In</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          {/* Col 3: Community Posted */}
+          <TouchableOpacity
+            style={styles.statusColItem}
+            onPress={() => navigation.navigate("Community")}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.statusColIconWrap, { backgroundColor: "#EFF6FF" }]}>
+              <MaterialIcons name="campaign" size={20} color="#2563EB" />
+            </View>
+            <Text style={styles.statusColValue}>
+              {communityPostsCount} {communityPostsCount === 1 ? "Post" : "Posts"}
+            </Text>
+            <Text style={styles.statusColLabel}>Community Posted</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Pre-Information Live Pickup Feed Banner */}
@@ -1188,58 +1174,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Status and Analysis Card */}
-        <View style={styles.statusAnalysisCard}>
-          <View style={styles.statusAnalysisHeader}>
-            <View style={styles.statusAnalysisIconWrap}>
-              <MaterialIcons name="analytics" size={22} color="#006A3B" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statusAnalysisTitle}>Status & Analysis</Text>
-              <Text style={styles.statusAnalysisSub}>Live Neighborhood Waste Analytics</Text>
-            </View>
-            <View style={[styles.livePillBadge, {
-              backgroundColor: onlineTrucks.length > 0 ? "#ECFDF5" : "#F3F4F6",
-              borderColor: onlineTrucks.length > 0 ? "#A7F3D0" : "#E5E7EB",
-            }]}>
-              <View style={[styles.liveDot, {
-                backgroundColor: onlineTrucks.length > 0 ? "#10B981" : "#9CA3AF"
-              }]} />
-              <Text style={[styles.livePillText, {
-                color: onlineTrucks.length > 0 ? "#047857" : "#6B7280"
-              }]}>
-                {onlineTrucks.length > 0 ? "Active" : "Scheduled"}
-              </Text>
-            </View>
-          </View>
-
-          {/* Contextual Analysis Insight Box */}
-          <View style={styles.insightBox}>
-            <MaterialIcons name="info-outline" size={18} color="#006A3B" />
-            <Text style={styles.insightText}>
-              {tarsiData.insight}
-            </Text>
-          </View>
-
-          {/* Analytics Grid */}
-          <View style={styles.analysisGrid}>
-            <View style={styles.analysisStatItem}>
-              <Text style={styles.analysisStatLabel}>Truck Proximity</Text>
-              <Text style={styles.analysisStatValue}>
-                {distToTruck !== null ? (distToTruck < 350 ? "<350m (Close)" : `${distToTruck}m`) : (onlineTrucks.length > 0 ? "Active in City" : "On Schedule")}
-              </Text>
-            </View>
-            <View style={[styles.analysisStatItem, styles.analysisStatDivider]}>
-              <Text style={styles.analysisStatLabel}>Street Bin Prep</Text>
-              <Text style={styles.analysisStatValue}>
-                {binReady ? "100% Prepared ✓" : "85% Prepared"}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Pickup completion congratulation banner */}
-        {todayPickupDone && (
+        {/* Pickup completion congratulation or Missed Pickup Banner */}
+        {todayPickupDone && binReady && (
           <View style={styles.pickupDoneBanner}>
             <MaterialIcons name="check-circle" size={22} color="#006A3B" />
             <View style={{ flex: 1 }}>
@@ -1251,56 +1187,90 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* Proximity Disposal Card */}
-        <View style={styles.proximityCard}>
-          <View style={styles.proximityCardHeader}>
-            <View style={styles.proximityBadgePill}>
-              <View style={styles.livePulseDot} />
-              <Text style={styles.proximityBadgeText}>
-                {distToTruck !== null && distToTruck < 350
-                  ? "TRUCK VERY CLOSE"
-                  : distToTruck !== null && distToTruck < 1050
-                  ? "TRUCK APPROACHING"
-                  : onlineTrucks.length > 0
-                  ? "TRUCK ACTIVE"
-                  : "COLLECTION SCHEDULED"}
-              </Text>
+        {todayPickupDone && !binReady && (
+          <View style={styles.missedPickupBanner}>
+            <View style={styles.missedPickupHeader}>
+              <View style={styles.missedPickupIconWrap}>
+                <MaterialIcons name="event-busy" size={22} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.missedPickupTitle}>You Missed Today's Collection Truck</Text>
+                <Text style={styles.missedPickupSub}>
+                  The garbage truck finished collection in {user?.barangay || 'your area'} before your bin was prepared.
+                </Text>
+              </View>
             </View>
-            <View style={styles.streakTagPill}>
-              <Text style={styles.streakTagIcon}>🔥</Text>
-              <Text style={styles.streakTagText}>{disposalStreak}-Day Streak</Text>
+            <View style={styles.missedPickupActions}>
+              <TouchableOpacity
+                style={styles.missedReportBtn}
+                onPress={() => navigation.navigate("Report")}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="report-problem" size={15} color="#92400E" />
+                <Text style={styles.missedReportBtnText}>Report Missed Pickup</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.missedSchedBtn}
+                onPress={() => setModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="event" size={15} color="#374151" />
+                <Text style={styles.missedSchedBtnText}>View Schedule</Text>
+              </TouchableOpacity>
             </View>
           </View>
+        )}
 
-          <Text style={styles.proximityCardTitle}>Garbage Disposal & Verification</Text>
-          <Text style={styles.proximityCardSub}>
-            Confirm your trash is at the curb with a Strava-style photo badge to earn +10 Eco Points and build your streak!
-          </Text>
+        {/* CONDITIONAL DISPOSAL & TRUCK CARD — ONLY SHOWN IF TRUCK IS ACTIVE NEARBY AND ROUTE NOT COMPLETED */}
+        {isTruckActiveNearby && (
+          <View style={styles.proximityCard}>
+            <View style={styles.proximityCardHeader}>
+              <View style={styles.proximityBadgePill}>
+                <View style={styles.livePulseDot} />
+                <Text style={styles.proximityBadgeText}>
+                  {distToTruck !== null && distToTruck < 350
+                    ? "TRUCK VERY CLOSE"
+                    : distToTruck !== null && distToTruck < 1050
+                    ? "TRUCK APPROACHING"
+                    : "GARBAGE TRUCK ACTIVE"}
+                </Text>
+              </View>
+              <View style={styles.streakTagPill}>
+                <MaterialIcons name="local-fire-department" size={14} color="#C2410C" />
+                <Text style={styles.streakTagText}>{disposalStreak}-Day Streak</Text>
+              </View>
+            </View>
 
-          <View style={styles.proximityActionsRow}>
-            <TouchableOpacity
-              style={styles.proximityBtnSecondary}
-              onPress={() => setModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="checklist" size={16} color="#006A3B" />
-              <Text style={styles.proximityBtnSecondaryText} numberOfLines={1} adjustsFontSizeToFit>
-                Prepare Bin
-              </Text>
-            </TouchableOpacity>
+            <Text style={styles.proximityCardTitle}>Garbage Disposal & Verification</Text>
+            <Text style={styles.proximityCardSub}>
+              A garbage truck is active near your area. Confirm your trash is at the curb with a photo badge to earn +10 Eco Points!
+            </Text>
 
-            <TouchableOpacity
-              style={styles.proximityBtnPrimary}
-              onPress={() => setProximityModalVisible(true)}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
-              <Text style={styles.proximityBtnPrimaryText} numberOfLines={1} adjustsFontSizeToFit>
-                Snap & Dispose
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.proximityActionsRow}>
+              <TouchableOpacity
+                style={styles.proximityBtnSecondary}
+                onPress={() => setModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="checklist" size={16} color="#006A3B" />
+                <Text style={styles.proximityBtnSecondaryText} numberOfLines={1}>
+                  Prepare Bin
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.proximityBtnPrimary}
+                onPress={() => setProximityModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
+                  Snap & Dispose
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Bento Grid Cards */}
         <View style={styles.cardGrid}>
@@ -2601,8 +2571,124 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.2,
   },
-  pickedUpBtnTextDisabled: {
-    color: "#9CA3AF",
+  // 3-Column Status Card Styles
+  statusThreeColCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  statusColItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusColIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  statusColValue: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  statusColLabel: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  statusColDivider: {
+    width: 1,
+    height: 38,
+    backgroundColor: "#F1F5F9",
+  },
+  // Missed Pickup Banner Styles
+  missedPickupBanner: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  missedPickupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  missedPickupIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#FDE68A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  missedPickupTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  missedPickupSub: {
+    fontSize: 12,
+    color: "#B45309",
+    marginTop: 2,
+    lineHeight: 16,
+    fontWeight: "500",
+  },
+  missedPickupActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  missedReportBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FDE68A",
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  missedReportBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  missedSchedBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  missedSchedBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#374151",
   },
 
   // Proximity Card Styles

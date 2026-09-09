@@ -5,9 +5,15 @@ import {
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
+  const rawData = payload[0]?.payload || {};
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3">
-      <p className="text-xs font-bold text-slate-600 mb-2">{label}</p>
+      <p className="text-xs font-bold text-slate-700 mb-1.5">{label}</p>
+      {rawData.rawValue && (
+        <p className="text-[11px] font-semibold text-slate-500 mb-1">
+          Raw ADC: <span className="text-slate-900 font-extrabold">{rawData.rawValue}</span>
+        </p>
+      )}
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2 text-xs">
           <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
