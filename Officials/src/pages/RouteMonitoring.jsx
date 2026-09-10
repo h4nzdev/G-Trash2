@@ -41,6 +41,8 @@ import {
   Palette,
   Eye,
   EyeOff,
+  Calendar,
+  CalendarX,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
@@ -1230,9 +1232,15 @@ export default function RouteMonitoring() {
     (t) => t.status === "online",
   ).length;
   const assignedCt = routes.filter((r) => r.truckId).length;
+  const hasScheduleToday = visibleRoutes.length > 0;
 
   // ── Active Route Logic ──
-  const activeRoute = selectedRoute || (routes.length > 0 ? routes[0] : null);
+  const activeRoute =
+    selectedRoute && visibleRoutes.some((r) => r._id === selectedRoute._id)
+      ? selectedRoute
+      : visibleRoutes.length > 0
+        ? visibleRoutes[0]
+        : null;
   const activeTruck = activeRoute ? trucks[activeRoute.truckId] : null;
   const activeFleet = activeRoute
     ? fleet.find((f) => f.truckId === activeRoute.truckId)
@@ -1358,216 +1366,261 @@ export default function RouteMonitoring() {
             </button>
           </div>
 
-          {/* 1. Truck Header */}
-          <div className="p-5 border-b border-slate-100 pb-4">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center ${activeTruck?.isOffRoute ? "bg-red-100 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}
-                >
-                  <Truck className="w-5 h-5" />
+          {/* Sidebar Content */}
+          {!hasScheduleToday ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 mb-4 shadow-sm">
+                <CalendarX className="w-8 h-8" />
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wider mb-2">
+                No Schedule Today
+              </span>
+              <h3 className="text-base font-bold text-slate-800">
+                No Active Route
+              </h3>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-[240px]">
+                {selectedBarangay && selectedBarangay !== "All"
+                  ? `There are currently no garbage collection routes scheduled for ${selectedBarangay} today.`
+                  : "There are currently no garbage collection routes scheduled for today."}
+              </p>
+
+              <div className="w-full mt-6 p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl text-left space-y-2.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Selected Barangay</span>
+                  <span className="font-bold text-slate-800">{selectedBarangay || official?.barangay || "All"}</span>
                 </div>
-                <div>
-                  <h2 className="text-[17px] font-bold text-slate-900 leading-tight">
-                    {activeRoute
-                      ? activeRoute.truckId || "Unassigned"
-                      : "No Route Selected"}
-                  </h2>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {activeTruck?.isOffRoute ? (
-                      <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-black tracking-wider uppercase flex items-center gap-1 animate-pulse shadow-sm">
-                        <AlertTriangle className="w-3 h-3 text-white" />
-                        OFF ROUTE
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Active Trucks</span>
+                  <span className="font-bold text-slate-800">{onlineCt} online</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Scheduled Stops</span>
+                  <span className="font-bold text-slate-800">0</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => (window.location.href = "/schedules")}
+                className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md hover:shadow transition-all"
+              >
+                <Calendar className="w-4 h-4" />
+                Go to Schedule Management
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* 1. Truck Header */}
+              <div className="p-5 border-b border-slate-100 pb-4">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${activeTruck?.isOffRoute ? "bg-red-100 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}
+                    >
+                      <Truck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-[17px] font-bold text-slate-900 leading-tight">
+                        {activeRoute
+                          ? activeRoute.truckId || "Unassigned"
+                          : "No Route Selected"}
+                      </h2>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {activeTruck?.isOffRoute ? (
+                          <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-black tracking-wider uppercase flex items-center gap-1 animate-pulse shadow-sm">
+                            <AlertTriangle className="w-3 h-3 text-white" />
+                            OFF ROUTE
+                          </span>
+                        ) : (
+                          <>
+                            <span
+                              className={`w-2 h-2 rounded-full ${activeTruck?.status === "online" ? "bg-emerald-500" : "bg-slate-400"}`}
+                            ></span>
+                            <span className="text-xs font-semibold text-slate-500">
+                              {activeTruck?.status === "online"
+                                ? "Collecting"
+                                : activeTruck?.status || "Offline"}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Off-Route Alert Card in Sidebar */}
+                {activeTruck?.isOffRoute && (
+                  <div className="mb-4 p-3 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-2.5 animate-pulse shadow-sm">
+                    <AlertTriangle className="w-4.5 h-4.5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-red-800 tracking-wide uppercase">
+                        DRIVER NOT ON ROUTE
+                      </p>
+                      <p className="text-[11px] font-semibold text-red-600 mt-0.5 leading-snug">
+                        Truck has deviated ~{activeTruck.offRouteDistance || 100}m
+                        away from the assigned collection path!
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Progress Bar */}
+                <div className="mb-4">
+                  <div className="flex items-end justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Route Progress
+                    </span>
+                    <span className="text-2xl font-bold text-emerald-600 leading-none">
+                      {progress}%
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                    <div
+                      className="h-full bg-emerald-600 rounded-full transition-all duration-700"
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Stops Completed:{" "}
+                    {activeRoute?.truckId
+                      ? `${completedStops} / ${totalStops}`
+                      : "—"}
+                  </p>
+                </div>
+
+                {/* 3. Truck Details Grid */}
+                <div className="mt-4 space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                      <span className="text-xs font-medium text-slate-500">
+                        Plate No.
                       </span>
-                    ) : (
-                      <>
-                        <span
-                          className={`w-2 h-2 rounded-full ${activeTruck?.status === "online" ? "bg-emerald-500" : "bg-slate-400"}`}
-                        ></span>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {activeTruck?.status === "online"
-                            ? "Collecting"
-                            : activeTruck?.status || "Offline"}
-                        </span>
-                      </>
-                    )}
+                      <span className="text-xs font-bold text-slate-800">
+                        {activeFleet?.plateNumber || activeRoute?.plateNumber || "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                      <span className="text-xs font-medium text-slate-500">
+                        Driver
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 truncate max-w-[150px]">
+                        {activeFleet?.driverName || activeRoute?.driverName || "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                      <span className="text-xs font-medium text-slate-500">
+                        Barangay
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {activeRoute?.barangay || selectedBarangay || official?.barangay || "N/A"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Clock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
+                      <span className="text-xs font-medium text-slate-500">
+                        Est. Finish
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {activeRoute?.endTime || activeRoute?.estimatedFinish || "—"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Off-Route Alert Card in Sidebar */}
-            {activeTruck?.isOffRoute && (
-              <div className="mb-4 p-3 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-2.5 animate-pulse shadow-sm">
-                <AlertTriangle className="w-4.5 h-4.5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-red-800 tracking-wide uppercase">
-                    DRIVER NOT ON ROUTE
-                  </p>
-                  <p className="text-[11px] font-semibold text-red-600 mt-0.5 leading-snug">
-                    Truck has deviated ~{activeTruck.offRouteDistance || 100}m
-                    away from the assigned collection path!
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* 2. Progress Bar */}
-            <div className="mb-4">
-              <div className="flex items-end justify-between mb-1">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Route Progress
-                </span>
-                <span className="text-2xl font-bold text-emerald-600 leading-none">
-                  {progress}%
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
-                <div
-                  className="h-full bg-emerald-600 rounded-full transition-all duration-700"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-              <p className="text-xs text-slate-400 mt-1.5">
-                Stops Completed:{" "}
-                {activeRoute?.truckId
-                  ? `${completedStops} / ${totalStops}`
-                  : "—"}
-              </p>
-            </div>
-
-            {/* 3. Truck Details Grid */}
-            <div className="mt-4 space-y-2.5">
-              <div className="flex items-center gap-3">
-                <CreditCard className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
-                  <span className="text-xs font-medium text-slate-500">
-                    Plate No.
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    ABC-1234
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
-                  <span className="text-xs font-medium text-slate-500">
-                    Driver
-                  </span>
-                  <span className="text-xs font-bold text-slate-800 truncate max-w-[150px]">
-                    {activeFleet?.driverName || activeRoute?.driverName || "—"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
-                  <span className="text-xs font-medium text-slate-500">
-                    Barangay
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    {official?.barangay || "N/A"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Clock className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <div className="flex w-full justify-between items-center border-b border-slate-50 pb-1">
-                  <span className="text-xs font-medium text-slate-500">
-                    Est. Finish
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    2:30 PM
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 4. Route Stops List */}
-          <div className="flex-1 overflow-y-auto px-5 pt-3 pb-1">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Route Stops ({totalStops})
-              </h3>
-              {selectedRoute && (
-                <button
-                  onClick={() => setSelectedRoute(null)}
-                  className="text-slate-300 hover:text-slate-500 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {!activeRoute ? (
-              <div className="flex flex-col items-center justify-center h-32 text-center">
-                <MapPin className="w-8 h-8 text-slate-200 mb-2" />
-                <p className="text-sm text-slate-400">
-                  Click a route on the map
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-0.5 pb-2">
-                {activeRoute.waypoints.map((wp, i) => {
-                  const isAssigned = !!activeRoute.truckId;
-                  const isCompleted = isAssigned && i < completedStops;
-                  const isCurrent = isAssigned && i === completedStops;
-                  const isUpcoming = !isAssigned || i > completedStops;
-
-                  return (
-                    <div
-                      key={i}
-                      className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isCurrent ? "bg-emerald-50/80 border-l-4 border-emerald-600 pl-2" : "border-l-4 border-transparent pl-2.5"}`}
+              {/* 4. Route Stops List */}
+              <div className="flex-1 overflow-y-auto px-5 pt-3 pb-1">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Route Stops ({totalStops})
+                  </h3>
+                  {selectedRoute && (
+                    <button
+                      onClick={() => setSelectedRoute(null)}
+                      className="text-slate-300 hover:text-slate-500 transition-colors"
                     >
-                      {/* Dot / Check */}
-                      <div className="flex-shrink-0">
-                        {isCompleted && (
-                          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] text-white shadow-sm">
-                            <Check className="w-3 h-3" />
-                          </div>
-                        )}
-                        {isCurrent && (
-                          <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] text-white font-bold shadow-sm">
-                            {i + 1}
-                          </div>
-                        )}
-                        {isUpcoming && (
-                          <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center text-[10px] text-slate-400 font-medium bg-white shadow-sm">
-                            {i + 1}
-                          </div>
-                        )}
-                      </div>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                      {/* Text */}
-                      <div className="flex-1 min-w-0 flex items-center gap-2">
-                        <p
-                          className={`text-[13px] font-medium truncate ${isCurrent ? "text-emerald-700" : isCompleted ? "text-slate-500" : "text-slate-700"}`}
+                {!activeRoute ? (
+                  <div className="flex flex-col items-center justify-center h-32 text-center">
+                    <MapPin className="w-8 h-8 text-slate-200 mb-2" />
+                    <p className="text-sm text-slate-400">
+                      Click a route on the map
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-0.5 pb-2">
+                    {activeRoute.waypoints.map((wp, i) => {
+                      const isAssigned = !!activeRoute.truckId;
+                      const isCompleted = isAssigned && i < completedStops;
+                      const isCurrent = isAssigned && i === completedStops;
+                      const isUpcoming = !isAssigned || i > completedStops;
+
+                      return (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${isCurrent ? "bg-emerald-50/80 border-l-4 border-emerald-600 pl-2" : "border-l-4 border-transparent pl-2.5"}`}
                         >
-                          {i + 1}. {wp.name}
-                        </p>
-                        {isCurrent && (
-                          <span className="text-[10px] font-bold text-emerald-600">
-                            CURRENT
-                          </span>
-                        )}
-                      </div>
+                          {/* Dot / Check */}
+                          <div className="flex-shrink-0">
+                            {isCompleted && (
+                              <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-[10px] text-white shadow-sm">
+                                <Check className="w-3 h-3" />
+                              </div>
+                            )}
+                            {isCurrent && (
+                              <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] text-white font-bold shadow-sm">
+                                {i + 1}
+                              </div>
+                            )}
+                            {isUpcoming && (
+                              <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center text-[10px] text-slate-400 font-medium bg-white shadow-sm">
+                                {i + 1}
+                              </div>
+                            )}
+                          </div>
 
-                      {/* Time */}
-                      <div className="text-[10px] text-slate-400 font-medium flex-shrink-0">
-                        {isCompleted ? "8:05 AM" : isCurrent ? "" : "Upcoming"}
-                      </div>
-                    </div>
-                  );
-                })}
+                          {/* Text */}
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <p
+                              className={`text-[13px] font-medium truncate ${isCurrent ? "text-emerald-700" : isCompleted ? "text-slate-500" : "text-slate-700"}`}
+                            >
+                              {i + 1}. {wp.name}
+                            </p>
+                            {isCurrent && (
+                              <span className="text-[10px] font-bold text-emerald-600">
+                                CURRENT
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Time */}
+                          <div className="text-[10px] text-slate-400 font-medium flex-shrink-0">
+                            {isCompleted ? "8:05 AM" : isCurrent ? "" : "Upcoming"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="mt-1 text-[9px] text-slate-400 italic border-t border-slate-100 pt-2 pb-4">
+                  * Times are estimates only
+                </div>
               </div>
-            )}
-
-            <div className="mt-1 text-[9px] text-slate-400 italic border-t border-slate-100 pt-2 pb-4">
-              * Times are estimates only
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* === RIGHT MAP AREA ================================= */}
@@ -1608,6 +1661,13 @@ export default function RouteMonitoring() {
                   <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2" />
                 )}
               </div>
+
+              {!hasScheduleToday && !loading && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200/90 rounded-lg text-amber-800 text-xs font-semibold shadow-xs">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>No schedule for today</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -2013,6 +2073,32 @@ export default function RouteMonitoring() {
                 >
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+            )}
+
+            {/* No Schedule for Today Floating Banner Overlay */}
+            {!hasScheduleToday && !loading && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto animate-pop-in">
+                <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 flex-shrink-0">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-900">
+                        No Schedule for Today
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200">
+                        {selectedBarangay && selectedBarangay !== "All"
+                          ? selectedBarangay
+                          : "All Barangays"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      There are no waste collection truck routes scheduled for today.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 

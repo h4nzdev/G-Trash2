@@ -297,7 +297,7 @@ const sensorReadingSchema = new mongoose.Schema({
   rawValue: { type: Number, default: 0 }, // raw analog value
   airQuality: {
     type: String,
-    enum: ["Good", "Moderate", "Unhealthy", "Hazardous"],
+    enum: ["Good", "Moderate", "Unhealthy", "Hazardous", "Critical", "Clean"],
     default: "Good",
   },
   timestamp: { type: Date, default: Date.now },
@@ -978,27 +978,7 @@ async function seedDriverAnalytics() {
       console.log("[Backend] Created Fleet entry for GT-QSO.");
     }
 
-    // 2. Ensure Schedule exists for GT-QSO
-    const today = new Date().toLocaleDateString("en-CA");
-    let qsoSchedule = await Schedule.findOne({ truckId: /GT-QSO/i, date: today });
-    if (!qsoSchedule) {
-      await Schedule.create({
-        date: today,
-        truckId: "GT-QSO",
-        driverName: "Xherdone James",
-        driverPhone: "09927870100",
-        routeName: "Apas — 5th Street ➔ 6th Street ➔ 7th Street",
-        barangay: "Apas",
-        sitioTasks: [
-          { name: "5th Street", lat: 10.3340, lng: 123.9030, completed: false },
-          { name: "6th Street", lat: 10.3350, lng: 123.9040, completed: false },
-          { name: "7th Street", lat: 10.3360, lng: 123.9050, completed: false },
-        ],
-        startTime: "08:00 AM",
-        status: "accepted",
-        notes: "Regular scheduled waste collection for Apas sitio stops."
-      });
-    }
+    // 2. Note: Schedules are managed dynamically by officials (no static/dummy schedule seeded for today)
 
     // 3. Ensure Collection Logs & Pickup Runs exist for GT-QSO & GT-SAJ
     const qsoLogsCount = await CollectionLog.countDocuments({ truckId: /GT-QSO/i });
@@ -4970,6 +4950,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
     humidity = 0,
     binLevel = 0,
     rawValue = 0,
+    airQuality: incomingAirQuality,
   } = req.body;
 
   if (!sensorId) {
@@ -4977,7 +4958,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   }
 
   try {
-    const airQuality = classifyAirQuality(rawValue, ammonia);
+    const airQuality = incomingAirQuality || classifyAirQuality(rawValue, ammonia);
 
     // 1. Look up existing pre-registered GarbageArea from dashboard or auto-create zone
     let existingArea = await GarbageArea.findOne({ sensorId });
@@ -5028,9 +5009,14 @@ app.post("/api/iot/sensor-data", async (req, res) => {
       io.emit("iot:alert", alert); // real-time push to dashboard & other endpoints
     }
 
-    // 5. Auto-create a report when air quality is Critical
+    // 5. Auto-create a report when air quality is Critical / Hazardous / Unhealthy
+    const isCriticalOrHazardous =
+      airQuality === "Critical" ||
+      airQuality === "Hazardous" ||
+      airQuality === "Unhealthy";
+
     let autoReport = null;
-    if (airQuality === "Critical") {
+    if (isCriticalOrHazardous) {
       autoReport = await Report.create({
         title: `IoT Alert: ${airQuality} Air Quality at ${finalLocation || sensorId}`,
         category: "Hazardous Waste",
@@ -5046,19 +5032,18 @@ app.post("/api/iot/sensor-data", async (req, res) => {
     }
 
     // 6. Update or Create garbage-area map node
-    const areaStatus =
-      airQuality === "Critical"
-        ? "critical"
-        : airQuality === "Moderate"
-          ? "moderate"
-          : "clean";
+    const isModerate = airQuality === "Moderate";
+    const areaStatus = isCriticalOrHazardous
+      ? "critical"
+      : isModerate
+        ? "moderate"
+        : "clean";
 
-    const areaIntensity =
-      airQuality === "Critical"
-        ? 0.9
-        : airQuality === "Moderate"
-          ? 0.5
-          : 0.2;
+    const areaIntensity = isCriticalOrHazardous
+      ? 0.9
+      : isModerate
+        ? 0.5
+        : 0.2;
 
     const updatedArea = await GarbageArea.findOneAndUpdate(
       { sensorId },
@@ -5098,8 +5083,10 @@ app.post("/api/iot/sensor-data", async (req, res) => {
 
     if (updatedArea.barangay) {
       const qualityPts =
-        airQuality === "Good" ? 3 : airQuality === "Moderate" ? 1 :
-        airQuality === "Unhealthy" ? -2 : airQuality === "Hazardous" ? -5 : 0;
+        airQuality === "Good" || airQuality === "Clean" ? 3 :
+        airQuality === "Moderate" ? 1 :
+        airQuality === "Unhealthy" ? -2 :
+        airQuality === "Critical" || airQuality === "Hazardous" ? -5 : 0;
       if (qualityPts !== 0) {
         addBarangayScore(updatedArea.barangay, qualityPts, "iotScore",
           qualityPts > 0 ? "areaQualityPts" : undefined).catch(() => {});

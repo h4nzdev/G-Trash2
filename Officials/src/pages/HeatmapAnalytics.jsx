@@ -1747,7 +1747,7 @@ export default function HeatmapAnalytics() {
           <div className="flex gap-2 pointer-events-auto">
             <button
               onClick={() => setShowCityBoundary(!showCityBoundary)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? "bg-blue-600 text-slate-900" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
             >
               <svg
                 className="w-4 h-4"
@@ -1775,8 +1775,8 @@ export default function HeatmapAnalytics() {
                 }}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all ${
                   isAdding
-                    ? "bg-red-600 text-slate-900"
-                    : "bg-emerald-700 text-slate-900 hover:bg-emerald-800"
+                    ? "bg-red-600 text-slate-100"
+                    : "bg-emerald-700 text-white hover:bg-emerald-800"
                 }`}
               >
                 {isAdding ? (
@@ -1791,8 +1791,8 @@ export default function HeatmapAnalytics() {
         </div>
 
         {isAdding && !newArea && !outOfBoundsError && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-emerald-950 text-slate-900 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
-            <MapPin className="w-4 h-4 animate-bounce text-emerald-400" />
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#10B981] text-slate-100 px-6 py-3 rounded-full text-sm font-bold shadow-2xl flex items-center gap-3 border border-emerald-400/30">
+            <MapPin className="w-4 h-4 animate-bounce text-slate-100" />
             Click inside {official?.barangay || "your barangay"} to mark a
             hotspot
           </div>
