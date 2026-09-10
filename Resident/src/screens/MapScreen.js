@@ -132,10 +132,10 @@ function buildLeafletHTML(truckB64) {
       map = new L.Map('map', {
         zoomControl: false, attributionControl: false, dragging: true,
         scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true,
-        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 13, maxZoom: 17,
+        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 17, maxZoom: 20,
         inertia: true, inertiaDeceleration: 3000,
       });
-      map.setView([10.3157, 123.8854], 14);
+      map.setView([10.3157, 123.8854], 17);
 
       var tileLayer, hillshadeLayer, labelsLayer;
       function setTileLayer(style) {
@@ -146,25 +146,25 @@ function buildLeafletHTML(truckB64) {
         if (style === 'satellite') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 17, minZoom: 13, attribution: '' }
+            { maxZoom: 20, maxNativeZoom: 18, minZoom: 17, attribution: '' }
           );
         } else if (style === 'topographic') {
           tileLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 17, minZoom: 11, attribution: '' }
+            { maxZoom: 20, maxNativeZoom: 18, minZoom: 17, attribution: '' }
           );
           hillshadeLayer = L.tileLayer(
             'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
-            { opacity: 0.25, maxZoom: 17 }
+            { opacity: 0.25, maxZoom: 20, maxNativeZoom: 17, minZoom: 17 }
           ).addTo(map);
           labelsLayer = L.tileLayer(
             'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-            { opacity: 0.7, maxZoom: 17 }
+            { opacity: 0.7, maxZoom: 20, maxNativeZoom: 18, minZoom: 17 }
           ).addTo(map);
         } else {
           tileLayer = L.tileLayer(
             'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            { opacity: 0.9, maxZoom: 17, minZoom: 13 }
+            { opacity: 0.9, maxZoom: 20, maxNativeZoom: 19, minZoom: 17 }
           );
         }
         tileLayer.addTo(map);
@@ -197,13 +197,18 @@ function buildLeafletHTML(truckB64) {
           radius: r, color: color, fillColor: color,
           fillOpacity: fillOp, weight: 2, opacity: 0.8, interactive: true,
         });
+        var lvlNum = area.status === 'critical' ? 3 : area.status === 'moderate' ? 2 : 1;
+        var lvlName = area.status === 'critical' ? 'Poor' : area.status === 'moderate' ? 'Moderate' : 'Good';
+        var lvlDesc = area.status === 'critical' ? 'Alert' : area.status === 'moderate' ? 'Caution' : 'Clean Air';
+        var lvlBg = area.status === 'critical' ? '#FEF2F2' : area.status === 'moderate' ? '#FFFBEB' : '#ECFDF5';
         circle.bindPopup(
-          '<div style="font-family:sans-serif;min-width:140px;padding:2px 0;">' +
-          '<b style="font-size:12px;">' + (area.name || 'Sensor') + '</b><br/>' +
-          '<span style="font-size:10px;color:' + color + ';font-weight:700;text-transform:uppercase;">' + area.status + '</span>' +
-          '<div style="margin-top:5px;font-size:10px;color:#555;line-height:1.6;">' +
-          'NH₃: ' + (area.ammonia || 'N/A') + '<br/>' +
-          'CH₄: ' + (area.methane || 'N/A') +
+          '<div style="font-family:sans-serif;min-width:145px;padding:4px 0;">' +
+          '<b style="font-size:12px;color:#111827;">' + (area.name || 'Sensor') + '</b><br/>' +
+          '<div style="margin-top:6px;display:inline-block;padding:3px 8px;border-radius:12px;background:' + lvlBg + ';border:1px solid ' + color + ';">' +
+          '<span style="font-size:11px;color:' + color + ';font-weight:700;">Level ' + lvlNum + ' · ' + lvlName + '</span>' +
+          '</div>' +
+          '<div style="margin-top:4px;font-size:10px;color:#6B7280;font-weight:500;">' +
+          'Status: ' + lvlDesc +
           '</div></div>'
         );
         circle.on('click', function() {
@@ -409,11 +414,11 @@ function buildLeafletHTML(truckB64) {
         }).addTo(map);
         drawUserRadius(lat, lng);
         if (autoPan) {
-          map.setView([lat, lng], 16);
+          map.setView([lat, lng], 17);
         }
       };
 
-      window.gotoLocation = function(lat, lng, zoom) { map.setView([lat, lng], zoom || 15); };
+      window.gotoLocation = function(lat, lng, zoom) { map.setView([lat, lng], zoom || 17); };
       setTimeout(function() { map.invalidateSize(); }, 300);
     })();
   </script>
@@ -1099,7 +1104,10 @@ export default function MapScreen() {
           onLoad={handleWebViewLoad}
           onMessage={handleWebViewMessage}
         />
-        <View style={styles.floatingActions}>
+
+        {user && (
+          <>
+            <View style={styles.floatingActions}>
           <TouchableOpacity
             style={[
               styles.floatingButton,
@@ -1114,7 +1122,7 @@ export default function MapScreen() {
                 if (liveTruckPos.current) {
                   const { lat, lng } = liveTruckPos.current;
                   webViewRef.current?.injectJavaScript(
-                    `window.gotoLocation(${lat}, ${lng}, 16); true;`,
+                    `window.gotoLocation(${lat}, ${lng}, 17); true;`,
                   );
                 }
               }
@@ -1169,7 +1177,7 @@ export default function MapScreen() {
               if (userLocationRef.current) {
                 const { lat, lng } = userLocationRef.current;
                 webViewRef.current?.injectJavaScript(
-                  `window.gotoLocation(${lat}, ${lng}, 16); true;`,
+                  `window.gotoLocation(${lat}, ${lng}, 17); true;`,
                 );
                 setTimeout(() => setIsLocationLoading(false), 400);
               } else {
@@ -1310,7 +1318,8 @@ export default function MapScreen() {
             </View>
           </View>
         )}
-
+          </>
+        )}
       </View>
 
       {user && (
@@ -1523,7 +1532,7 @@ export default function MapScreen() {
                     setIsFollowing(next);
                     if (liveTruckPos.current) {
                       const { lat, lng } = liveTruckPos.current;
-                      webViewRef.current?.injectJavaScript(`window.gotoLocation(${lat}, ${lng}, 16); true;`);
+                      webViewRef.current?.injectJavaScript(`window.gotoLocation(${lat}, ${lng}, 17); true;`);
                     }
                   }}
                   activeOpacity={0.8}
@@ -1554,9 +1563,35 @@ export default function MapScreen() {
         </View>
       )}
 
+      {/* Guest Mode: Bottom Banner with Sign In */}
+      {!user && (
+        <View style={[styles.guestBottomBanner, { paddingBottom: Math.max(bottomInset, 16) }]}>
+          <View style={styles.guestBannerContent}>
+            <View style={styles.guestIconWrap}>
+              <MaterialIcons name="local-shipping" size={24} color="#006A3B" />
+            </View>
+            <View style={styles.guestTextWrap}>
+              <Text style={styles.guestBannerTitle}>Welcome to G-Trash</Text>
+              <Text style={styles.guestBannerSub}>
+                Sign in to track live collection routes and prepare your bin.
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.guestSignInBtn}
+            onPress={() => navigation.navigate("Login")}
+            activeOpacity={0.85}
+          >
+            <MaterialIcons name="login" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.guestSignInBtnText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Air Quality & Hazard Zone Pop-Up Modal */}
       <Modal
-        visible={hazardModalVisible}
+        visible={hazardModalVisible && !!user}
         transparent
         animationType="slide"
         onRequestClose={() => setHazardModalVisible(false)}
@@ -1592,32 +1627,158 @@ export default function MapScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Hazard Status Pill */}
-            <View style={[styles.hazardStatusBadge, {
-              backgroundColor: selectedHazardArea?.status === 'critical' ? '#FEF2F2' : selectedHazardArea?.status === 'moderate' ? '#FFFBEB' : '#ECFDF5',
-              borderColor: selectedHazardArea?.status === 'critical' ? '#FCA5A5' : selectedHazardArea?.status === 'moderate' ? '#FDE68A' : '#A7F3D0',
-            }]}>
-              <View style={[styles.hazardStatusDot, {
-                backgroundColor: selectedHazardArea?.status === 'critical' ? '#E53935' : selectedHazardArea?.status === 'moderate' ? '#F59E0B' : '#10B981',
-              }]} />
-              <Text style={[styles.hazardStatusText, {
-                color: selectedHazardArea?.status === 'critical' ? '#DC2626' : selectedHazardArea?.status === 'moderate' ? '#D97706' : '#047857',
-              }]}>
-                {selectedHazardArea?.status === 'critical' ? 'HAZARDOUS AIR QUALITY' : selectedHazardArea?.status === 'moderate' ? 'MODERATE AIR QUALITY' : 'CLEAN AIR QUALITY'}
-              </Text>
-            </View>
+            {/* Hazard Status Pill & 3 Level Air Quality Indicator */}
+            {(() => {
+              const isCrit =
+                selectedHazardArea?.status === "critical" ||
+                selectedHazardArea?.airQuality === "Unhealthy" ||
+                selectedHazardArea?.airQuality === "Hazardous" ||
+                selectedHazardArea?.airQuality === "Critical";
+              const isMod =
+                selectedHazardArea?.status === "moderate" ||
+                selectedHazardArea?.airQuality === "Moderate";
+              const hLevel = isCrit ? 3 : isMod ? 2 : 1;
+              const hLabel = isCrit
+                ? "POOR AIR QUALITY"
+                : isMod
+                ? "MODERATE AIR QUALITY"
+                : "GOOD AIR QUALITY";
+              return (
+                <>
+                  <View
+                    style={[
+                      styles.hazardStatusBadge,
+                      {
+                        backgroundColor: isCrit
+                          ? "#FEF2F2"
+                          : isMod
+                          ? "#FFFBEB"
+                          : "#ECFDF5",
+                        borderColor: isCrit
+                          ? "#FCA5A5"
+                          : isMod
+                          ? "#FDE68A"
+                          : "#A7F3D0",
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.hazardStatusDot,
+                        {
+                          backgroundColor: isCrit
+                            ? "#E53935"
+                            : isMod
+                            ? "#F59E0B"
+                            : "#10B981",
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.hazardStatusText,
+                        {
+                          color: isCrit
+                            ? "#DC2626"
+                            : isMod
+                            ? "#D97706"
+                            : "#047857",
+                        },
+                      ]}
+                    >
+                      {`LEVEL ${hLevel} · ${hLabel}`}
+                    </Text>
+                  </View>
 
-            {/* Gas Metrics Row */}
-            <View style={styles.hazardMetricsRow}>
-              <View style={styles.hazardMetricCard}>
-                <Text style={styles.hazardMetricLabel}>Ammonia (NH₃)</Text>
-                <Text style={styles.hazardMetricValue}>{selectedHazardArea?.ammonia || '12 ppm'}</Text>
-              </View>
-              <View style={styles.hazardMetricCard}>
-                <Text style={styles.hazardMetricLabel}>Methane (CH₄)</Text>
-                <Text style={styles.hazardMetricValue}>{selectedHazardArea?.methane || '18%'}</Text>
-              </View>
-            </View>
+                  {/* 3 Level Air Quality Status Row */}
+                  <View style={styles.hazardLevelsRow}>
+                    {[
+                      {
+                        level: 1,
+                        label: "Good",
+                        desc: "Clean Air",
+                        color: "#10B981",
+                        bg: "#ECFDF5",
+                        border: "#10B981",
+                      },
+                      {
+                        level: 2,
+                        label: "Moderate",
+                        desc: "Caution",
+                        color: "#F59E0B",
+                        bg: "#FFFBEB",
+                        border: "#F59E0B",
+                      },
+                      {
+                        level: 3,
+                        label: "Poor",
+                        desc: "Alert",
+                        color: "#EF4444",
+                        bg: "#FEF2F2",
+                        border: "#EF4444",
+                      },
+                    ].map((item) => {
+                      const isCur = hLevel === item.level;
+                      return (
+                        <View
+                          key={item.level}
+                          style={[
+                            styles.hazardLevelCard,
+                            isCur
+                              ? {
+                                  backgroundColor: item.bg,
+                                  borderColor: item.border,
+                                  borderWidth: 1.5,
+                                }
+                              : styles.hazardLevelCardInactive,
+                          ]}
+                        >
+                          <View style={styles.hazardLevelHeader}>
+                            <View
+                              style={[
+                                styles.hazardLevelDot,
+                                {
+                                  backgroundColor: isCur
+                                    ? item.color
+                                    : "#9CA3AF",
+                                },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.hazardLevelNum,
+                                { color: isCur ? item.color : "#9CA3AF" },
+                              ]}
+                            >
+                              Level {item.level}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.hazardLevelTitle,
+                              {
+                                color: isCur ? "#111827" : "#4B5563",
+                                fontWeight: isCur ? "700" : "600",
+                              },
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.hazardLevelDesc,
+                              { color: isCur ? item.color : "#9CA3AF" },
+                            ]}
+                          >
+                            {item.desc}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </>
+              );
+            })()}
 
             {/* Air Quality Index Trend Graph */}
             <View style={styles.hazardChartContainer}>
@@ -1649,10 +1810,10 @@ export default function MapScreen() {
               <MaterialIcons name="shield" size={18} color="#006A3B" />
               <Text style={styles.hazardRecText}>
                 {selectedHazardArea?.status === 'critical'
-                  ? 'High decomposition gas levels detected. Please wear a mask when near this waste container.'
+                  ? 'Level 3 Alert: Poor air quality detected. Please wear a mask when near this waste container.'
                   : selectedHazardArea?.status === 'moderate'
-                  ? 'Moderate air quality detected. Ensure waste bin lid remains tightly closed.'
-                  : 'Air quality levels are normal. Healthy environment around waste zone.'}
+                  ? 'Level 2 Caution: Moderate air quality detected. Ensure waste bin lid remains tightly closed.'
+                  : 'Level 1 Normal: Air quality levels are good. Healthy environment around waste zone.'}
               </Text>
             </View>
 
@@ -1669,7 +1830,7 @@ export default function MapScreen() {
 
       {/* ── Barangay Selection Picker Modal ── */}
       <Modal
-        visible={showBarangayModal}
+        visible={showBarangayModal && !!user}
         transparent
         animationType="fade"
         onRequestClose={() => setShowBarangayModal(false)}
@@ -1727,7 +1888,7 @@ export default function MapScreen() {
 
       {/* ── Barangay Collection Calendar Schedule Modal ── */}
       <Modal
-        visible={showCalendarModal}
+        visible={showCalendarModal && !!user}
         transparent
         animationType="slide"
         onRequestClose={() => setShowCalendarModal(false)}
@@ -1904,6 +2065,72 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
     paddingBottom: 10,
+  },
+  guestBottomBanner: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 18,
+    paddingHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    borderBottomWidth: 0,
+    zIndex: 20,
+  },
+  guestBannerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  guestIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#E6F4EA",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  guestTextWrap: {
+    flex: 1,
+  },
+  guestBannerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 3,
+  },
+  guestBannerSub: {
+    fontSize: 12,
+    color: "#6B7280",
+    lineHeight: 17,
+  },
+  guestSignInBtn: {
+    backgroundColor: "#006A3B",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  guestSignInBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   handleBarContainer: { paddingVertical: 16, alignItems: "center", width: "100%" },
   handleBar: {
@@ -2248,6 +2475,51 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.5,
+  },
+  hazardLevelsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  hazardLevelCard: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  hazardLevelCardInactive: {
+    backgroundColor: "#F9FAFB",
+    borderColor: "#E5E7EB",
+    opacity: 0.65,
+  },
+  hazardLevelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 3,
+  },
+  hazardLevelDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  hazardLevelNum: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  hazardLevelTitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  hazardLevelDesc: {
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 2,
   },
   hazardMetricsRow: {
     flexDirection: "row",

@@ -168,9 +168,13 @@ export default function NotificationScreen({ navigation }) {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const today = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })();
       const [reportsRes, scheduleRes, announcementsRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/reports`),
-        fetch(`${API_URL}/api/schedules/today`),
+        fetch(`${API_URL}/api/schedules/today?date=${today}`),
         fetch(`${API_URL}/api/announcements`),
       ]);
 

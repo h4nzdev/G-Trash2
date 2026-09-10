@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
+import { io } from "socket.io-client";
 import {
   X,
   MapPin,
@@ -68,6 +69,9 @@ export default function ReportsManagement() {
   const [healthNoteText, setHealthNoteText] = useState("");
   const [healthNoteSaving, setHealthNoteSaving] = useState(false);
   const [flagging, setFlagging] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: null, target: null });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchReports = async () => {
     setLoading(true);
@@ -95,6 +99,46 @@ export default function ReportsManagement() {
       .get(`${API}/api/fleet`)
       .then(({ data }) => setFleet(data))
       .catch(() => {});
+
+    const socket = io(API, { transports: ["websocket", "polling"] });
+
+    socket.on("report:deleted", ({ id }) => {
+      setReportList((prev) => prev.filter((r) => r._id !== id));
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setSelectedReport((prev) => (prev?._id === id ? null : prev));
+    });
+
+    socket.on("reports:batch-deleted", (payload) => {
+      if (payload?.isIotBulk) {
+        setReportList((prev) => prev.filter((r) => !r.reportedBy?.toLowerCase().startsWith('iot sensor')));
+      } else if (Array.isArray(payload?.ids)) {
+        const idSet = new Set(payload.ids);
+        setReportList((prev) => prev.filter((r) => !idSet.has(r._id)));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          payload.ids.forEach((id) => next.delete(id));
+          return next;
+        });
+        setSelectedReport((prev) => (prev && idSet.has(prev._id) ? null : prev));
+      }
+    });
+
+    socket.on("report:new", () => {
+      fetchReports();
+    });
+
+    socket.on("report:updated", () => {
+      fetchReports();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -254,11 +298,90 @@ export default function ReportsManagement() {
 
   const [viewMode, setViewMode] = useState("list");
   const [clearingIot, setClearingIot] = useState(false);
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const confirmDeleteSingle = (report, e) => {
+    if (e) e.stopPropagation();
+    setDeleteModal({ isOpen: true, type: "single", target: report });
+  };
+
+  const confirmDeleteBatch = () => {
+    if (selectedIds.size === 0) return;
+    setDeleteModal({
+      isOpen: true,
+      type: "batch",
+      target: Array.from(selectedIds),
+    });
+  };
+
+  const executeDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const token = localStorage.getItem("gtrash_token");
+      const config = token
+        ? { headers: { Authorization: `Bearer ${token}` } }
+        : {};
+
+      if (deleteModal.type === "single") {
+        const reportId = deleteModal.target?._id || deleteModal.target?.id;
+        await axios.delete(`${API}/api/reports/${reportId}`, config);
+        setReportList((prev) => prev.filter((r) => r._id !== reportId));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(reportId);
+          return next;
+        });
+        if (selectedReport?._id === reportId) {
+          setSelectedReport(null);
+        }
+      } else if (deleteModal.type === "batch") {
+        const ids = deleteModal.target;
+        await axios.post(
+          `${API}/api/reports/batch-delete`,
+          { reportIds: ids },
+          config
+        );
+        const idSet = new Set(ids);
+        setReportList((prev) => prev.filter((r) => !idSet.has(r._id)));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          ids.forEach((id) => next.delete(id));
+          return next;
+        });
+        if (selectedReport && idSet.has(selectedReport._id)) {
+          setSelectedReport(null);
+        }
+      }
+      setDeleteModal({ isOpen: false, type: null, target: null });
+    } catch (err) {
+      alert(
+        "Failed to delete report(s): " +
+          (err.response?.data?.error || err.message)
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleClearAllIot = async () => {
     if (!window.confirm('Delete all IoT auto-generated reports? This cannot be undone.')) return;
     setClearingIot(true);
     try {
-      const { data } = await axios.delete(`${API}/api/reports/iot-bulk`);
+      const token = localStorage.getItem("gtrash_token");
+      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+      const { data } = await axios.delete(`${API}/api/reports/iot-bulk`, config);
       setReportList(prev => prev.filter(r => !isIotReport(r)));
       if (selectedReport && isIotReport(selectedReport)) setSelectedReport(null);
     } catch { /* silent */ }
@@ -294,6 +417,25 @@ export default function ReportsManagement() {
         return new Date(a.createdAt) - new Date(b.createdAt);
       return new Date(b.createdAt) - new Date(a.createdAt); // Newest
     });
+
+  const isAllVisibleSelected =
+    filtered.length > 0 && filtered.every((r) => selectedIds.has(r._id));
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.delete(r._id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.add(r._id));
+        return next;
+      });
+    }
+  };
 
   const counts = {
     all: reportList.length,
@@ -466,14 +608,25 @@ export default function ReportsManagement() {
       ) : viewMode === "list" ? (
         <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
           {/* List header */}
-          <div className="grid grid-cols-[1fr_2fr_1fr_80px_88px_56px_40px] gap-3 items-center px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+          <div className="grid grid-cols-[36px_1fr_2fr_1fr_80px_88px_56px_72px] gap-3 items-center px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            <div className="flex items-center justify-center">
+              {!isChd && (
+                <input
+                  type="checkbox"
+                  checked={isAllVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  title={isAllVisibleSelected ? "Deselect all visible" : "Select all visible"}
+                />
+              )}
+            </div>
             <span>Status</span>
             <span>Report</span>
             <span className="hidden md:block">Reporter</span>
             <span className="hidden lg:block">Time</span>
             <span>Priority</span>
             <span className="text-right">Score</span>
-            <span />
+            <span className="text-right">Actions</span>
           </div>
 
           {/* List rows */}
@@ -495,12 +648,31 @@ export default function ReportsManagement() {
                 Low: "text-slate-500 bg-slate-50 border-slate-200",
               }[report.priority] ?? "text-slate-500 bg-slate-50 border-slate-200";
 
+              const isRowSelected = selectedIds.has(report._id);
+
               return (
                 <div
                   key={report._id}
                   onClick={() => openReport(report)}
-                  className="grid grid-cols-[1fr_2fr_1fr_80px_88px_56px_40px] gap-3 items-center px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors group"
+                  className={`grid grid-cols-[36px_1fr_2fr_1fr_80px_88px_56px_72px] gap-3 items-center px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors group ${
+                    isRowSelected ? "bg-emerald-50/40" : ""
+                  }`}
                 >
+                  {/* Row Checkbox */}
+                  <div
+                    className="flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {!isChd && (
+                      <input
+                        type="checkbox"
+                        checked={isRowSelected}
+                        onChange={() => toggleSelect(report._id)}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                    )}
+                  </div>
+
                   {/* Status */}
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`} />
@@ -539,17 +711,39 @@ export default function ReportsManagement() {
                     {report.urgency > 0 ? "+" : ""}{report.urgency}
                   </span>
 
-                  {/* Action */}
-                  <div className="flex justify-end">
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                  {/* Actions */}
+                  <div
+                    className="flex items-center justify-end gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {!isChd && (
+                      <button
+                        onClick={(e) => confirmDeleteSingle(report, e)}
+                        title="Delete report"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openReport(report)}
+                      className="p-1 rounded-lg text-slate-300 group-hover:text-emerald-600 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
             <p className="text-xs text-slate-400">{filtered.length} report{filtered.length !== 1 ? "s" : ""}</p>
+            {!isChd && selectedIds.size > 0 && (
+              <p className="text-xs font-semibold text-emerald-700">
+                {selectedIds.size} selected
+              </p>
+            )}
           </div>
         </div>
       ) : (
@@ -561,7 +755,9 @@ export default function ReportsManagement() {
               onView={openReport}
               onAssign={isChd ? null : handleAssign}
               onResolve={isChd ? null : handleResolve}
-              onDelete={!isChd && isIotReport(report) ? handleDeleteIotReport : null}
+              onDelete={!isChd ? (r) => confirmDeleteSingle(r) : null}
+              isSelected={selectedIds.has(report._id)}
+              onToggleSelect={!isChd ? toggleSelect : null}
               isChd={isChd}
             />
           ))}
@@ -1066,7 +1262,17 @@ export default function ReportsManagement() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 pb-6 flex gap-3">
+            <div className="px-6 pb-6 flex items-center gap-3">
+              {!isChd && (
+                <button
+                  onClick={() => confirmDeleteSingle(selectedReport)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+                  title="Permanently delete this report"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              )}
               <button
                 onClick={() => {
                   setSelectedReport(null);
@@ -1084,6 +1290,106 @@ export default function ReportsManagement() {
                   Mark as Resolved
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Batch Action Bar */}
+      {!isChd && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-700">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-slate-900 font-bold text-xs">
+              {selectedIds.size}
+            </span>
+            <span className="text-sm font-medium">
+              {selectedIds.size === 1
+                ? "1 report selected"
+                : `${selectedIds.size} reports selected`}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            onClick={confirmDeleteBatch}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors shadow-sm"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete Selected
+          </button>
+          <button
+            onClick={clearSelection}
+            className="text-xs font-medium text-slate-400 hover:text-white transition-colors"
+          >
+            Deselect All
+          </button>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[2100] flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {deleteModal.type === "single"
+                    ? "Delete Report"
+                    : "Delete Selected Reports"}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  This action cannot be undone
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {deleteModal.type === "single" ? (
+                <>
+                  Are you sure you want to permanently delete the report{" "}
+                  <strong className="text-slate-900 font-semibold">
+                    "{deleteModal.target?.title}"
+                  </strong>
+                  ?
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete{" "}
+                  <strong className="text-slate-900 font-semibold">
+                    {deleteModal.target?.length || selectedIds.size} selected
+                    reports
+                  </strong>
+                  ?
+                </>
+              )}
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() =>
+                  setDeleteModal({ isOpen: false, type: null, target: null })
+                }
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={executeDelete}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {isDeleting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isDeleting ? "Deleting..." : "Delete Permanently"}
+              </button>
             </div>
           </div>
         </div>

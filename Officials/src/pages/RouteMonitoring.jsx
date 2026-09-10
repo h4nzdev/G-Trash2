@@ -900,9 +900,9 @@ export default function RouteMonitoring() {
 
   // Filter routes by selected Barangay
   const visibleRoutes = useMemo(() => {
-    const activeBrgy = selectedBarangay?.toLowerCase();
+    const activeBrgy = selectedBarangay?.toLowerCase()?.trim();
     if (!activeBrgy || activeBrgy === "all") return routes;
-    return routes.filter((r) => r.barangay?.toLowerCase() === activeBrgy);
+    return routes.filter((r) => r.barangay?.toLowerCase()?.trim() === activeBrgy);
   }, [routes, selectedBarangay]);
 
   // Dynamic Heatmap Points calculation for report clusters & truck activity
@@ -945,11 +945,20 @@ export default function RouteMonitoring() {
   // ── API Data Fetching ──
   const fetchData = async () => {
     setLoading(true);
-    setLoading(true);
     try {
+      const localDate = (() => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      })();
+
       const [schedulesRes, trucksRes, fleetRes, reportsRes, collectionsRes] =
         await Promise.all([
-          axios.get(`${API}/api/schedules/today`),
+          axios
+            .get(`${API}/api/schedules?date=${localDate}`)
+            .catch(() => axios.get(`${API}/api/schedules/today?date=${localDate}`)),
           axios.get(`${API}/api/trucks`),
           axios.get(`${API}/api/fleet`),
           axios.get(`${API}/api/reports?category=Overflowing Bin`),
@@ -957,7 +966,20 @@ export default function RouteMonitoring() {
         ]);
 
       // Map dynamic scheduled sitio sequences as routes
-      const todayScheds = schedulesRes.data.schedules || [];
+      let todayScheds = Array.isArray(schedulesRes.data)
+        ? schedulesRes.data
+        : schedulesRes.data?.schedules || [];
+
+      // Fallback: If no schedules returned for query date, try /api/schedules/today endpoint
+      if (todayScheds.length === 0) {
+        try {
+          const fallbackRes = await axios.get(`${API}/api/schedules/today?date=${localDate}`);
+          todayScheds = Array.isArray(fallbackRes.data)
+            ? fallbackRes.data
+            : fallbackRes.data?.schedules || [];
+        } catch (_) {}
+      }
+
       const mappedRoutes = todayScheds.map((sched) => {
         const coords =
           sched.routeCoords && sched.routeCoords.length > 0
@@ -992,11 +1014,12 @@ export default function RouteMonitoring() {
       });
 
       // Filter routes by LGU official's barangay restriction if set
+      const officialBrgy = official?.barangay?.toLowerCase()?.trim();
       const filteredRoutes =
-        official?.barangay && official.barangay !== "All"
+        officialBrgy && officialBrgy !== "all"
           ? mappedRoutes.filter(
               (r) =>
-                r.barangay?.toLowerCase() === official.barangay.toLowerCase(),
+                r.barangay?.toLowerCase()?.trim() === officialBrgy,
             )
           : mappedRoutes;
 
@@ -1004,7 +1027,6 @@ export default function RouteMonitoring() {
       setFleet(fleetRes.data);
 
       // Filter visible trucks by official's barangay restriction
-      const officialBrgy = official?.barangay?.toLowerCase();
       const isRestricted = officialBrgy && officialBrgy !== "all";
 
       const allowedTruckIds = isRestricted

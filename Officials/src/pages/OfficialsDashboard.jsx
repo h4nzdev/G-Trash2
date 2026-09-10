@@ -736,6 +736,8 @@ export default function OfficialsDashboard() {
 
     socket.on('report:new', () => { fetchAll(); });
     socket.on('report:updated', () => { fetchAll(); });
+    socket.on('report:deleted', () => { fetchAll(); });
+    socket.on('reports:batch-deleted', () => { fetchAll(); });
     socket.on('truck:status', () => { fetchAll(); });
     socket.on('schedule:changed', () => { fetchAll(); });
     socket.on('collection:new', () => { fetchAll(); });

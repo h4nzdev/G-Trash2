@@ -5,28 +5,57 @@ import Badge from '../shared/Badge';
 const priorityDot = { Critical: 'bg-red-500', High: 'bg-red-400', Medium: 'bg-amber-500', Low: 'bg-slate-400' };
 const priorityBadge = { Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low' };
 
-export default function ReportCard({ report, onView, onAssign, onResolve, onDelete, isChd }) {
+export default function ReportCard({
+  report,
+  onView,
+  onAssign,
+  onResolve,
+  onDelete,
+  isChd,
+  isSelected,
+  onToggleSelect,
+}) {
   const [expanded, setExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = urgencyScore >= 5;
   const isIot = report.reportedBy?.toLowerCase().startsWith('iot sensor');
 
-  const handleDelete = async () => {
+  const handleDelete = async (e) => {
+    if (e) e.stopPropagation();
     if (!onDelete) return;
     setDeleting(true);
-    await onDelete(report._id);
+    await onDelete(report);
     setDeleting(false);
   };
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border ${isHighUrgency ? 'border-red-200 bg-red-50/10' : isIot ? 'border-blue-100 bg-blue-50/20' : 'border-slate-100'} overflow-hidden hover:shadow-md transition-shadow duration-200`}>
+    <div
+      className={`bg-white rounded-2xl shadow-sm border transition-all duration-200 overflow-hidden hover:shadow-md ${
+        isSelected
+          ? "border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/10"
+          : isHighUrgency
+            ? "border-red-200 bg-red-50/10"
+            : isIot
+              ? "border-blue-100 bg-blue-50/20"
+              : "border-slate-100"
+      }`}
+    >
       {/* Priority stripe */}
       <div className={`h-1 ${isIot ? 'bg-blue-400' : priorityDot[report.priority]} w-full`} />
 
       <div className="p-5">
         {/* Header */}
         <div className="flex items-start gap-3 mb-3">
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={() => onToggleSelect(report._id)}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer flex-shrink-0"
+            />
+          )}
           <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[report.priority]}`} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -117,7 +146,7 @@ export default function ReportCard({ report, onView, onAssign, onResolve, onDele
               </button>
               <button
                 onClick={() => onResolve?.(report)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-900 hover:to-emerald-800 rounded-lg transition-colors ml-auto"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-900 hover:to-emerald-800 rounded-lg transition-colors"
               >
                 <CheckCircle className="w-3.5 h-3.5" /> Resolve
               </button>
@@ -128,7 +157,7 @@ export default function ReportCard({ report, onView, onAssign, onResolve, onDele
               onClick={handleDelete}
               disabled={deleting}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors ml-auto disabled:opacity-50"
-              title="Delete IoT report"
+              title="Delete report"
             >
               {deleting
                 ? <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />

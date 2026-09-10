@@ -15,9 +15,22 @@ const Tab = createBottomTabNavigator();
 export default function BottomTabNavigator() {
   const { user } = useAuth();
 
+  if (!user) {
+    return (
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: { display: 'none' },
+        }}
+      >
+        <Tab.Screen name="Map" component={MapScreen} />
+      </Tab.Navigator>
+    );
+  }
+
   return (
     <Tab.Navigator
-      initialRouteName={!user ? "Map" : "Home"}
+      initialRouteName="Home"
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
           let iconName;

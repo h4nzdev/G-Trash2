@@ -39,12 +39,17 @@ export default function DriverAnalytics() {
     setLoading(true);
     setError(null);
 
+    const localDate = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
+
     Promise.allSettled([
       axios.get(`${API}/api/fleet/${truckId}`),
       axios.get(`${API}/api/collections/truck/${truckId}?period=month`),
       axios.get(`${API}/api/routes/truck/${truckId}`),
       axios.get(`${API}/api/pickup`),
-      axios.get(`${API}/api/schedules/truck/${truckId}/today`),
+      axios.get(`${API}/api/schedules/truck/${truckId}/today?date=${localDate}`),
       axios.get(`${API}/api/fleet`),
     ]).then(([fleetRes, colRes, routeRes, pickupRes, schedRes, allFleetRes]) => {
       let driverData = null;

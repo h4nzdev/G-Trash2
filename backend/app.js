@@ -699,11 +699,21 @@ async function generateUniqueTruckId() {
 }
 
 function getTodayYMD() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  try {
+    // Return date in Asia/Manila (UTC+8) to match the Philippines deployment and prevent UTC server midnight shifts
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch (_) {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 }
 
 // Normalize street/house strings so "Purok 5 St." and "Purok 5 Street" match
@@ -1739,17 +1749,45 @@ app.post("/api/reports/:id/comments", async (req, res) => {
 });
 
 // Bulk-delete all IoT auto-generated reports (must be before /:id)
-app.delete("/api/reports/iot-bulk", async (req, res) => {
+app.delete("/api/reports/iot-bulk", authMiddleware, async (req, res) => {
+  if (req.official?.role === "chd") {
+    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
+  }
   try {
     const result = await Report.deleteMany({ reportedBy: { $regex: /^IoT Sensor/i } });
     console.log(`[DELETE] Cleared ${result.deletedCount} IoT auto-reports`);
+    io.emit("reports:batch-deleted", { isIotBulk: true });
     res.json({ deleted: result.deletedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete("/api/reports/:id", async (req, res) => {
+// Batch-delete multiple selected reports (must be before /:id)
+app.post("/api/reports/batch-delete", authMiddleware, async (req, res) => {
+  if (req.official?.role === "chd") {
+    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
+  }
+  const { reportIds } = req.body;
+  if (!Array.isArray(reportIds) || reportIds.length === 0) {
+    return res.status(400).json({ error: "reportIds array is required" });
+  }
+  try {
+    const result = await Report.deleteMany({ _id: { $in: reportIds } });
+    console.log(`[DELETE] Batch deleted ${result.deletedCount} reports`);
+    io.emit("reports:batch-deleted", { ids: reportIds });
+    res.json({ ok: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    console.error(`[DELETE] Error in batch report delete: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete single report by ID
+app.delete("/api/reports/:id", authMiddleware, async (req, res) => {
+  if (req.official?.role === "chd") {
+    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
+  }
   console.log(`[DELETE] Request to delete report: ${req.params.id}`);
   try {
     const report = await Report.findByIdAndDelete(req.params.id);
@@ -1757,8 +1795,20 @@ app.delete("/api/reports/:id", async (req, res) => {
       console.log(`[DELETE] Report NOT FOUND: ${req.params.id}`);
       return res.status(404).json({ error: "Report not found" });
     }
+    // Decrement linked GarbageArea reportCount if applicable
+    if (report.lat && report.lng) {
+      await GarbageArea.updateOne(
+        {
+          lat: { $gte: report.lat - 0.001, $lte: report.lat + 0.001 },
+          lng: { $gte: report.lng - 0.001, $lte: report.lng + 0.001 },
+          reportCount: { $gt: 0 },
+        },
+        { $inc: { reportCount: -1 } }
+      ).catch(() => {});
+    }
     console.log(`[DELETE] Successfully deleted report: ${req.params.id}`);
-    res.json({ message: "Report deleted successfully" });
+    io.emit("report:deleted", { id: req.params.id });
+    res.json({ message: "Report deleted successfully", id: req.params.id });
   } catch (err) {
     console.error(`[DELETE] Error deleting report: ${err.message}`);
     res.status(500).json({ error: err.message });
@@ -2553,14 +2603,6 @@ app.post("/api/reports/:id/verify", async (req, res) => {
   }
 });
 
-app.delete("/api/reports/:id", authMiddleware, async (req, res) => {
-  try {
-    await Report.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // CHD: Flag report as health concern
 app.patch("/api/reports/:id/health-flag", authMiddleware, async (req, res) => {
@@ -3754,11 +3796,12 @@ app.delete("/api/garbage-areas/:id", async (req, res) => {
 });
 
 // --- Schedules -----------------------------------------------
-// Public: today's schedules for Resident HomeScreen
+// Public: today's schedules for Resident HomeScreen & Route Monitoring
+// Accepts ?date=YYYY-MM-DD from the client, falling back to Philippines local date
 app.get("/api/schedules/today", async (req, res) => {
   try {
     await updateOverdueSchedules();
-    const today = getTodayYMD();
+    const today = req.query.date || getTodayYMD();
     const schedules = await Schedule.find({ date: today }).sort({
       createdAt: 1,
     });

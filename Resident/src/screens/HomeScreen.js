@@ -17,6 +17,7 @@ import {
   Image,
   ActivityIndicator,
   Animated,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -227,6 +228,7 @@ export default function HomeScreen({ navigation }) {
   );
   const [iotAreas, setIotAreas] = useState([]);
   const [latestIotReading, setLatestIotReading] = useState(null);
+  const [iotReadingsHistory, setIotReadingsHistory] = useState([]);
   const [todayPickupDone, setTodayPickupDone] = useState(false);
   const [latestPickupFeed, setLatestPickupFeed] = useState(null);
 
@@ -266,7 +268,6 @@ export default function HomeScreen({ navigation }) {
   const [proximityModalVisible, setProximityModalVisible] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
-  const [submittingPhoto, setSubmittingPhoto] = useState(false);
   const [celebrationVisible, setCelebrationVisible] = useState(false);
   const [celebrationData, setCelebrationData] = useState(null);
   const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
@@ -277,26 +278,24 @@ export default function HomeScreen({ navigation }) {
     if (!isTruckCollecting) {
       Alert.alert(
         "Truck Not Active",
-        "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+        "Photo capture is available when a collection truck is actively online and collecting in your area."
       );
       return;
     }
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission Needed", "Camera permission is required to capture trash disposal photos.");
+        Alert.alert("Permission Needed", "Camera permission is required to capture photos.");
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.6,
-        base64: true,
+        quality: 0.8,
+        base64: false,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
-        const photoUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setSelectedPhoto(photoUri);
+        setSelectedPhoto(result.assets[0].uri);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -309,26 +308,24 @@ export default function HomeScreen({ navigation }) {
     if (!isTruckCollecting) {
       Alert.alert(
         "Truck Not Active",
-        "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+        "Photo selection is available when a collection truck is actively online and collecting in your area."
       );
       return;
     }
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission Needed", "Photo library access is required to select trash disposal photos.");
+        Alert.alert("Permission Needed", "Photo library access is required to select photos.");
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.6,
-        base64: true,
+        quality: 0.8,
+        base64: false,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
-        const photoUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setSelectedPhoto(photoUri);
+        setSelectedPhoto(result.assets[0].uri);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -337,52 +334,53 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const handleSubmitDisposal = async () => {
+  const handleShareOrSavePhoto = async () => {
     if (!selectedPhoto) return;
-    setSubmittingPhoto(true);
     try {
-      const nextStreak = disposalStreak + 1;
-      const res = await fetch(`${API_URL}/api/disposal/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          residentId: user?.id,
-          residentName: user?.name || "Resident",
-          barangay: user?.barangay || "General",
-          photoUrl: selectedPhoto,
-          streak: nextStreak,
-          truckId: activeTruckId,
-          locationName: `${user?.barangay || "Community"} Curb`,
-        }),
+      setBinReady(true);
+      const today = getTodayYMD();
+      AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
+      setPhotoPreviewVisible(false);
+
+      // Open native system share dialog so resident can save to mobile or share to stories/socials
+      await Share.share({
+        title: "Garbage Disposal",
+        message: `My garbage bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 #CleanerCebu #GTrash`,
+        url: selectedPhoto,
       });
-      const data = await res.json();
-      if (data.success) {
-        setDisposalStreak(data.newStreak);
-        setCelebrationData(data);
-        setPhotoPreviewVisible(false);
-        setCelebrationVisible(true);
-        setBinReady(true);
-        const today = getTodayYMD();
-        AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
-      } else {
-        Alert.alert("Notice", data.message || "Failed to submit disposal photo.");
-      }
     } catch (err) {
-      Alert.alert("Error", "Network error submitting disposal verification photo.");
-    } finally {
-      setSubmittingPhoto(false);
+      console.log("Share dismissed or error:", err);
     }
   };
 
-  // Fetch barangay IoT areas on mount
+  // Fetch barangay IoT areas & real sensor readings on mount
   useEffect(() => {
-    const brgy = user?.barangay;
-    if (!brgy) return;
+    const brgy = user?.barangay || "Apas";
     fetch(`${API_URL}/api/garbage-areas?barangay=${encodeURIComponent(brgy)}`)
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setIotAreas(data); })
       .catch(() => {});
-  }, []);
+
+    fetch(`${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setLatestIotReading(data[0]);
+          setIotReadingsHistory(data);
+        } else {
+          fetch(`${API_URL}/api/iot/readings?limit=7`)
+            .then((r) => r.json())
+            .then((all) => {
+              if (Array.isArray(all) && all.length > 0) {
+                setLatestIotReading(all[0]);
+                setIotReadingsHistory(all);
+              }
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [user?.barangay]);
 
   // Restore bin-ready and picked-up state from AsyncStorage (keyed by date — auto-resets next day)
   useEffect(() => {
@@ -416,27 +414,111 @@ export default function HomeScreen({ navigation }) {
 
   const aqData = useMemo(() => {
     const order = { critical: 0, moderate: 1, clean: 2 };
-    const aqMap = { Hazardous: 'critical', Unhealthy: 'critical', Moderate: 'moderate', Good: 'clean' };
-    const readingArea = latestIotReading ? {
-      status: aqMap[latestIotReading.airQuality] || 'clean',
-      ammonia: `${latestIotReading.ammonia} ppm`,
-      methane: `${latestIotReading.methane}%`,
-    } : null;
-    if (!iotAreas.length) return readingArea;
-    const worstArea = [...iotAreas].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3))[0];
-    if (!readingArea) return worstArea;
-    return (order[readingArea.status] ?? 3) < (order[worstArea.status] ?? 3) ? readingArea : worstArea;
+    const aqMap = {
+      Hazardous: 'critical',
+      Unhealthy: 'critical',
+      Critical: 'critical',
+      Moderate: 'moderate',
+      Good: 'clean',
+      Clean: 'clean',
+    };
+    if (latestIotReading) {
+      return {
+        status: aqMap[latestIotReading.airQuality] || 'clean',
+        airQuality: latestIotReading.airQuality || 'Good',
+        ammonia: latestIotReading.ammonia != null ? `${latestIotReading.ammonia} ppm` : '0 ppm',
+        methane: latestIotReading.methane != null && latestIotReading.methane > 0
+          ? `${latestIotReading.methane}%`
+          : '0%',
+        rawValue: latestIotReading.rawValue != null ? latestIotReading.rawValue : null,
+        sensorId: latestIotReading.sensorId,
+        location: latestIotReading.location,
+      };
+    }
+    if (iotAreas.length > 0) {
+      const worstArea = [...iotAreas].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3))[0];
+      return {
+        status: worstArea.status || 'clean',
+        airQuality: worstArea.status === 'critical' ? 'Poor' : worstArea.status === 'moderate' ? 'Moderate' : 'Good',
+        ammonia: worstArea.ammonia ? (typeof worstArea.ammonia === 'number' ? `${worstArea.ammonia} ppm` : worstArea.ammonia) : '0 ppm',
+        methane: worstArea.methane ? (typeof worstArea.methane === 'number' ? `${worstArea.methane}%` : worstArea.methane) : '0%',
+        rawValue: null,
+        sensorId: worstArea.sensorId,
+        location: worstArea.name,
+      };
+    }
+    return null;
   }, [iotAreas, latestIotReading]);
+
+  const chartBars = useMemo(() => {
+    if (iotReadingsHistory && iotReadingsHistory.length > 0) {
+      // iotReadingsHistory is descending (newest first). Slice 7 and reverse for chronological order
+      const items = [...iotReadingsHistory].slice(0, 7).reverse();
+      const padCount = Math.max(0, 7 - items.length);
+      const padded = [];
+      for (let p = 0; p < padCount; p++) {
+        padded.push({
+          id: `pad-${p}`,
+          height: 24,
+          color: "#A7F3D0",
+          airQuality: "Good",
+        });
+      }
+
+      const activeBars = items.map((item, idx) => {
+        const isAlert =
+          item.airQuality === 'Unhealthy' ||
+          item.airQuality === 'Hazardous' ||
+          item.airQuality === 'Critical';
+        const isWarn = item.airQuality === 'Moderate';
+        const color = isAlert ? '#EF4444' : isWarn ? '#F59E0B' : '#10B981';
+
+        let height = 28;
+        if (item.rawValue != null && item.rawValue > 0) {
+          height = Math.min(88, Math.max(20, Math.round((item.rawValue / 900) * 68 + 20)));
+        } else if (item.ammonia != null && item.ammonia > 0) {
+          height = Math.min(88, Math.max(20, Math.round(item.ammonia * 2 + 18)));
+        } else if (isAlert) {
+          height = 78;
+        } else if (isWarn) {
+          height = 50;
+        } else {
+          height = 28;
+        }
+
+        return {
+          id: item._id || `active-${idx}`,
+          height,
+          color,
+          airQuality: item.airQuality,
+        };
+      });
+
+      return [...padded, ...activeBars];
+    }
+
+    return [
+      { id: 1, height: 26, color: "#10B981" },
+      { id: 2, height: 32, color: "#10B981" },
+      { id: 3, height: 24, color: "#10B981" },
+      { id: 4, height: 36, color: "#10B981" },
+      { id: 5, height: 28, color: "#10B981" },
+      { id: 6, height: 30, color: "#10B981" },
+      { id: 7, height: 34, color: "#10B981" },
+    ];
+  }, [iotReadingsHistory]);
 
   const fetchDashboard = useCallback(async () => {
     try {
       const today = getTodayYMD();
-      const [trucksRes, schedulesRes, reportsRes] = await Promise.allSettled([
+      const brgy = user?.barangay || "Apas";
+      const [trucksRes, schedulesRes, reportsRes, iotRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
         fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) =>
           r.json(),
         ),
         fetch(`${API_URL}/api/reports`).then((r) => r.json()),
+        fetch(`${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`).then((r) => r.json()),
       ]);
 
       if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
@@ -463,6 +545,11 @@ export default function HomeScreen({ navigation }) {
         setPendingCount(
           reportsRes.value.filter((r) => r.status !== "resolved").length,
         );
+      }
+
+      if (iotRes.status === "fulfilled" && Array.isArray(iotRes.value) && iotRes.value.length > 0) {
+        setLatestIotReading(iotRes.value[0]);
+        setIotReadingsHistory(iotRes.value);
       }
     } catch (err) {
       // silent — dashboard still shows with empty state
@@ -625,6 +712,7 @@ export default function HomeScreen({ navigation }) {
       const brgy = userBarangayRef.current;
       if (brgy && reading.barangay && reading.barangay !== brgy) return;
       setLatestIotReading(reading);
+      setIotReadingsHistory((prev) => [reading, ...prev.filter((r) => r._id !== reading._id).slice(0, 6)]);
       if (reading.airQuality === "Unhealthy" || reading.airQuality === "Hazardous") {
         const now = Date.now();
         if (now - aqAlertLastFiredRef.current > 5 * 60 * 1000) {
@@ -1078,6 +1166,16 @@ export default function HomeScreen({ navigation }) {
     return () => float.stop();
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      navigation.navigate("Map");
+    }
+  }, [user]);
+
+  if (!user) {
+    return null;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Proximity toast — overlays at the top */}
@@ -1275,8 +1373,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* CONDITIONAL DISPOSAL & TRUCK CARD — ONLY SHOWN IF TRUCK IS ACTIVE NEARBY AND ROUTE NOT COMPLETED */}
-        {isTruckActiveNearby && (
+        {/* CONDITIONAL DISPOSAL & TRUCK CARD — ONLY SHOWN IF TRUCK IS ACTIVE NEARBY, ROUTE NOT COMPLETED, AND BIN NOT YET PREPARED */}
+        {isTruckActiveNearby && !binReady && (
           <View style={styles.proximityCard}>
             <View style={styles.proximityCardHeader}>
               <View style={styles.proximityBadgePill}>
@@ -1289,15 +1387,15 @@ export default function HomeScreen({ navigation }) {
                     : "GARBAGE TRUCK ACTIVE"}
                 </Text>
               </View>
-              <View style={styles.streakTagPill}>
-                <MaterialIcons name="local-fire-department" size={14} color="#C2410C" />
-                <Text style={styles.streakTagText}>{disposalStreak}-Day Streak</Text>
+              <View style={[styles.streakTagPill, { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" }]}>
+                <MaterialIcons name="share" size={14} color="#059669" />
+                <Text style={[styles.streakTagText, { color: "#059669" }]}>Story & Share</Text>
               </View>
             </View>
 
-            <Text style={styles.proximityCardTitle}>Garbage Disposal & Verification</Text>
+            <Text style={styles.proximityCardTitle}>Garbage Disposal Photo</Text>
             <Text style={styles.proximityCardSub}>
-              A garbage truck is active near your area. Confirm your trash is at the curb with a photo badge to earn +10 Eco Points!
+              A garbage truck is active near your area. Snap a photo of your curb or bin to save to your phone or share to your stories!
             </Text>
 
             <View style={styles.proximityActionsRow}>
@@ -1321,7 +1419,7 @@ export default function HomeScreen({ navigation }) {
                   if (!isTruckCollecting) {
                     Alert.alert(
                       "Truck Not Active",
-                      "Disposal snap verification is disabled. You can only verify disposal when a collection truck is actively online and currently collecting in your area."
+                      "Photo capture is available when a collection truck is actively online and collecting in your area."
                     );
                     return;
                   }
@@ -1331,7 +1429,7 @@ export default function HomeScreen({ navigation }) {
               >
                 <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
                 <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
-                  Snap & Dispose
+                  Snap Photo
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1342,26 +1440,50 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.cardGrid}>
           {/* Air Quality Card */}
           {(() => {
-            const dotColor = aqData?.status === 'critical' ? '#E53935'
-              : aqData?.status === 'moderate' ? '#F59E0B'
-              : aqData ? '#4CAF50'
-              : '#F5A623';
-            const statusLabel = aqData?.status === 'critical' ? 'Poor'
-              : aqData?.status === 'moderate' ? 'Moderate'
-              : aqData ? 'Good'
-              : 'No data';
-            const statusColor = aqData?.status === 'critical' ? '#DC2626'
-              : aqData?.status === 'moderate' ? '#92400E'
-              : aqData ? '#065F46'
-              : '#92400E';
+            const isCritical =
+              aqData?.status === "critical" ||
+              aqData?.airQuality === "Unhealthy" ||
+              aqData?.airQuality === "Hazardous" ||
+              aqData?.airQuality === "Critical";
+            const isModerate =
+              aqData?.status === "moderate" ||
+              aqData?.airQuality === "Moderate";
+            const activeLevel = isCritical ? 3 : isModerate ? 2 : 1;
+            const dotColor = isCritical
+              ? "#E53935"
+              : isModerate
+              ? "#F59E0B"
+              : aqData
+              ? "#10B981"
+              : "#9CA3AF";
+            const statusLabel =
+              aqData?.airQuality ||
+              (isCritical
+                ? "Poor"
+                : isModerate
+                ? "Moderate"
+                : aqData
+                ? "Good"
+                : "No data");
+            const statusColor = isCritical
+              ? "#DC2626"
+              : isModerate
+              ? "#92400E"
+              : aqData
+              ? "#065F46"
+              : "#6B7280";
             return (
               <View style={styles.airQualityCard}>
                 <View style={styles.cardHeader}>
                   <View>
                     <Text style={styles.cardTitle}>{t("air_quality")}</Text>
                     <View style={styles.statusRow}>
-                      <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-                      <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+                      <View
+                        style={[styles.statusDot, { backgroundColor: dotColor }]}
+                      />
+                      <Text style={[styles.statusText, { color: statusColor }]}>
+                        {`Level ${activeLevel} · ${statusLabel}`}
+                      </Text>
                     </View>
                   </View>
                   <MaterialIcons name="air" size={28} color="#6B7280" />
@@ -1369,20 +1491,100 @@ export default function HomeScreen({ navigation }) {
 
                 {/* Mini Chart */}
                 <View style={styles.chartContainer}>
-                  {[40, 55, 45, 70, 60, 85, 75].map((h, i) => (
-                    <View key={i} style={[styles.chartBar, { height: h, backgroundColor: BAR_COLORS[i] }]} />
+                  {chartBars.map((bar, i) => (
+                    <View
+                      key={bar.id || i}
+                      style={[
+                        styles.chartBar,
+                        { height: bar.height, backgroundColor: bar.color },
+                      ]}
+                    />
                   ))}
                 </View>
 
-                <View style={styles.metricsRow}>
-                  <View style={styles.metricItem}>
-                    <Text style={styles.metricLabel}>Ammonia</Text>
-                    <Text style={styles.metricValue}>{aqData?.ammonia ?? '—'}</Text>
-                  </View>
-                  <View style={[styles.metricItem, styles.metricDivider]}>
-                    <Text style={styles.metricLabel}>Methane</Text>
-                    <Text style={styles.metricValue}>{aqData?.methane ?? '—'}</Text>
-                  </View>
+                {/* 3 Levels of Air Quality */}
+                <View style={styles.levelsContainer}>
+                  {[
+                    {
+                      level: 1,
+                      label: "Good",
+                      sub: "Clean",
+                      color: "#10B981",
+                      bg: "#ECFDF5",
+                      border: "#10B981",
+                    },
+                    {
+                      level: 2,
+                      label: "Moderate",
+                      sub: "Fair",
+                      color: "#F59E0B",
+                      bg: "#FFFBEB",
+                      border: "#F59E0B",
+                    },
+                    {
+                      level: 3,
+                      label: "Poor",
+                      sub: "Alert",
+                      color: "#EF4444",
+                      bg: "#FEF2F2",
+                      border: "#EF4444",
+                    },
+                  ].map((lvl) => {
+                    const isActive = activeLevel === lvl.level;
+                    return (
+                      <View
+                        key={lvl.level}
+                        style={[
+                          styles.levelCard,
+                          isActive
+                            ? {
+                                backgroundColor: lvl.bg,
+                                borderColor: lvl.border,
+                                borderWidth: 1.5,
+                              }
+                            : styles.levelCardInactive,
+                        ]}
+                      >
+                        <View style={styles.levelBadgeRow}>
+                          <View
+                            style={[
+                              styles.levelDot,
+                              { backgroundColor: isActive ? lvl.color : "#9CA3AF" },
+                            ]}
+                          />
+                          <Text
+                            style={[
+                              styles.levelNumText,
+                              { color: isActive ? lvl.color : "#9CA3AF" },
+                            ]}
+                          >
+                            Level {lvl.level}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.levelTitleText,
+                            {
+                              color: isActive ? "#111827" : "#6B7280",
+                              fontWeight: isActive ? "700" : "500",
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {lvl.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.levelSubText,
+                            { color: isActive ? lvl.color : "#9CA3AF" },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {lvl.sub}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             );
@@ -1621,8 +1823,8 @@ export default function HomeScreen({ navigation }) {
                 <MaterialIcons name="local-shipping" size={22} color="#006A3B" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Garbage Disposal</Text>
-                <Text style={styles.modalSubtitle}>Choose how you want to prepare or submit</Text>
+                <Text style={styles.modalTitle}>Garbage Disposal Photo</Text>
+                <Text style={styles.modalSubtitle}>Take a photo to save or share to your stories</Text>
               </View>
             </View>
 
@@ -1654,7 +1856,7 @@ export default function HomeScreen({ navigation }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.choiceOptionTitle}>Take Trash Photo</Text>
-                <Text style={styles.choiceOptionSub}>Snap curb photo with Strava overlay badge</Text>
+                <Text style={styles.choiceOptionSub}>Snap curb photo with clean story badge</Text>
               </View>
               <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
             </TouchableOpacity>
@@ -1668,8 +1870,8 @@ export default function HomeScreen({ navigation }) {
                 <MaterialIcons name="photo-library" size={22} color="#D97706" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.choiceOptionTitle}>Upload from Gallery</Text>
-                <Text style={styles.choiceOptionSub}>Select existing photo from device</Text>
+                <Text style={styles.choiceOptionTitle}>Select from Gallery</Text>
+                <Text style={styles.choiceOptionSub}>Choose existing photo from device</Text>
               </View>
               <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
             </TouchableOpacity>
@@ -1677,7 +1879,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Strava-Style Photo Overlay Preview Modal */}
+      {/* Story-Style Photo Overlay Preview Modal */}
       <Modal
         visible={photoPreviewVisible}
         transparent
@@ -1686,8 +1888,8 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.modalOverlayDark}>
           <View style={styles.stravaPreviewContainer}>
-            <Text style={styles.stravaHeaderTitle}>Disposal Verification</Text>
-            <Text style={styles.stravaHeaderSub}>Strava-style photo badge overlay</Text>
+            <Text style={styles.stravaHeaderTitle}>Disposal Story Photo</Text>
+            <Text style={styles.stravaHeaderSub}>Save to device or share to your stories</Text>
 
             {selectedPhoto && (
               <View style={styles.stravaCardWrap}>
@@ -1703,25 +1905,25 @@ export default function HomeScreen({ navigation }) {
                   </View>
                   <View style={styles.verifiedPill}>
                     <MaterialIcons name="verified" size={13} color="#FFFFFF" />
-                    <Text style={styles.verifiedPillText}>{activeTruckId}</Text>
+                    <Text style={styles.verifiedPillText}>{activeTruckId || "Truck Active"}</Text>
                   </View>
                 </View>
 
                 {/* Bottom Glass Badges */}
                 <View style={styles.stravaOverlayBottom}>
                   <View style={styles.streakOverlayBadge}>
-                    <Text style={styles.overlayIcon}>🔥</Text>
+                    <Text style={styles.overlayIcon}>🗑️</Text>
                     <View>
-                      <Text style={styles.overlayLabel}>STREAK</Text>
-                      <Text style={styles.overlayValue}>{disposalStreak + 1} Days</Text>
+                      <Text style={styles.overlayLabel}>STATUS</Text>
+                      <Text style={styles.overlayValue}>Bin Ready</Text>
                     </View>
                   </View>
 
                   <View style={styles.pointsOverlayBadge}>
-                    <Text style={styles.overlayIcon}>🌟</Text>
+                    <Text style={styles.overlayIcon}>🌱</Text>
                     <View>
-                      <Text style={styles.overlayLabel}>ECO REWARD</Text>
-                      <Text style={styles.overlayValue}>+10 Points</Text>
+                      <Text style={styles.overlayLabel}>COMMUNITY</Text>
+                      <Text style={styles.overlayValue}>Cleaner Cebu</Text>
                     </View>
                   </View>
                 </View>
@@ -1735,7 +1937,6 @@ export default function HomeScreen({ navigation }) {
                   setPhotoPreviewVisible(false);
                   setProximityModalVisible(true);
                 }}
-                disabled={submittingPhoto}
               >
                 <MaterialIcons name="refresh" size={18} color="#4B5563" />
                 <Text style={styles.retakeBtnText}>Retake</Text>
@@ -1743,18 +1944,11 @@ export default function HomeScreen({ navigation }) {
 
               <TouchableOpacity
                 style={styles.submitDisposalBtn}
-                onPress={handleSubmitDisposal}
-                disabled={submittingPhoto}
+                onPress={handleShareOrSavePhoto}
                 activeOpacity={0.85}
               >
-                {submittingPhoto ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
-                    <Text style={styles.submitDisposalBtnText}>Submit Photo</Text>
-                  </>
-                )}
+                <MaterialIcons name="share" size={18} color="#FFFFFF" />
+                <Text style={styles.submitDisposalBtnText}>Share / Save Photo</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1845,9 +2039,9 @@ export default function HomeScreen({ navigation }) {
             <View style={[styles.officialNoticeIconWrap, { backgroundColor: "#FEF3C7" }]}>
               <MaterialIcons name="stars" size={32} color="#D97706" />
             </View>
-            <Text style={styles.officialNoticeTitle}>Sign In to Earn Eco Points</Text>
+            <Text style={styles.officialNoticeTitle}>Sign In to Get Started</Text>
             <Text style={styles.officialNoticeMessage}>
-              You are currently in Guest Mode. Sign in or create an account to verify garbage disposal, build your daily streak, and earn +10 Eco Points per pickup!
+              You are currently in Guest Mode. Sign in or create an account to prepare your bin and track garbage collection in real time!
             </Text>
 
             <TouchableOpacity
@@ -2049,6 +2243,51 @@ const styles = StyleSheet.create({
   chartBar: {
     flex: 1,
     borderRadius: 8,
+  },
+  levelsContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+  levelCard: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  levelCardInactive: {
+    backgroundColor: "#F9FAFB",
+    borderColor: "#E5E7EB",
+    opacity: 0.65,
+  },
+  levelBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 2,
+  },
+  levelDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  levelNumText: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  levelTitleText: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  levelSubText: {
+    fontSize: 9,
+    fontWeight: "600",
+    marginTop: 1,
   },
   metricsRow: {
     flexDirection: "row",
