@@ -311,7 +311,7 @@ const iotAlertSchema = new mongoose.Schema({
   barangay: { type: String, default: "" },
   severity: {
     type: String,
-    enum: ["critical", "moderate", "low"],
+    enum: ["critical", "moderate", "low", "info", "warning", "clean"],
     default: "moderate",
   },
   message: { type: String, required: true },
@@ -4927,6 +4927,7 @@ function generateIoTAlerts(reading) {
       gasType: "normal",
       value: reading.rawValue || 0,
       threshold: 0,
+      acknowledged: true,
     });
   }
 
