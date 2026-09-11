@@ -207,7 +207,9 @@ const scheduleSchema = new mongoose.Schema({
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
       completed: { type: Boolean, default: false },
-      completedAt: { type: Date }
+      completedAt: { type: Date },
+      proofImage: { type: String, default: "" },
+      afterImage: { type: String, default: "" }
     }
   ],
   routeCoords: { type: [[Number]], default: [] },
@@ -218,6 +220,11 @@ const scheduleSchema = new mongoose.Schema({
   isPriority: { type: Boolean, default: false },
   priorityLevel: { type: String, enum: ["Normal", "High", "Critical"], default: "Normal" },
   priorityReason: { type: String, default: "" },
+  totalWeight: { type: Number, default: 0 }, // net weight in tons or kg
+  weightUnit: { type: String, enum: ["tons", "kg"], default: "tons" },
+  disposalFacility: { type: String, default: "" }, // e.g. Binaliw Landfill, Inayawan Transfer Station, Barangay MRF
+  disposalPhoto: { type: String, default: "" }, // scale slip / weighbridge ticket / proof photo
+  completedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 const Schedule = mongoose.model("Schedule", scheduleSchema);
@@ -265,6 +272,9 @@ const collectionLogSchema = new mongoose.Schema({
   stopAddress: { type: String, default: "" },
   wasteType: { type: String, default: "General" },
   weight: { type: Number, default: 0 },
+  weightUnit: { type: String, enum: ["kg", "tons"], default: "kg" },
+  disposalFacility: { type: String, default: "" },
+  disposalPhoto: { type: String, default: "" },
   bins: { type: Number, default: 1 },
   routeId: { type: String, default: "" },
   routeName: { type: String, default: "" },
@@ -4279,6 +4289,7 @@ app.delete("/api/schedules/:id", authMiddleware, async (req, res) => {
 
 app.post("/api/schedules/:id/complete", async (req, res) => {
   try {
+    const { totalWeight, weightUnit, disposalFacility, disposalPhoto, completedAt } = req.body || {};
     const schedule = await Schedule.findById(req.params.id);
     if (!schedule) {
       return res.status(404).json({ error: "Schedule not found" });
@@ -4306,13 +4317,21 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
       }
     }
 
-    // Update status to completed
+    // Update status to completed and store weighbridge/disposal reporting
     schedule.status = "completed";
+    if (totalWeight !== undefined && totalWeight !== null && !isNaN(Number(totalWeight))) {
+      schedule.totalWeight = Number(totalWeight);
+    }
+    if (weightUnit) schedule.weightUnit = weightUnit;
+    if (disposalFacility) schedule.disposalFacility = disposalFacility;
+    if (disposalPhoto) schedule.disposalPhoto = disposalPhoto;
+    schedule.completedAt = completedAt ? new Date(completedAt) : new Date();
+
     // Ensure sitio tasks are flagged completed (in case they aren't already)
     if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach(t => {
         t.completed = true;
-        if (!t.completedAt) t.completedAt = new Date();
+        if (!t.completedAt) t.completedAt = schedule.completedAt;
       });
     }
 
@@ -4331,7 +4350,11 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
       barangay: schedule.barangay,
       routeName: schedule.routeName,
       totalSitios: schedule.sitioTasks?.length || 1,
-      completedAt: new Date(),
+      totalWeight: schedule.totalWeight,
+      weightUnit: schedule.weightUnit,
+      disposalFacility: schedule.disposalFacility,
+      disposalPhoto: schedule.disposalPhoto,
+      completedAt: schedule.completedAt,
     });
 
     try {
@@ -4356,7 +4379,7 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
 });
 
 app.post("/api/schedules/:id/complete-task", async (req, res) => {
-  const { sitioName, lat, lng, completedAt } = req.body;
+  const { sitioName, lat, lng, completedAt, proofImage, afterImage } = req.body;
   if (!sitioName) return res.status(400).json({ error: "sitioName is required" });
   try {
     const schedule = await Schedule.findById(req.params.id);
@@ -4373,6 +4396,10 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
           t.completedAt = taskCompletedAt;
           if (lat != null && lng != null) {
             t.pickupLocation = { lat: Number(lat), lng: Number(lng) };
+          }
+          if (proofImage || afterImage) {
+            t.proofImage = proofImage || afterImage;
+            t.afterImage = proofImage || afterImage;
           }
           matched = true;
         }
@@ -4644,6 +4671,9 @@ app.post("/api/collections", async (req, res) => {
     stopAddress,
     wasteType,
     weight,
+    weightUnit,
+    disposalFacility,
+    disposalPhoto,
     bins,
     routeId,
     routeName,
@@ -4670,6 +4700,9 @@ app.post("/api/collections", async (req, res) => {
       stopAddress: stopAddress || "",
       wasteType: wasteType || "General",
       weight: weight != null ? weight : 0,
+      weightUnit: weightUnit || "kg",
+      disposalFacility: disposalFacility || "",
+      disposalPhoto: disposalPhoto || "",
       bins: bins != null ? bins : 1,
       routeId: routeId || "",
       routeName: routeName || "",

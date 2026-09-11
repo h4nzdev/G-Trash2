@@ -394,7 +394,11 @@ export default function CollectorHomeScreen() {
           else reject(new Error("Could not mark task complete"));
         };
         xhr.onerror = () => reject(new Error("Network failed"));
-        xhr.send(JSON.stringify({ sitioName: activeFlowTask.sitioName }));
+        xhr.send(JSON.stringify({
+          sitioName: activeFlowTask.sitioName,
+          proofImage: finalAfterUrl,
+          afterImage: finalAfterUrl,
+        }));
       });
 
       await completeTaskPromise;
@@ -612,7 +616,8 @@ export default function CollectorHomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.shiftCompletedBannerTitle}>Shift & Pickups Completed</Text>
                 <Text style={styles.shiftCompletedBannerSub}>
-                  Truck {TRUCK_ID} ({driverName}) has completed all scheduled waste collections for today.
+                  Truck {TRUCK_ID} ({driverName}) has completed all scheduled collections
+                  {todaySchedules?.[0]?.disposalFacility ? ` · Weighed at ${todaySchedules[0].disposalFacility}` : ""}.
                 </Text>
               </View>
             </View>
@@ -621,7 +626,9 @@ export default function CollectorHomeScreen() {
                 {analyticsStats.completedStops} / {analyticsStats.totalStops} Stops Cleared
               </Text>
               <Text style={styles.shiftCompletedFooterStat}>
-                ~{analyticsStats.estimatedBins} Bins Volume
+                {todaySchedules?.[0]?.totalWeight
+                  ? `⚖️ ${todaySchedules[0].totalWeight} ${todaySchedules[0].weightUnit || "tons"} Weighed`
+                  : `~${analyticsStats.estimatedBins} Bins Volume`}
               </Text>
             </View>
           </View>

@@ -353,6 +353,31 @@ function PickupCheckpointPopupContent({ pickup }) {
           )}
         </div>
       </div>
+
+      {/* Photo Proof of Cleaning Thumbnail */}
+      {(pickup.afterImage || pickup.proofImage || pickup.beforeImage) && (
+        <div className="space-y-1 pt-1 border-t border-slate-100">
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+            <span>Cleaning Photo Proof</span>
+            <span className="text-emerald-700 font-extrabold flex items-center gap-0.5">✓ Verified</span>
+          </div>
+          <a
+            href={pickup.afterImage || pickup.proofImage || pickup.beforeImage}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block aspect-[16/9] w-full rounded-lg overflow-hidden border border-slate-200 group relative bg-slate-100"
+          >
+            <img
+              src={pickup.afterImage || pickup.proofImage || pickup.beforeImage}
+              alt="Proof"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+            />
+            <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold">
+              Click to view photo
+            </div>
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -2085,8 +2110,9 @@ export default function RouteMonitoring() {
                       `${completedRouteAlert.barangay} Collection Route`}
                   </p>
                   <p className="text-[10px] text-emerald-300/80">
-                    Truck: {completedRouteAlert.truckId} · Driver:{" "}
-                    {completedRouteAlert.driverName || "Collector"}
+                    Truck: {completedRouteAlert.truckId} · Driver: {completedRouteAlert.driverName || "Collector"}
+                    {completedRouteAlert.totalWeight ? ` · ⚖️ ${completedRouteAlert.totalWeight} ${completedRouteAlert.weightUnit || 'tons'}` : ''}
+                    {completedRouteAlert.disposalFacility ? ` · 📍 ${completedRouteAlert.disposalFacility.replace(' (ARN)', '')}` : ''}
                   </p>
                 </div>
                 <button
