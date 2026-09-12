@@ -268,6 +268,9 @@ export default function HomeScreen({ navigation }) {
   const [proximityModalVisible, setProximityModalVisible] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [capturedBase64, setCapturedBase64] = useState(null);
+  const [hasSnappedToday, setHasSnappedToday] = useState(false);
+  const [isSubmittingDisposal, setIsSubmittingDisposal] = useState(false);
   const [celebrationVisible, setCelebrationVisible] = useState(false);
   const [celebrationData, setCelebrationData] = useState(null);
   const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
@@ -275,10 +278,10 @@ export default function HomeScreen({ navigation }) {
   const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
 
   const handleTakePhoto = async () => {
-    if (!isTruckCollecting) {
+    if (hasSnappedToday) {
       Alert.alert(
-        "Truck Not Active",
-        "Photo capture is available when a collection truck is actively online and collecting in your area."
+        "Daily Limit Reached",
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today and resets tomorrow at midnight."
       );
       return;
     }
@@ -291,11 +294,12 @@ export default function HomeScreen({ navigation }) {
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8,
-        base64: false,
+        quality: 0.7,
+        base64: true,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
         setSelectedPhoto(result.assets[0].uri);
+        setCapturedBase64(result.assets[0].base64 || null);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -305,10 +309,10 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handlePickPhoto = async () => {
-    if (!isTruckCollecting) {
+    if (hasSnappedToday) {
       Alert.alert(
-        "Truck Not Active",
-        "Photo selection is available when a collection truck is actively online and collecting in your area."
+        "Daily Limit Reached",
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today and resets tomorrow at midnight."
       );
       return;
     }
@@ -321,11 +325,12 @@ export default function HomeScreen({ navigation }) {
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8,
-        base64: false,
+        quality: 0.7,
+        base64: true,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
         setSelectedPhoto(result.assets[0].uri);
+        setCapturedBase64(result.assets[0].base64 || null);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -336,20 +341,113 @@ export default function HomeScreen({ navigation }) {
 
   const handleShareOrSavePhoto = async () => {
     if (!selectedPhoto) return;
-    try {
-      setBinReady(true);
-      const today = getTodayYMD();
-      AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
+    if (hasSnappedToday) {
+      Alert.alert(
+        "Daily Snap Completed",
+        "You have already submitted your daily disposal photo today. Resets tomorrow at midnight!"
+      );
       setPhotoPreviewVisible(false);
+      return;
+    }
 
-      // Open native system share dialog so resident can save to mobile or share to stories/socials
-      await Share.share({
-        title: "Garbage Disposal",
-        message: `My garbage bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 #CleanerCebu #GTrash`,
-        url: selectedPhoto,
-      });
+    setIsSubmittingDisposal(true);
+    const today = getTodayYMD();
+
+    try {
+      let finalPhotoUrl = selectedPhoto;
+
+      // Upload image to backend / Cloudinary if base64 data exists
+      if (capturedBase64) {
+        try {
+          const uploadRes = await fetch(`${API_URL}/api/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: `data:image/jpeg;base64,${capturedBase64}` }),
+          });
+          if (uploadRes.ok) {
+            const uploadJson = await uploadRes.json();
+            if (uploadJson?.url) {
+              finalPhotoUrl = uploadJson.url;
+            }
+          }
+        } catch (upErr) {
+          console.log("Image upload fallback to direct uri:", upErr);
+        }
+      }
+
+      // Submit disposal verification record to backend
+      const residentId = user?.id || user?._id;
+      if (residentId) {
+        const subRes = await fetch(`${API_URL}/api/disposal/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            residentId,
+            photoUrl: finalPhotoUrl,
+            barangay: user?.barangay || "Apas",
+            sitio: user?.sitio || "",
+            truckId: activeTruckId || "Barangay Unit",
+            isTruckNearAndScheduled: !!isTruckNear,
+          }),
+        });
+
+        const subJson = await subRes.json();
+        if (!subRes.ok && subJson?.alreadySubmittedToday) {
+          setHasSnappedToday(true);
+          await AsyncStorage.setItem(`@disposal_snapped_${today}`, "true");
+          setPhotoPreviewVisible(false);
+          setIsSubmittingDisposal(false);
+          Alert.alert(
+            "Daily Snap Recorded",
+            "You have already submitted your disposal photo for today. Your daily snap resets tomorrow at midnight!"
+          );
+          return;
+        }
+
+        if (subRes.ok) {
+          if (subJson.newStreak != null) setDisposalStreak(subJson.newStreak);
+          if (subJson.totalPoints != null) setUserPoints(subJson.totalPoints);
+        }
+      }
+
+      // Mark locally as snapped today & bin ready
+      setHasSnappedToday(true);
+      setBinReady(true);
+      await Promise.all([
+        AsyncStorage.setItem(`@disposal_snapped_${today}`, "true"),
+        AsyncStorage.setItem(`@bin_prepared_${today}`, "true"),
+      ]);
+
+      setPhotoPreviewVisible(false);
+      setIsSubmittingDisposal(false);
+
+      Alert.alert(
+        "Disposal Report Sent! 📸",
+        "Your disposal photo has been successfully submitted to Barangay Officials.\n\nYou have completed your 1 daily snap for today (resets tomorrow at midnight)!"
+      );
+
+      // Open native system share dialog
+      try {
+        await Share.share({
+          title: "Garbage Disposal",
+          message: `My garbage bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 #CleanerCebu #GTrash`,
+          url: selectedPhoto,
+        });
+      } catch (shareErr) {
+        /* share dismissed */
+      }
     } catch (err) {
-      console.log("Share dismissed or error:", err);
+      console.log("Disposal submit error:", err);
+      // Fallback local save so resident progress is kept
+      setHasSnappedToday(true);
+      setBinReady(true);
+      AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+      setPhotoPreviewVisible(false);
+      setIsSubmittingDisposal(false);
+      Alert.alert(
+        "Disposal Photo Saved",
+        "Your disposal photo has been saved for today (resets tomorrow)."
+      );
     }
   };
 
@@ -382,17 +480,36 @@ export default function HomeScreen({ navigation }) {
       .catch(() => {});
   }, [user?.barangay]);
 
-  // Restore bin-ready and picked-up state from AsyncStorage (keyed by date — auto-resets next day)
+  // Restore bin-ready, picked-up, and daily snapped state from AsyncStorage (keyed by date — auto-resets next day)
   useEffect(() => {
     const today = getTodayYMD();
     Promise.all([
       AsyncStorage.getItem(`@bin_prepared_${today}`),
       AsyncStorage.getItem(`@bin_pickedup_${today}`),
-    ]).then(([prepared, pickedUp]) => {
+      AsyncStorage.getItem(`@disposal_snapped_${today}`),
+    ]).then(([prepared, pickedUp, snapped]) => {
       if (prepared === 'true') setBinReady(true);
       if (pickedUp === 'true') setTodayPickedUp(true);
+      if (snapped === 'true') setHasSnappedToday(true);
     }).catch(() => {});
-  }, []);
+
+    const residentId = user?.id || user?._id;
+    if (residentId) {
+      fetch(`${API_URL}/api/disposal/status/${residentId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.hasSnappedToday) {
+            setHasSnappedToday(true);
+            AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+          } else {
+            AsyncStorage.getItem(`@disposal_snapped_${today}`).then((val) => {
+              if (val !== "true") setHasSnappedToday(false);
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user]);
 
   // Check if today's pickup already happened (so banner shows even after app restart)
   useEffect(() => {
@@ -1373,29 +1490,46 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* CONDITIONAL DISPOSAL & TRUCK CARD — ONLY SHOWN IF TRUCK IS ACTIVE NEARBY, ROUTE NOT COMPLETED, AND BIN NOT YET PREPARED */}
-        {isTruckActiveNearby && !binReady && (
+        {/* DAILY GARBAGE DISPOSAL PHOTO CARD (1 SNAP PER DAY • RESETS IN 1 DAY) */}
+        {!todayPickupDone && (
           <View style={styles.proximityCard}>
             <View style={styles.proximityCardHeader}>
-              <View style={styles.proximityBadgePill}>
-                <View style={styles.livePulseDot} />
-                <Text style={styles.proximityBadgeText}>
-                  {distToTruck !== null && distToTruck < 350
-                    ? "TRUCK VERY CLOSE"
-                    : distToTruck !== null && distToTruck < 1050
-                    ? "TRUCK APPROACHING"
-                    : "GARBAGE TRUCK ACTIVE"}
+              <View style={[styles.proximityBadgePill, hasSnappedToday && { backgroundColor: "#ECFDF5" }]}>
+                <View style={[styles.livePulseDot, hasSnappedToday && { backgroundColor: "#059669" }]} />
+                <Text style={[styles.proximityBadgeText, hasSnappedToday && { color: "#047857" }]}>
+                  {hasSnappedToday
+                    ? "SNAPPED TODAY (1/DAY)"
+                    : isTruckCollecting
+                    ? "TRUCK ACTIVE IN AREA"
+                    : "DAILY DISPOSAL REPORT"}
                 </Text>
               </View>
-              <View style={[styles.streakTagPill, { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" }]}>
-                <MaterialIcons name="share" size={14} color="#059669" />
-                <Text style={[styles.streakTagText, { color: "#059669" }]}>Story & Share</Text>
+              <View
+                style={[
+                  styles.streakTagPill,
+                  hasSnappedToday
+                    ? { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }
+                    : { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+                ]}
+              >
+                <MaterialIcons
+                  name={hasSnappedToday ? "check-circle" : "camera-alt"}
+                  size={14}
+                  color="#059669"
+                />
+                <Text style={[styles.streakTagText, { color: "#059669" }]}>
+                  {hasSnappedToday ? "Resets Tomorrow" : "1 Snap / Day"}
+                </Text>
               </View>
             </View>
 
-            <Text style={styles.proximityCardTitle}>Garbage Disposal Photo</Text>
+            <Text style={styles.proximityCardTitle}>
+              {hasSnappedToday ? "Daily Disposal Photo ✓" : "Garbage Disposal Photo"}
+            </Text>
             <Text style={styles.proximityCardSub}>
-              A garbage truck is active near your area. Snap a photo of your curb or bin to save to your phone or share to your stories!
+              {hasSnappedToday
+                ? "You have already submitted your garbage disposal photo report today! Your 1-snap limit resets tomorrow at midnight."
+                : "Snap a photo of your waste bin or curb disposal area to report to Barangay Officials (1 snap per day • resets tomorrow)."}
             </Text>
 
             <View style={styles.proximityActionsRow}>
@@ -1410,28 +1544,37 @@ export default function HomeScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.proximityBtnPrimary,
-                  !isTruckCollecting && { backgroundColor: "#9CA3AF" }
-                ]}
-                onPress={() => {
-                  if (!isTruckCollecting) {
+              {hasSnappedToday ? (
+                <TouchableOpacity
+                  style={[
+                    styles.proximityBtnPrimary,
+                    { backgroundColor: "#ECFDF5", borderWidth: 1.5, borderColor: "#10B981" },
+                  ]}
+                  onPress={() => {
                     Alert.alert(
-                      "Truck Not Active",
-                      "Photo capture is available when a collection truck is actively online and collecting in your area."
+                      "Daily Limit (1 Snap / Day)",
+                      "You have already snapped and submitted your garbage disposal photo for today.\n\nYour 1 snap resets tomorrow at midnight!"
                     );
-                    return;
-                  }
-                  setProximityModalVisible(true);
-                }}
-                activeOpacity={isTruckCollecting ? 0.85 : 0.6}
-              >
-                <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
-                <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
-                  Snap Photo
-                </Text>
-              </TouchableOpacity>
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="check-circle" size={16} color="#059669" />
+                  <Text style={[styles.proximityBtnPrimaryText, { color: "#059669" }]} numberOfLines={1}>
+                    Snapped Today ✓
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.proximityBtnPrimary}
+                  onPress={() => setProximityModalVisible(true)}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                  <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
+                    Snap Photo (1/day)
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -1943,12 +2086,19 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.submitDisposalBtn}
+                style={[styles.submitDisposalBtn, isSubmittingDisposal && { opacity: 0.7 }]}
                 onPress={handleShareOrSavePhoto}
+                disabled={isSubmittingDisposal}
                 activeOpacity={0.85}
               >
-                <MaterialIcons name="share" size={18} color="#FFFFFF" />
-                <Text style={styles.submitDisposalBtnText}>Share / Save Photo</Text>
+                {isSubmittingDisposal ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <MaterialIcons name="cloud-upload" size={18} color="#FFFFFF" />
+                    <Text style={styles.submitDisposalBtnText}>Submit & Share</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>

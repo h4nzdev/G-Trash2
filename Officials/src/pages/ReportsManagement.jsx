@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import ReportCard from "../components/reports/ReportCard";
 import ReportFilter from "../components/reports/ReportFilter";
+import ResidentDisposalTable from "../components/reports/ResidentDisposalTable";
 import Badge from "../components/shared/Badge";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
@@ -48,6 +50,10 @@ function timeAgo(dateStr) {
 export default function ReportsManagement() {
   const { official } = useAuth();
   const isChd = official?.role === 'chd';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get("tab") === "disposal" ? "disposal" : "incidents"
+  );
 
   const [filters, setFilters] = useState({
     search: "",
@@ -455,7 +461,62 @@ export default function ReportsManagement() {
 
   return (
     <div className="p-6">
-      {/* Header with refresh */}
+      {/* Top Level Reports Category Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-4 mb-6">
+        <button
+          onClick={() => {
+            setActiveTab("incidents");
+            setSearchParams({ tab: "incidents" });
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+            activeTab === "incidents"
+              ? "bg-emerald-700 text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          Citizen Incident Reports
+          <span
+            className={`ml-1 px-2 py-0.5 text-[10px] rounded-full font-bold ${
+              activeTab === "incidents"
+                ? "bg-emerald-800 text-emerald-100"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {counts.all}
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab("disposal");
+            setSearchParams({ tab: "disposal" });
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+            activeTab === "disposal"
+              ? "bg-emerald-700 text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+          }`}
+        >
+          <Camera className="w-4 h-4" />
+          Resident Disposal Photos
+          <span
+            className={`ml-1 px-2 py-0.5 text-[10px] rounded-full font-bold ${
+              activeTab === "disposal"
+                ? "bg-emerald-800 text-emerald-100"
+                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+            }`}
+          >
+            Live Table
+          </span>
+        </button>
+      </div>
+
+      {activeTab === "disposal" ? (
+        <ResidentDisposalTable official={official} />
+      ) : (
+        <>
+          {/* Header with refresh */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-slate-800">Reports Management</h1>
@@ -1393,6 +1454,8 @@ export default function ReportsManagement() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

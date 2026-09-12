@@ -6038,6 +6038,24 @@ app.post("/api/disposal/submit", async (req, res) => {
     if (!resident) return res.status(404).json({ error: "Resident not found" });
 
     const now = new Date();
+    // Daily 1-snap rule: User can only snap once per day (resets at midnight)
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const alreadySubmittedToday = await DisposalVerification.findOne({
+      residentId: resident._id,
+      status: "active",
+      createdAt: { $gte: startOfToday, $lte: endOfToday },
+    });
+
+    if (alreadySubmittedToday) {
+      return res.status(400).json({
+        error: "You can only snap once per day! Your daily garbage photo has already been submitted today and resets tomorrow.",
+        alreadySubmittedToday: true,
+        resetsAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0),
+      });
+    }
+
     const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
     let awardPoints = 0;
@@ -6073,7 +6091,7 @@ app.post("/api/disposal/submit", async (req, res) => {
       residentId: resident._id,
       residentName: `${resident.firstName} ${resident.lastName}`,
       barangay: barangay || resident.barangay,
-      sitio: sitio || "",
+      sitio: sitio || resident.sitio || "",
       photoUrl,
       streakCount: newStreak,
       pointsAwarded: awardPoints,
@@ -6097,11 +6115,125 @@ app.post("/api/disposal/submit", async (req, res) => {
   }
 });
 
+// Check whether resident has already snapped today (for 1 snap per day enforcement)
+app.get("/api/disposal/status/:residentId", async (req, res) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const todayRecord = await DisposalVerification.findOne({
+      residentId: req.params.residentId,
+      status: "active",
+      createdAt: { $gte: startOfToday, $lte: endOfToday },
+    });
+
+    res.json({
+      hasSnappedToday: !!todayRecord,
+      submission: todayRecord || null,
+      resetsAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get resident disposal photo reports with filter support
 app.get("/api/disposal/photos", async (req, res) => {
   try {
-    const { barangay } = req.query;
+    const { barangay, sitio, period = "all", search } = req.query;
     const filter = { status: "active" };
-    if (barangay && barangay !== "All") filter.barangay = barangay;
+
+    if (barangay && barangay !== "All" && barangay !== "All Barangays") {
+      filter.barangay = new RegExp(`^${barangay}$`, "i");
+    }
+    if (sitio && sitio !== "All" && sitio !== "All Sitios") {
+      filter.sitio = new RegExp(`^${sitio}$`, "i");
+    }
+
+    if (period === "today") {
+      const now = new Date();
+      filter.createdAt = {
+        $gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+        $lte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999),
+      };
+    } else if (period === "week") {
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      filter.createdAt = { $gte: weekAgo };
+    } else if (period === "month") {
+      const now = new Date();
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      filter.createdAt = { $gte: monthAgo };
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      filter.$or = [
+        { residentName: new RegExp(q, "i") },
+        { sitio: new RegExp(q, "i") },
+        { barangay: new RegExp(q, "i") },
+      ];
+    }
+
+    // Seed mock photos if completely empty so officials have demo data
+    const count = await DisposalVerification.countDocuments({ status: "active" });
+    if (count === 0) {
+      const sampleResident = await Resident.findOne();
+      const resId = sampleResident?._id || new mongoose.Types.ObjectId();
+      const mockPhotos = [
+        {
+          residentId: resId,
+          residentName: "Maria Santos",
+          barangay: "Apas",
+          sitio: "Sitio Mahayahay",
+          photoUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=600&q=80",
+          streakCount: 4,
+          pointsAwarded: 10,
+          truckId: "GT-QSO",
+          status: "active",
+          createdAt: new Date(Date.now() - 45 * 60 * 1000), // 45 mins ago
+        },
+        {
+          residentId: resId,
+          residentName: "Juan Dela Cruz",
+          barangay: "Apas",
+          sitio: "Sitio San Miguel",
+          photoUrl: "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&q=80",
+          streakCount: 2,
+          pointsAwarded: 10,
+          truckId: "GT-QSO",
+          status: "active",
+          createdAt: new Date(Date.now() - 2 * 3600 * 1000), // 2 hours ago
+        },
+        {
+          residentId: resId,
+          residentName: "Elena Rodriguez",
+          barangay: "Lahug",
+          sitio: "Salinas Drive",
+          photoUrl: "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=600&q=80",
+          streakCount: 7,
+          pointsAwarded: 10,
+          truckId: "GT-SAJ",
+          status: "active",
+          createdAt: new Date(Date.now() - 4 * 3600 * 1000), // 4 hours ago
+        },
+        {
+          residentId: resId,
+          residentName: "Ramon Gomez",
+          barangay: "Mabolo",
+          sitio: "Sitio Sindulan",
+          photoUrl: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&q=80",
+          streakCount: 1,
+          pointsAwarded: 10,
+          truckId: "GT-MAB",
+          status: "active",
+          createdAt: new Date(Date.now() - 6 * 3600 * 1000), // 6 hours ago
+        },
+      ];
+      await DisposalVerification.insertMany(mockPhotos);
+    }
+
     const photos = await DisposalVerification.find(filter).sort({ createdAt: -1 }).limit(100);
     res.json(photos);
   } catch (err) {
