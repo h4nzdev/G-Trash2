@@ -218,255 +218,259 @@ export default function DisposalReportScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FBF9F8" />
-
-      {/* Screen Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation.navigate("Home"))}
-          activeOpacity={0.7}
-        >
-          <MaterialIcons name="arrow-back" size={24} color="#1B1C1C" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>Disposal Report</Text>
-          <Text style={styles.headerSub}>{TRUCK_ID} • {barangay}</Text>
-        </View>
-        <View style={styles.headerRightBadge}>
-          <Text style={styles.headerRightBadgeText}>SCALE REPORT</Text>
-        </View>
-      </View>
-
+      <StatusBar barStyle="light-content" backgroundColor="#006A3B" />
       <ScrollView
-        contentContainerStyle={styles.container}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {isLoadingSchedule ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#006A3B" />
-            <Text style={styles.loadingText}>Loading route details…</Text>
+        {/* ── Green curved cover header ── */}
+        <View style={styles.coverHeader}>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation.navigate("Home"))}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.headerRightBadge}>
+              <MaterialIcons name="scale" size={13} color="#FFFFFF" />
+              <Text style={styles.headerRightBadgeText}>SCALE REPORT</Text>
+            </View>
           </View>
-        ) : (
-          <>
-            {/* Hero Accomplishment Card */}
-            <View style={styles.heroCard}>
-              <View style={styles.heroIconWrap}>
-                <MaterialIcons name="local-shipping" size={32} color="#006A3B" />
-              </View>
-              <Text style={styles.heroTitle}>Sitios 100% Cleared!</Text>
-              <Text style={styles.heroDescription}>
-                Submit the weighbridge scale report to officially conclude collection for{" "}
-                <Text style={styles.heroHighlight}>{barangay}</Text>.
-              </Text>
+          <Text style={styles.screenLabel}>Disposal Report</Text>
+          <Text style={styles.screenSub}>{TRUCK_ID} • {barangay}</Text>
+        </View>
 
-              <View style={styles.sitiosPill}>
-                <View style={styles.sitiosPillLeft}>
-                  <MaterialIcons name="check-circle" size={16} color="#006A3B" />
-                  <Text style={styles.sitiosPillLabel}>Sitios Collected</Text>
+        {/* ── White sheet (overlaps cover) ── */}
+        <View style={styles.whiteSheet}>
+          {isLoadingSchedule ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#006A3B" />
+              <Text style={styles.loadingText}>Loading route details…</Text>
+            </View>
+          ) : (
+            <>
+              {/* Hero Accomplishment Card */}
+              <View style={styles.heroCard}>
+                <View style={styles.heroIconWrap}>
+                  <MaterialIcons name="local-shipping" size={30} color="#006A3B" />
                 </View>
-                <Text style={styles.sitiosPillCount}>
-                  {sitiosCleared} / {totalSitios} (Complete)
+                <Text style={styles.heroTitle}>Sitios 100% Cleared!</Text>
+                <Text style={styles.heroDescription}>
+                  Submit the weighbridge scale report to officially conclude collection for{" "}
+                  <Text style={styles.heroHighlight}>{barangay}</Text>.
                 </Text>
-              </View>
-            </View>
 
-            {/* Section 1: Designated Disposal Facility */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>1. Designated Disposal Facility</Text>
-              <Text style={styles.sectionHint}>Select the weighbridge or landfill site visited</Text>
-              <View style={styles.facilityList}>
-                {FACILITIES.map((fac) => {
-                  const isSelected = disposalFacility === fac.name;
-                  return (
-                    <TouchableOpacity
-                      key={fac.name}
-                      onPress={() => setDisposalFacility(fac.name)}
-                      style={[
-                        styles.facilityItem,
-                        isSelected && styles.facilityItemSelected,
-                      ]}
-                      activeOpacity={0.75}
-                    >
-                      <View style={styles.facilityItemLeft}>
-                        <MaterialIcons
-                          name={isSelected ? "radio-button-checked" : "radio-button-unchecked"}
-                          size={20}
-                          color={isSelected ? "#006A3B" : "#94A3B8"}
-                        />
-                        <Text
-                          style={[
-                            styles.facilityItemName,
-                            isSelected && styles.facilityItemNameSelected,
-                          ]}
-                        >
-                          {fac.short}
-                        </Text>
-                      </View>
-                      {isSelected && (
-                        <View style={styles.selectedBadge}>
-                          <Text style={styles.selectedBadgeText}>SELECTED</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Section 2: Weighed Waste (Scale Net) */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={styles.sectionTitle}>2. Weighed Waste (Scale Net)</Text>
-                  <Text style={styles.sectionHint}>Net tonnage recorded on scale ticket</Text>
-                </View>
-                {/* Unit Switcher */}
-                <View style={styles.unitToggleContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.unitBtn,
-                      disposalWeightUnit === "tons" && styles.unitBtnActive,
-                    ]}
-                    onPress={() => setDisposalWeightUnit("tons")}
-                  >
-                    <Text
-                      style={[
-                        styles.unitBtnText,
-                        disposalWeightUnit === "tons" && styles.unitBtnTextActive,
-                      ]}
-                    >
-                      TONS
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.unitBtn,
-                      disposalWeightUnit === "kg" && styles.unitBtnActive,
-                    ]}
-                    onPress={() => setDisposalWeightUnit("kg")}
-                  >
-                    <Text
-                      style={[
-                        styles.unitBtnText,
-                        disposalWeightUnit === "kg" && styles.unitBtnTextActive,
-                      ]}
-                    >
-                      KG
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.weightInputWrap}>
-                <View style={styles.scaleIconWrap}>
-                  <MaterialIcons name="scale" size={22} color="#006A3B" />
-                </View>
-                <TextInput
-                  style={styles.weightTextInput}
-                  value={disposalWeight}
-                  onChangeText={setDisposalWeight}
-                  keyboardType="decimal-pad"
-                  placeholder="e.g. 2.40"
-                  placeholderTextColor="#94A3B8"
-                />
-                <Text style={styles.weightUnitSuffix}>{disposalWeightUnit}</Text>
-              </View>
-            </View>
-
-            {/* Section 3: Scale Slip / Disposal Photo Proof */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>3. Scale Slip / Disposal Photo Proof</Text>
-              <Text style={styles.sectionHint}>Attach photo of weighbridge ticket or dump receipt</Text>
-
-              {disposalPhoto ? (
-                <View style={styles.photoPreviewContainer}>
-                  <Image source={{ uri: disposalPhoto }} style={styles.photoPreview} resizeMode="cover" />
-                  <View style={styles.photoOverlayBadge}>
-                    <MaterialIcons name="check-circle" size={14} color="#FFFFFF" />
-                    <Text style={styles.photoOverlayText}>Ticket Captured</Text>
+                <View style={styles.sitiosPill}>
+                  <View style={styles.sitiosPillLeft}>
+                    <MaterialIcons name="check-circle" size={16} color="#006A3B" />
+                    <Text style={styles.sitiosPillLabel}>Sitios Collected</Text>
                   </View>
-                  <View style={styles.photoActionRow}>
-                    <TouchableOpacity
-                      style={styles.retakeBtn}
-                      onPress={takeDisposalPhoto}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons name="photo-camera" size={16} color="#006A3B" />
-                      <Text style={styles.retakeBtnText}>Camera</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.retakeBtn}
-                      onPress={chooseFromGallery}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons name="photo-library" size={16} color="#006A3B" />
-                      <Text style={styles.retakeBtnText}>Gallery</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <View style={styles.cameraIconCircle}>
-                    <MaterialIcons name="photo-camera" size={28} color="#006A3B" />
-                  </View>
-                  <Text style={styles.placeholderTitle}>No scale ticket attached</Text>
-                  <Text style={styles.placeholderSub}>
-                    Capture a clear photo of the certified weighbridge slip
+                  <Text style={styles.sitiosPillCount}>
+                    {sitiosCleared} / {totalSitios} (Complete)
                   </Text>
-                  <View style={styles.photoButtonRow}>
+                </View>
+              </View>
+
+              {/* Section 1: Designated Disposal Facility */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>1. Designated Disposal Facility</Text>
+                <Text style={styles.sectionHint}>Select the weighbridge or landfill site visited</Text>
+                <View style={styles.facilityList}>
+                  {FACILITIES.map((fac) => {
+                    const isSelected = disposalFacility === fac.name;
+                    return (
+                      <TouchableOpacity
+                        key={fac.name}
+                        onPress={() => setDisposalFacility(fac.name)}
+                        style={[
+                          styles.facilityItem,
+                          isSelected && styles.facilityItemSelected,
+                        ]}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.facilityItemLeft}>
+                          <MaterialIcons
+                            name={isSelected ? "radio-button-checked" : "radio-button-unchecked"}
+                            size={20}
+                            color={isSelected ? "#006A3B" : "#94A3B8"}
+                          />
+                          <Text
+                            style={[
+                              styles.facilityItemName,
+                              isSelected && styles.facilityItemNameSelected,
+                            ]}
+                          >
+                            {fac.short}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <View style={styles.selectedBadge}>
+                            <Text style={styles.selectedBadgeText}>SELECTED</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Section 2: Weighed Waste (Scale Net) */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View>
+                    <Text style={styles.sectionTitle}>2. Weighed Waste (Scale Net)</Text>
+                    <Text style={styles.sectionHint}>Net tonnage recorded on scale ticket</Text>
+                  </View>
+                  {/* Unit Switcher */}
+                  <View style={styles.unitToggleContainer}>
                     <TouchableOpacity
-                      style={styles.captureBtn}
-                      onPress={takeDisposalPhoto}
-                      activeOpacity={0.8}
+                      style={[
+                        styles.unitBtn,
+                        disposalWeightUnit === "tons" && styles.unitBtnActive,
+                      ]}
+                      onPress={() => setDisposalWeightUnit("tons")}
                     >
-                      <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
-                      <Text style={styles.captureBtnText}>Open Camera</Text>
+                      <Text
+                        style={[
+                          styles.unitBtnText,
+                          disposalWeightUnit === "tons" && styles.unitBtnTextActive,
+                        ]}
+                      >
+                        TONS
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.galleryBtn}
-                      onPress={chooseFromGallery}
-                      activeOpacity={0.8}
+                      style={[
+                        styles.unitBtn,
+                        disposalWeightUnit === "kg" && styles.unitBtnActive,
+                      ]}
+                      onPress={() => setDisposalWeightUnit("kg")}
                     >
-                      <MaterialIcons name="photo-library" size={18} color="#006A3B" />
-                      <Text style={styles.galleryBtnText}>Gallery</Text>
+                      <Text
+                        style={[
+                          styles.unitBtnText,
+                          disposalWeightUnit === "kg" && styles.unitBtnTextActive,
+                        ]}
+                      >
+                        KG
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-              )}
-            </View>
 
-            {/* Submit Action */}
-            <View style={styles.submitSection}>
-              <TouchableOpacity
-                style={[styles.primarySubmitBtn, isSubmitting && styles.primarySubmitBtnDisabled]}
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-                activeOpacity={0.85}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                <View style={styles.weightInputWrap}>
+                  <View style={styles.scaleIconWrap}>
+                    <MaterialIcons name="scale" size={22} color="#006A3B" />
+                  </View>
+                  <TextInput
+                    style={styles.weightTextInput}
+                    value={disposalWeight}
+                    onChangeText={setDisposalWeight}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 2.40"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Text style={styles.weightUnitSuffix}>{disposalWeightUnit}</Text>
+                </View>
+              </View>
+
+              {/* Section 3: Scale Slip / Disposal Photo Proof */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>3. Scale Slip / Disposal Photo Proof</Text>
+                <Text style={styles.sectionHint}>Attach photo of weighbridge ticket or dump receipt</Text>
+
+                {disposalPhoto ? (
+                  <View style={styles.photoPreviewContainer}>
+                    <Image source={{ uri: disposalPhoto }} style={styles.photoPreview} resizeMode="cover" />
+                    <View style={styles.photoOverlayBadge}>
+                      <MaterialIcons name="check-circle" size={14} color="#FFFFFF" />
+                      <Text style={styles.photoOverlayText}>Ticket Captured</Text>
+                    </View>
+                    <View style={styles.photoActionRow}>
+                      <TouchableOpacity
+                        style={styles.retakeBtn}
+                        onPress={takeDisposalPhoto}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons name="photo-camera" size={16} color="#006A3B" />
+                        <Text style={styles.retakeBtnText}>Camera</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.retakeBtn}
+                        onPress={chooseFromGallery}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons name="photo-library" size={16} color="#006A3B" />
+                        <Text style={styles.retakeBtnText}>Gallery</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ) : (
-                  <>
-                    <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
-                    <Text style={styles.primarySubmitBtnText}>
-                      Submit Weighbridge Report & Finish Shift
+                  <View style={styles.photoPlaceholder}>
+                    <View style={styles.cameraIconCircle}>
+                      <MaterialIcons name="photo-camera" size={28} color="#006A3B" />
+                    </View>
+                    <Text style={styles.placeholderTitle}>No scale ticket attached</Text>
+                    <Text style={styles.placeholderSub}>
+                      Capture a clear photo of the certified weighbridge slip
                     </Text>
-                  </>
+                    <View style={styles.photoButtonRow}>
+                      <TouchableOpacity
+                        style={styles.captureBtn}
+                        onPress={takeDisposalPhoto}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
+                        <Text style={styles.captureBtnText}>Open Camera</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.galleryBtn}
+                        onPress={chooseFromGallery}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons name="photo-library" size={18} color="#006A3B" />
+                        <Text style={styles.galleryBtnText}>Gallery</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 )}
-              </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                style={styles.reviewLaterBtn}
-                onPress={() => navigation.navigate("Home")}
-                disabled={isSubmitting}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.reviewLaterText}>Review Later / Back to Home</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+              {/* Submit Action */}
+              <View style={styles.submitSection}>
+                <TouchableOpacity
+                  style={[styles.primarySubmitBtn, isSubmitting && styles.primarySubmitBtnDisabled]}
+                  onPress={handleSubmit}
+                  disabled={isSubmitting}
+                  activeOpacity={0.85}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
+                      <Text style={styles.primarySubmitBtnText}>
+                        Submit Weighbridge Report & Finish Shift
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.reviewLaterBtn}
+                  onPress={() => navigation.navigate("Home")}
+                  disabled={isSubmitting}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.reviewLaterText}>Review Later / Back to Home</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -475,55 +479,79 @@ export default function DisposalReportScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#006A3B",
   },
-  header: {
-    height: 56,
+  scroll: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: "#F8FAFC",
+  },
+
+  // ── Cover Header ──
+  coverHeader: {
+    backgroundColor: "#006A3B",
+    paddingTop: 16,
+    paddingBottom: 48,
+    paddingHorizontal: 20,
+  },
+  headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0EDED",
+    marginBottom: 12,
   },
   backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitleWrap: {
-    flex: 1,
-    marginLeft: 8,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#1B1C1C",
-  },
-  headerSub: {
-    fontSize: 11,
-    color: "#6F7A70",
-    fontWeight: "500",
-  },
   headerRightBadge: {
-    backgroundColor: "#E4EEE9",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
   headerRightBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
-    color: "#006A3B",
+    color: "#FFFFFF",
     letterSpacing: 0.5,
   },
-  container: {
-    padding: 16,
-    paddingBottom: 40,
+  screenLabel: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    marginBottom: 2,
   },
+  screenSub: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.85)",
+    fontWeight: "600",
+  },
+
+  // ── White Sheet (Overlaps Cover) ──
+  whiteSheet: {
+    backgroundColor: "#F8FAFC",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -28,
+    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+    flex: 1,
+    minHeight: "100%",
+  },
+
   loadingContainer: {
     paddingVertical: 80,
     alignItems: "center",
@@ -534,24 +562,26 @@ const styles = StyleSheet.create({
     color: "#6F7A70",
     fontWeight: "600",
   },
+
+  // ── Hero Card ──
   heroCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 20,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#F0EDED",
+    borderColor: "#EDF4F0",
     marginBottom: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
     elevation: 2,
   },
   heroIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: "#E4EEE9",
     alignItems: "center",
     justifyContent: "center",
@@ -567,11 +597,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   heroDescription: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#6F7A70",
     textAlign: "center",
     lineHeight: 18,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   heroHighlight: {
     color: "#006A3B",
@@ -582,9 +612,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "#F0EDED",
+    borderColor: "#EDF4F0",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -604,17 +634,19 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#006A3B",
   },
+
+  // ── Section Cards ──
   sectionCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#F0EDED",
+    borderColor: "#EDF4F0",
     marginBottom: 14,
-    shadowColor: "#000",
+    shadowColor: "#006A3B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
   },
   sectionHeaderRow: {
@@ -632,10 +664,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   sectionHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#6F7A70",
     marginBottom: 12,
   },
+
   facilityList: {
     gap: 8,
   },
@@ -646,12 +679,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 14,
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1.5,
-    borderColor: "#F0EDED",
+    borderColor: "#EDF4F0",
   },
   facilityItemSelected: {
-    backgroundColor: "#E4EEE9",
+    backgroundColor: "#ECFDF5",
     borderColor: "#006A3B",
   },
   facilityItemLeft: {
@@ -671,8 +704,8 @@ const styles = StyleSheet.create({
   },
   selectedBadge: {
     backgroundColor: "#006A3B",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   selectedBadgeText: {
@@ -681,15 +714,17 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.5,
   },
+
+  // ── Weighed Waste ──
   unitToggleContainer: {
     flexDirection: "row",
-    backgroundColor: "#F0EDED",
+    backgroundColor: "#EDF4F0",
     borderRadius: 8,
     padding: 2,
   },
   unitBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 6,
   },
   unitBtnActive: {
@@ -706,19 +741,25 @@ const styles = StyleSheet.create({
   weightInputWrap: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1.5,
     borderColor: "#006A3B",
     borderRadius: 14,
     paddingHorizontal: 14,
-    height: 52,
+    height: 54,
   },
   scaleIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#E4EEE9",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
   },
   weightTextInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "900",
     color: "#1B1C1C",
   },
@@ -728,17 +769,19 @@ const styles = StyleSheet.create({
     color: "#006A3B",
     textTransform: "uppercase",
   },
+
+  // ── Photo Proof ──
   photoPreviewContainer: {
     width: "100%",
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#F0EDED",
-    backgroundColor: "#FBF9F8",
+    borderColor: "#EDF4F0",
+    backgroundColor: "#F8FAFC",
   },
   photoPreview: {
     width: "100%",
-    height: 180,
+    height: 190,
     backgroundColor: "#E2E8F0",
   },
   photoOverlayBadge: {
@@ -748,7 +791,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0, 106, 59, 0.9)",
+    backgroundColor: "rgba(0, 106, 59, 0.92)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -770,7 +813,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    height: 38,
+    height: 40,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#006A3B",
@@ -787,27 +830,27 @@ const styles = StyleSheet.create({
     borderColor: "#BECABE",
     borderStyle: "dashed",
     borderRadius: 16,
-    padding: 20,
+    padding: 22,
     alignItems: "center",
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#F8FAFC",
   },
   cameraIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: "#E4EEE9",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
   },
   placeholderTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
     color: "#1B1C1C",
     marginBottom: 2,
   },
   placeholderSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#6F7A70",
     textAlign: "center",
     marginBottom: 14,
@@ -824,7 +867,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     backgroundColor: "#006A3B",
-    height: 42,
+    height: 44,
     borderRadius: 12,
   },
   captureBtnText: {
@@ -841,7 +884,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E4EEE9",
     borderWidth: 1,
     borderColor: "#006A3B",
-    height: 42,
+    height: 44,
     borderRadius: 12,
   },
   galleryBtnText: {
@@ -849,6 +892,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#006A3B",
   },
+
+  // ── Actions ──
   submitSection: {
     marginTop: 8,
     gap: 10,
@@ -876,12 +921,16 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   reviewLaterBtn: {
-    height: 40,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EDF4F0",
   },
   reviewLaterText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "700",
     color: "#6F7A70",
   },

@@ -11,15 +11,20 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
+
+const SEVERITIES = [
+  { value: 'low', label: 'Low', color: '#10B981', bg: '#DCFCE7' },
+  { value: 'medium', label: 'Medium', color: '#F59E0B', bg: '#FEF3C7' },
+  { value: 'high', label: 'High', color: '#EF4444', bg: '#FEE2E2' },
+  { value: 'critical', label: 'Critical', color: '#7C3AED', bg: '#EDE9FE' },
+];
 
 export default function CollectorProfileScreen() {
   const { user, logout, updateUser } = useAuth();
@@ -33,10 +38,12 @@ export default function CollectorProfileScreen() {
   const [truckStatus, setTruckStatus] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
 
-  // Route preference
-  const [showRouteModal, setShowRouteModal] = useState(false);
-  const [preferredRoute, setPreferredRoute] = useState(null); // { id, name, barangay }
-  const [allRoutes, setAllRoutes] = useState([]);
+  // Bug Report modal
+  const [showBugModal, setShowBugModal] = useState(false);
+  const [bugTitle, setBugTitle] = useState('');
+  const [bugDesc, setBugDesc] = useState('');
+  const [bugSeverity, setBugSeverity] = useState('medium');
+  const [submittingBug, setSubmittingBug] = useState(false);
 
   // Edit modal
   const [editModal, setEditModal] = useState(false);
@@ -48,11 +55,10 @@ export default function CollectorProfileScreen() {
     if (!truckId) return;
     setLoadingData(true);
     try {
-      const [fleetRes, routeRes, truckRes, allRoutesRes] = await Promise.allSettled([
+      const [fleetRes, routeRes, truckRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/fleet/${truckId}`).then((r) => r.json()),
         fetch(`${API_URL}/api/routes/truck/${truckId}`).then((r) => r.json()),
         fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
-        fetch(`${API_URL}/api/routes`).then((r) => r.json()),
       ]);
 
       if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
@@ -66,9 +72,6 @@ export default function CollectorProfileScreen() {
         const mine = truckRes.value.find((t) => t.truckId === truckId);
         setTruckStatus(mine ?? null);
       }
-      if (allRoutesRes.status === 'fulfilled' && Array.isArray(allRoutesRes.value)) {
-        setAllRoutes(allRoutesRes.value);
-      }
     } catch (_) {
       // Silently fall back to local auth data
     } finally {
@@ -80,27 +83,53 @@ export default function CollectorProfileScreen() {
     fetchProfileData();
   }, [fetchProfileData]);
 
-  // Load saved route preference from AsyncStorage
-  useEffect(() => {
-    AsyncStorage.getItem('@truck_route_preference')
-      .then((val) => {
-        if (val) setPreferredRoute(JSON.parse(val));
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleSelectRoute = async (route) => {
-    const pref = route ? { id: route._id, name: route.name, barangay: route.barangay || '' } : null;
-    setPreferredRoute(pref);
-    await AsyncStorage.setItem('@truck_route_preference', JSON.stringify(pref));
-    setShowRouteModal(false);
-  };
-
   // Derived display values
   const driverName = fleetData?.driverName || user?.driverName || user?.name || 'Driver';
   const driverPhone = fleetData?.driverPhone || user?.driverPhone || '';
   const routeName = routeData?.name || fleetData?.route || user?.route || 'No route assigned';
   const isOnline = truckStatus?.status === 'online';
+
+  const handleBugSubmit = async () => {
+    if (!bugTitle.trim()) {
+      Alert.alert('Required', 'Please enter a title for the issue.');
+      return;
+    }
+    if (!bugDesc.trim()) {
+      Alert.alert('Required', 'Please describe what went wrong.');
+      return;
+    }
+    setSubmittingBug(true);
+    try {
+      const res = await fetch(`${API_URL}/api/bugs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: bugTitle.trim(),
+          description: bugDesc.trim(),
+          severity: bugSeverity,
+          platform: 'mobile-truck',
+          deviceInfo: `Truck ${truckId || 'Unknown'} (${Platform.OS} ${Platform.Version})`,
+          reportedBy: driverName || user?.name || `Truck ${truckId}`,
+          status: 'open',
+        }),
+      });
+
+      if (!res.ok) throw new Error('Submission failed');
+
+      setShowBugModal(false);
+      setBugTitle('');
+      setBugDesc('');
+      setBugSeverity('medium');
+      Alert.alert(
+        'Report Submitted',
+        'Thank you! Your issue report has been logged and sent to the technical dispatch team.'
+      );
+    } catch {
+      Alert.alert('Error', 'Failed to submit bug report. Please verify your connection.');
+    } finally {
+      setSubmittingBug(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -272,27 +301,6 @@ export default function CollectorProfileScreen() {
 
               <View style={styles.separator} />
 
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => setShowRouteModal(true)}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
-                    <MaterialIcons name="alt-route" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>Route Preferences</Text>
-                </View>
-                <View style={styles.menuRight}>
-                  <Text style={styles.menuValue} numberOfLines={1}>
-                    {preferredRoute ? preferredRoute.name : 'None'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-                </View>
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
               <View style={styles.menuRow}>
                 <View style={styles.menuLeft}>
                   <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
@@ -319,38 +327,66 @@ export default function CollectorProfileScreen() {
             {/* Resources & Support */}
             <Text style={styles.sectionLabel}>Resources & Support</Text>
             <View style={styles.card}>
-              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.6}
+                onPress={() =>
+                  Alert.alert(
+                    'Collector Manual',
+                    'The Digital Collector Operating Manual and Training Guides are coming soon in the next system update.',
+                    [{ text: 'OK' }]
+                  )
+                }
+              >
                 <View style={styles.menuLeft}>
                   <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
                     <Ionicons name="book-outline" size={18} color="#006A3B" />
                   </View>
                   <Text style={styles.menuText}>Collector Manual</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+                <View style={styles.comingSoonBadge}>
+                  <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+                </View>
               </TouchableOpacity>
 
               <View style={styles.separator} />
 
-              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.6}
+                onPress={() => setShowBugModal(true)}
+              >
                 <View style={styles.menuLeft}>
                   <View style={[styles.iconBox, { backgroundColor: '#FEF3C7' }]}>
-                    <Ionicons name="warning-outline" size={18} color="#D97706" />
+                    <Ionicons name="bug-outline" size={18} color="#D97706" />
                   </View>
-                  <Text style={styles.menuText}>Report Route Issue</Text>
+                  <Text style={styles.menuText}>Report Issue / Bug</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
               </TouchableOpacity>
 
               <View style={styles.separator} />
 
-              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.6}
+                onPress={() =>
+                  Alert.alert(
+                    'Help & Support',
+                    'In-app live dispatch support is coming soon. For urgent concerns, please contact your Barangay Command Center or Dispatcher.',
+                    [{ text: 'OK' }]
+                  )
+                }
+              >
                 <View style={styles.menuLeft}>
                   <View style={[styles.iconBox, { backgroundColor: '#E4EEE9' }]}>
                     <Ionicons name="help-circle-outline" size={18} color="#006A3B" />
                   </View>
                   <Text style={styles.menuText}>Help & Support</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+                <View style={styles.comingSoonBadge}>
+                  <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+                </View>
               </TouchableOpacity>
             </View>
 
@@ -388,51 +424,117 @@ export default function CollectorProfileScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Route Preference Modal ── */}
-      <Modal visible={showRouteModal} animationType="slide" transparent onRequestClose={() => setShowRouteModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { paddingTop: 0 }]}>
-            <View style={styles.modalSheetHeader}>
-              <Text style={styles.modalSheetTitle}>Route Preference</Text>
-              <TouchableOpacity onPress={() => setShowRouteModal(false)}>
+      {/* ── Bug Report Modal ── */}
+      <Modal
+        visible={showBugModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowBugModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.modalSheetTitle}>Report Issue / Bug</Text>
+                <Text style={styles.modalSheetSubtitle}>
+                  Submit technical issues, GPS lags, or app glitches directly to dispatch.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowBugModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="close" size={24} color="#1B1C1C" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.routeModalHint}>
-              Select your default collection route when no automated dispatch is active.
-            </Text>
-            <FlatList
-              data={[{ _id: null, name: 'None – no preference', barangay: '' }, ...allRoutes]}
-              keyExtractor={(item) => item._id || 'none'}
-              showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 380 }}
-              renderItem={({ item }) => {
-                const isActive = item._id ? preferredRoute?.id === item._id : !preferredRoute;
-                return (
-                  <TouchableOpacity
-                    style={[styles.routeItem, isActive && styles.routeItemActive]}
-                    onPress={() => handleSelectRoute(item._id ? item : null)}
-                  >
-                    <MaterialIcons
-                      name={item._id ? 'alt-route' : 'not-interested'}
-                      size={18}
-                      color={isActive ? '#006A3B' : '#C4CEC7'}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.routeItemText, isActive && { color: '#006A3B', fontWeight: '700' }]}>
-                        {item.name}
-                      </Text>
-                      {item.barangay ? (
-                        <Text style={styles.routeItemSub}>{item.barangay}</Text>
-                      ) : null}
-                    </View>
-                    {isActive && <Ionicons name="checkmark-circle" size={18} color="#006A3B" />}
-                  </TouchableOpacity>
-                );
-              }}
-            />
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Issue Title</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bugTitle}
+                  onChangeText={setBugTitle}
+                  placeholder="e.g. Navigation waypoint not updating"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Severity Level</Text>
+                <View style={styles.severityContainer}>
+                  {SEVERITIES.map((s) => {
+                    const isSelected = bugSeverity === s.value;
+                    return (
+                      <TouchableOpacity
+                        key={s.value}
+                        style={[
+                          styles.severityBtn,
+                          isSelected && { backgroundColor: s.bg, borderColor: s.color },
+                        ]}
+                        onPress={() => setBugSeverity(s.value)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.severityBtnText,
+                            isSelected && { color: s.color, fontWeight: '800' },
+                          ]}
+                        >
+                          {s.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Issue Description</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textArea]}
+                  value={bugDesc}
+                  onChangeText={setBugDesc}
+                  placeholder="Describe what happened, what went wrong, or exact location..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Reporter & Vehicle Context</Text>
+                <View style={styles.readonlyField}>
+                  <MaterialIcons name="info-outline" size={16} color="#64748B" />
+                  <Text style={styles.readonlyFieldText}>
+                    Truck: {truckId || 'None'} • Driver: {driverName}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.saveBtn,
+                  (!bugTitle.trim() || !bugDesc.trim() || submittingBug) && styles.saveBtnDisabled,
+                ]}
+                onPress={handleBugSubmit}
+                disabled={!bugTitle.trim() || !bugDesc.trim() || submittingBug}
+                activeOpacity={0.85}
+              >
+                {submittingBug ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Submit Bug Report</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Edit Profile Modal ── */}
@@ -764,31 +866,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalSheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 20,
-    marginBottom: 12,
-  },
   modalSheetTitle: { fontSize: 20, fontWeight: '700', color: '#1B1C1C' },
-  routeModalHint: {
-    fontSize: 13,
-    color: '#7A8C7F',
-    marginBottom: 12,
-    lineHeight: 18,
+  modalSheetSubtitle: {
+    fontSize: 12,
+    color: '#6F7A70',
+    marginTop: 2,
+    lineHeight: 16,
   },
-  routeItem: {
+  comingSoonBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  comingSoonBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.2,
+  },
+  severityContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    gap: 12,
+    gap: 8,
   },
-  routeItemActive: { backgroundColor: '#ECFDF5' },
-  routeItemText: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  routeItemSub: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+  severityBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  severityBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  textArea: {
+    minHeight: 88,
+    paddingTop: 10,
+  },
 
   inputGroup: { marginBottom: 16 },
   inputLabel: {

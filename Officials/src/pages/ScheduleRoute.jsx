@@ -411,263 +411,403 @@ export default function ScheduleRoute() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ── Calendar ── */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          {/* Month navigation */}
-          <div className="flex items-center justify-between mb-5">
-            <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors">
+      {/* ── Full Calendar at the Top ── */}
+      <div className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+        {/* Month navigation */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={prevMonth}
+              className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+              title="Previous Month"
+            >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-base font-bold text-slate-800">{MONTHS[month]} {year}</h2>
-            <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">
+              {MONTHS[month]} {year}
+            </h2>
+            <button
+              onClick={nextMonth}
+              className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+              title="Next Month"
+            >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Day headers */}
-          <div className="grid grid-cols-7 mb-1">
-            {DAYS.map(d => (
-              <div key={d} className="text-center text-xs font-bold text-slate-400 uppercase tracking-wider py-1.5">{d}</div>
-            ))}
-          </div>
-
-          {/* Day cells */}
-          {loading ? (
-            <div className="grid grid-cols-7 gap-1 animate-pulse">
-              {Array.from({ length: 35 }).map((_, idx) => (
-                <div key={idx} className="h-14 bg-slate-50 border border-slate-100 rounded-xl p-1.5 flex flex-col justify-between">
-                  <div className="h-3 w-4 bg-slate-200 rounded" />
-                  <div className="h-2 w-full bg-slate-100 rounded" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-7 gap-1">
-              {cells.map((day, idx) => {
-                if (!day) return <div key={`e-${idx}`} />;
-                const ymd = toYMD(year, month, day);
-                const hasSched = (schedulesByDate[ymd] || []).length > 0;
-                const isToday = ymd === today;
-                const isSelected = ymd === selectedDate;
-                const count = (schedulesByDate[ymd] || []).length;
-                return (
-                  <button
-                    key={ymd}
-                    onClick={() => setSelectedDate(ymd)}
-                    className={`relative flex flex-col items-center justify-center rounded-2xl py-2.5 min-h-[56px] transition-all duration-200 text-sm font-medium border-2
-                      ${isSelected
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-500 shadow-sm'
-                        : isToday
-                          ? 'bg-blue-50 text-blue-800 border-blue-200 hover:border-blue-300 font-bold'
-                          : 'bg-white text-slate-700 border-transparent hover:border-slate-200 hover:bg-slate-50'
-                      }`}
-                  >
-                    {day}
-                    {hasSched && (
-                      <div className="flex gap-1 mt-1 items-center">
-                        {(schedulesByDate[ymd] || []).slice(0, 3).map((s, i) => {
-                          const isDiMalata = s.wasteType === 'Di-Malata';
-                          return (
-                            <span
-                              key={i}
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isDiMalata ? 'bg-blue-500' : 'bg-emerald-500'
-                              }`}
-                              title={isDiMalata ? 'Di-Malata' : 'Malata'}
-                            />
-                          );
-                        })}
-                        {count > 3 && <span className={`text-[9px] font-bold ${isSelected ? 'text-emerald-700' : 'text-slate-500'}`}>+{count - 3}</span>}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Malata (Bio)
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <div className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Di-Malata (Non-Bio)
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <div className="w-2.5 h-2.5 rounded-full bg-blue-50 border-2 border-blue-200" /> Today
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-50 border-2 border-emerald-500" /> Selected
-            </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                const now = new Date();
+                setYear(now.getFullYear());
+                setMonth(now.getMonth());
+                setSelectedDate(todayYMD());
+              }}
+              className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+            >
+              Today
+            </button>
+            <span className="hidden sm:inline-block text-xs font-medium text-slate-400">
+              Click any date to view and manage schedule details below
+            </span>
           </div>
         </div>
 
-        {/* ── Day Panel ── */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Selected Date</p>
-              <h3 className="text-sm font-bold text-slate-800 leading-tight">{formatDisplayDate(selectedDate)}</h3>
-            </div>
-            <button
-              onClick={openModal}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors"
+        {/* Day headers */}
+        <div className="grid grid-cols-7 mb-2">
+          {DAYS.map((d) => (
+            <div
+              key={d}
+              className="text-center text-xs font-bold text-slate-400 uppercase tracking-wider py-2"
             >
-              <Plus className="w-3.5 h-3.5" /> Schedule
-            </button>
-          </div>
-
-          {scheduleError && (
-            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-              <span className="font-bold shrink-0">Error:</span>
-              <span>{scheduleError}</span>
+              {d}
             </div>
-          )}
+          ))}
+        </div>
 
-          {/* Waste Type Filter Toggle */}
-          {daySchedules.length > 0 && (
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-3">
-              {['All', 'Malata', 'Di-Malata'].map((t) => (
+        {/* Day cells */}
+        {loading ? (
+          <div className="grid grid-cols-7 gap-2 animate-pulse">
+            {Array.from({ length: 35 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="h-20 bg-slate-50 border border-slate-100 rounded-2xl p-2 flex flex-col justify-between"
+              >
+                <div className="h-3 w-5 bg-slate-200 rounded" />
+                <div className="h-2 w-full bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-7 gap-2">
+            {cells.map((day, idx) => {
+              if (!day) return <div key={`e-${idx}`} className="min-h-[72px]" />;
+              const ymd = toYMD(year, month, day);
+              const dayScheds = schedulesByDate[ymd] || [];
+              const hasSched = dayScheds.length > 0;
+              const isToday = ymd === today;
+              const isSelected = ymd === selectedDate;
+              const count = dayScheds.length;
+
+              return (
                 <button
-                  key={t}
-                  type="button"
-                  onClick={() => setFilterWasteType(t)}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    filterWasteType === t
-                      ? 'bg-white text-slate-800 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
+                  key={ymd}
+                  onClick={() => setSelectedDate(ymd)}
+                  className={`relative flex flex-col justify-between p-2 sm:p-2.5 rounded-2xl min-h-[72px] sm:min-h-[82px] transition-all duration-200 text-left border-2 cursor-pointer ${
+                    isSelected
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
+                      : isToday
+                        ? 'bg-blue-50/50 text-blue-900 border-blue-200 hover:border-blue-300 font-bold'
+                        : 'bg-white text-slate-700 border-slate-100 hover:border-slate-300 hover:bg-slate-50/80 shadow-2xs'
                   }`}
                 >
-                  {t === 'All' ? 'All Types' : t === 'Malata' ? '🍃 Malata' : '♻️ Di-Malata'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex-1 overflow-y-auto space-y-3">
-            {(() => {
-              const filteredSchedules = daySchedules.filter(s => {
-                if (filterWasteType === 'All') return true;
-                return (s.wasteType || 'Malata') === filterWasteType;
-              });
-
-              if (filteredSchedules.length === 0 && !scheduleError) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm border border-slate-100">
-                      <Calendar className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-slate-600">
-                      {daySchedules.length > 0 ? `No ${filterWasteType} routes scheduled` : 'No scheduled routes'}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
-                      {daySchedules.length > 0 ? 'Try selecting another waste category filter.' : 'Assign a truck to a route for this date to get started.'}
-                    </p>
+                  <div className="w-full flex items-center justify-between">
+                    <span
+                      className={`text-sm font-bold ${
+                        isSelected
+                          ? 'text-emerald-800'
+                          : isToday
+                            ? 'text-blue-700'
+                            : 'text-slate-800'
+                      }`}
+                    >
+                      {day}
+                    </span>
+                    {count > 0 && (
+                      <span
+                        className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                          isSelected
+                            ? 'bg-emerald-200/70 text-emerald-900'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {count} {count === 1 ? 'run' : 'runs'}
+                      </span>
+                    )}
                   </div>
-                );
-              }
 
-              return filteredSchedules.map(s => (
-                <div key={s._id} className="group relative p-4 bg-white hover:bg-slate-50 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0 flex flex-col gap-2">
-                      {/* Top row: Time, Truck, Waste Type & Status Badges */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {s.startTime ? (
-                          <div className="flex items-center gap-1.5 bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="text-xs font-bold">{s.startTime}{s.endTime ? ` - ${s.endTime}` : ''}</span>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-md border border-slate-100">Any Time</span>
-                        )}
-                        <div className="flex items-center gap-1.5 bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-1 rounded-md">
-                          <Truck className="w-3.5 h-3.5 text-slate-600" />
-                          <span className="text-xs font-bold truncate max-w-[120px]">{s.driverName || 'No Driver'}</span>
-                        </div>
-                        {/* Waste Category Badge */}
-                        {s.wasteType === 'Di-Malata' ? (
-                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                            <Recycle className="w-3 h-3 text-blue-600" />
-                            Di-Malata
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                            <Leaf className="w-3 h-3 text-emerald-600" />
-                            Malata
-                          </span>
-                        )}
-                        {s.isPriority && (
-                          <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                            Priority ({s.priorityLevel || 'High'})
-                          </span>
-                        )}
-                        {s.status === 'completed' && (
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider">Completed</span>
-                        )}
-                        {s.status === 'accepted' && (
-                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                            Accepted
-                          </span>
-                        )}
-                        {s.status === 'missed' && (
-                          <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded-md uppercase tracking-wider">Missed</span>
-                        )}
-                        {s.status === 'pending' && (
-                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded-md uppercase tracking-wider">Pending</span>
-                        )}
-                      </div>
-                      
-                      {/* Driver & Route Info */}
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          {s.driverName && (
-                            <p className="text-sm font-bold text-slate-800 truncate">{s.driverName}</p>
+                  {hasSched ? (
+                    <div className="w-full flex flex-wrap gap-1 mt-1 items-center">
+                      {dayScheds.slice(0, 4).map((s, i) => {
+                        const isDiMalata = s.wasteType === 'Di-Malata';
+                        return (
+                          <span
+                            key={i}
+                            className={`w-2 h-2 rounded-full ${
+                              isDiMalata ? 'bg-blue-500' : 'bg-emerald-500'
+                            } ${s.isPriority ? 'ring-1 ring-red-400 animate-pulse' : ''}`}
+                            title={`${s.wasteType || 'Waste'} - ${s.driverName || 'Driver'}`}
+                          />
+                        );
+                      })}
+                      {count > 4 && (
+                        <span
+                          className={`text-[9px] font-bold ${
+                            isSelected ? 'text-emerald-800' : 'text-slate-500'
+                          }`}
+                        >
+                          +{count - 4}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="h-2" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Calendar Legend & Month Summary */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span>Malata (Bio)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+              <span>Di-Malata (Non-Bio)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-50 border-2 border-blue-200" />
+              <span>Today</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-50 border-2 border-emerald-500" />
+              <span>Selected Date</span>
+            </div>
+          </div>
+          <p className="text-xs font-semibold text-slate-500">
+            <span className="font-bold text-slate-800">{schedules.length}</span> total schedules in {MONTHS[month]}
+          </p>
+        </div>
+      </div>
+
+      {/* ── Schedule Details at the Bottom ── */}
+      <div className="w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        {/* Details Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100 mb-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                Selected Date Details
+              </span>
+              <span className="text-xs font-bold text-slate-400">•</span>
+              <span className="text-xs font-semibold text-slate-500">
+                {daySchedules.length} {daySchedules.length === 1 ? 'Route Scheduled' : 'Routes Scheduled'}
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mt-1">
+              {formatDisplayDate(selectedDate)}
+            </h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Waste Type Filter Toggle */}
+            {daySchedules.length > 0 && (
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+                {['All', 'Malata', 'Di-Malata'].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setFilterWasteType(t)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      filterWasteType === t
+                        ? 'bg-white text-slate-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {t === 'All' ? 'All Types' : t === 'Malata' ? '🍃 Malata' : '♻️ Di-Malata'}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={openModal}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Schedule Route
+            </button>
+          </div>
+        </div>
+
+        {scheduleError && (
+          <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+            <span className="font-bold shrink-0">Error:</span>
+            <span>{scheduleError}</span>
+          </div>
+        )}
+
+        {/* Schedule Cards Grid */}
+        <div>
+          {(() => {
+            const filteredSchedules = daySchedules.filter((s) => {
+              if (filterWasteType === 'All') return true;
+              return (s.wasteType || 'Malata') === filterWasteType;
+            });
+
+            if (filteredSchedules.length === 0 && !scheduleError) {
+              return (
+                <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                  <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm border border-slate-100">
+                    <Calendar className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <p className="text-base font-bold text-slate-700">
+                    {daySchedules.length > 0
+                      ? `No ${filterWasteType} routes scheduled on this date`
+                      : `No scheduled routes for ${formatDisplayDate(selectedDate)}`}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                    {daySchedules.length > 0
+                      ? 'Try selecting another waste category filter.'
+                      : 'Assign a truck and driver to a route for this date to begin collection operations.'}
+                  </p>
+                  <button
+                    onClick={openModal}
+                    className="mt-4 flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Schedule Now
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredSchedules.map((s) => (
+                  <div
+                    key={s._id}
+                    className="group relative p-5 bg-white hover:bg-slate-50/70 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Top Badges Row */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {s.startTime ? (
+                            <div className="flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              <span>{s.startTime}{s.endTime ? ` - ${s.endTime}` : ''}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">
+                              Any Time
+                            </span>
                           )}
-                          {(s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone) && (
+
+                          {/* Waste Category Badge */}
+                          {s.wasteType === 'Di-Malata' ? (
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
+                              <Recycle className="w-3 h-3 text-blue-600" />
+                              Di-Malata
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
+                              <Leaf className="w-3 h-3 text-emerald-600" />
+                              Malata
+                            </span>
+                          )}
+
+                          {s.isPriority && (
+                            <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                              Priority
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status Badge */}
+                        <div>
+                          {s.status === 'completed' && (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                              Completed
+                            </span>
+                          )}
+                          {s.status === 'accepted' && (
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                              Accepted
+                            </span>
+                          )}
+                          {s.status === 'missed' && (
+                            <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                              Missed
+                            </span>
+                          )}
+                          {s.status === 'pending' && (
+                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Driver & Truck Info */}
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+                              <Truck className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800 leading-tight">
+                                {s.driverName || 'No Driver Assigned'}
+                              </p>
+                              <p className="text-[11px] font-mono text-emerald-700 font-bold">
+                                {s.truckId}
+                              </p>
+                            </div>
+                          </div>
+
+                          {(s.driverPhone || fleet.find((t) => t.truckId === s.truckId)?.driverPhone) && (
                             <a
-                              href={`tel:${s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone}`}
-                              className="text-xs text-slate-500 hover:text-emerald-600 flex items-center gap-1 font-medium transition-colors"
+                              href={`tel:${s.driverPhone || fleet.find((t) => t.truckId === s.truckId)?.driverPhone}`}
+                              className="text-xs text-slate-500 hover:text-emerald-600 flex items-center gap-1 font-medium transition-colors bg-slate-50 hover:bg-emerald-50 px-2 py-1 rounded-lg border border-slate-100"
                               title="Call driver"
                             >
                               <Phone className="w-3 h-3 text-emerald-500" />
-                              {s.driverPhone || fleet.find(t => t.truckId === s.truckId)?.driverPhone}
+                              <span className="text-[11px]">{s.driverPhone || fleet.find((t) => t.truckId === s.truckId)?.driverPhone}</span>
                             </a>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <Route className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                          <span className="text-xs text-slate-600 font-medium truncate">{s.routeName || <span className="italic text-slate-400">No route assigned</span>}</span>
+                      </div>
+
+                      {/* Route Path */}
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 mb-3">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                          <Route className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="font-bold truncate">{s.routeName || 'Assigned Route'}</span>
                         </div>
+                        {s.barangay && (
+                          <p className="text-[11px] text-slate-400 mt-0.5 pl-5">Barangay {s.barangay}</p>
+                        )}
                       </div>
 
                       {/* Notes & Priority Reason */}
                       {s.notes && (
-                        <p className="text-xs text-slate-500 italic bg-amber-50/50 border border-amber-100/50 px-2.5 py-1.5 rounded-lg border-l-2 border-l-amber-300 mt-1">
+                        <p className="text-xs text-slate-500 italic bg-amber-50/50 border border-amber-100 px-2.5 py-1.5 rounded-lg border-l-2 border-l-amber-400 mb-2">
                           "{s.notes}"
                         </p>
                       )}
                       {s.isPriority && s.priorityReason && (
-                        <p className="text-xs text-red-700 font-medium bg-red-50/80 border border-red-200 px-2.5 py-1.5 rounded-lg border-l-2 border-l-red-500 mt-1 flex items-center gap-1.5">
-                          <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0" />
-                          <span>Priority Reason: {s.priorityReason}</span>
+                        <p className="text-xs text-red-700 font-medium bg-red-50 border border-red-200 px-2.5 py-1.5 rounded-lg border-l-2 border-l-red-500 mb-2 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                          <span>Priority: {s.priorityReason}</span>
                         </p>
                       )}
                     </div>
 
-                    {/* Actions: Update Status button & Delete button */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Action Buttons Row */}
+                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 mt-2">
                       <button
                         type="button"
                         onClick={() => {
                           setStatusModalSchedule(s);
                           setSelectedNewStatus(s.status || 'pending');
                         }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
                         title="Update Driver Status"
                       >
                         <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
@@ -683,17 +823,10 @@ export default function ScheduleRoute() {
                       </button>
                     </div>
                   </div>
-                </div>
-              ));
-            })()}
-          </div>
-
-          {/* Month summary */}
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <p className="text-xs text-slate-400 text-center">
-              <span className="font-bold text-slate-600">{schedules.length}</span> total schedules in {MONTHS[month]}
-            </p>
-          </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
