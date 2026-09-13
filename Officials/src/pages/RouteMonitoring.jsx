@@ -969,6 +969,13 @@ export default function RouteMonitoring() {
           waypoints: waypoints,
           currentStopIndex: completedCount,
           status: sched.status,
+          runNumber: sched.runNumber || 1,
+          startTime: sched.startTime || "",
+          endTime: sched.endTime || "",
+          createdAt: sched.createdAt,
+          totalWeight: sched.totalWeight || 0,
+          weightUnit: sched.weightUnit || "tons",
+          disposalFacility: sched.disposalFacility || "",
         };
       });
 
@@ -1239,13 +1246,19 @@ export default function RouteMonitoring() {
   const activeRoute =
     selectedRoute && visibleRoutes.some((r) => r._id === selectedRoute._id)
       ? selectedRoute
-      : visibleRoutes.length > 0
-        ? visibleRoutes[0]
-        : null;
+      : visibleRoutes.find((r) => r.status !== "completed") ||
+        visibleRoutes[visibleRoutes.length - 1] ||
+        visibleRoutes[0] ||
+        null;
   const activeTruck = activeRoute ? trucks[activeRoute.truckId] : null;
   const activeFleet = activeRoute
     ? fleet.find((f) => f.truckId === activeRoute.truckId)
     : null;
+
+  // All runs for the current truck today (for multi-run switching)
+  const activeTruckRoutes = visibleRoutes.filter(
+    (r) => r.truckId && activeRoute?.truckId && r.truckId === activeRoute.truckId,
+  );
 
   // Determines progress. Defaults to 0 if unassigned.
   const completedStops = activeRoute?.currentStopIndex || 0;
@@ -1383,6 +1396,70 @@ export default function RouteMonitoring() {
                         Truck has deviated ~{activeTruck.offRouteDistance || 100}m
                         away from the assigned collection path!
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Multi-Run / Schedule Switcher for this Truck */}
+                {activeTruckRoutes.length > 1 && (
+                  <div className="mb-4 bg-slate-50 border border-slate-200/90 rounded-xl p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between mb-2 px-0.5">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        Today's Runs ({activeTruckRoutes.length})
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400">Select to monitor</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-0.5">
+                      {activeTruckRoutes.map((r, idx) => {
+                        const isSelected = activeRoute?._id === r._id;
+                        const isDone = r.status === "completed";
+                        const runNum = r.runNumber || (idx + 1);
+                        const rCompleted = r.currentStopIndex || (r.waypoints?.filter(w => w.completed)?.length || 0);
+                        const rTotal = r.waypoints?.length || 0;
+                        const rProg = rTotal > 0 ? Math.round((rCompleted / rTotal) * 100) : (isDone ? 100 : 0);
+
+                        return (
+                          <button
+                            key={r._id}
+                            onClick={() => setSelectedRoute(r)}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-all ${
+                              isSelected
+                                ? "bg-emerald-600 text-white shadow-sm font-bold"
+                                : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <span
+                                className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                  isSelected
+                                    ? "bg-white"
+                                    : isDone
+                                    ? "bg-emerald-500"
+                                    : "bg-amber-500 animate-pulse"
+                                }`}
+                              />
+                              <span className="truncate">
+                                Run {runNum}
+                                {r.startTime ? ` • ${r.startTime}` : ""}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                  isSelected
+                                    ? "bg-emerald-700 text-emerald-100"
+                                    : isDone
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                                }`}
+                              >
+                                {isDone ? "Done" : `${rProg}%`}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1749,8 +1826,9 @@ export default function RouteMonitoring() {
                             !isNaN(wp.lng),
                         )
                         .map((wp, i) => {
-                          const isComp = i < completedStops;
-                          const isCurr = i === completedStops;
+                          const routeCompletedCt = route.currentStopIndex ?? (route.waypoints?.filter(w => w.completed)?.length || 0);
+                          const isComp = route.status === "completed" || (wp.completed === true) || (i < routeCompletedCt);
+                          const isCurr = route.status !== "completed" && i === routeCompletedCt;
                           return (
                             <Marker
                               key={i}
@@ -2008,7 +2086,7 @@ export default function RouteMonitoring() {
 
 
             {/* Live Route Completed Banner Alert */}
-            {completedRouteAlert && (
+            {completedRouteAlert && activeRoute?.status === "completed" && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1100] w-[92%] max-w-xl bg-emerald-950/95 backdrop-blur-md text-slate-100 px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-500/80 flex items-center gap-3.5 animate-fadeIn pointer-events-auto">
                 <div className="w-9 h-9 rounded-xl bg-emerald-600/30 border border-emerald-400/50 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
                   <Check className="w-5 h-5 stroke-[2.5]" />

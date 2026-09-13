@@ -413,9 +413,18 @@ export default function CollectorHomeScreen() {
     }
   };
 
+  // Active schedule for today: prioritizes uncompleted runs, then newest run
+  const activeSchedule = useMemo(() => {
+    if (!todaySchedules || todaySchedules.length === 0) return null;
+    return (
+      todaySchedules.find((s) => s.status !== "completed") ||
+      todaySchedules[todaySchedules.length - 1]
+    );
+  }, [todaySchedules]);
+
   // AI Chat
   const openAiModal = () => {
-    const areaName = todaySchedules[0]?.routeName || "Unassigned";
+    const areaName = activeSchedule?.routeName || todaySchedules[0]?.routeName || "Unassigned";
     const greeting = `Hi ${driverName.split(" ")[0]}! I'm EcoAssist AI. You're assigned to "${areaName}" today. How can I help you?`;
     setAiMessages([{ role: "assistant", content: greeting }]);
     setAiInput("");
@@ -437,7 +446,7 @@ export default function CollectorHomeScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: updated,
-          context: { driverName, truckId: TRUCK_ID, routeName: todaySchedules[0]?.routeName || "" },
+          context: { driverName, truckId: TRUCK_ID, routeName: activeSchedule?.routeName || todaySchedules[0]?.routeName || "" },
         }),
       });
       const data = await res.json();
@@ -450,20 +459,21 @@ export default function CollectorHomeScreen() {
     }
   };
 
-  // Dynamic Shift Analytics Calculations
+  // Dynamic Shift Analytics Calculations based on active run
   const analyticsStats = useMemo(() => {
     let totalStops = 0;
     let completedStops = 0;
 
-    todaySchedules.forEach((sched) => {
-      if (sched.sitioTasks && sched.sitioTasks.length > 0) {
-        totalStops += sched.sitioTasks.length;
-        completedStops += sched.sitioTasks.filter((t) => t.completed).length;
-      } else if (sched.sitio) {
+    const targetSchedule = activeSchedule || todaySchedules[0];
+    if (targetSchedule) {
+      if (targetSchedule.sitioTasks && targetSchedule.sitioTasks.length > 0) {
+        totalStops = targetSchedule.sitioTasks.length;
+        completedStops = targetSchedule.sitioTasks.filter((t) => t.completed).length;
+      } else if (targetSchedule.sitio) {
         totalStops += 1;
-        if (sched.status === "completed") completedStops += 1;
+        if (targetSchedule.status === "completed") completedStops += 1;
       }
-    });
+    }
 
     const stopsLeft = Math.max(0, totalStops - completedStops);
     const progressPercent = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
@@ -476,13 +486,14 @@ export default function CollectorHomeScreen() {
       progressPercent,
       estimatedBins,
     };
-  }, [todaySchedules]);
+  }, [activeSchedule, todaySchedules]);
 
   const isRouteCompleted = useMemo(() => {
-    if (!todaySchedules || todaySchedules.length === 0) return false;
+    if (!activeSchedule) return false;
+    if (activeSchedule.status === "completed") return true;
     if (analyticsStats.totalStops > 0 && analyticsStats.stopsLeft === 0) return true;
-    return todaySchedules.every((sched) => sched.status === "completed");
-  }, [todaySchedules, analyticsStats]);
+    return false;
+  }, [activeSchedule, analyticsStats]);
 
   // Broadcast shift completion to Officials app & auto-end shift
   useEffect(() => {
@@ -549,9 +560,9 @@ export default function CollectorHomeScreen() {
   }, []);
 
   const formattedAssignedRoute = useMemo(() => {
-    if (!todaySchedules || todaySchedules.length === 0) return "No schedule assigned today";
-    return formatRouteArrowString(todaySchedules[0]);
-  }, [todaySchedules, formatRouteArrowString]);
+    if (!activeSchedule && (!todaySchedules || todaySchedules.length === 0)) return "No schedule assigned today";
+    return formatRouteArrowString(activeSchedule || todaySchedules[0]);
+  }, [activeSchedule, todaySchedules, formatRouteArrowString]);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -605,23 +616,27 @@ export default function CollectorHomeScreen() {
             <View style={styles.heroRouteHeader}>
               <View style={styles.heroRouteHeaderLeft}>
                 <MaterialIcons name="alt-route" size={18} color="#059669" />
-                <Text style={styles.heroRouteHeaderTitle}>TODAY'S ASSIGNED ROUTE</Text>
+                <Text style={styles.heroRouteHeaderTitle}>
+                  {activeSchedule?.runNumber && activeSchedule.runNumber > 1
+                    ? `TODAY'S ASSIGNED ROUTE (RUN ${activeSchedule.runNumber})`
+                    : "TODAY'S ASSIGNED ROUTE"}
+                </Text>
               </View>
-              {todaySchedules.length > 0 && (
+              {activeSchedule && (
                 <View style={[
                   styles.heroWasteBadge,
-                  todaySchedules[0]?.wasteType === "Di-Malata" ? styles.heroWasteBadgeDiMalata : styles.heroWasteBadgeMalata
+                  activeSchedule.wasteType === "Di-Malata" ? styles.heroWasteBadgeDiMalata : styles.heroWasteBadgeMalata
                 ]}>
                   <MaterialIcons
-                    name={todaySchedules[0]?.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                    name={activeSchedule.wasteType === "Di-Malata" ? "recycling" : "eco"}
                     size={12}
-                    color={todaySchedules[0]?.wasteType === "Di-Malata" ? "#1D4ED8" : "#065F46"}
+                    color={activeSchedule.wasteType === "Di-Malata" ? "#1D4ED8" : "#065F46"}
                   />
                   <Text style={[
                     styles.heroWasteBadgeText,
-                    todaySchedules[0]?.wasteType === "Di-Malata" ? styles.heroWasteBadgeTextDiMalata : styles.heroWasteBadgeTextMalata
+                    activeSchedule.wasteType === "Di-Malata" ? styles.heroWasteBadgeTextDiMalata : styles.heroWasteBadgeTextMalata
                   ]}>
-                    {(todaySchedules[0]?.wasteType || "MALATA").toUpperCase()}
+                    {(activeSchedule.wasteType || "MALATA").toUpperCase()}
                   </Text>
                 </View>
               )}
@@ -640,8 +655,8 @@ export default function CollectorHomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.shiftCompletedBannerTitle}>Shift & Pickups Completed</Text>
                 <Text style={styles.shiftCompletedBannerSub}>
-                  Truck {TRUCK_ID} ({driverName}) has completed all scheduled collections
-                  {todaySchedules?.[0]?.disposalFacility ? ` · Weighed at ${todaySchedules[0].disposalFacility}` : ""}.
+                  Truck {TRUCK_ID} ({driverName}) has completed scheduled collections
+                  {activeSchedule?.disposalFacility ? ` · Weighed at ${activeSchedule.disposalFacility}` : ""}.
                 </Text>
               </View>
             </View>
@@ -650,8 +665,8 @@ export default function CollectorHomeScreen() {
                 {analyticsStats.completedStops} / {analyticsStats.totalStops} Stops Cleared
               </Text>
               <Text style={styles.shiftCompletedFooterStat}>
-                {todaySchedules?.[0]?.totalWeight
-                  ? `⚖️ ${todaySchedules[0].totalWeight} ${todaySchedules[0].weightUnit || "tons"} Weighed`
+                {activeSchedule?.totalWeight
+                  ? `⚖️ ${activeSchedule.totalWeight} ${activeSchedule.weightUnit || "tons"} Weighed`
                   : `~${analyticsStats.estimatedBins} Bins Volume`}
               </Text>
             </View>

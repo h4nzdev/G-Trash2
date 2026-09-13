@@ -855,7 +855,8 @@ export default function CollectorMapScreen({ navigation }) {
               ? [data.schedule]
               : [];
           setTodaySchedules(list);
-          setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null));
+          const defaultSched = list.find(s => s.status !== 'completed' && !(s.sitioTasks?.length > 0 && s.sitioTasks.every(t => t.completed))) || list[0];
+          setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (defaultSched?._id || null));
           
           const isDone = list.length === 0 || list.every(s => 
             s.status === 'completed' || 
@@ -1197,26 +1198,18 @@ export default function CollectorMapScreen({ navigation }) {
   const assignedRouteBarangay = activeSchedule?.barangay || activeSchedule?.routeName || '';
 
   const isRouteCompleted = useMemo(() => {
-    if (!todaySchedules || todaySchedules.length === 0) return false;
-    let totalStops = 0;
-    let completedStops = 0;
-    todaySchedules.forEach((sched) => {
-      if (sched.sitioTasks && sched.sitioTasks.length > 0) {
-        totalStops += sched.sitioTasks.length;
-        completedStops += sched.sitioTasks.filter((t) => t.completed).length;
-      } else if (sched.sitio) {
-        totalStops += 1;
-        if (sched.status === "completed") completedStops += 1;
-      }
-    });
-    if (totalStops > 0 && completedStops === totalStops) return true;
-    return todaySchedules.every((s) => s.status === "completed");
-  }, [todaySchedules]);
+    if (!activeSchedule) return false;
+    if (activeSchedule.status === "completed") return true;
+    if (activeSchedule.sitioTasks && activeSchedule.sitioTasks.length > 0) {
+      return activeSchedule.sitioTasks.every((t) => t.completed);
+    }
+    return false;
+  }, [activeSchedule]);
 
   const handleOpenCompletionSummary = useCallback(() => {
-    const s = todaySchedules?.[0];
-    const sitiosCleared = todaySchedules?.reduce((sum, sch) => sum + (sch.sitioTasks ? sch.sitioTasks.filter(t => t.completed).length : (sch.status === 'completed' ? 1 : 0)), 0) || 0;
-    const totalSitios = todaySchedules?.reduce((sum, sch) => sum + (sch.sitioTasks ? sch.sitioTasks.length : 1), 0) || 0;
+    const s = activeSchedule || todaySchedules?.[0];
+    const sitiosCleared = s?.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s?.status === 'completed' ? 1 : 0);
+    const totalSitios = s?.sitioTasks?.length || 1;
 
     if (navigation?.navigate) {
       navigation.navigate("DisposalReport", {
@@ -1227,23 +1220,23 @@ export default function CollectorMapScreen({ navigation }) {
         totalSitios,
       });
     }
-  }, [todaySchedules, assignedRouteBarangay, navigation]);
+  }, [activeSchedule, todaySchedules, assignedRouteBarangay, navigation]);
 
   useEffect(() => {
-    if (isRouteCompleted && todaySchedules?.length > 0) {
+    if (isRouteCompleted && activeSchedule) {
       if (navigationActive || navigationActiveRef.current) {
         stopNavigation();
       }
       socketRef.current?.emit("truck:shift-completed", {
         truckId: TRUCK_ID,
         driverName: user?.driverName || user?.name || "Collector",
-        routeName: assignedRouteBarangay || "Collection Duty",
-        completedStops: todaySchedules?.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s.status === 'completed' ? 1 : 0)), 0),
-        totalStops: todaySchedules?.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.length : 1), 0),
+        routeName: activeSchedule.routeName || assignedRouteBarangay || "Collection Duty",
+        completedStops: activeSchedule.sitioTasks ? activeSchedule.sitioTasks.filter(t => t.completed).length : 1,
+        totalStops: activeSchedule.sitioTasks ? activeSchedule.sitioTasks.length : 1,
         timestamp: new Date().toISOString(),
       });
     }
-  }, [isRouteCompleted, todaySchedules, TRUCK_ID, user, assignedRouteBarangay, navigationActive]);
+  }, [isRouteCompleted, activeSchedule, TRUCK_ID, user, assignedRouteBarangay, navigationActive]);
 
   const allStops = useMemo(() => {
     if (sitioList && sitioList.length > 0) {
@@ -2094,6 +2087,60 @@ export default function CollectorMapScreen({ navigation }) {
           {!navigationActive ? (
             /* Discovery Mode */
             <View style={styles.discoveryMode} pointerEvents="box-none">
+              {/* Route Switcher when multiple schedules exist today */}
+              {todaySchedules && todaySchedules.length > 1 && !isExpanded && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.routeSwitcherScroll}
+                  contentContainerStyle={styles.routeSwitcherContent}
+                >
+                  {todaySchedules.map((s, idx) => {
+                    const isSelected = activeScheduleId === s._id;
+                    const isDone = s.status === "completed" || (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed));
+                    const runLabel = s.runNumber ? `Run ${s.runNumber}` : `Run ${idx + 1}`;
+                    return (
+                      <TouchableOpacity
+                        key={s._id}
+                        style={[
+                          styles.routeSwitchPill,
+                          isSelected && styles.routeSwitchPillActive,
+                        ]}
+                        onPress={() => setActiveScheduleId(s._id)}
+                        activeOpacity={0.8}
+                      >
+                        <View
+                          style={[
+                            styles.routeSwitchDot,
+                            isSelected && styles.routeSwitchDotActive,
+                            isDone && { backgroundColor: isSelected ? "#FFFFFF" : "#10B981" },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.routeSwitchText,
+                            isSelected && styles.routeSwitchTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {runLabel} {isDone ? "✓" : ""}
+                        </Text>
+                        {s.startTime ? (
+                          <Text
+                            style={[
+                              styles.routeSwitchTime,
+                              isSelected && styles.routeSwitchTimeActive,
+                            ]}
+                          >
+                            {s.startTime}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
               {!isExpanded && (
                 <TouchableOpacity 
                   style={[

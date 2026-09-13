@@ -226,6 +226,7 @@ const scheduleSchema = new mongoose.Schema({
   weightUnit: { type: String, enum: ["tons", "kg"], default: "tons" },
   disposalFacility: { type: String, default: "" }, // e.g. Binaliw Landfill, Inayawan Transfer Station, Barangay MRF
   disposalPhoto: { type: String, default: "" }, // scale slip / weighbridge ticket / proof photo
+  runNumber: { type: Number, default: 1 },
   completedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
@@ -3901,7 +3902,14 @@ app.get("/api/schedules/today", async (req, res) => {
     await updateOverdueSchedules();
     const today = req.query.date || getTodayYMD();
     const schedules = await Schedule.find({ date: today }).sort({
-      createdAt: 1,
+      createdAt: -1,
+    });
+    // Prioritize active/pending runs before completed runs; newest first
+    schedules.sort((a, b) => {
+      const aDone = a.status === "completed" ? 1 : 0;
+      const bDone = b.status === "completed" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
     res.json({ today, schedules });
   } catch (err) {
@@ -3922,8 +3930,15 @@ app.get("/api/schedules/truck/:truckId/today", async (req, res) => {
     );
 
     const schedules = await Schedule.find({ truckId, date: today }).sort({
-      startTime: 1,
-      createdAt: 1,
+      createdAt: -1,
+    });
+
+    // Prioritize active/pending runs before completed runs; newest first
+    schedules.sort((a, b) => {
+      const aDone = a.status === "completed" ? 1 : 0;
+      const bDone = b.status === "completed" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
 
     console.log(
@@ -3932,7 +3947,7 @@ app.get("/api/schedules/truck/:truckId/today", async (req, res) => {
     if (schedules.length > 0) {
       schedules.forEach((s, i) => {
         console.log(
-          `  ${i + 1}. ID: ${s._id}, Route: ${s.routeName}, RouteId: ${s.routeId}`,
+          `  ${i + 1}. ID: ${s._id}, Route: ${s.routeName}, Status: ${s.status}, Run: ${s.runNumber || 1}`,
         );
       });
     }
@@ -3949,7 +3964,16 @@ app.get("/api/schedules/truck/:truckId/priority-stops", async (req, res) => {
     const truckId = req.params.truckId.toUpperCase();
     const today = req.query.date || getTodayYMD();
 
-    const schedules = await Schedule.find({ truckId, date: today });
+    const schedules = await Schedule.find({ truckId, date: today }).sort({
+      createdAt: -1,
+    });
+    // Prioritize active/pending runs before completed runs
+    schedules.sort((a, b) => {
+      const aDone = a.status === "completed" ? 1 : 0;
+      const bDone = b.status === "completed" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
     if (schedules.length === 0) {
       return res.json({ schedules: [], today });
     }
@@ -4064,7 +4088,15 @@ app.get("/api/schedules", optionalAuth, async (req, res) => {
     // For simplicity, all authenticated officials see all schedules â€” superadmin filter applies
     const schedules = await Schedule.find(filter).sort({
       date: 1,
-      createdAt: 1,
+      createdAt: -1,
+    });
+    // Prioritize active/pending schedules before completed schedules
+    schedules.sort((a, b) => {
+      if (a.date !== b.date) return (a.date || "").localeCompare(b.date || "");
+      const aDone = a.status === "completed" ? 1 : 0;
+      const bDone = b.status === "completed" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
     res.json(schedules);
   } catch (err) {
@@ -4187,13 +4219,25 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
 
     const finalRouteName = routeName || (barangay && sitios.length > 0 ? `${barangay} → ${sitios.join(" → ")}` : routeName || barangay || '');
 
-    // Prevent exact duplicate (same truck + same route on the same day)
-    const dup = await Schedule.findOne({ date, truckId, routeName: finalRouteName });
-    if (dup) {
+    // Allow multiple runs on the same day: only prevent duplicate if an identical schedule is ALREADY active/pending
+    const existingActive = await Schedule.findOne({
+      date,
+      truckId,
+      routeName: { $regex: new RegExp(`^${finalRouteName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) },
+      status: { $ne: "completed" },
+    });
+    if (existingActive) {
       return res.status(409).json({
-        error: "This truck is already scheduled for this sequence route on this date",
+        error: "This truck already has an active schedule for this sequence route today. Complete or update the current run before creating a new one.",
       });
     }
+
+    // Determine run number for this truck today
+    const existingTruckSchedulesCount = await Schedule.countDocuments({ date, truckId });
+    const runNumber = existingTruckSchedulesCount + 1;
+    const finalDisplayRouteName = runNumber > 1 && !finalRouteName.includes(`(Run `)
+      ? `${finalRouteName} (Run ${runNumber})`
+      : finalRouteName;
 
     // Call OpenRouteService to obtain actual road driving path coordinates
     let routeCoords = [];
@@ -4230,7 +4274,7 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       driverName: driverName || fleet?.driverName || "",
       driverPhone: fleet?.driverPhone || req.body.driverPhone || "",
       routeId: routeId || null,
-      routeName: finalRouteName,
+      routeName: finalDisplayRouteName,
       barangay,
       sitio: sitios[0] || "",
       sitioTasks,
@@ -4238,6 +4282,7 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       startTime: startTime || "",
       endTime: endTime || "",
       notes,
+      runNumber,
       isPriority: !!isPriority || priorityLevel === "High" || priorityLevel === "Critical",
       priorityLevel: priorityLevel || (isPriority ? "High" : "Normal"),
       priorityReason: priorityReason || "",
