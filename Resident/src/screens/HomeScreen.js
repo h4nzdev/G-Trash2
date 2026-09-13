@@ -482,34 +482,42 @@ export default function HomeScreen({ navigation }) {
 
   // Restore bin-ready, picked-up, and daily snapped state from AsyncStorage (keyed by date — auto-resets next day)
   useEffect(() => {
-    const today = getTodayYMD();
-    Promise.all([
-      AsyncStorage.getItem(`@bin_prepared_${today}`),
-      AsyncStorage.getItem(`@bin_pickedup_${today}`),
-      AsyncStorage.getItem(`@disposal_snapped_${today}`),
-    ]).then(([prepared, pickedUp, snapped]) => {
-      if (prepared === 'true') setBinReady(true);
-      if (pickedUp === 'true') setTodayPickedUp(true);
-      if (snapped === 'true') setHasSnappedToday(true);
-    }).catch(() => {});
+    const syncDailyState = () => {
+      const today = getTodayYMD();
+      Promise.all([
+        AsyncStorage.getItem(`@bin_prepared_${today}`),
+        AsyncStorage.getItem(`@bin_pickedup_${today}`),
+        AsyncStorage.getItem(`@disposal_snapped_${today}`),
+      ]).then(([prepared, pickedUp, snapped]) => {
+        if (prepared === 'true') setBinReady(true);
+        if (pickedUp === 'true') setTodayPickedUp(true);
+        if (snapped === 'true') setHasSnappedToday(true);
+      }).catch(() => {});
 
-    const residentId = user?.id || user?._id;
-    if (residentId) {
-      fetch(`${API_URL}/api/disposal/status/${residentId}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.hasSnappedToday) {
-            setHasSnappedToday(true);
-            AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
-          } else {
-            AsyncStorage.getItem(`@disposal_snapped_${today}`).then((val) => {
-              if (val !== "true") setHasSnappedToday(false);
-            }).catch(() => {});
-          }
-        })
-        .catch(() => {});
-    }
-  }, [user]);
+      const residentId = user?.id || user?._id;
+      if (residentId) {
+        fetch(`${API_URL}/api/disposal/status/${residentId}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data?.hasSnappedToday) {
+              setHasSnappedToday(true);
+              AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+            } else {
+              AsyncStorage.getItem(`@disposal_snapped_${today}`).then((val) => {
+                if (val !== "true") setHasSnappedToday(false);
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    syncDailyState();
+    const unsubscribe = navigation?.addListener ? navigation.addListener("focus", syncDailyState) : undefined;
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user, navigation]);
 
   // Check if today's pickup already happened (so banner shows even after app restart)
   useEffect(() => {
@@ -932,6 +940,15 @@ export default function HomeScreen({ navigation }) {
       fetchDashboard();
     });
 
+    socket.on("bin:status:update", () => {
+      const today = getTodayYMD();
+      AsyncStorage.getItem(`@bin_prepared_${today}`)
+        .then((val) => {
+          if (val === "true") setBinReady(true);
+        })
+        .catch(() => {});
+    });
+
     return () => {
       socket.disconnect();
       clearTimeout(toastTimerRef.current);
@@ -1217,6 +1234,43 @@ export default function HomeScreen({ navigation }) {
 
   const isTruckActiveNearby = isTruckCollecting;
 
+  const isTruckNearOrActive = useMemo(() => {
+    if (todayPickupDone || isRouteCompleted) return false;
+    if (onlineTrucks.length === 0) return false;
+
+    // 1. If distance is calculated and truck is within 3km (3000m), it is NEAR
+    if (distToTruck !== null && distToTruck <= 3000) {
+      return true;
+    }
+
+    // 2. Check if an active truck is on schedule for the user's barangay
+    const brgy = user?.barangay;
+    if (brgy && todaySchedules.length > 0) {
+      const brgySched = todaySchedules.find(
+        (s) =>
+          s.barangay?.toLowerCase() === brgy.toLowerCase() ||
+          s.routeName?.toLowerCase().includes(brgy.toLowerCase())
+      );
+      if (brgySched) {
+        // Truck assigned to this schedule is online
+        const isSchedTruckOnline = onlineTrucks.some(
+          (t) => t.truckId === brgySched.truckId || t.plateNumber === brgySched.truckPlate
+        );
+        if (isSchedTruckOnline && brgySched.status !== 'completed') {
+          return true;
+        }
+      }
+    }
+
+    // 3. Fallback: if user location is not available (distToTruck is null),
+    // consider active if there is any collecting truck online
+    if (distToTruck === null && isTruckCollecting) {
+      return true;
+    }
+
+    return false;
+  }, [todayPickupDone, isRouteCompleted, onlineTrucks, distToTruck, user?.barangay, todaySchedules, isTruckCollecting]);
+
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
     const duration = PULSE_DURATIONS[pulseTier];
@@ -1491,7 +1545,7 @@ export default function HomeScreen({ navigation }) {
         )}
 
         {/* DAILY GARBAGE DISPOSAL PHOTO CARD (1 SNAP PER DAY • RESETS IN 1 DAY) */}
-        {!todayPickupDone && (
+        {!todayPickupDone && isTruckNearOrActive && (
           <View style={styles.proximityCard}>
             <View style={styles.proximityCardHeader}>
               <View style={[styles.proximityBadgePill, hasSnappedToday && { backgroundColor: "#ECFDF5" }]}>
@@ -1501,7 +1555,7 @@ export default function HomeScreen({ navigation }) {
                     ? "SNAPPED TODAY (1/DAY)"
                     : isTruckCollecting
                     ? "TRUCK ACTIVE IN AREA"
-                    : "DAILY DISPOSAL REPORT"}
+                    : "TRUCK NEARBY"}
                 </Text>
               </View>
               <View

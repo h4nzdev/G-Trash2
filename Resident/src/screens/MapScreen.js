@@ -501,16 +501,24 @@ export default function MapScreen() {
     userLocationRef.current = userLocation;
   }, [userLocation]);
 
-  // Load bin prepared status for today
+  // Load bin prepared status for today & refresh whenever screen comes into focus
   useEffect(() => {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    AsyncStorage.getItem(`@bin_prepared_${today}`)
-      .then((val) => {
-        if (val === "true") setBinReady(true);
-      })
-      .catch(() => {});
-  }, []);
+    const checkBinPrepared = () => {
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      AsyncStorage.getItem(`@bin_prepared_${today}`)
+        .then((val) => {
+          if (val === "true") setBinReady(true);
+        })
+        .catch(() => {});
+    };
+
+    checkBinPrepared();
+    const unsubscribe = navigation?.addListener ? navigation.addListener("focus", checkBinPrepared) : undefined;
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [navigation]);
 
   const handlePrepareBin = async () => {
     if (binReady) return;
@@ -569,7 +577,35 @@ export default function MapScreen() {
   }, [hasScheduleToday, activeSchedule, todaySchedules, cleanedNotif]);
 
   const missedBannerData = useMemo(() => {
-    if (binReady) return null;
+    if (binReady) {
+      if (isRouteCompleted || cleanedNotif) {
+        return {
+          type: 'prepared_completed',
+          title: "Collection Completed ✓",
+          message: "Garbage collection in your area has completed. Thank you for having your bin prepared!",
+          icon: "check-circle",
+          color: "#059669",
+          bgColor: "#ECFDF5",
+          borderColor: "#A7F3D0",
+          titleColor: "#065F46",
+          messageColor: "#047857",
+        };
+      }
+      return {
+        type: 'prepared',
+        title: "Bin Prepared & Ready ✓",
+        message: isTruckActiveForBarangay
+          ? `Your bin is marked as prepared! The collection driver in ${activeBarangay || 'your area'} has been notified to stop at your location.`
+          : "Your garbage bin is marked as prepared for active collection. The driver will be notified upon arrival.",
+        icon: "check-circle",
+        color: "#059669",
+        bgColor: "#ECFDF5",
+        borderColor: "#A7F3D0",
+        titleColor: "#065F46",
+        messageColor: "#047857",
+      };
+    }
+
     if (!hasScheduleToday) return null;
 
     if (isRouteCompleted || cleanedNotif) {
@@ -581,6 +617,8 @@ export default function MapScreen() {
         color: "#D97706",
         bgColor: "#FFFBEB",
         borderColor: "#FDE68A",
+        titleColor: "#92400E",
+        messageColor: "#B45309",
       };
     }
 
@@ -599,6 +637,8 @@ export default function MapScreen() {
           color: "#D97706",
           bgColor: "#FFFBEB",
           borderColor: "#FDE68A",
+          titleColor: "#92400E",
+          messageColor: "#B45309",
         };
       }
     }
@@ -612,13 +652,15 @@ export default function MapScreen() {
         color: "#B45309",
         bgColor: "#FEF3C7",
         borderColor: "#FDE68A",
+        titleColor: "#92400E",
+        messageColor: "#B45309",
       };
     }
 
     return null;
   }, [binReady, hasScheduleToday, isRouteCompleted, cleanedNotif, isTruckActiveForBarangay, activeSchedule, userBarangay, activeBarangay, user]);
 
-  const hasMissedTruck = !!missedBannerData;
+  const hasMissedTruck = !!missedBannerData && (missedBannerData.type === 'missed_full' || missedBannerData.type === 'missed_sitio');
 
   const distToUser = useMemo(() => {
     if (!truckPosState?.lat || !userLocation?.lat) return null;
@@ -953,6 +995,16 @@ export default function MapScreen() {
       });
       setTimeout(() => setCleanedNotif(null), 8000);
       fetchSitiosAndSchedules();
+    });
+
+    socket.on("bin:status:update", () => {
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      AsyncStorage.getItem(`@bin_prepared_${today}`)
+        .then((val) => {
+          if (val === "true") setBinReady(true);
+        })
+        .catch(() => {});
     });
 
     return () => socket.disconnect();
@@ -1456,10 +1508,10 @@ export default function MapScreen() {
                     <MaterialIcons name={missedBannerData.icon} size={22} color={missedBannerData.color} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400E' }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: missedBannerData.titleColor || '#92400E' }}>
                       {missedBannerData.title}
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#B45309', marginTop: 2, lineHeight: 15, fontWeight: '500' }}>
+                    <Text style={{ fontSize: 11, color: missedBannerData.messageColor || '#B45309', marginTop: 2, lineHeight: 15, fontWeight: '500' }}>
                       {missedBannerData.message}
                     </Text>
                   </View>

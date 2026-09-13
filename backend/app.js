@@ -248,9 +248,11 @@ const garbageAreaSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ["critical", "moderate", "clean", "inactive"],
-    default: "inactive",
-  isActive: { type: Boolean, default: false },
+    default: "clean",
   },
+  isActive: { type: Boolean, default: true },
+  rawValue: { type: Number, default: 0 },
+  airQuality: { type: String, default: "Clean" },
   ammonia: { type: String, default: "0 ppm" },
   methane: { type: String, default: "0 ppm" },
   bins: { type: Number, default: 0 },
@@ -3763,7 +3765,43 @@ app.get("/api/garbage-areas", optionalAuth, async (req, res) => {
     if (!req.official && req.query.barangay) {
       filter.barangay = req.query.barangay;
     }
-    const areas = await GarbageArea.find(filter).sort({ createdAt: -1 });
+    const areas = await GarbageArea.find(filter).sort({ createdAt: -1 }).lean();
+
+    // Ensure any IoT sensor-linked area is synced with its latest telemetry
+    const sensorAreas = areas.filter((a) => a.sensorId);
+    if (sensorAreas.length > 0) {
+      const sensorIds = sensorAreas.map((a) => a.sensorId);
+      const latestReadings = await SensorReading.aggregate([
+        { $match: { sensorId: { $in: sensorIds } } },
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$sensorId", doc: { $first: "$$ROOT" } } },
+      ]);
+      const readingMap = new Map(latestReadings.map((r) => [r._id, r.doc]));
+
+      for (const area of areas) {
+        if (area.sensorId && readingMap.has(area.sensorId)) {
+          const lr = readingMap.get(area.sensorId);
+          area.rawValue = lr.rawValue || 0;
+          area.airQuality = lr.airQuality || "Clean";
+          if (area.isActive !== false) {
+            const isCrit =
+              lr.airQuality === "Critical" ||
+              lr.airQuality === "Hazardous" ||
+              lr.airQuality === "Unhealthy" ||
+              (lr.rawValue || 0) >= 500;
+            const isMod =
+              lr.airQuality === "Moderate" ||
+              ((lr.rawValue || 0) >= 200 && (lr.rawValue || 0) < 500);
+
+            area.status = isCrit ? "critical" : isMod ? "moderate" : "clean";
+            area.intensity = isCrit ? 0.9 : isMod ? 0.5 : 0.2;
+            area.ammonia = `${lr.ammonia || 0} ppm`;
+            area.methane = `${lr.methane || 0}%`;
+          }
+        }
+      }
+    }
+
     res.json(areas);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3781,19 +3819,65 @@ app.post("/api/garbage-areas", async (req, res) => {
   }
 });
 
-
 app.put('/api/garbage-areas/:id/toggle-active', async (req, res) => {
   try {
     const zone = await GarbageArea.findById(req.params.id);
     if (!zone) return res.status(404).json({ error: 'Not found' });
-    zone.isActive = req.body.isActive;
-    zone.status = zone.isActive ? 'clean' : 'inactive';
-    if (!zone.isActive) {
-       zone.ammonia = '0 ppm';
-       zone.methane = '0 ppm';
+    
+    zone.isActive = req.body.isActive !== false;
+
+    if (zone.isActive) {
+      if (zone.sensorId) {
+        const latestReading = await SensorReading.findOne({ sensorId: zone.sensorId }).sort({ timestamp: -1 });
+        if (latestReading) {
+          zone.rawValue = latestReading.rawValue || 0;
+          zone.airQuality = latestReading.airQuality || "Clean";
+          zone.ammonia = `${latestReading.ammonia || 0} ppm`;
+          zone.methane = `${latestReading.methane || 0}%`;
+
+          const isCrit =
+            zone.airQuality === "Critical" ||
+            zone.airQuality === "Hazardous" ||
+            zone.airQuality === "Unhealthy" ||
+            (zone.rawValue || 0) >= 500;
+          const isMod =
+            zone.airQuality === "Moderate" ||
+            ((zone.rawValue || 0) >= 200 && (zone.rawValue || 0) < 500);
+
+          zone.status = isCrit ? "critical" : isMod ? "moderate" : "clean";
+          zone.intensity = isCrit ? 0.9 : isMod ? 0.5 : 0.2;
+        } else {
+          zone.status = "clean";
+          zone.intensity = 0.2;
+        }
+      } else {
+        if (zone.status === "inactive") zone.status = "clean";
+        if (zone.intensity === 0.1) zone.intensity = 0.5;
+      }
+    } else {
+      zone.status = "inactive";
+      zone.intensity = 0.1;
+      zone.ammonia = "0 ppm";
+      zone.methane = "0 ppm";
     }
+
     await zone.save();
-    io.emit('zones_update');
+
+    io.emit("garbage-area:updated", zone);
+    io.emit("zone:status:update", {
+      zoneId: zone._id,
+      areaId: zone._id,
+      name: zone.name,
+      barangay: zone.barangay,
+      previousStatus: null,
+      newStatus: zone.status,
+      rawValue: zone.rawValue,
+      airQuality: zone.airQuality,
+      isActive: zone.isActive,
+      changedBy: "Official Toggle",
+      timestamp: new Date().toISOString(),
+    });
+
     res.json(zone);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4888,7 +4972,39 @@ app.patch("/api/zones/:zoneId/status", async (req, res) => {
 // GET: all GarbageAreas that have a registered sensorId
 app.get("/api/sensor-zones", async (req, res) => {
   try {
-    const zones = await GarbageArea.find({ sensorId: { $ne: null } }).sort({ createdAt: -1 });
+    const zones = await GarbageArea.find({ sensorId: { $ne: null } }).sort({ createdAt: -1 }).lean();
+    if (zones.length > 0) {
+      const sensorIds = zones.map((z) => z.sensorId);
+      const latestReadings = await SensorReading.aggregate([
+        { $match: { sensorId: { $in: sensorIds } } },
+        { $sort: { timestamp: -1 } },
+        { $group: { _id: "$sensorId", doc: { $first: "$$ROOT" } } },
+      ]);
+      const readingMap = new Map(latestReadings.map((r) => [r._id, r.doc]));
+
+      for (const zone of zones) {
+        if (readingMap.has(zone.sensorId)) {
+          const lr = readingMap.get(zone.sensorId);
+          zone.rawValue = lr.rawValue || 0;
+          zone.airQuality = lr.airQuality || "Clean";
+          if (zone.isActive !== false) {
+            const isCrit =
+              lr.airQuality === "Critical" ||
+              lr.airQuality === "Hazardous" ||
+              lr.airQuality === "Unhealthy" ||
+              (lr.rawValue || 0) >= 500;
+            const isMod =
+              lr.airQuality === "Moderate" ||
+              ((lr.rawValue || 0) >= 200 && (lr.rawValue || 0) < 500);
+
+            zone.status = isCrit ? "critical" : isMod ? "moderate" : "clean";
+            zone.intensity = isCrit ? 0.9 : isMod ? 0.5 : 0.2;
+            zone.ammonia = `${lr.ammonia || 0} ppm`;
+            zone.methane = `${lr.methane || 0}%`;
+          }
+        }
+      }
+    }
     res.json(zones);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4921,11 +5037,33 @@ app.post("/api/sensor-zones", optionalAuth, async (req, res) => {
           lat,
           lng,
           source: "iot",
+          isActive: true,
         },
         $setOnInsert: { status: "clean", reportCount: 0, intensity: 0.2 },
       },
       { upsert: true, new: true },
     );
+
+    // If telemetry exists for this sensor, sync status and readings immediately
+    const latestReading = await SensorReading.findOne({ sensorId }).sort({ timestamp: -1 });
+    if (latestReading) {
+      zone.rawValue = latestReading.rawValue || 0;
+      zone.airQuality = latestReading.airQuality || "Clean";
+      zone.ammonia = `${latestReading.ammonia || 0} ppm`;
+      zone.methane = `${latestReading.methane || 0}%`;
+      const isCrit =
+        zone.airQuality === "Critical" ||
+        zone.airQuality === "Hazardous" ||
+        zone.airQuality === "Unhealthy" ||
+        (zone.rawValue || 0) >= 500;
+      const isMod =
+        zone.airQuality === "Moderate" ||
+        ((zone.rawValue || 0) >= 200 && (zone.rawValue || 0) < 500);
+      zone.status = isCrit ? "critical" : isMod ? "moderate" : "clean";
+      zone.intensity = isCrit ? 0.9 : isMod ? 0.5 : 0.2;
+      await zone.save();
+    }
+
     io.emit("garbage-area:updated", zone);
     console.log(`[IoT] Sensor zone registered: ${sensorId} at (${lat}, ${lng})`);
     res.json(zone);
@@ -5152,6 +5290,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
         sensorId,
         source: "iot",
         name: finalLocation || sensorId,
+        isActive: true,
         updatedAt: new Date(),
       },
       { upsert: true, new: true },
@@ -5168,6 +5307,9 @@ app.post("/api/iot/sensor-data", async (req, res) => {
       previousStatus: null,
       newStatus: areaStatus,
       newColor: iotColorMap[areaStatus] || "yellow",
+      rawValue: rawValue,
+      airQuality: airQuality,
+      isActive: true,
       reason: "iot_sensor_reading",
       changedBy: `Sensor ${sensorId}`,
       timestamp: new Date().toISOString(),

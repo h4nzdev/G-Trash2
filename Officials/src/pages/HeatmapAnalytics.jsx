@@ -574,6 +574,7 @@ function normalizeMQ135RawValue(rawValue, status, airQuality) {
 // 200 - 499  -> Amber (#f59e0b) Moderate
 // 500+ ADC   -> Red (#ef4444) Critical
 function getAirQualityColor(rawValue, status, airQuality) {
+  if (status === "inactive") return "#94a3b8";
   const val = Number(rawValue) || 0;
   if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "#ef4444";
   if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "#f59e0b";
@@ -583,6 +584,7 @@ function getAirQualityColor(rawValue, status, airQuality) {
 }
 
 function getAirQualityLabel(rawValue, status, airQuality) {
+  if (status === "inactive") return "Sensor Inactive";
   const val = Number(rawValue) || 0;
   if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "Critical Risk (500+ ADC)";
   if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "Moderate Air Quality (200-499 ADC)";
@@ -1362,9 +1364,16 @@ export default function HeatmapAnalytics() {
 
   const toggleSensorActive = async (zone, isActive) => {
     try {
-      await axios.put(`${API}/api/garbage-areas/${zone._id}/toggle-active`, {
-        isActive,
-      });
+      const { data: updatedZone } = await axios.put(
+        `${API}/api/garbage-areas/${zone._id}/toggle-active`,
+        { isActive },
+      );
+      setZones((prev) =>
+        prev.map((z) => (z._id === zone._id ? { ...z, ...updatedZone } : z)),
+      );
+      setSensorZones((prev) =>
+        prev.map((z) => (z._id === zone._id ? { ...z, ...updatedZone } : z)),
+      );
       fetchZonesAndBoundary();
     } catch (e) {
       console.error(e);
@@ -1478,7 +1487,26 @@ export default function HeatmapAnalytics() {
       setZones((prev) =>
         prev.map((z) =>
           z._id === String(update.areaId) || z._id === String(update.zoneId)
-            ? { ...z, status: update.newStatus }
+            ? {
+                ...z,
+                status: update.newStatus,
+                ...(update.rawValue !== undefined && { rawValue: update.rawValue }),
+                ...(update.airQuality !== undefined && { airQuality: update.airQuality }),
+                ...(update.isActive !== undefined && { isActive: update.isActive }),
+              }
+            : z,
+        ),
+      );
+      setSensorZones((prev) =>
+        prev.map((z) =>
+          z._id === String(update.areaId) || z._id === String(update.zoneId)
+            ? {
+                ...z,
+                status: update.newStatus,
+                ...(update.rawValue !== undefined && { rawValue: update.rawValue }),
+                ...(update.airQuality !== undefined && { airQuality: update.airQuality }),
+                ...(update.isActive !== undefined && { isActive: update.isActive }),
+              }
             : z,
         ),
       );
@@ -2292,7 +2320,7 @@ export default function HeatmapAnalytics() {
                               <input
                                 type="checkbox"
                                 className="peer sr-only"
-                                checked={zone.isActive}
+                                checked={zone.isActive !== false && zone.status !== "inactive"}
                                 onChange={(e) =>
                                   toggleSensorActive(zone, e.target.checked)
                                 }
