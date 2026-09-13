@@ -1,5 +1,24 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock, Scale, Edit3, Check } from 'lucide-react';
+import {
+  Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock,
+  Scale, Edit3, Check, TrendingUp, BarChart3, PieChart as PieIcon, Building2,
+  ChevronDown, ChevronUp, Activity, Sparkles, Layers, ArrowUpRight
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -18,6 +37,100 @@ const WASTE_COLORS = {
   Hazardous:  'bg-red-100 text-red-700',
   Organic:    'bg-emerald-100 text-emerald-700',
   Bulky:      'bg-amber-100 text-amber-700',
+};
+
+const WASTE_HEX_COLORS = {
+  Organic:    '#10b981',
+  Recyclable: '#3b82f6',
+  General:    '#64748b',
+  Hazardous:  '#ef4444',
+  Bulky:      '#f59e0b',
+  Other:      '#8b5cf6',
+};
+
+const HistoryAnalyticsTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0]?.payload;
+    return (
+      <div className="bg-slate-900 text-white p-3 rounded-xl shadow-2xl border border-slate-700/60 text-xs min-w-[180px]">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-2 mb-2">
+          <span className="font-bold text-slate-100">{data?.date || label}</span>
+          {data?.fullDate && (
+            <span className="text-[10px] text-slate-400 font-mono">
+              {data.fullDate}
+            </span>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              Weight:
+            </span>
+            <span className="font-extrabold text-white text-sm">
+              {data?.weightTons ?? 0} Tons
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-blue-400" />
+              Bins Cleared:
+            </span>
+            <span className="font-bold text-white">
+              {data?.bins ?? 0}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-purple-400" />
+              Stops Cleared:
+            </span>
+            <span className="font-bold text-white">
+              {data?.stops ?? 0}
+            </span>
+          </div>
+          {data?.truckCount > 0 && (
+            <div className="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Active Trucks:</span>
+              <span className="font-medium text-emerald-400">{data.truckCount} deployed</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+const TruckBarTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0]?.payload;
+    return (
+      <div className="bg-slate-900 text-white p-3 rounded-xl shadow-2xl border border-slate-700/60 text-xs min-w-[180px]">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-2 mb-2">
+          <span className="font-bold text-slate-100">{data?.truckId}</span>
+          <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold rounded">
+            {data?.driverName || 'Driver'}
+          </span>
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-300">Weight Hauled:</span>
+            <span className="font-extrabold text-emerald-400 text-sm">{data?.weightTons} Tons</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-300">Stops Cleared:</span>
+            <span className="font-bold text-white">{data?.stops} stops</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-300">Bins Cleared:</span>
+            <span className="font-bold text-white">{data?.bins} bins</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
 };
 
 function formatDuration(mins) {
@@ -74,6 +187,8 @@ export default function CollectionHistory() {
   const [page,       setPage]       = useState(0);
   const [healthAlertOnly, setHealthAlertOnly] = useState(false);
   const [selectedLogProof, setSelectedLogProof] = useState(null);
+  const [showAnalytics, setShowAnalytics] = useState(true);
+  const [trendMetric, setTrendMetric] = useState('weight'); // 'weight' | 'bins' | 'stops'
 
   // Weighbridge / weight logging state
   const [editingLogWeight, setEditingLogWeight] = useState(null);
@@ -200,6 +315,152 @@ export default function CollectionHistory() {
     return { totalWeight: totalWeightKg, totalBins, totalStops: logs.length, mostActive, totalDurationMins, avgDurationMins };
   }, [logs]);
 
+  // Analytics calculations based on current dataset (filtered)
+  const analyticsData = useMemo(() => {
+    const dataSet = filtered;
+
+    const timeMap = {};
+    const streamMap = {};
+    let totalKg = 0;
+    const truckMap = {};
+    const facilityMap = {};
+
+    const getWeightInKg = (r) => {
+      const w = Number(r.weight) || 0;
+      return r.weightUnit === 'tons' ? w * 1000 : w;
+    };
+
+    dataSet.forEach((r) => {
+      const kg = getWeightInKg(r);
+      const bins = Number(r.bins) || 0;
+      totalKg += kg;
+
+      // Timeline by date
+      const dateKey = r.date || (r.completedAt ? r.completedAt.slice(0, 10) : 'Unknown');
+      if (!timeMap[dateKey]) {
+        timeMap[dateKey] = { dateKey, weightKg: 0, bins: 0, stops: 0, trucks: new Set() };
+      }
+      timeMap[dateKey].weightKg += kg;
+      timeMap[dateKey].bins += bins;
+      timeMap[dateKey].stops += 1;
+      if (r.truckId) timeMap[dateKey].trucks.add(r.truckId);
+
+      // Waste stream
+      const stream = r.wasteType || 'General';
+      if (!streamMap[stream]) {
+        streamMap[stream] = { name: stream, weightKg: 0, bins: 0, count: 0 };
+      }
+      streamMap[stream].weightKg += kg;
+      streamMap[stream].bins += bins;
+      streamMap[stream].count += 1;
+
+      // Truck performance
+      const tid = r.truckId || 'Unknown';
+      if (!truckMap[tid]) {
+        truckMap[tid] = { truckId: tid, weightKg: 0, stops: 0, bins: 0, driverName: r.driverName || '—' };
+      }
+      truckMap[tid].weightKg += kg;
+      truckMap[tid].stops += 1;
+      truckMap[tid].bins += bins;
+      if (r.driverName && r.driverName !== '—') truckMap[tid].driverName = r.driverName;
+
+      // Facility
+      const fac = r.disposalFacility || 'Unassigned / Local MRF';
+      if (!facilityMap[fac]) {
+        facilityMap[fac] = { name: fac, weightKg: 0, stops: 0 };
+      }
+      facilityMap[fac].weightKg += kg;
+      facilityMap[fac].stops += 1;
+    });
+
+    const sortedTimeline = Object.keys(timeMap).sort().map((key) => {
+      const item = timeMap[key];
+      let displayDate = key;
+      try {
+        const parts = key.split('-');
+        if (parts.length === 3) {
+          const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
+          displayDate = dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+      } catch (_) {}
+      return {
+        date: displayDate,
+        fullDate: key,
+        weightTons: parseFloat((item.weightKg / 1000).toFixed(2)),
+        weightKg: Math.round(item.weightKg),
+        bins: item.bins,
+        stops: item.stops,
+        truckCount: item.trucks.size,
+      };
+    });
+
+    const streamList = Object.values(streamMap).map((s) => {
+      const pct = totalKg > 0
+        ? Math.round((s.weightKg / totalKg) * 100)
+        : (dataSet.length > 0 ? Math.round((s.count / dataSet.length) * 100) : 0);
+      return {
+        ...s,
+        weightTons: parseFloat((s.weightKg / 1000).toFixed(2)),
+        percentage: pct,
+        color: WASTE_HEX_COLORS[s.name] || '#94a3b8',
+      };
+    }).sort((a, b) => b.weightKg - a.weightKg);
+
+    const truckList = Object.values(truckMap).map((t) => ({
+      ...t,
+      weightTons: parseFloat((t.weightKg / 1000).toFixed(2)),
+    })).sort((a, b) => b.weightTons - a.weightTons || b.stops - a.stops).slice(0, 6);
+
+    const facilityList = Object.values(facilityMap).map((f) => {
+      const pct = totalKg > 0
+        ? Math.round((f.weightKg / totalKg) * 100)
+        : (dataSet.length > 0 ? Math.round((f.stops / dataSet.length) * 100) : 0);
+      return {
+        ...f,
+        weightTons: parseFloat((f.weightKg / 1000).toFixed(2)),
+        percentage: pct,
+      };
+    }).sort((a, b) => b.weightKg - a.weightKg || b.stops - a.stops);
+
+    return {
+      timeline: sortedTimeline,
+      streams: streamList,
+      trucks: truckList,
+      facilities: facilityList,
+      totalWeightTons: parseFloat((totalKg / 1000).toFixed(2)),
+      totalRecords: dataSet.length,
+    };
+  }, [filtered]);
+
+  const timelineKPIs = useMemo(() => {
+    const list = analyticsData.timeline;
+    if (!list || list.length === 0) {
+      return { peakDate: '—', peakVal: '—', dailyAvg: '—', activeDays: 0 };
+    }
+    let maxVal = 0;
+    let maxDate = '—';
+    let sum = 0;
+
+    list.forEach((d) => {
+      const val = trendMetric === 'weight' ? d.weightTons : (trendMetric === 'bins' ? d.bins : d.stops);
+      if (val > maxVal) {
+        maxVal = val;
+        maxDate = d.date;
+      }
+      sum += val;
+    });
+
+    const avg = (sum / list.length).toFixed(trendMetric === 'weight' ? 2 : 0);
+    const unitLabel = trendMetric === 'weight' ? 'Tons' : (trendMetric === 'bins' ? 'bins' : 'stops');
+
+    return {
+      peakDate: maxDate,
+      peakVal: `${maxVal} ${unitLabel}`,
+      dailyAvg: `${avg} ${unitLabel}`,
+      activeDays: list.length,
+    };
+  }, [analyticsData.timeline, trendMetric]);
+
   const handlePeriodChange = (val) => {
     setPeriod(val);
     setDateFilter(''); // clear specific date when switching period
@@ -267,6 +528,414 @@ export default function CollectionHistory() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Analytics & Operational Trends Section */}
+      <div className="space-y-4">
+        {/* Section Header with Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-6 py-4 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 flex-shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900">Collection Analytics & Trends</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Visual Analytics
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Performance trends across {filtered.length} log{filtered.length !== 1 ? 's' : ''} {truckIds.length > 0 ? `(${truckIds.length} trucks)` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Metric Switcher */}
+            {showAnalytics && (
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('weight')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    trendMetric === 'weight'
+                      ? 'bg-white text-emerald-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Weight (Tons)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('bins')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    trendMetric === 'bins'
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Bins Cleared
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('stops')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    trendMetric === 'stops'
+                      ? 'bg-white text-purple-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Stops Cleared
+                </button>
+              </div>
+            )}
+
+            {/* Collapse/Expand toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAnalytics((prev) => !prev)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+            >
+              {showAnalytics ? (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  <span>Hide Charts</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span>Show Charts</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Charts Body */}
+        {showAnalytics && (
+          loading ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm h-80 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs text-slate-400 font-medium">Generating analytics charts…</p>
+                </div>
+              </div>
+              <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm h-80 flex items-center justify-center">
+                <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-100 p-8 shadow-sm text-center">
+              <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-700">No Collection Records to Analyze</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                No collection records match your current filters. Adjust your period, clear search queries, or select another truck to view operational trends.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Row 1: Timeline Trend (Left 8) + Waste Stream Breakdown (Right 4) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                
+                {/* Timeline Chart */}
+                <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-emerald-600" />
+                          Collection Output Over Time
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          {trendMetric === 'weight' && 'Daily waste tonnage weighed at municipal disposal facilities'}
+                          {trendMetric === 'bins' && 'Daily volume of waste receptacles emptied across routes'}
+                          {trendMetric === 'stops' && 'Daily scheduled collection points serviced and verified'}
+                        </p>
+                      </div>
+
+                      {/* Quick KPIs */}
+                      <div className="flex items-center gap-2">
+                        <div className="px-2.5 py-1 bg-emerald-50 border border-emerald-100 rounded-lg text-right">
+                          <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Peak Output</p>
+                          <p className="text-xs font-bold text-emerald-800">{timelineKPIs.peakVal}</p>
+                        </div>
+                        <div className="px-2.5 py-1 bg-slate-50 border border-slate-100 rounded-lg text-right">
+                          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Daily Avg</p>
+                          <p className="text-xs font-bold text-slate-700">{timelineKPIs.dailyAvg}</p>
+                        </div>
+                        <div className="px-2.5 py-1 bg-slate-50 border border-slate-100 rounded-lg text-right hidden sm:block">
+                          <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Active Days</p>
+                          <p className="text-xs font-bold text-slate-700">{timelineKPIs.activeDays} d</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Area Chart */}
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={analyticsData.timeline} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorWeight" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.35}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                            </linearGradient>
+                            <linearGradient id="colorBins" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35}/>
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
+                            </linearGradient>
+                            <linearGradient id="colorStops" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.35}/>
+                              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis
+                            dataKey="date"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 11, fill: '#64748b' }}
+                            dy={5}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 11, fill: '#64748b' }}
+                          />
+                          <Tooltip content={<HistoryAnalyticsTooltip />} />
+                          {trendMetric === 'weight' && (
+                            <Area
+                              type="monotone"
+                              dataKey="weightTons"
+                              name="Weight"
+                              stroke="#10b981"
+                              strokeWidth={2.5}
+                              fillOpacity={1}
+                              fill="url(#colorWeight)"
+                              dot={{ r: 3, fill: '#10b981', strokeWidth: 1, stroke: '#fff' }}
+                              activeDot={{ r: 5, fill: '#10b981' }}
+                            />
+                          )}
+                          {trendMetric === 'bins' && (
+                            <Area
+                              type="monotone"
+                              dataKey="bins"
+                              name="Bins"
+                              stroke="#3b82f6"
+                              strokeWidth={2.5}
+                              fillOpacity={1}
+                              fill="url(#colorBins)"
+                              dot={{ r: 3, fill: '#3b82f6', strokeWidth: 1, stroke: '#fff' }}
+                              activeDot={{ r: 5, fill: '#3b82f6' }}
+                            />
+                          )}
+                          {trendMetric === 'stops' && (
+                            <Area
+                              type="monotone"
+                              dataKey="stops"
+                              name="Stops"
+                              stroke="#8b5cf6"
+                              strokeWidth={2.5}
+                              fillOpacity={1}
+                              fill="url(#colorStops)"
+                              dot={{ r: 3, fill: '#8b5cf6', strokeWidth: 1, stroke: '#fff' }}
+                              activeDot={{ r: 5, fill: '#8b5cf6' }}
+                            />
+                          )}
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Waste Stream Donut Chart */}
+                <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <PieIcon className="w-4 h-4 text-emerald-600" />
+                        Waste Stream Breakdown
+                      </h3>
+                      <span className="text-[11px] font-bold text-slate-400">By Classification</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">
+                      Distribution of waste types cleared across all stops
+                    </p>
+
+                    {/* Donut Chart */}
+                    <div className="h-44 w-full relative">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={analyticsData.streams}
+                            dataKey="weightKg"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={48}
+                            outerRadius={72}
+                            paddingAngle={3}
+                          >
+                            {analyticsData.streams.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const item = payload[0].payload;
+                                return (
+                                  <div className="bg-slate-900 text-white p-2.5 rounded-xl shadow-xl border border-slate-700/60 text-xs">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                      <span className="font-bold">{item.name} Waste</span>
+                                    </div>
+                                    <p className="text-slate-300">
+                                      Weight: <strong className="text-white">{item.weightTons} Tons</strong> ({item.percentage}%)
+                                    </p>
+                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                      {item.bins} bins · {item.count} collection stops
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      {/* Center Donut Label */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-base font-black text-slate-800 leading-tight">
+                          {analyticsData.totalWeightTons}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                          Tons Total
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Stream legend pills */}
+                    <div className="space-y-1.5 mt-2">
+                      {analyticsData.streams.slice(0, 4).map((item) => (
+                        <div key={item.name} className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                            <span className="font-medium text-slate-700">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="text-slate-500 font-medium">{item.weightTons} T</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {item.percentage}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: Fleet Productivity by Truck (Left 6) + Disposal Facility Allocation (Right 6) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                
+                {/* Truck Productivity Chart */}
+                <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-emerald-600" />
+                        Fleet Collection Performance
+                      </h3>
+                      <p className="text-xs text-slate-500">Tonnage hauled and serviced by deployed trucks</p>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                      Top {analyticsData.trucks.length} Vehicles
+                    </span>
+                  </div>
+
+                  <div className="h-52 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={analyticsData.trucks} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis
+                          dataKey="truckId"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                          dy={5}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: '#64748b' }}
+                        />
+                        <Tooltip content={<TruckBarTooltip />} cursor={{ fill: '#f8fafc' }} />
+                        <Bar
+                          dataKey="weightTons"
+                          name="Weight (Tons)"
+                          fill="#0d9488"
+                          radius={[6, 6, 0, 0]}
+                          barSize={26}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Disposal Facility Allocation */}
+                <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-teal-600" />
+                          Disposal Facility Routing
+                        </h3>
+                        <p className="text-xs text-slate-500">Municipal weighbridge destination allocation</p>
+                      </div>
+                      <span className="text-[11px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
+                        {analyticsData.facilities.length} Facilities
+                      </span>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {analyticsData.facilities.slice(0, 4).map((f) => (
+                        <div key={f.name} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Building2 className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />
+                              <span className="font-semibold text-slate-800 truncate" title={f.name}>{f.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 font-mono">
+                              <span className="text-slate-600 font-bold">{f.weightTons} Tons</span>
+                              <span className="text-slate-400 text-[11px]">({f.stops} stops)</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                {f.percentage}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-teal-500 to-emerald-500 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${Math.min(100, Math.max(4, f.percentage))}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Compliant with City Solid Waste Management Routing</span>
+                    <span className="font-semibold text-slate-600">{analyticsData.totalRecords} Stops Tracked</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )
+        )}
       </div>
 
       {/* Table card */}

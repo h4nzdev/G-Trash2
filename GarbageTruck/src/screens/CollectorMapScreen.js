@@ -2789,7 +2789,7 @@ export default function CollectorMapScreen({ navigation }) {
               activeOpacity={0.85}
             >
               <MaterialIcons name="alt-route" size={18} color="#FFFFFF" />
-              <Text style={styles.deviationBtnPrimaryText}>View Return Route to Assigned Path</Text>
+              <Text style={styles.deviationBtnPrimaryText}>Back to Route</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -2815,275 +2815,620 @@ export default function CollectorMapScreen({ navigation }) {
           }
         }}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
-          <View style={{ flex: 1 }}>
-            {/* Header */}
-            <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
-              <TouchableOpacity
-                onPress={() => {
-                  if (activeFlowTask.step === 'options') {
-                    setActiveFlowTask(null);
-                  } else if (activeFlowTask.step === 'before_photo') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'options' }));
-                  } else if (activeFlowTask.step === 'cleaning') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }));
-                  } else if (activeFlowTask.step === 'after_photo') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
-                  } else if (activeFlowTask.step === 'details') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }));
-                  }
-                }}
-                disabled={isSubmittingFlow}
-                style={{ padding: 4 }}
-              >
-                <MaterialIcons name="arrow-back" size={24} color="#F8FAFC" />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>
-                {activeFlowTask?.step === 'options' && 'Select Action'}
-                {activeFlowTask?.step === 'before_photo' && 'Proof: Before Cleaning'}
-                {activeFlowTask?.step === 'cleaning' && 'Clearing In Progress'}
-                {activeFlowTask?.step === 'after_photo' && 'Proof: After Cleaning'}
-                {activeFlowTask?.step === 'details' && 'Log Verification Details'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setActiveFlowTask(null)}
-                disabled={isSubmittingFlow}
-                style={{ padding: 4 }}
-              >
-                <MaterialIcons name="close" size={24} color="#F8FAFC" />
-              </TouchableOpacity>
-            </View>
+        {activeFlowTask ? (
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+            <StatusBar barStyle="light-content" backgroundColor="#006A3B" />
+            <View style={{ flex: 1 }}>
+              {/* Header */}
+              <View style={{
+                height: 62,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 16,
+                backgroundColor: '#006A3B',
+                shadowColor: '#006A3B',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+                elevation: 4
+              }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!activeFlowTask) return;
+                    if (activeFlowTask.step === 'options') {
+                      setActiveFlowTask(null);
+                    } else if (activeFlowTask.step === 'before_photo') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'options' }) : null);
+                    } else if (activeFlowTask.step === 'cleaning') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'before_photo' }) : null);
+                    } else if (activeFlowTask.step === 'after_photo') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'cleaning' }) : null);
+                    } else if (activeFlowTask.step === 'details') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'after_photo' }) : null);
+                    }
+                  }}
+                  disabled={isSubmittingFlow}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="arrow-back" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
 
-            {/* Step Content */}
-            <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 20, justifyContent: 'center' }}>
-              {activeFlowTask?.step === 'options' && (
-                <View style={{ gap: 16, width: '100%' }}>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginBottom: 8 }}>
-                    {activeFlowTask.sitioName}
+                <View style={{ alignItems: 'center', flex: 1, marginHorizontal: 8 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF', textAlign: 'center' }} numberOfLines={1}>
+                    {activeFlowTask.step === 'options' && 'Select Action'}
+                    {activeFlowTask.step === 'before_photo' && 'Proof: Before Cleaning'}
+                    {activeFlowTask.step === 'cleaning' && 'Clearing In Progress'}
+                    {activeFlowTask.step === 'after_photo' && 'Proof: After Cleaning'}
+                    {activeFlowTask.step === 'details' && 'Log Verification Details'}
                   </Text>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Select an action to perform at this garbage collection area.
+                  <Text style={{ fontSize: 11, color: '#D1FAE5', fontWeight: '600', marginTop: 1 }} numberOfLines={1}>
+                    {activeFlowTask.sitioName || 'Collection Stop'}
                   </Text>
+                </View>
 
-                  <TouchableOpacity
-                    onPress={() => {
-                      setBasicReportNotes("");
-                      setBasicReportCategory("Other");
-                      setShowBasicReportModal(true);
-                    }}
-                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
-                  >
-                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
-                      <MaterialIcons name="warning" size={26} color="#EF4444" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Basic Report</Text>
-                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>File a hazard, obstruction or incident report</Text>
-                    </View>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setActiveFlowTask(null)}
+                  disabled={isSubmittingFlow}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="close" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
 
-                  <TouchableOpacity
-                    onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }))}
-                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#10B981', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
-                  >
-                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
-                      <MaterialIcons name="local-shipping" size={26} color="#10B981" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Clear Area & Log Pickup</Text>
-                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Perform standard before/after clearing flow</Text>
-                    </View>
-                  </TouchableOpacity>
+              {/* Step Breadcrumb Progress (when not on options) */}
+              {activeFlowTask.step !== 'options' && (
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  backgroundColor: '#FFFFFF',
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#EDF4F0'
+                }}>
+                  {['before_photo', 'cleaning', 'after_photo', 'details'].map((s, idx) => {
+                    const stepOrder = ['before_photo', 'cleaning', 'after_photo', 'details'];
+                    const curIdx = activeFlowTask?.step ? stepOrder.indexOf(activeFlowTask.step) : 0;
+                    const isCurrent = activeFlowTask?.step === s;
+                    const isPast = curIdx > idx;
+                    const labels = ['Before', 'Clearing', 'After', 'Log'];
+                    return (
+                      <View key={s} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 10,
+                          backgroundColor: isCurrent ? '#ECFDF5' : isPast ? '#DCFCE7' : '#F1F5F9',
+                          borderWidth: 1,
+                          borderColor: isCurrent ? '#A7F3D0' : isPast ? '#BBF7D0' : '#E2E8F0'
+                        }}>
+                          {isPast ? (
+                            <MaterialIcons name="check" size={12} color="#059669" />
+                          ) : (
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: isCurrent ? '#047857' : '#94A3B8' }}>{idx + 1}</Text>
+                          )}
+                          <Text style={{
+                            fontSize: 10,
+                            fontWeight: isCurrent ? '800' : '600',
+                            color: isCurrent ? '#047857' : isPast ? '#059669' : '#94A3B8'
+                          }}>
+                            {labels[idx]}
+                          </Text>
+                        </View>
+                        {idx < 3 && (
+                          <View style={{ width: 10, height: 1.5, backgroundColor: isPast ? '#059669' : '#E2E8F0' }} />
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
-              {activeFlowTask?.step === 'before_photo' && (
-                <View style={{ alignItems: 'center', width: '100%' }}>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Please capture the accumulation levels BEFORE you start cleaning.
-                  </Text>
+              {/* Step Content */}
+              <ScrollView
+                contentContainerStyle={{
+                  flexGrow: 1,
+                  padding: 20,
+                  justifyContent: activeFlowTask.step === 'options' ? 'center' : 'flex-start',
+                  backgroundColor: '#F8FAFC'
+                }}
+                showsVerticalScrollIndicator={false}
+              >
+                {activeFlowTask.step === 'options' && (
+                  <View style={{ gap: 16, width: '100%' }}>
+                    <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                      <View style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 32,
+                        backgroundColor: '#ECFDF5',
+                        borderWidth: 1.5,
+                        borderColor: '#A7F3D0',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 12
+                      }}>
+                        <MaterialIcons name="location-on" size={34} color="#006A3B" />
+                      </View>
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                        {activeFlowTask.sitioName}
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#6F7A70', textAlign: 'center', marginTop: 4 }}>
+                        Select an action to perform at this collection stop
+                      </Text>
+                    </View>
 
-                  {beforeImage ? (
-                    <View style={{ width: '100%', alignItems: 'center' }}>
-                      <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
-                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                    {/* Clear Area & Log Pickup Button */}
+                    <TouchableOpacity
+                      onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }))}
+                      activeOpacity={0.85}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderWidth: 1.5,
+                        borderColor: '#A7F3D0',
+                        borderRadius: 20,
+                        padding: 20,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 16,
+                        shadowColor: '#006A3B',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.08,
+                        shadowRadius: 10,
+                        elevation: 3
+                      }}
+                    >
+                      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                        <MaterialIcons name="local-shipping" size={28} color="#006A3B" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#1B1C1C' }}>Clear Area & Log Pickup</Text>
+                        <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>Perform standard before/after clearing flow</Text>
+                      </View>
+                      <MaterialIcons name="chevron-right" size={24} color="#006A3B" />
+                    </TouchableOpacity>
+
+                    {/* Basic Report Button */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setBasicReportNotes("");
+                        setBasicReportCategory("Other");
+                        setShowBasicReportModal(true);
+                      }}
+                      activeOpacity={0.85}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderWidth: 1.5,
+                        borderColor: '#FEE2E2',
+                        borderRadius: 20,
+                        padding: 20,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 16,
+                        shadowColor: '#64748B',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.04,
+                        shadowRadius: 6,
+                        elevation: 2
+                      }}
+                    >
+                      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+                        <MaterialIcons name="warning" size={28} color="#EF4444" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#1B1C1C' }}>File Incident Report</Text>
+                        <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>Report road block, heavy hazard, or bin issue</Text>
+                      </View>
+                      <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {activeFlowTask.step === 'before_photo' && (
+                  <View style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 24,
+                    padding: 20,
+                    borderWidth: 1,
+                    borderColor: '#EDF4F0',
+                    gap: 18,
+                    shadowColor: '#64748B',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 10,
+                    elevation: 2
+                  }}>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ fontSize: 17, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                        Capture photo BEFORE waste collection
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#006A3B', fontWeight: '700', marginTop: 3 }}>
+                        📍 {activeFlowTask.sitioName}
+                      </Text>
+                    </View>
+
+                    {beforeImage ? (
+                      <View style={{ width: '100%', alignItems: 'center' }}>
+                        <View style={{ width: '100%', borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0', marginBottom: 16 }}>
+                          <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 260 }} resizeMode="cover" />
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                          <TouchableOpacity
+                            onPress={() => takePhotoStep('before')}
+                            style={{
+                              flex: 1,
+                              backgroundColor: '#E4EEE9',
+                              paddingVertical: 14,
+                              borderRadius: 14,
+                              alignItems: 'center',
+                              flexDirection: 'row',
+                              justifyContent: 'center',
+                              gap: 8,
+                              borderWidth: 1,
+                              borderColor: '#CBD5E1'
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <MaterialIcons name="photo-camera" size={20} color="#006A3B" />
+                            <Text style={{ color: '#006A3B', fontWeight: '800', fontSize: 14 }}>Retake</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              const lat = currentLocation?.latitude || lastGpsRef.current?.lat || 10.332;
+                              const lng = currentLocation?.longitude || lastGpsRef.current?.lng || 123.905;
+                              fetch(`${TRACKING_SERVER}/api/schedules/clearing-status`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  truckId: TRUCK_ID,
+                                  driverName: user?.driverName || user?.name || 'Collector',
+                                  barangay: activeFlowTask?.barangay || assignedRouteBarangay || 'Apas',
+                                  sitioName: activeFlowTask?.sitioName,
+                                  status: 'clearing',
+                                  lat,
+                                  lng,
+                                }),
+                              }).catch(() => {});
+                              if (webViewReady.current && webViewRef.current) {
+                                const sName = (activeFlowTask?.sitioName || '').replace(/'/g, "\\'");
+                                webViewRef.current.injectJavaScript(`if (window.setClearingMarker) window.setClearingMarker('${sName}', ${lat}, ${lng}, true); true;`);
+                              }
+                              setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
+                            }}
+                            style={{
+                              flex: 1,
+                              backgroundColor: '#006A3B',
+                              paddingVertical: 14,
+                              borderRadius: 14,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              shadowColor: '#006A3B',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.2,
+                              shadowRadius: 4,
+                              elevation: 3
+                            }}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Proceed</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{
+                        width: '100%',
+                        height: 230,
+                        backgroundColor: '#F8FAF8',
+                        borderRadius: 16,
+                        borderWidth: 2,
+                        borderColor: '#CBD5E1',
+                        borderStyle: 'dashed',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 20,
+                        gap: 10
+                      }}>
+                        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center' }}>
+                          <MaterialIcons name="photo-camera" size={30} color="#006A3B" />
+                        </View>
                         <TouchableOpacity
                           onPress={() => takePhotoStep('before')}
-                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ backgroundColor: '#006A3B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 }}
+                          activeOpacity={0.85}
                         >
-                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
+                          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Snap Before Photo</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => {
-                            const lat = currentLocation?.latitude || lastGpsRef.current?.lat || 10.332;
-                            const lng = currentLocation?.longitude || lastGpsRef.current?.lng || 123.905;
-                            fetch(`${TRACKING_SERVER}/api/schedules/clearing-status`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                truckId: TRUCK_ID,
-                                driverName: user?.driverName || user?.name || 'Collector',
-                                barangay: activeFlowTask?.barangay || assignedRouteBarangay || 'Apas',
-                                sitioName: activeFlowTask?.sitioName,
-                                status: 'clearing',
-                                lat,
-                                lng,
-                              }),
-                            }).catch(() => {});
-                            if (webViewReady.current && webViewRef.current) {
-                              const sName = (activeFlowTask?.sitioName || '').replace(/'/g, "\\'");
-                              webViewRef.current.injectJavaScript(`if (window.setClearingMarker) window.setClearingMarker('${sName}', ${lat}, ${lng}, true); true;`);
-                            }
-                            setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
-                          }}
-                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
-                        </TouchableOpacity>
+                        <Text style={{ fontSize: 11, color: '#6F7A70', textAlign: 'center' }}>Capture site condition before waste collection</Text>
                       </View>
-                    </View>
-                  ) : (
-                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
-                      <TouchableOpacity
-                        onPress={() => takePhotoStep('before')}
-                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap Before Photo</Text>
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Permission prompt will open. Fallback to sample photo on simulators.</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {activeFlowTask?.step === 'cleaning' && (
-                <View style={{ alignItems: 'center', width: '100%', gap: 20 }}>
-                  <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-                    <View style={{ position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: 'rgba(16, 185, 129, 0.15)', borderWidth: 1, borderColor: '#10B981' }} />
-                    <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: '#064E3B', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#34D399', elevation: 8 }}>
-                      <MaterialIcons name="cleaning-services" size={48} color="#34D399" />
-                    </View>
+                    )}
                   </View>
+                )}
 
-                  <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#34D399' }} />
-                    <Text style={{ color: '#34D399', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>LIVE CLEARING ON MAP</Text>
+                {activeFlowTask.step === 'cleaning' && (
+                  <View style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 24,
+                    padding: 24,
+                    borderWidth: 1,
+                    borderColor: '#EDF4F0',
+                    gap: 20,
+                    alignItems: 'center',
+                    shadowColor: '#006A3B',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.06,
+                    shadowRadius: 10,
+                    elevation: 3
+                  }}>
+                    <View style={{
+                      width: 88,
+                      height: 88,
+                      borderRadius: 44,
+                      backgroundColor: '#ECFDF5',
+                      borderWidth: 2,
+                      borderColor: '#A7F3D0',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <MaterialIcons name="cleaning-services" size={46} color="#006A3B" />
+                    </View>
+
+                    <View style={{ alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                        Clean the Area Now
+                      </Text>
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        backgroundColor: '#ECFDF5',
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: '#A7F3D0'
+                      }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>Live Map Animation Active</Text>
+                      </View>
+                      <Text style={{ fontSize: 13, color: '#6F7A70', textAlign: 'center', lineHeight: 20, marginTop: 4 }}>
+                        Begin collecting waste bins and sweeping surroundings at <Text style={{ color: '#006A3B', fontWeight: '800' }}>{activeFlowTask.sitioName}</Text>. Live broom marker is broadcasting on maps.
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        const lat = currentLocation?.latitude || lastGpsRef.current?.lat || null;
+                        const lng = currentLocation?.longitude || lastGpsRef.current?.lng || null;
+                        fetch(`${TRACKING_SERVER}/api/schedules/clearing-status`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            truckId: TRUCK_ID,
+                            driverName: user?.driverName || user?.name || 'Collector',
+                            barangay: activeFlowTask?.barangay || assignedRouteBarangay || 'Apas',
+                            sitioName: activeFlowTask?.sitioName,
+                            status: 'completed',
+                            lat,
+                            lng,
+                          }),
+                        }).catch(() => {});
+                        if (webViewReady.current && webViewRef.current) {
+                          webViewRef.current.injectJavaScript(`if (window.setClearingMarker) window.setClearingMarker('', 0, 0, false); true;`);
+                        }
+                        setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }));
+                      }}
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#006A3B',
+                        paddingVertical: 16,
+                        borderRadius: 16,
+                        alignItems: 'center',
+                        marginTop: 8,
+                        shadowColor: '#006A3B',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 8,
+                        elevation: 4
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Mark as Cleared</Text>
+                    </TouchableOpacity>
                   </View>
+                )}
 
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' }}>
-                    Clean the Area Now
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', lineHeight: 20, paddingHorizontal: 10 }}>
-                    Begin collecting waste bins and sweeping surroundings at <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{activeFlowTask.sitioName}</Text>. Live broom marker is broadcasting on maps.
-                  </Text>
+                {activeFlowTask.step === 'after_photo' && (
+                  <View style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 24,
+                    padding: 20,
+                    borderWidth: 1,
+                    borderColor: '#EDF4F0',
+                    gap: 18,
+                    shadowColor: '#64748B',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 10,
+                    elevation: 2
+                  }}>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ fontSize: 17, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                        Capture photo AFTER waste collection
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#006A3B', fontWeight: '700', marginTop: 3 }}>
+                        📍 {activeFlowTask.sitioName}
+                      </Text>
+                    </View>
 
-                  <TouchableOpacity
-                    onPress={() => {
-                      const lat = currentLocation?.latitude || lastGpsRef.current?.lat || null;
-                      const lng = currentLocation?.longitude || lastGpsRef.current?.lng || null;
-                      fetch(`${TRACKING_SERVER}/api/schedules/clearing-status`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          truckId: TRUCK_ID,
-                          driverName: user?.driverName || user?.name || 'Collector',
-                          barangay: activeFlowTask?.barangay || assignedRouteBarangay || 'Apas',
-                          sitioName: activeFlowTask?.sitioName,
-                          status: 'completed',
-                          lat,
-                          lng,
-                        }),
-                      }).catch(() => {});
-                      if (webViewReady.current && webViewRef.current) {
-                        webViewRef.current.injectJavaScript(`if (window.setClearingMarker) window.setClearingMarker('', 0, 0, false); true;`);
-                      }
-                      setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }));
-                    }}
-                    style={{ backgroundColor: '#10B981', width: '100%', height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 8 }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Mark as Cleared</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {activeFlowTask?.step === 'after_photo' && (
-                <View style={{ alignItems: 'center', width: '100%' }}>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Please capture the final cleared area AFTER cleaning is done.
-                  </Text>
-
-                  {afterImage ? (
-                    <View style={{ width: '100%', alignItems: 'center' }}>
-                      <Image source={{ uri: afterImage }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: '#1E293B', marginBottom: 24 }} resizeMode="cover" />
-                      <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                    {afterImage ? (
+                      <View style={{ width: '100%', alignItems: 'center' }}>
+                        <View style={{ width: '100%', borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0', marginBottom: 16 }}>
+                          <Image source={{ uri: afterImage }} style={{ width: '100%', height: 260 }} resizeMode="cover" />
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+                          <TouchableOpacity
+                            onPress={() => takePhotoStep('after')}
+                            style={{
+                              flex: 1,
+                              backgroundColor: '#E4EEE9',
+                              paddingVertical: 14,
+                              borderRadius: 14,
+                              alignItems: 'center',
+                              flexDirection: 'row',
+                              justifyContent: 'center',
+                              gap: 8,
+                              borderWidth: 1,
+                              borderColor: '#CBD5E1'
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <MaterialIcons name="photo-camera" size={20} color="#006A3B" />
+                            <Text style={{ color: '#006A3B', fontWeight: '800', fontSize: 14 }}>Retake</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
+                            style={{
+                              flex: 1,
+                              backgroundColor: '#006A3B',
+                              paddingVertical: 14,
+                              borderRadius: 14,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              shadowColor: '#006A3B',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.2,
+                              shadowRadius: 4,
+                              elevation: 3
+                            }}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Proceed</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{
+                        width: '100%',
+                        height: 230,
+                        backgroundColor: '#F8FAF8',
+                        borderRadius: 16,
+                        borderWidth: 2,
+                        borderColor: '#CBD5E1',
+                        borderStyle: 'dashed',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 20,
+                        gap: 10
+                      }}>
+                        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center' }}>
+                          <MaterialIcons name="photo-camera" size={30} color="#006A3B" />
+                        </View>
                         <TouchableOpacity
                           onPress={() => takePhotoStep('after')}
-                          style={{ flex: 1, height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ backgroundColor: '#006A3B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 }}
+                          activeOpacity={0.85}
                         >
-                          <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Retake</Text>
+                          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Snap After Photo</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
-                          style={{ flex: 1, height: 50, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Proceed</Text>
-                        </TouchableOpacity>
+                        <Text style={{ fontSize: 11, color: '#6F7A70', textAlign: 'center' }}>Verify that the site is completely empty and clean</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {activeFlowTask.step === 'details' && (
+                  <View style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 24,
+                    padding: 20,
+                    borderWidth: 1,
+                    borderColor: '#EDF4F0',
+                    gap: 18,
+                    shadowColor: '#64748B',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 10,
+                    elevation: 2,
+                    width: '100%'
+                  }}>
+                    <View>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#1B1C1C' }}>
+                        Log Verification Details
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>
+                        Review photos and confirm status for {activeFlowTask.sitioName}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, color: '#6F7A70', fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 }}>Before</Text>
+                        {beforeImage ? (
+                          <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 110, borderRadius: 12, borderWidth: 1, borderColor: '#EDF4F0' }} />
+                        ) : (
+                          <View style={{ width: '100%', height: 110, borderRadius: 12, backgroundColor: '#F8FAF8', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                            <Text style={{ color: '#94A3B8', fontSize: 12 }}>No image</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, color: '#6F7A70', fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 }}>After</Text>
+                        {afterImage ? (
+                          <Image source={{ uri: afterImage }} style={{ width: '100%', height: 110, borderRadius: 12, borderWidth: 1, borderColor: '#EDF4F0' }} />
+                        ) : (
+                          <View style={{ width: '100%', height: 110, borderRadius: 12, backgroundColor: '#F8FAF8', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                            <Text style={{ color: '#94A3B8', fontSize: 12 }}>No image</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
-                  ) : (
-                    <View style={{ width: '100%', height: 320, borderRadius: 24, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#94A3B8" style={{ marginBottom: 16 }} />
-                      <TouchableOpacity
-                        onPress={() => takePhotoStep('after')}
-                        style={{ backgroundColor: '#10B981', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginBottom: 12 }}
-                      >
-                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Snap After Photo</Text>
-                      </TouchableOpacity>
-                      <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center' }}>Verify that the site is completely empty and clean.</Text>
-                    </View>
-                  )}
-                </View>
-              )}
 
-              {activeFlowTask?.step === 'details' && (
-                <View style={{ width: '100%' }}>
-                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
-                    <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>BEFORE</Text>
-                      {beforeImage ? (
-                        <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
-                      ) : (
-                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4 }}>AFTER</Text>
-                      {afterImage ? (
-                        <Image source={{ uri: afterImage }} style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B' }} />
-                      ) : (
-                        <View style={{ width: '100%', height: 100, borderRadius: 10, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: '#64748B', fontSize: 12 }}>No image</Text></View>
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={{ gap: 16 }}>
                     <View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Area Status</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Area Status</Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         {[
-                          { label: 'Clean', value: 'clean', color: '#10B981', bg: 'rgba(16,185,129,0.1)' },
-                          { label: 'Moderate', value: 'moderate', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
-                          { label: 'Critical', value: 'critical', color: '#EF4444', bg: 'rgba(239,68,68,0.1)' }
+                          { label: 'Clean', value: 'clean', color: '#059669', bg: '#ECFDF5', border: '#A7F3D0' },
+                          { label: 'Moderate', value: 'moderate', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
+                          { label: 'Critical', value: 'critical', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' }
                         ].map(st => {
                           const isSelected = flowStatus === st.value;
                           return (
                             <TouchableOpacity
                               key={st.value}
                               onPress={() => setFlowStatus(st.value)}
-                              style={{ flex: 1, height: 40, borderRadius: 10, borderWidth: 1.5, borderColor: isSelected ? st.color : '#334155', backgroundColor: isSelected ? st.bg : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                              style={{
+                                flex: 1,
+                                height: 42,
+                                borderRadius: 12,
+                                borderWidth: 1.5,
+                                borderColor: isSelected ? st.color : '#E2E8F0',
+                                backgroundColor: isSelected ? st.bg : '#F8FAF8',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
                             >
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? st.color : '#94A3B8' }}>{st.label}</Text>
+                              <Text style={{ fontSize: 12, fontWeight: '800', color: isSelected ? st.color : '#6F7A70' }}>{st.label}</Text>
                             </TouchableOpacity>
                           );
                         })}
@@ -3093,7 +3438,20 @@ export default function CollectorMapScreen({ navigation }) {
                     <TouchableOpacity
                       onPress={submitCleaningFlow}
                       disabled={isSubmittingFlow}
-                      style={{ backgroundColor: '#10B981', height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}
+                      style={{
+                        backgroundColor: '#006A3B',
+                        height: 52,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginTop: 10,
+                        shadowColor: '#006A3B',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 8,
+                        elevation: 4
+                      }}
+                      activeOpacity={0.85}
                     >
                       {isSubmittingFlow ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
@@ -3102,11 +3460,11 @@ export default function CollectorMapScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
                   </View>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </SafeAreaView>
+                )}
+              </ScrollView>
+            </View>
+          </SafeAreaView>
+        ) : null}
       </Modal>
 
       {/* Basic Report Sub-Modal */}
@@ -3120,15 +3478,32 @@ export default function CollectorMapScreen({ navigation }) {
         }}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#1E293B', width: '100%', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#334155' }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            width: '100%',
+            borderRadius: 24,
+            padding: 22,
+            borderWidth: 1,
+            borderColor: '#EDF4F0',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.15,
+            shadowRadius: 16,
+            elevation: 8
+          }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#F8FAFC' }}>File Incident Report</Text>
-              <TouchableOpacity onPress={() => setShowBasicReportModal(false)}>
-                <MaterialIcons name="close" size={24} color="#94A3B8" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+                  <MaterialIcons name="warning" size={18} color="#EF4444" />
+                </View>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#1B1C1C' }}>File Incident Report</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowBasicReportModal(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialIcons name="close" size={18} color="#6F7A70" />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8 }}>Incident Category</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>Incident Category</Text>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
               {['Blocked Road', 'Hazard', 'Other'].map(cat => {
                 const isSelected = basicReportCategory === cat;
@@ -3136,40 +3511,61 @@ export default function CollectorMapScreen({ navigation }) {
                   <TouchableOpacity
                     key={cat}
                     onPress={() => setBasicReportCategory(cat)}
-                    style={{ flex: 1, height: 38, borderRadius: 8, borderWidth: 1.5, borderColor: isSelected ? '#10B981' : '#334155', backgroundColor: isSelected ? 'rgba(16,185,129,0.1)' : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                    style={{
+                      flex: 1,
+                      height: 40,
+                      borderRadius: 10,
+                      borderWidth: 1.5,
+                      borderColor: isSelected ? '#EF4444' : '#E2E8F0',
+                      backgroundColor: isSelected ? '#FEF2F2' : '#F8FAF8',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#10B981' : '#94A3B8' }}>{cat}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isSelected ? '#DC2626' : '#1B1C1C' }}>{cat}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 6 }}>Notes / Description</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', marginBottom: 6, letterSpacing: 0.5 }}>Notes / Description</Text>
             <TextInput
-              style={{ borderWidth: 1, borderColor: '#334155', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#F8FAFC', backgroundColor: '#0F172A', height: 80, textAlignVertical: 'top', marginBottom: 20 }}
+              style={{
+                borderWidth: 1,
+                borderColor: '#CBD5E1',
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                fontSize: 14,
+                color: '#1B1C1C',
+                backgroundColor: '#F8FAF8',
+                height: 90,
+                textAlignVertical: 'top',
+                marginBottom: 20
+              }}
               value={basicReportNotes}
               onChangeText={setBasicReportNotes}
               placeholder="e.g. Blocked street due to parked truck"
-              placeholderTextColor="#475569"
+              placeholderTextColor="#94A3B8"
               multiline
             />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
                 onPress={() => setShowBasicReportModal(false)}
-                style={{ flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' }}
+                style={{ flex: 1, height: 46, borderRadius: 14, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAF8', alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ color: '#94A3B8', fontWeight: '700' }}>Cancel</Text>
+                <Text style={{ color: '#6F7A70', fontWeight: '800' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={submitBasicReportFlow}
                 disabled={submittingBasicReport}
-                style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}
+                style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: '#DC2626', alignItems: 'center', justifyContent: 'center' }}
               >
                 {submittingBasicReport ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Submit Report</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Submit Report</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -3198,7 +3594,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     paddingVertical: 32,
-    paddingHorizontal: 28,
+    paddingHorizontal: 0,
     alignItems: "center",
     width: "80%",
     shadowColor: "#000",
@@ -3935,7 +4331,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   swipeHintText: { fontSize: 11, color: "#BECABE" },
-  stopList: { flex: 1, paddingHorizontal: 20 },
+  stopList: { flex: 1 },
 
   actionCard: {
     backgroundColor: "#FFFFFF",
@@ -4426,17 +4822,19 @@ const styles = StyleSheet.create({
   },
 
   unassignedCard: {
-    backgroundColor: "#F6F3F2",
-    borderRadius: 20,
-    padding: 24,
-    marginTop: 8,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
     alignItems: "center",
   },
   unassignedIconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#E8EDEA",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1.5,
+    borderColor: "#A7F3D0",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
@@ -4735,7 +5133,7 @@ const styles = StyleSheet.create({
   bannerOffRouteStrip: {
     backgroundColor: '#DC2626',
     borderRadius: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 16,
     paddingVertical: 6,
     marginTop: 10,
     flexDirection: 'row',

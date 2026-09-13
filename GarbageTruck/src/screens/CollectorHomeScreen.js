@@ -285,8 +285,8 @@ export default function CollectorHomeScreen() {
     
     xhr.send(JSON.stringify({
       category: basicReportCategory,
-      description: basicReportNotes || `Issue reported at ${activeFlowTask.sitioName}`,
-      location: activeFlowTask.sitioName,
+      description: basicReportNotes || `Issue reported at ${activeFlowTask?.sitioName || 'Area'}`,
+      location: activeFlowTask?.sitioName || 'Area',
       reportedBy: driverName,
       truckId: TRUCK_ID,
     }));
@@ -958,138 +958,395 @@ export default function CollectorHomeScreen() {
           }
         }}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
-          <View style={{ flex: 1 }}>
-            {/* Header */}
-            <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#334155' }}>
-              <TouchableOpacity
-                onPress={() => {
-                  if (activeFlowTask.step === 'options') {
-                    setActiveFlowTask(null);
-                  } else if (activeFlowTask.step === 'before_photo') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'options' }));
-                  } else if (activeFlowTask.step === 'cleaning') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }));
-                  } else if (activeFlowTask.step === 'after_photo') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
-                  } else if (activeFlowTask.step === 'details') {
-                    setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }));
-                  }
-                }}
-                disabled={isSubmittingFlow}
-                style={{ padding: 4 }}
-              >
-                <MaterialIcons name="arrow-back" size={24} color="#F8FAFC" />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>
-                {activeFlowTask?.step === 'options' && 'Select Action'}
-                {activeFlowTask?.step === 'before_photo' && 'Proof: Before Cleaning'}
-                {activeFlowTask?.step === 'cleaning' && 'Clearing In Progress'}
-                {activeFlowTask?.step === 'after_photo' && 'Proof: After Cleaning'}
-                {activeFlowTask?.step === 'details' && 'Log Verification Details'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setActiveFlowTask(null)}
-                disabled={isSubmittingFlow}
-                style={{ padding: 4 }}
-              >
-                <MaterialIcons name="close" size={24} color="#F8FAFC" />
-              </TouchableOpacity>
-            </View>
+        {activeFlowTask ? (
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+            <StatusBar barStyle="light-content" backgroundColor="#006A3B" />
+            <View style={{ flex: 1 }}>
+              {/* Header */}
+              <View style={{
+                height: 62,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 16,
+                backgroundColor: '#006A3B',
+                shadowColor: '#006A3B',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+                elevation: 4
+              }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!activeFlowTask) return;
+                    if (activeFlowTask.step === 'options') {
+                      setActiveFlowTask(null);
+                    } else if (activeFlowTask.step === 'before_photo') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'options' }) : null);
+                    } else if (activeFlowTask.step === 'cleaning') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'before_photo' }) : null);
+                    } else if (activeFlowTask.step === 'after_photo') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'cleaning' }) : null);
+                    } else if (activeFlowTask.step === 'details') {
+                      setActiveFlowTask(prev => prev ? ({ ...prev, step: 'after_photo' }) : null);
+                    }
+                  }}
+                  disabled={isSubmittingFlow}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="arrow-back" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <View style={{ alignItems: 'center', flex: 1, marginHorizontal: 8 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF', textAlign: 'center' }} numberOfLines={1}>
+                    {activeFlowTask?.step === 'options' && 'Select Action'}
+                    {activeFlowTask?.step === 'before_photo' && 'Proof: Before Cleaning'}
+                    {activeFlowTask?.step === 'cleaning' && 'Clearing In Progress'}
+                    {activeFlowTask?.step === 'after_photo' && 'Proof: After Cleaning'}
+                    {activeFlowTask?.step === 'details' && 'Log Verification Details'}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#D1FAE5', fontWeight: '600', marginTop: 1 }} numberOfLines={1}>
+                    {activeFlowTask?.sitioName || 'Collection Stop'}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setActiveFlowTask(null)}
+                  disabled={isSubmittingFlow}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="close" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Step Breadcrumb Progress (when not on options) */}
+              {activeFlowTask?.step && activeFlowTask.step !== 'options' && (
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  backgroundColor: '#FFFFFF',
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#EDF4F0'
+                }}>
+                  {['before_photo', 'cleaning', 'after_photo', 'details'].map((s, idx) => {
+                    const stepOrder = ['before_photo', 'cleaning', 'after_photo', 'details'];
+                    const curIdx = activeFlowTask?.step ? stepOrder.indexOf(activeFlowTask.step) : 0;
+                    const isCurrent = activeFlowTask?.step === s;
+                    const isPast = curIdx > idx;
+                    const labels = ['Before', 'Clearing', 'After', 'Log'];
+                    return (
+                      <View key={s} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 10,
+                          backgroundColor: isCurrent ? '#ECFDF5' : isPast ? '#DCFCE7' : '#F1F5F9',
+                          borderWidth: 1,
+                          borderColor: isCurrent ? '#A7F3D0' : isPast ? '#BBF7D0' : '#E2E8F0'
+                        }}>
+                          {isPast ? (
+                            <MaterialIcons name="check" size={12} color="#059669" />
+                          ) : (
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: isCurrent ? '#047857' : '#94A3B8' }}>{idx + 1}</Text>
+                          )}
+                          <Text style={{
+                            fontSize: 10,
+                            fontWeight: isCurrent ? '800' : '600',
+                            color: isCurrent ? '#047857' : isPast ? '#059669' : '#94A3B8'
+                          }}>
+                            {labels[idx]}
+                          </Text>
+                        </View>
+                        {idx < 3 && (
+                          <View style={{ width: 10, height: 1.5, backgroundColor: isPast ? '#059669' : '#E2E8F0' }} />
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
             {/* Step Content */}
-            <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 20, justifyContent: 'center' }}>
+            <ScrollView
+              contentContainerStyle={{
+                flexGrow: 1,
+                padding: 20,
+                justifyContent: activeFlowTask?.step === 'options' ? 'center' : 'flex-start',
+                backgroundColor: '#F8FAFC'
+              }}
+              showsVerticalScrollIndicator={false}
+            >
               {activeFlowTask?.step === 'options' && (
                 <View style={{ gap: 16, width: '100%' }}>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginBottom: 8 }}>
-                    {activeFlowTask.sitioName}
-                  </Text>
-                  <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 20 }}>
-                    Select an action to perform at this garbage collection area.
-                  </Text>
+                  <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                    <View style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: '#ECFDF5',
+                      borderWidth: 1.5,
+                      borderColor: '#A7F3D0',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 12
+                    }}>
+                      <MaterialIcons name="location-on" size={34} color="#006A3B" />
+                    </View>
+                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                      {activeFlowTask.sitioName}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#6F7A70', textAlign: 'center', marginTop: 4 }}>
+                      Select an action to perform at this collection stop
+                    </Text>
+                  </View>
 
+                  {/* Clear Area & Log Pickup Button */}
+                  <TouchableOpacity
+                    onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }))}
+                    activeOpacity={0.85}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: '#A7F3D0',
+                      borderRadius: 20,
+                      padding: 20,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 16,
+                      shadowColor: '#006A3B',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 10,
+                      elevation: 3
+                    }}
+                  >
+                    <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialIcons name="local-shipping" size={28} color="#006A3B" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#1B1C1C' }}>Clear Area & Log Pickup</Text>
+                      <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>Perform standard before/after clearing flow</Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={24} color="#006A3B" />
+                  </TouchableOpacity>
+
+                  {/* Basic Report Button */}
                   <TouchableOpacity
                     onPress={() => {
                       setBasicReportNotes("");
                       setBasicReportCategory("Other");
                       setShowBasicReportModal(true);
                     }}
-                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
+                    activeOpacity={0.85}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: '#FEE2E2',
+                      borderRadius: 20,
+                      padding: 20,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 16,
+                      shadowColor: '#64748B',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 6,
+                      elevation: 2
+                    }}
                   >
-                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
-                      <MaterialIcons name="warning" size={26} color="#EF4444" />
+                    <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialIcons name="warning" size={28} color="#EF4444" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Basic Report</Text>
-                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>File a hazard, obstruction or incident report</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#1B1C1C' }}>File Incident Report</Text>
+                      <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>Report road block, heavy hazard, or bin issue</Text>
                     </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'before_photo' }))}
-                    style={{ backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#10B981', borderRadius: 20, padding: 24, flexDirection: 'row', alignItems: 'center', gap: 16 }}
-                  >
-                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
-                      <MaterialIcons name="local-shipping" size={26} color="#10B981" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#F8FAFC' }}>Clear Area & Log Pickup</Text>
-                      <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Perform standard before/after clearing flow</Text>
-                    </View>
+                    <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
                   </TouchableOpacity>
                 </View>
               )}
 
               {activeFlowTask?.step === 'before_photo' && (
-                <View style={{ gap: 20, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' }}>
-                    Capture photo BEFORE waste collection at {activeFlowTask.sitioName}
-                  </Text>
+                <View style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 24,
+                  padding: 20,
+                  borderWidth: 1,
+                  borderColor: '#EDF4F0',
+                  gap: 18,
+                  shadowColor: '#64748B',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 2
+                }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 17, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                      Capture photo BEFORE waste collection
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#006A3B', fontWeight: '700', marginTop: 3 }}>
+                      📍 {activeFlowTask.sitioName}
+                    </Text>
+                  </View>
+
                   {beforeImage ? (
-                    <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 240, borderRadius: 16 }} resizeMode="cover" />
+                    <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0' }}>
+                      <Image source={{ uri: beforeImage }} style={{ width: '100%', height: 240 }} resizeMode="cover" />
+                    </View>
                   ) : (
-                    <View style={{ width: '100%', height: 200, backgroundColor: '#1E293B', borderRadius: 16, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#64748B" />
-                      <Text style={{ color: '#94A3B8', fontSize: 13 }}>No photo captured yet</Text>
+                    <View style={{
+                      width: '100%',
+                      height: 210,
+                      backgroundColor: '#F8FAF8',
+                      borderRadius: 16,
+                      borderWidth: 2,
+                      borderColor: '#CBD5E1',
+                      borderStyle: 'dashed',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8
+                    }}>
+                      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center' }}>
+                        <MaterialIcons name="photo-camera" size={30} color="#006A3B" />
+                      </View>
+                      <Text style={{ color: '#1B1C1C', fontSize: 14, fontWeight: '700' }}>No photo captured yet</Text>
+                      <Text style={{ color: '#6F7A70', fontSize: 12 }}>Tap below to capture site conditions</Text>
                     </View>
                   )}
-                  <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+
+                  <View style={{ flexDirection: 'row', gap: 12, width: '100%', marginTop: 4 }}>
                     <TouchableOpacity
                       onPress={() => takePhotoStep('before')}
-                      style={{ flex: 1, backgroundColor: '#334155', paddingVertical: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#E4EEE9',
+                        paddingVertical: 14,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        flexDirection: 'row',
+                        justifyContent: 'center',
+                        gap: 8,
+                        borderWidth: 1,
+                        borderColor: '#CBD5E1'
+                      }}
+                      activeOpacity={0.8}
                     >
-                      <MaterialIcons name="photo-camera" size={20} color="#F8FAFC" />
-                      <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{beforeImage ? "Retake Photo" : "Take Photo"}</Text>
+                      <MaterialIcons name="photo-camera" size={20} color="#006A3B" />
+                      <Text style={{ color: '#006A3B', fontWeight: '800', fontSize: 14 }}>{beforeImage ? "Retake Photo" : "Take Photo"}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => {
                         notifyClearingStatus(activeFlowTask.sitioName, 'clearing');
                         setActiveFlowTask(prev => ({ ...prev, step: 'cleaning' }));
                       }}
-                      style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#006A3B',
+                        paddingVertical: 14,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        shadowColor: '#006A3B',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 4,
+                        elevation: 3
+                      }}
+                      activeOpacity={0.85}
                     >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Next Step</Text>
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Next Step</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
 
               {activeFlowTask?.step === 'cleaning' && (
-                <View style={{ gap: 24, alignItems: 'center', paddingHorizontal: 12 }}>
-                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#064E3B', alignItems: 'center', justifyContent: 'center' }}>
-                    <MaterialIcons name="cleaning-services" size={44} color="#34D399" />
+                <View style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 24,
+                  padding: 24,
+                  borderWidth: 1,
+                  borderColor: '#EDF4F0',
+                  gap: 20,
+                  alignItems: 'center',
+                  shadowColor: '#006A3B',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.06,
+                  shadowRadius: 10,
+                  elevation: 3
+                }}>
+                  <View style={{
+                    width: 88,
+                    height: 88,
+                    borderRadius: 44,
+                    backgroundColor: '#ECFDF5',
+                    borderWidth: 2,
+                    borderColor: '#A7F3D0',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <MaterialIcons name="cleaning-services" size={46} color="#006A3B" />
                   </View>
                   <View style={{ alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' }}>
+                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
                       Clearing In Progress
                     </Text>
-                    <Text style={{ fontSize: 14, color: '#94A3B8', textAlign: 'center', lineHeight: 20 }}>
-                      Live broom animation is broadcasting on Officials & Resident maps for <Text style={{ color: '#34D399', fontWeight: '700' }}>{activeFlowTask.sitioName}</Text>.
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: '#ECFDF5',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: '#A7F3D0'
+                    }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>Live Map Animation Active</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: '#6F7A70', textAlign: 'center', lineHeight: 20, marginTop: 4 }}>
+                      Live broom animation is broadcasting on Officials & Resident maps for <Text style={{ color: '#006A3B', fontWeight: '800' }}>{activeFlowTask.sitioName}</Text>.
                     </Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'after_photo' }))}
-                    style={{ width: '100%', backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginTop: 12 }}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#006A3B',
+                      paddingVertical: 16,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      marginTop: 8,
+                      shadowColor: '#006A3B',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 8,
+                      elevation: 4
+                    }}
+                    activeOpacity={0.85}
                   >
                     <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 16 }}>Finish Clearing & Take After Photo</Text>
                   </TouchableOpacity>
@@ -1097,77 +1354,207 @@ export default function CollectorHomeScreen() {
               )}
 
               {activeFlowTask?.step === 'after_photo' && (
-                <View style={{ gap: 20, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' }}>
-                    Capture photo AFTER waste collection at {activeFlowTask.sitioName}
-                  </Text>
+                <View style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 24,
+                  padding: 20,
+                  borderWidth: 1,
+                  borderColor: '#EDF4F0',
+                  gap: 18,
+                  shadowColor: '#64748B',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 2
+                }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 17, fontWeight: '800', color: '#1B1C1C', textAlign: 'center' }}>
+                      Capture photo AFTER waste collection
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#006A3B', fontWeight: '700', marginTop: 3 }}>
+                      📍 {activeFlowTask.sitioName}
+                    </Text>
+                  </View>
+
                   {afterImage ? (
-                    <Image source={{ uri: afterImage }} style={{ width: '100%', height: 240, borderRadius: 16 }} resizeMode="cover" />
+                    <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0' }}>
+                      <Image source={{ uri: afterImage }} style={{ width: '100%', height: 240 }} resizeMode="cover" />
+                    </View>
                   ) : (
-                    <View style={{ width: '100%', height: 200, backgroundColor: '#1E293B', borderRadius: 16, borderWidth: 2, borderColor: '#334155', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <MaterialIcons name="photo-camera" size={48} color="#64748B" />
-                      <Text style={{ color: '#94A3B8', fontSize: 13 }}>No photo captured yet</Text>
+                    <View style={{
+                      width: '100%',
+                      height: 210,
+                      backgroundColor: '#F8FAF8',
+                      borderRadius: 16,
+                      borderWidth: 2,
+                      borderColor: '#CBD5E1',
+                      borderStyle: 'dashed',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8
+                    }}>
+                      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#E4EEE9', alignItems: 'center', justifyContent: 'center' }}>
+                        <MaterialIcons name="photo-camera" size={30} color="#006A3B" />
+                      </View>
+                      <Text style={{ color: '#1B1C1C', fontSize: 14, fontWeight: '700' }}>No photo captured yet</Text>
+                      <Text style={{ color: '#6F7A70', fontSize: 12 }}>Tap below to capture completed area</Text>
                     </View>
                   )}
-                  <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+
+                  <View style={{ flexDirection: 'row', gap: 12, width: '100%', marginTop: 4 }}>
                     <TouchableOpacity
                       onPress={() => takePhotoStep('after')}
-                      style={{ flex: 1, backgroundColor: '#334155', paddingVertical: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#E4EEE9',
+                        paddingVertical: 14,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        flexDirection: 'row',
+                        justifyContent: 'center',
+                        gap: 8,
+                        borderWidth: 1,
+                        borderColor: '#CBD5E1'
+                      }}
+                      activeOpacity={0.8}
                     >
-                      <MaterialIcons name="photo-camera" size={20} color="#F8FAFC" />
-                      <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{afterImage ? "Retake Photo" : "Take Photo"}</Text>
+                      <MaterialIcons name="photo-camera" size={20} color="#006A3B" />
+                      <Text style={{ color: '#006A3B', fontWeight: '800', fontSize: 14 }}>{afterImage ? "Retake Photo" : "Take Photo"}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => setActiveFlowTask(prev => ({ ...prev, step: 'details' }))}
-                      style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#006A3B',
+                        paddingVertical: 14,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        shadowColor: '#006A3B',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 4,
+                        elevation: 3
+                      }}
+                      activeOpacity={0.85}
                     >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Next Step</Text>
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Next Step</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
 
               {activeFlowTask?.step === 'details' && (
-                <View style={{ gap: 16 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 }}>
-                    Log Verification Details
-                  </Text>
+                <View style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 24,
+                  padding: 20,
+                  borderWidth: 1,
+                  borderColor: '#EDF4F0',
+                  gap: 20,
+                  shadowColor: '#64748B',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 2
+                }}>
                   <View>
-                    <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Waste Type</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {['General', 'Recyclable', 'Organic', 'Hazardous'].map(type => (
-                        <TouchableOpacity
-                          key={type}
-                          onPress={() => setFlowWasteType(type)}
-                          style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            borderRadius: 10,
-                            backgroundColor: flowWasteType === type ? '#10B981' : '#1E293B',
-                            borderWidth: 1,
-                            borderColor: flowWasteType === type ? '#10B981' : '#334155'
-                          }}
-                        >
-                          <Text style={{ fontSize: 12, fontWeight: '600', color: flowWasteType === type ? '#FFFFFF' : '#94A3B8' }}>{type}</Text>
-                        </TouchableOpacity>
-                      ))}
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: '#1B1C1C' }}>
+                      Log Verification Details
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#6F7A70', marginTop: 2 }}>
+                      Confirm collected volume and waste type for {activeFlowTask.sitioName}
+                    </Text>
+                  </View>
+
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
+                      Waste Category
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {['General', 'Recyclable', 'Organic', 'Hazardous'].map(type => {
+                        const isSelected = flowWasteType === type;
+                        return (
+                          <TouchableOpacity
+                            key={type}
+                            onPress={() => setFlowWasteType(type)}
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 10,
+                              borderRadius: 12,
+                              backgroundColor: isSelected ? '#006A3B' : '#F8FAF8',
+                              borderWidth: 1.5,
+                              borderColor: isSelected ? '#006A3B' : '#E2E8F0',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 6
+                            }}
+                          >
+                            {isSelected && <MaterialIcons name="check" size={16} color="#FFFFFF" />}
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#1B1C1C' }}>{type}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
+
                   <View>
-                    <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>Bins Collected</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
+                      Bins / Bags Cleared
+                    </Text>
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: '#F8FAF8',
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      padding: 12
+                    }}>
                       <TouchableOpacity
                         onPress={() => setFlowBins(prev => Math.max(1, prev - 1))}
-                        style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          backgroundColor: '#FFFFFF',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 1,
+                          borderColor: '#CBD5E1',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.05,
+                          shadowRadius: 2,
+                          elevation: 1
+                        }}
                       >
-                        <MaterialIcons name="remove" size={20} color="#F8FAFC" />
+                        <MaterialIcons name="remove" size={22} color="#006A3B" />
                       </TouchableOpacity>
-                      <Text style={{ fontSize: 18, fontWeight: '700', color: '#F8FAFC' }}>{flowBins}</Text>
+                      <View style={{ alignItems: 'center' }}>
+                        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1B1C1C' }}>{flowBins}</Text>
+                        <Text style={{ fontSize: 11, color: '#6F7A70', fontWeight: '600' }}>Standard Bins</Text>
+                      </View>
                       <TouchableOpacity
                         onPress={() => setFlowBins(prev => prev + 1)}
-                        style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center' }}
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          backgroundColor: '#FFFFFF',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 1,
+                          borderColor: '#CBD5E1',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.05,
+                          shadowRadius: 2,
+                          elevation: 1
+                        }}
                       >
-                        <MaterialIcons name="add" size={20} color="#F8FAFC" />
+                        <MaterialIcons name="add" size={22} color="#006A3B" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1175,7 +1562,19 @@ export default function CollectorHomeScreen() {
                   <TouchableOpacity
                     onPress={submitCleaningFlow}
                     disabled={isSubmittingFlow}
-                    style={{ backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 }}
+                    style={{
+                      backgroundColor: '#006A3B',
+                      paddingVertical: 16,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      marginTop: 8,
+                      shadowColor: '#006A3B',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 8,
+                      elevation: 4
+                    }}
+                    activeOpacity={0.85}
                   >
                     {isSubmittingFlow ? (
                       <ActivityIndicator color="#FFFFFF" />
@@ -1188,6 +1587,7 @@ export default function CollectorHomeScreen() {
             </ScrollView>
           </View>
         </SafeAreaView>
+      ) : null}
       </Modal>
 
       {/* Basic Report Modal */}
@@ -1195,66 +1595,152 @@ export default function CollectorHomeScreen() {
         visible={showBasicReportModal}
         transparent
         animationType="slide"
+        statusBarTranslucent
         onRequestClose={() => setShowBasicReportModal(false)}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#0F172A' }}>
-          <View style={{ flex: 1, padding: 20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <Text style={{ fontSize: 20, fontWeight: '800', color: '#F8FAFC' }}>File Basic Report</Text>
-              <TouchableOpacity onPress={() => setShowBasicReportModal(false)} style={{ padding: 4 }}>
-                <MaterialIcons name="close" size={24} color="#F8FAFC" />
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            {/* Header */}
+            <View style={{
+              height: 62,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              backgroundColor: '#FFFFFF',
+              borderBottomWidth: 1,
+              borderBottomColor: '#EDF4F0',
+              shadowColor: '#64748B',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 2
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+                  <MaterialIcons name="warning" size={20} color="#EF4444" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#1B1C1C' }}>File Incident Report</Text>
+                  <Text style={{ fontSize: 11, color: '#6F7A70', fontWeight: '600' }}>
+                    {activeFlowTask?.sitioName || 'Area Incident'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowBasicReportModal(false)}
+                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={20} color="#6F7A70" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ gap: 16 }}>
-              <Text style={{ fontSize: 14, color: '#94A3B8' }}>
-                Select issue type for <Text style={{ color: '#F8FAFC', fontWeight: '700' }}>{activeFlowTask?.sitioName}</Text>:
-              </Text>
+            <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }} showsVerticalScrollIndicator={false}>
+              <View style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 20,
+                padding: 18,
+                borderWidth: 1,
+                borderColor: '#EDF4F0',
+                shadowColor: '#64748B',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                elevation: 2
+              }}>
+                <Text style={{ fontSize: 14, color: '#6F7A70', marginBottom: 14 }}>
+                  Select issue type for <Text style={{ color: '#1B1C1C', fontWeight: '800' }}>{activeFlowTask?.sitioName}</Text>:
+                </Text>
 
-              {['Blocked Road', 'Overflow Hazard', 'Vehicle Obstruction', 'Other'].map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  onPress={() => setBasicReportCategory(cat)}
+                <View style={{ gap: 10 }}>
+                  {['Blocked Road', 'Overflow Hazard', 'Vehicle Obstruction', 'Other'].map(cat => {
+                    const isSelected = basicReportCategory === cat;
+                    return (
+                      <TouchableOpacity
+                        key={cat}
+                        onPress={() => setBasicReportCategory(cat)}
+                        activeOpacity={0.8}
+                        style={{
+                          padding: 16,
+                          borderRadius: 14,
+                          backgroundColor: isSelected ? '#FEF2F2' : '#F8FAF8',
+                          borderWidth: 1.5,
+                          borderColor: isSelected ? '#EF4444' : '#E2E8F0',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <MaterialIcons
+                            name={cat === 'Blocked Road' ? 'traffic' : cat === 'Overflow Hazard' ? 'delete-forever' : cat === 'Vehicle Obstruction' ? 'no-crash' : 'report-problem'}
+                            size={22}
+                            color={isSelected ? '#DC2626' : '#6F7A70'}
+                          />
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: isSelected ? '#DC2626' : '#1B1C1C' }}>{cat}</Text>
+                        </View>
+                        {isSelected && <MaterialIcons name="check-circle" size={20} color="#EF4444" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 20,
+                padding: 18,
+                borderWidth: 1,
+                borderColor: '#EDF4F0',
+                shadowColor: '#64748B',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                elevation: 2,
+                gap: 10
+              }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#6F7A70', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Additional Notes
+                </Text>
+                <TextInput
+                  value={basicReportNotes}
+                  onChangeText={setBasicReportNotes}
+                  placeholder="Describe details for LGU Officials..."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  numberOfLines={4}
                   style={{
-                    padding: 16,
-                    borderRadius: 12,
-                    backgroundColor: basicReportCategory === cat ? '#1E293B' : '#0F172A',
-                    borderWidth: 1.5,
-                    borderColor: basicReportCategory === cat ? '#EF4444' : '#334155',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
+                    backgroundColor: '#F8FAF8',
+                    borderRadius: 14,
+                    padding: 14,
+                    color: '#1B1C1C',
+                    borderWidth: 1,
+                    borderColor: '#CBD5E1',
+                    textAlignVertical: 'top',
+                    minHeight: 110,
+                    fontSize: 14
                   }}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: basicReportCategory === cat ? '#EF4444' : '#F8FAFC' }}>{cat}</Text>
-                  {basicReportCategory === cat && <MaterialIcons name="check-circle" size={20} color="#EF4444" />}
-                </TouchableOpacity>
-              ))}
-
-              <Text style={{ fontSize: 14, color: '#94A3B8', marginTop: 8 }}>Additional Notes:</Text>
-              <TextInput
-                value={basicReportNotes}
-                onChangeText={setBasicReportNotes}
-                placeholder="Describe details for LGU Officials..."
-                placeholderTextColor="#64748B"
-                multiline
-                numberOfLines={4}
-                style={{
-                  backgroundColor: '#1E293B',
-                  borderRadius: 12,
-                  padding: 14,
-                  color: '#F8FAFC',
-                  borderWidth: 1,
-                  borderColor: '#334155',
-                  textAlignVertical: 'top',
-                  minHeight: 100
-                }}
-              />
+                />
+              </View>
 
               <TouchableOpacity
                 onPress={submitBasicReportFlow}
                 disabled={submittingBasicReport}
-                style={{ backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 12 }}
+                style={{
+                  backgroundColor: '#DC2626',
+                  paddingVertical: 16,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  marginTop: 6,
+                  shadowColor: '#DC2626',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 8,
+                  elevation: 4
+                }}
+                activeOpacity={0.85}
               >
                 {submittingBasicReport ? (
                   <ActivityIndicator color="#FFFFFF" />
