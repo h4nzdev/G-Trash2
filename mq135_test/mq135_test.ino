@@ -46,11 +46,11 @@ void loop() {
   Serial.print(voltage, 2);
   Serial.print(" V");
 
-  // Threshold check (> 700)
-  if (digitalNumber > 700) {
+  // Threshold check (> 500)
+  if (digitalNumber > 500) {
     digitalWrite(ledRed, HIGH);
     digitalWrite(buzzer, HIGH);
-    Serial.println("\t | STATUS: ALERT (> 700 - Poor Air Quality!)");
+    Serial.println("\t | STATUS: ALERT (> 500 - Poor Air Quality!)");
   } else {
     digitalWrite(ledRed, LOW);
     digitalWrite(buzzer, LOW);

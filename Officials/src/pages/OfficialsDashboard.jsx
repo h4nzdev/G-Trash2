@@ -87,7 +87,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-red-600">{loading ? '–' : riskCounts.high}</p>
             <p className="text-xs font-semibold text-slate-700">High Risk Zones</p>
-            <p className="text-[10px] text-slate-400">Raw ADC &ge; 700</p>
+            <p className="text-[10px] text-slate-400">Raw ADC &ge; 500</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-amber-200 p-5 flex items-center gap-4">
@@ -97,7 +97,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-amber-600">{loading ? '–' : riskCounts.moderate}</p>
             <p className="text-xs font-semibold text-slate-700">Moderate Risk Zones</p>
-            <p className="text-[10px] text-slate-400">Raw ADC 400 – 699</p>
+            <p className="text-[10px] text-slate-400">Raw ADC 200 – 499</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-emerald-100 p-5 flex items-center gap-4">
@@ -107,7 +107,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-emerald-600">{loading ? '–' : riskCounts.low}</p>
             <p className="text-xs font-semibold text-slate-700">Low Risk Zones</p>
-            <p className="text-[10px] text-slate-400">Raw ADC &lt; 400 — Clean air</p>
+            <p className="text-[10px] text-slate-400">Raw ADC &lt; 200 — Clean air</p>
           </div>
         </div>
       </div>
@@ -184,7 +184,7 @@ function ChdDashboard() {
           ) : (
             <div className="space-y-2">
               {barangaysAtRisk.map((b, i) => {
-                const isHigh = b.maxRawValue !== undefined ? b.maxRawValue >= 700 : (b.maxAmmonia > 50 || b.maxMethane > 25);
+                const isHigh = b.maxRawValue !== undefined ? b.maxRawValue >= 500 : (b.maxAmmonia > 50 || b.maxMethane > 25);
                 const rawVal = b.maxRawValue ?? 0;
                 const voltageVal = (rawVal * 3.3) / 4095.0;
                 return (
@@ -714,8 +714,18 @@ export default function OfficialsDashboard() {
         return;
       }
       setLatestReadings(prev => {
+        const existing = prev.find(r => r.sensorId === reading.sensorId);
+        const readingWithPrev = {
+          ...reading,
+          previousReading: existing ? {
+            rawValue: existing.rawValue,
+            voltage: (existing.rawValue * (3.3 / 4095.0)).toFixed(2),
+            airQuality: existing.airQuality,
+            timestamp: existing.timestamp || existing.updatedAt || new Date().toISOString(),
+          } : existing?.previousReading || null,
+        };
         const filtered = prev.filter(r => r.sensorId !== reading.sensorId);
-        return [reading, ...filtered];
+        return [readingWithPrev, ...filtered];
       });
       setIotSummary(prev => ({ ...prev, recentReadings: (prev.recentReadings || 0) + 1 }));
     });
@@ -926,14 +936,14 @@ export default function OfficialsDashboard() {
       {activeTab === 'operations' ? (
         <>
           {/* Main Operational 2-Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column (7/12): Live Resident Reports Widget */}
-            <div className="lg:col-span-7">
+            <div className="lg:col-span-7 h-full">
               <RecentReportsWidget reports={reportsList} onReportUpdated={fetchAll} />
             </div>
 
             {/* Right Column (5/12): Route Dispatch & Active Alerts */}
-            <div className="lg:col-span-5 space-y-6">
+            <div className="lg:col-span-5 space-y-6 h-full flex flex-col">
               {/* Route Recommendation Card */}
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -968,36 +978,7 @@ export default function OfficialsDashboard() {
               {/* Live MQ-135 Sensor Status Widget */}
               <SensorStatusWidget readings={latestReadings} onNavigateAlerts={() => navigate('/alerts')} />
 
-              {/* Active IoT Alerts */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-500" /> Active IoT Alerts
-                      {iotAlerts.length > 0 && (
-                        <span className="text-[10px] font-medium bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                          {iotAlerts.filter(a => !a.acknowledged).length} Action Needed
-                        </span>
-                      )}
-                    </h2>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Real-time bin & gas threshold alerts</p>
-                  </div>
-                  <button onClick={() => navigate('/alerts')} className="text-xs font-semibold text-indigo-600 hover:underline">
-                    View All
-                  </button>
-                </div>
-                <div className="p-4">
-                  {formattedAlerts.length > 0 ? (
-                    <RecentAlerts alerts={formattedAlerts} />
-                  ) : (
-                    <div className="py-6 text-center text-slate-400 bg-slate-50/50 rounded-xl">
-                      <CheckCircle className="w-8 h-8 mx-auto mb-1.5 text-emerald-400" />
-                      <p className="text-xs font-semibold text-slate-600">No active alerts</p>
-                      <p className="text-[11px] text-slate-400">IoT sensors operating normally</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              
             </div>
           </div>
 

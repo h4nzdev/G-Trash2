@@ -62,7 +62,7 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
   const pendingCount = reports.filter(r => r.status === 'pending').length;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col h-fit">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col h-full">
       {/* Widget Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">

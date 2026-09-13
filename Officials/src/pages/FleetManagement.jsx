@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   Truck, Plus, Trash2, RefreshCw, Copy, Check, X, Share2, BarChart2,
-  ChevronDown, Search, UserPlus, ArrowRight, ArrowLeft, UserCheck, Shield, Edit3, Phone
+  ChevronDown, Search, UserPlus, ArrowRight, ArrowLeft, UserCheck, Shield, Edit3, Phone,
+  Leaf, Recycle
 } from 'lucide-react';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +27,7 @@ export default function FleetManagement() {
   const [plateNumber, setPlateNumber] = useState('');
   const [fuelType, setFuelType] = useState('Diesel');
   const [capacity, setCapacity] = useState('');
+  const [wasteType, setWasteType] = useState('Both');
   
   // Shared Truck Form state
   const [route, setRoute] = useState('');
@@ -58,6 +60,7 @@ export default function FleetManagement() {
   const [editFuelType, setEditFuelType] = useState('Diesel');
   const [editCapacity, setEditCapacity] = useState('');
   const [editTruckType, setEditTruckType] = useState('dedicated');
+  const [editWasteType, setEditWasteType] = useState('Both');
   const [editServiceBarangays, setEditServiceBarangays] = useState([]);
   const [editBrgySearch, setEditBrgySearch] = useState('');
   const [isEditBrgyDropdownOpen, setIsEditBrgyDropdownOpen] = useState(false);
@@ -191,6 +194,7 @@ export default function FleetManagement() {
         route,
         type: truckType,
         serviceBarangays: finalServiceBarangays,
+        wasteType: wasteType || 'Both',
       };
 
       const { data } = await axios.post(`${API}/api/fleet`, payload);
@@ -200,7 +204,7 @@ export default function FleetManagement() {
       
       // Reset forms
       setDriverName(''); setDriverId(''); setDriverPhone(''); setDriverImage(null);
-      setTruckModel(''); setPlateNumber(''); setCapacity('');
+      setTruckModel(''); setPlateNumber(''); setCapacity(''); setWasteType('Both');
       setRoute(''); setTruckType('dedicated'); setServiceBarangays([]);
       setBrgySearch(''); setIsBrgyDropdownOpen(false);
       setModalTab('truck');
@@ -252,6 +256,7 @@ export default function FleetManagement() {
     setEditFuelType(truck.fuelType || 'Diesel');
     setEditCapacity(truck.capacity || '');
     setEditTruckType(truck.type || 'dedicated');
+    setEditWasteType(truck.wasteType || 'Both');
     
     let sList = Array.isArray(truck.serviceBarangays) ? [...truck.serviceBarangays] : [];
     if (truck.barangay && !sList.map(b => b.toLowerCase()).includes(truck.barangay.toLowerCase())) {
@@ -278,6 +283,7 @@ export default function FleetManagement() {
         capacity: editCapacity ? Number(editCapacity) : 0,
         type: editTruckType,
         serviceBarangays: finalServiceBarangays,
+        wasteType: editWasteType || 'Both',
       });
 
       setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
@@ -369,6 +375,7 @@ export default function FleetManagement() {
                 <th className="px-6 py-3 text-left">Truck ID</th>
                 <th className="px-6 py-3 text-left">Driver</th>
                 <th className="px-6 py-3 text-left">Type</th>
+                <th className="px-6 py-3 text-left">Waste Category</th>
                 <th className="px-6 py-3 text-left">Coverage</th>
                 <th className="px-6 py-3">Registered</th>
                 <th className="px-6 py-3" />
@@ -455,6 +462,21 @@ export default function FleetManagement() {
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
                         <Truck className="w-3 h-3" /> Dedicated
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {t.wasteType === 'Malata' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full">
+                        <Leaf className="w-3 h-3 text-emerald-600" /> Malata Only
+                      </span>
+                    ) : t.wasteType === 'Di-Malata' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold rounded-full">
+                        <Recycle className="w-3 h-3 text-blue-600" /> Di-Malata Only
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-600 border border-slate-200 text-xs font-medium rounded-full">
+                        Both / General
                       </span>
                     )}
                   </td>
@@ -607,7 +629,44 @@ export default function FleetManagement() {
                       </div>
                     </div>
 
-                    <hr className="border-slate-100 my-1" />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Designated Waste Category</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWasteType('Both')}
+                          className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                            wasteType === 'Both'
+                              ? 'border-slate-800 bg-slate-800 text-white shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          Both / General
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWasteType('Malata')}
+                          className={`py-2 px-2 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
+                            wasteType === 'Malata'
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20 shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <Leaf className="w-3.5 h-3.5 text-emerald-600" /> Malata Only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWasteType('Di-Malata')}
+                          className={`py-2 px-2 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
+                            wasteType === 'Di-Malata'
+                              ? 'border-blue-600 bg-blue-50 text-blue-800 ring-2 ring-blue-500/20 shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <Recycle className="w-3.5 h-3.5 text-blue-600" /> Di-Malata Only
+                        </button>
+                      </div>
+                    </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck Type</label>
@@ -1056,7 +1115,44 @@ export default function FleetManagement() {
                   </div>
                 </div>
 
-                <hr className="border-slate-100 my-1" />
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Designated Waste Category</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditWasteType('Both')}
+                      className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all ${
+                        editWasteType === 'Both'
+                          ? 'border-slate-800 bg-slate-800 text-white shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Both / General
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditWasteType('Malata')}
+                      className={`py-2 px-2 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
+                        editWasteType === 'Malata'
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20 shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <Leaf className="w-3.5 h-3.5 text-emerald-600" /> Malata Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditWasteType('Di-Malata')}
+                      className={`py-2 px-2 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
+                        editWasteType === 'Di-Malata'
+                          ? 'border-blue-600 bg-blue-50 text-blue-800 ring-2 ring-blue-500/20 shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <Recycle className="w-3.5 h-3.5 text-blue-600" /> Di-Malata Only
+                    </button>
+                  </div>
+                </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck Type</label>

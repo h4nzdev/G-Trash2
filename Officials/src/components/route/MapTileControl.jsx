@@ -32,11 +32,11 @@ export const GOOGLE_MAP_TILES = {
   },
 };
 
-export default function MapTileControl({ activeTileKey = "grayscale", onChangeTile }) {
+export default function MapTileControl({ activeTileKey = "grayscale", onChangeTile, className }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="absolute top-3 right-3 z-[1000]">
+    <div className={className || "absolute top-3 right-3 z-[1000]"}>
       <div className="relative">
         <button
           onClick={() => setIsOpen(!isOpen)}

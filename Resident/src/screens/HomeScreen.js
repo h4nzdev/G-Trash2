@@ -1773,6 +1773,21 @@ export default function HomeScreen({ navigation }) {
                     {firstSchedule?.routeName || "—"}
                   </Text>
                 </View>
+                {firstSchedule && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Waste Category</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                      <MaterialIcons
+                        name={firstSchedule.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                        size={15}
+                        color={firstSchedule.wasteType === "Di-Malata" ? "#93C5FD" : "#A7F3D0"}
+                      />
+                      <Text style={[styles.detailValue, { color: firstSchedule.wasteType === "Di-Malata" ? "#BFDBFE" : "#D1FAE5", fontWeight: "800" }]}>
+                        {firstSchedule.wasteType === "Di-Malata" ? "DI-MALATA (Non-Bio)" : "MALATA (Biodegradable)"}
+                      </Text>
+                    </View>
+                  </View>
+                )}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Driver</Text>
                   <Text style={styles.detailValue}>
@@ -1880,11 +1895,50 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.modalTitle}>Prepare Your Bin</Text>
                 <Text style={styles.modalSubtitle}>
                   {firstSchedule
-                    ? `Collection Today · ${firstSchedule.routeName || "Scheduled"}`
+                    ? `${firstSchedule.wasteType || "Malata"} Collection Today · ${firstSchedule.routeName || "Scheduled"}`
                     : "Bin preparation checklist"}
                 </Text>
               </View>
             </View>
+
+            {firstSchedule && (
+              <View style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                backgroundColor: firstSchedule.wasteType === "Di-Malata" ? "#EFF6FF" : "#ECFDF5",
+                borderColor: firstSchedule.wasteType === "Di-Malata" ? "#BFDBFE" : "#A7F3D0",
+                borderWidth: 1,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 14,
+                marginBottom: 14,
+              }}>
+                <MaterialIcons
+                  name={firstSchedule.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                  size={22}
+                  color={firstSchedule.wasteType === "Di-Malata" ? "#1D4ED8" : "#059669"}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color: firstSchedule.wasteType === "Di-Malata" ? "#1E40AF" : "#065F46",
+                  }}>
+                    {firstSchedule.wasteType === "Di-Malata" ? "DI-MALATA (Non-Biodegradable)" : "MALATA (Biodegradable / Organic)"}
+                  </Text>
+                  <Text style={{
+                    fontSize: 11,
+                    color: firstSchedule.wasteType === "Di-Malata" ? "#3B82F6" : "#047857",
+                    marginTop: 1,
+                  }}>
+                    {firstSchedule.wasteType === "Di-Malata"
+                      ? "Bring out dry recyclables, plastics, bottles, cardboard, and cans."
+                      : "Bring out kitchen food scraps, vegetable peels, and garden waste."}
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {checklist.map((item, index) => (
               <TouchableOpacity

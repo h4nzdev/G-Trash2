@@ -192,7 +192,8 @@ function buildLeafletHTML(truckB64) {
         
         var group = L.layerGroup();
         
-        var r = 180 + Math.round((area.intensity || 0.5) * 120);
+        // 1.5 to 3-meter (5 to 10 feet) radius of a potential gas source or leakage point.
+        var r = 3;
         var circle = L.circle([area.lat, area.lng], {
           radius: r, color: color, fillColor: color,
           fillOpacity: fillOp, weight: 2, opacity: 0.8, interactive: true,
@@ -209,6 +210,9 @@ function buildLeafletHTML(truckB64) {
           '</div>' +
           '<div style="margin-top:4px;font-size:10px;color:#6B7280;font-weight:500;">' +
           'Status: ' + lvlDesc +
+          '</div>' +
+          '<div style="margin-top:4px;font-size:9px;color:#9CA3AF;line-height:1.2;">' +
+          '1.5 to 3-meter (5 to 10 feet) radius of a potential gas source or leakage point.' +
           '</div></div>'
         );
         circle.on('click', function() {
@@ -261,39 +265,48 @@ function buildLeafletHTML(truckB64) {
         });
       }
 
+      var lastTruckCoords = {};
       function makeTruckIcon(truckId, heading) {
+        var rot = typeof heading === 'number' && !isNaN(heading) ? heading : 0;
         return L.divIcon({
-          html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
-                  '<div style="background:#006A3B;color:#ffffff;font-size:10px;font-weight:800;padding:3px 10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.25);margin-bottom:4px;white-space:nowrap;letter-spacing:0.3px;">ETA: 8 min</div>' +
-                  '<div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 4px 15px rgba(0,106,59,0.4);border:2.5px solid #006A3B;position:relative;z-index:2;">' +
-                    '<img src="data:image/png;base64,' + TB + '" style="width:36px;height:36px;object-fit:contain;display:block;" />' +
-                  '</div>' +
-                  '<div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #006A3B;margin-top:-3px;"></div>' +
+          html: '<div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;">' +
+                  '<img src="data:image/png;base64,' + TB + '" style="width:26px;height:44px;object-fit:contain;display:block;transform:rotate(' + rot + 'deg);transform-origin:center center;transition:transform 0.4s ease-out;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.35));" alt="Truck" />' +
                 '</div>',
-          iconSize: [80, 85],
-          iconAnchor: [40, 75],
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
           className: '',
         });
       }
 
       function makeIdleIcon(truckId) {
         return L.divIcon({
-          html: '<div style="display:flex;flex-direction:column;align-items:center;opacity:0.7;">' +
-                  '<div style="background:#fff;border-radius:12px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);border:2.5px solid #6B7280;filter:grayscale(100%);">' +
-                    '<img src="data:image/png;base64,' + TB + '" style="width:36px;height:36px;object-fit:contain;display:block;" />' +
-                  '</div>' +
-                  '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #6B7280;margin-top:-3px;"></div>' +
-                  '<div style="background:#6B7280;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;white-space:nowrap;margin-top:2px;"> Idle </div>' +
+          html: '<div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;opacity:0.65;filter:grayscale(100%);">' +
+                  '<img src="data:image/png;base64,' + TB + '" style="width:26px;height:44px;object-fit:contain;display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,0.25));" alt="Truck" />' +
                 '</div>',
-          iconSize: [50, 75],
-          iconAnchor: [25, 52],
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
           className: '',
         });
       }
 
       window.updateTruckPosition = function(lat, lng, truckId, autoPan, heading) {
         var id = truckId || 'GT';
-        var icon = makeTruckIcon(id, heading);
+        var last = lastTruckCoords[id];
+        var calcHeading = (typeof heading === 'number' && !isNaN(heading) && heading !== 0) ? heading : null;
+
+        if (calcHeading === null && last && (last.lat !== lat || last.lng !== lng)) {
+          var dLng = ((lng - last.lng) * Math.PI) / 180;
+          var phi1 = (last.lat * Math.PI) / 180;
+          var phi2 = (lat * Math.PI) / 180;
+          var y = Math.sin(dLng) * Math.cos(phi2);
+          var x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+          calcHeading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+        } else if (calcHeading === null) {
+          calcHeading = last ? last.heading : 0;
+        }
+
+        lastTruckCoords[id] = { lat: lat, lng: lng, heading: calcHeading };
+        var icon = makeTruckIcon(id, calcHeading);
         if (!truckMarkers[id]) {
           truckMarkers[id] = L.marker([lat, lng], { icon: icon }).addTo(map);
         } else {

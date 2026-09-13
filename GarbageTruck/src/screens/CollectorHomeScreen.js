@@ -599,8 +599,28 @@ export default function CollectorHomeScreen() {
           {/* Single Assigned Route Card (SHOWN ONLY ONCE) */}
           <View style={styles.heroRouteCard}>
             <View style={styles.heroRouteHeader}>
-              <MaterialIcons name="alt-route" size={18} color="#059669" />
-              <Text style={styles.heroRouteHeaderTitle}>TODAY'S ASSIGNED ROUTE</Text>
+              <View style={styles.heroRouteHeaderLeft}>
+                <MaterialIcons name="alt-route" size={18} color="#059669" />
+                <Text style={styles.heroRouteHeaderTitle}>TODAY'S ASSIGNED ROUTE</Text>
+              </View>
+              {todaySchedules.length > 0 && (
+                <View style={[
+                  styles.heroWasteBadge,
+                  todaySchedules[0]?.wasteType === "Di-Malata" ? styles.heroWasteBadgeDiMalata : styles.heroWasteBadgeMalata
+                ]}>
+                  <MaterialIcons
+                    name={todaySchedules[0]?.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                    size={12}
+                    color={todaySchedules[0]?.wasteType === "Di-Malata" ? "#1D4ED8" : "#065F46"}
+                  />
+                  <Text style={[
+                    styles.heroWasteBadgeText,
+                    todaySchedules[0]?.wasteType === "Di-Malata" ? styles.heroWasteBadgeTextDiMalata : styles.heroWasteBadgeTextMalata
+                  ]}>
+                    {(todaySchedules[0]?.wasteType || "MALATA").toUpperCase()}
+                  </Text>
+                </View>
+              )}
             </View>
             <Text style={styles.heroRouteText}>{formattedAssignedRoute}</Text>
           </View>
@@ -772,6 +792,40 @@ export default function CollectorHomeScreen() {
             {todaySchedules.length > 0 ? (
               todaySchedules.map((sched, i) => (
                 <View key={sched._id || i} style={styles.checklistCard}>
+                  {/* Schedule Card Header with Waste Badge */}
+                  <View style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingBottom: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#F1F5F9",
+                    marginBottom: 2,
+                  }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
+                      <MaterialIcons name="alt-route" size={16} color="#059669" />
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#1E293B" }} numberOfLines={1}>
+                        {sched.routeName || "Route Duty"}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.checklistWasteBadge,
+                      sched.wasteType === "Di-Malata" ? styles.checklistWasteBadgeDiMalata : styles.checklistWasteBadgeMalata
+                    ]}>
+                      <MaterialIcons
+                        name={sched.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                        size={12}
+                        color={sched.wasteType === "Di-Malata" ? "#1D4ED8" : "#047857"}
+                      />
+                      <Text style={[
+                        styles.checklistWasteBadgeText,
+                        sched.wasteType === "Di-Malata" ? styles.checklistWasteBadgeTextDiMalata : styles.checklistWasteBadgeTextMalata
+                      ]}>
+                        {sched.wasteType === "Di-Malata" ? "DI-MALATA" : "MALATA"}
+                      </Text>
+                    </View>
+                  </View>
+
                   {sched.sitioTasks && sched.sitioTasks.length > 0 ? (
                     sched.sitioTasks.map((task, idx) => (
                       <TouchableOpacity
@@ -1373,9 +1427,70 @@ const styles = StyleSheet.create({
     backgroundColor: "#ECFDF5", borderRadius: 16, padding: 14, marginTop: 12,
     borderWidth: 1, borderColor: "#A7F3D0",
   },
-  heroRouteHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  heroRouteHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+  heroRouteHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
   heroRouteHeaderTitle: { fontSize: 10, fontWeight: "800", color: "#047857", letterSpacing: 0.8 },
   heroRouteText: { fontSize: 14, fontWeight: "700", color: "#065F46", lineHeight: 20 },
+
+  heroWasteBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  heroWasteBadgeMalata: {
+    backgroundColor: "#D1FAE5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  heroWasteBadgeDiMalata: {
+    backgroundColor: "#DBEAFE",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  heroWasteBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  heroWasteBadgeTextMalata: {
+    color: "#065F46",
+  },
+  heroWasteBadgeTextDiMalata: {
+    color: "#1D4ED8",
+  },
+
+  checklistWasteBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  checklistWasteBadgeMalata: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  checklistWasteBadgeDiMalata: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  checklistWasteBadgeText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  checklistWasteBadgeTextMalata: {
+    color: "#059669",
+  },
+  checklistWasteBadgeTextDiMalata: {
+    color: "#2563EB",
+  },
 
   // ── Primary Map Action Button ──────────────────────────────────────────────
   primaryLaunchMapBtn: {

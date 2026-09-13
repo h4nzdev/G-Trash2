@@ -176,6 +176,7 @@ const fleetSchema = new mongoose.Schema({
   barangay: { type: String, default: "" },
   type: { type: String, enum: ["dedicated", "shared"], default: "dedicated" },
   serviceBarangays: { type: [String], default: [] },
+  wasteType: { type: String, enum: ["Both", "Malata", "Di-Malata"], default: "Both" },
   createdAt: { type: Date, default: Date.now },
 });
 const Fleet = mongoose.model("Fleet", fleetSchema);
@@ -217,6 +218,7 @@ const scheduleSchema = new mongoose.Schema({
   endTime: { type: String, default: "" }, // Optional HH:MM
   status: { type: String, enum: ["pending", "accepted", "completed", "missed"], default: "pending" },
   notes: { type: String, default: "" },
+  wasteType: { type: String, enum: ["Malata", "Di-Malata", "General"], default: "Malata" },
   isPriority: { type: Boolean, default: false },
   priorityLevel: { type: String, enum: ["Normal", "High", "Critical"], default: "Normal" },
   priorityReason: { type: String, default: "" },
@@ -2698,6 +2700,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
     route,
     type,
     serviceBarangays,
+    wasteType,
   } = req.body;
 
   try {
@@ -2769,6 +2772,7 @@ app.post("/api/fleet", authMiddleware, async (req, res) => {
       barangay: homeBrgy,
       type: type || "dedicated",
       serviceBarangays: finalServiceBarangays,
+      wasteType: wasteType || "Both",
     });
     io.emit("fleet:new", entry);
     res.status(201).json(entry);
@@ -4045,7 +4049,7 @@ app.post("/api/sitios", authMiddleware, async (req, res) => {
 
 app.post("/api/schedules", authMiddleware, async (req, res) => {
   try {
-    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio, sitios: rawSitios, isPriority, priorityLevel, priorityReason } =
+    const { date, truckId: rawTruckId, driverName, routeId, routeName, startTime, endTime, notes, barangay, sitio, sitios: rawSitios, isPriority, priorityLevel, priorityReason, wasteType: rawWasteType } =
       req.body;
     const truckId = rawTruckId?.toUpperCase();
     if (!date || !truckId)
@@ -4055,6 +4059,8 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
     if (!barangay) {
       return res.status(400).json({ error: "Barangay is required" });
     }
+
+    const wasteType = ["Malata", "Di-Malata"].includes(rawWasteType) ? rawWasteType : "Malata";
 
     // Normalize sitios to an array
     let sitios = [];
@@ -4151,9 +4157,10 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       isPriority: !!isPriority || priorityLevel === "High" || priorityLevel === "Critical",
       priorityLevel: priorityLevel || (isPriority ? "High" : "Normal"),
       priorityReason: priorityReason || "",
+      wasteType,
     });
 
-    io.emit("schedule:changed", { truckId, date });
+    io.emit("schedule:changed", { truckId, date, wasteType });
 
     if (schedule.isPriority) {
       io.emit("priority:update", {
@@ -4166,7 +4173,7 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
 
       io.to(`truck:${truckId}`).emit("truck:priority:alert", {
         title: "⚠️ Priority Route Assigned",
-        message: `High Priority Area route assigned: ${finalRouteName}`,
+        message: `High Priority Area route assigned: ${finalRouteName} (${wasteType})`,
         scheduleId: schedule._id,
         priorityLevel: schedule.priorityLevel,
       });
@@ -4174,11 +4181,12 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
 
     // Push notification to the assigned truck
     const timeLabel = startTime ? ` at ${startTime}` : "";
+    const wasteBadge = wasteType === "Di-Malata" ? "Di-Malata (Non-Bio)" : "Malata (Biodegradable)";
     notifyTruck(
       truckId,
-      schedule.isPriority ? "🚨 Priority Schedule Assigned" : "New Schedule Assigned",
-      `You have been scheduled for "${finalRouteName || "a route"}" on ${date}${timeLabel}.`,
-      { type: "schedule", scheduleId: schedule._id.toString(), date, routeName: finalRouteName },
+      schedule.isPriority ? `🚨 Priority Schedule: ${wasteBadge}` : `New Schedule Assigned: ${wasteBadge}`,
+      `You have been scheduled for ${wasteBadge} pickup on "${finalRouteName || "a route"}" on ${date}${timeLabel}.`,
+      { type: "schedule", scheduleId: schedule._id.toString(), date, routeName: finalRouteName, wasteType },
     );
 
     res.status(201).json(schedule);
@@ -4939,8 +4947,8 @@ const IOT_THRESHOLDS = {
 
 function classifyAirQuality(rawValue, ammonia = 0) {
   const val = Number(rawValue) || 0;
-  if (val >= 700) return "Critical";
-  if (val >= 400) return "Moderate";
+  if (val >= 500) return "Critical";
+  if (val >= 200) return "Moderate";
   if (val > 0) return "Clean";
   if (ammonia >= 45) return "Critical";
   if (ammonia >= 25) return "Moderate";
@@ -4959,6 +4967,13 @@ function generateIoTAlerts(reading) {
   
   const exceededCritical = [];
   const exceededModerate = [];
+
+  const rawVal = Number(reading.rawValue) || 0;
+  if (rawVal >= 500) {
+    exceededCritical.push(`Air Quality (${rawVal} ADC)`);
+  } else if (rawVal >= 200) {
+    exceededModerate.push(`Air Quality (${rawVal} ADC)`);
+  }
 
   for (const { field, label, unit } of checks) {
     const val = reading[field] || 0;
@@ -5035,7 +5050,7 @@ app.post("/api/iot/sensor-data", async (req, res) => {
   }
 
   try {
-    const airQuality = incomingAirQuality || classifyAirQuality(rawValue, ammonia);
+    const airQuality = (rawValue > 0 ? classifyAirQuality(rawValue, ammonia) : incomingAirQuality) || classifyAirQuality(rawValue, ammonia);
 
     // 1. Look up existing pre-registered GarbageArea from dashboard or auto-create zone
     let existingArea = await GarbageArea.findOne({ sensorId });
@@ -5374,12 +5389,12 @@ app.get("/api/iot/health-summary", async (req, res) => {
       { $replaceRoot: { newRoot: "$doc" } },
     ]);
 
-    const high = latest.filter(r => r.rawValue >= 700 || r.ammonia > 50 || r.methane > 25);
+    const high = latest.filter(r => r.rawValue >= 500 || r.ammonia > 50 || r.methane > 25);
     const moderate = latest.filter(r =>
       !high.some(h => h._id?.toString() === r._id?.toString()) &&
-      (r.rawValue >= 400 || r.ammonia >= 25 || r.methane >= 10)
+      (r.rawValue >= 200 || r.ammonia >= 25 || r.methane >= 10)
     );
-    const low = latest.filter(r => (r.rawValue || 0) < 400 && r.ammonia < 25 && r.methane < 10);
+    const low = latest.filter(r => (r.rawValue || 0) < 200 && r.ammonia < 25 && r.methane < 10);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recentAlerts = await IoTAlert.find({ createdAt: { $gte: sevenDaysAgo } })
@@ -5394,7 +5409,7 @@ app.get("/api/iot/health-summary", async (req, res) => {
     });
 
     const barangaysAtRisk = Object.values(barangayMap)
-      .filter(b => b.sensors.some(s => (s.rawValue || 0) >= 400 || s.ammonia > 25 || s.methane > 10))
+      .filter(b => b.sensors.some(s => (s.rawValue || 0) >= 200 || s.ammonia > 25 || s.methane > 10))
       .map(b => ({
         name: b.name,
         maxRawValue: Math.max(...b.sensors.map(s => s.rawValue || 0)),

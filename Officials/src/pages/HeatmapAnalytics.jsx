@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -12,6 +12,9 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
+if (typeof window !== "undefined" && !window.L) {
+  window.L = L;
+}
 import "leaflet.heat";
 import "leaflet/dist/leaflet.css";
 import axios from "axios";
@@ -72,6 +75,9 @@ import {
 } from "../utils/mapBoundary";
 import API from "../config";
 import html2canvas from "html2canvas";
+import MapTileControl, {
+  GOOGLE_MAP_TILES,
+} from "../components/route/MapTileControl";
 
 const zoneColor = {
   critical: "#ef4444",
@@ -87,15 +93,15 @@ function parseRawValue(val) {
 
 function healthRiskColor(rawValue) {
   const raw = Number(rawValue) || 0;
-  if (raw >= 700) return "#ef4444"; // Critical — red
-  if (raw >= 400) return "#f59e0b"; // Moderate — yellow
+  if (raw >= 500) return "#ef4444"; // Critical — red
+  if (raw >= 200) return "#f59e0b"; // Moderate — yellow
   return "#10b981"; // Safe — green
 }
 
 function healthRiskLabel(rawValue) {
   const raw = Number(rawValue) || 0;
-  if (raw >= 700) return "Critical";
-  if (raw >= 400) return "Moderate";
+  if (raw >= 500) return "Critical";
+  if (raw >= 200) return "Moderate";
   return "Clean";
 }
 
@@ -168,20 +174,20 @@ function AirQualityTrendModal({ zone, onClose }) {
   const voltageVal = ((rawVal * 3.3) / 4095.0).toFixed(2);
 
   let statusBg = "bg-emerald-600";
-  let statusBadge = "Clean";
+  let statusBadge = "Clean (<200 ADC)";
   let healthAdvice =
-    "Raw ADC < 400: Air quality is safe with normal background environmental readings.";
+    "Raw ADC < 200: Air quality is safe with normal background environmental readings.";
 
-  if (rawVal >= 700 || zone.status === "critical") {
+  if (rawVal >= 500 || zone.status === "critical") {
     statusBg = "bg-red-600";
-    statusBadge = "Critical Risk (700+ ADC)";
+    statusBadge = "Critical Risk (500+ ADC)";
     healthAdvice =
-      "Raw ADC >= 700: High decomposition gas concentration detected. Priority waste collection required.";
-  } else if (rawVal >= 400 || zone.status === "moderate") {
+      "Raw ADC >= 500: High decomposition gas concentration detected. Priority waste collection required.";
+  } else if (rawVal >= 200 || zone.status === "moderate") {
     statusBg = "bg-amber-500";
-    statusBadge = "Moderate (400-699 ADC)";
+    statusBadge = "Moderate (200-499 ADC)";
     healthAdvice =
-      "Raw ADC 400-699: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
+      "Raw ADC 200-499: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
   }
 
   const historyData = generateAirQualityHistory(zone);
@@ -390,29 +396,29 @@ function AirQualityTrendModal({ zone, onClose }) {
 
                   <ReferenceArea
                     y1={0}
-                    y2={400}
+                    y2={200}
                     fillColor="#10b981"
                     fillOpacity={0.08}
                   />
                   <ReferenceArea
-                    y1={400}
-                    y2={700}
+                    y1={200}
+                    y2={500}
                     fillColor="#f59e0b"
                     fillOpacity={0.1}
                   />
                   <ReferenceArea
-                    y1={700}
+                    y1={500}
                     y2={4095}
                     fillColor="#ef4444"
                     fillOpacity={0.12}
                   />
 
                   <ReferenceLine
-                    y={700}
+                    y={500}
                     stroke="#ef4444"
                     strokeDasharray="3 3"
                     label={{
-                      value: "Critical (700 ADC)",
+                      value: "Critical (500 ADC)",
                       position: "right",
                       fill: "#ef4444",
                       fontSize: 10,
@@ -420,11 +426,11 @@ function AirQualityTrendModal({ zone, onClose }) {
                     }}
                   />
                   <ReferenceLine
-                    y={400}
+                    y={200}
                     stroke="#f59e0b"
                     strokeDasharray="3 3"
                     label={{
-                      value: "Moderate (400 ADC)",
+                      value: "Moderate (200 ADC)",
                       position: "right",
                       fill: "#d97706",
                       fontSize: 10,
@@ -469,14 +475,14 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               {/* Color Scale Bar */}
               <div className="relative w-full h-3 rounded-full overflow-hidden flex shadow-inner">
-                <div className="h-full bg-emerald-500 w-[40%] flex items-center justify-center text-[9px] font-black text-white">
-                  Clean (&lt;400)
+                <div className="h-full bg-emerald-500 w-[20%] flex items-center justify-center text-[9px] font-black text-white">
+                  Clean (&lt;200)
                 </div>
                 <div className="h-full bg-amber-500 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
-                  Moderate (400-699)
+                  Moderate (200-499)
                 </div>
-                <div className="h-full bg-red-600 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
-                  Critical (700+)
+                <div className="h-full bg-red-600 w-[50%] flex items-center justify-center text-[9px] font-black text-white">
+                  Critical (500+)
                 </div>
 
                 {/* Pointer indicator */}
@@ -490,8 +496,8 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               <div className="flex justify-between text-[9px] text-slate-400 font-semibold mt-1">
                 <span>0 ADC</span>
-                <span>400 ADC</span>
-                <span>700 ADC</span>
+                <span>200 ADC</span>
+                <span>500 ADC</span>
                 <span>1000+ ADC</span>
               </div>
             </div>
@@ -535,21 +541,89 @@ function AirQualityTrendModal({ zone, onClose }) {
 
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
 
+// Normalize MQ-135 rawValue (0 - 1000+ ADC) and status into 0 - 1 heat intensity
+// < 200 ADC (Clean)        -> 0.15 - 0.35 (Green aura)
+// 200 - 499 ADC (Moderate) -> 0.60 - 0.78 (Amber/Yellow aura)
+// >= 500 ADC (Critical)    -> 0.85 - 1.00 (Red aura)
+function normalizeMQ135RawValue(rawValue, status, airQuality) {
+  const isCrit = status === "critical" || airQuality === "Critical" || airQuality === "Hazardous";
+  const isMod = status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated";
+  const isCln = status === "clean" || airQuality === "Clean" || airQuality === "Safe";
+
+  const val = Number(rawValue) || 0;
+
+  if (val >= 500 || isCrit) {
+    const excess = Math.max(0, val - 500);
+    return Math.min(1.0, 0.88 + (excess / 800) * 0.12);
+  }
+
+  if (val >= 200 || isMod) {
+    const prog = Math.max(0, Math.min(299, val - 200));
+    return 0.60 + (prog / 300) * 0.18;
+  }
+
+  if (val > 0 || isCln) {
+    return Math.max(0.15, Math.min(0.35, (val / 200) * 0.35));
+  }
+
+  return 0.20;
+}
+
+// Synchronized color matching the Heatmap gradient
+// < 200 ADC  -> Green (#10b981) Clean
+// 200 - 499  -> Amber (#f59e0b) Moderate
+// 500+ ADC   -> Red (#ef4444) Critical
+function getAirQualityColor(rawValue, status, airQuality) {
+  const val = Number(rawValue) || 0;
+  if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "#ef4444";
+  if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "#f59e0b";
+  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "#10b981";
+
+  return "#10b981";
+}
+
+function getAirQualityLabel(rawValue, status, airQuality) {
+  const val = Number(rawValue) || 0;
+  if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "Critical Risk (500+ ADC)";
+  if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "Moderate Air Quality (200-499 ADC)";
+  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "Clean Air (<200 ADC)";
+
+  return "Clean Air (<200 ADC)";
+}
+
 function HeatmapLayer({ data, options }) {
   const map = useMap();
   const heatLayerRef = useRef(null);
 
   useEffect(() => {
     if (!map) return;
-    if (heatLayerRef.current) {
-      map.removeLayer(heatLayerRef.current);
+    const heatConstructor =
+      L.heatLayer ||
+      (typeof window !== "undefined" && window.L?.heatLayer);
+    if (!heatConstructor) return;
+
+    if (!heatLayerRef.current) {
+      if (data && data.length > 0) {
+        heatLayerRef.current = heatConstructor(data, options).addTo(map);
+      }
+    } else {
+      if (data && data.length > 0) {
+        if (options && heatLayerRef.current.setOptions) {
+          heatLayerRef.current.setOptions(options);
+        }
+        if (heatLayerRef.current.setLatLngs) {
+          heatLayerRef.current.setLatLngs(data);
+        }
+      } else {
+        map.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
+      }
     }
-    if (data && data.length > 0) {
-      heatLayerRef.current = L.heatLayer(data, options).addTo(map);
-    }
+
     return () => {
       if (heatLayerRef.current && map) {
         map.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
       }
     };
   }, [map, data, options]);
@@ -984,11 +1058,12 @@ function MapPickerModal({ open, onClose, onConfirm }) {
         <div style={{ height: "360px", position: "relative" }}>
           <MapContainer
             center={CEBU_CENTER}
-            zoom={13}
+            zoom={18}
             style={{ width: "100%", height: "100%" }}
             zoomControl={true}
           >
             <TileLayer
+              className="leaflet-tile-grayscale"
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution="&copy; OpenStreetMap contributors"
             />
@@ -1115,6 +1190,7 @@ export default function HeatmapAnalytics() {
   const isChd = official?.role === "chd";
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [selectedZone, setSelectedZone] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [newArea, setNewArea] = useState(null);
@@ -1142,40 +1218,87 @@ export default function HeatmapAnalytics() {
   const socketRef = useRef(null);
   const toastTimers = useRef({});
 
-  function FitBoundsToSensors({ zones, boundary }) {
+  // Real-time Leaflet Canvas Heatmap Options
+  // Smooth gradient: Green (Clean <200) -> Lime -> Yellow (Moderate 200-499) -> Orange (Elevated) -> Red (Critical 500+)
+  const heatmapOptions = useMemo(
+    () => ({
+      radius: 42,
+      blur: 28,
+      maxZoom: 18,
+      max: 1.0,
+      minOpacity: 0.12,
+      gradient: {
+        0.2: "#10b981", // Clean (<200 ADC)
+        0.45: "#84cc16",
+        0.55: "#eab308", // Moderate (200-499 ADC)
+        0.72: "#f97316", // Elevated Moderate
+        0.88: "#ef4444", // Critical (500+ ADC)
+      },
+    }),
+    [],
+  );
+
+  // Derive [lat, lng, intensity] data points dynamically from zones
+  const heatmapPoints = useMemo(() => {
+    return zones
+      .filter((z) => {
+        const lat = z.lat ?? z.latitude;
+        const lng = z.lng ?? z.longitude;
+        return (
+          lat != null &&
+          lng != null &&
+          !isNaN(lat) &&
+          !isNaN(lng) &&
+          z.isActive !== false &&
+          (z.sensorId || (z.rawValue != null && z.rawValue > 0))
+        );
+      })
+      .map((z) => {
+        const lat = Number(z.lat ?? z.latitude);
+        const lng = Number(z.lng ?? z.longitude);
+        const raw = Number(z.rawValue ?? z.adcValue ?? 0);
+        const intensity = normalizeMQ135RawValue(raw, z.status, z.airQuality);
+        return [lat, lng, intensity];
+      });
+  }, [zones]);
+
+  function FitBoundsToSensors({ zones }) {
     const map = useMap();
+    const hasSetViewRef = useRef(false);
 
     useEffect(() => {
-      if (!map) return;
+      if (!map || hasSetViewRef.current) return;
 
-      // Collect all coordinates from zones
-      const allCoords = [];
+      // Prioritize the active IoT sensor zone to center at default zoom 18
+      const activeSensor = zones.find(
+        (z) =>
+          z.sensorId &&
+          z.lat != null &&
+          z.lng != null &&
+          !isNaN(z.lat) &&
+          !isNaN(z.lng),
+      );
 
-      zones.forEach((zone) => {
-        if (
-          zone.lat != null &&
-          zone.lng != null &&
-          !isNaN(zone.lat) &&
-          !isNaN(zone.lng)
-        ) {
-          allCoords.push([zone.lat, zone.lng]);
+      if (activeSensor) {
+        map.setView([Number(activeSensor.lat), Number(activeSensor.lng)], 18);
+        hasSetViewRef.current = true;
+      } else if (zones.length > 0) {
+        const firstValidZone = zones.find(
+          (z) =>
+            z.lat != null &&
+            z.lng != null &&
+            !isNaN(z.lat) &&
+            !isNaN(z.lng),
+        );
+        if (firstValidZone) {
+          map.setView(
+            [Number(firstValidZone.lat), Number(firstValidZone.lng)],
+            18,
+          );
+          hasSetViewRef.current = true;
         }
-      });
-
-      // If no zones, try to use boundary
-      if (allCoords.length === 0 && boundary && boundary.length > 0) {
-        boundary.forEach(([lat, lng]) => {
-          if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
-            allCoords.push([lat, lng]);
-          }
-        });
       }
-
-      if (allCoords.length === 0) return;
-
-      const bounds = L.latLngBounds(allCoords);
-      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
-    }, [zones, boundary, map]);
+    }, [zones, map]);
 
     return null;
   }
@@ -1565,7 +1688,7 @@ export default function HeatmapAnalytics() {
                   className={`text-2xl font-black ${criticalCt > 0 || healthRiskView ? "text-red-600" : "text-slate-700"}`}
                 >
                   {healthRiskView
-                    ? zones.filter((z) => (z.rawValue || 0) >= 700).length
+                    ? zones.filter((z) => (z.rawValue || 0) >= 500).length
                     : criticalCt}
                 </p>
               </div>
@@ -1582,7 +1705,7 @@ export default function HeatmapAnalytics() {
                   {healthRiskView
                     ? zones.filter(
                         (z) =>
-                          (z.rawValue || 0) >= 400 && (z.rawValue || 0) < 700,
+                          (z.rawValue || 0) >= 200 && (z.rawValue || 0) < 500,
                       ).length
                     : moderateCt}
                 </p>
@@ -1716,10 +1839,45 @@ export default function HeatmapAnalytics() {
                 Map Legend
               </p>
               <div className="space-y-3">
+                <div className="space-y-2 pb-3 border-b border-slate-200/70">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-800 font-bold block">
+                      Air Quality Heatmap
+                    </span>
+                    <span className="text-[9px] font-semibold text-slate-400">MQ-135</span>
+                  </div>
+                  <div
+                    className="h-2 w-full rounded-full shadow-inner"
+                    style={{
+                      background:
+                        "linear-gradient(to right, #10b981 0%, #84cc16 35%, #eab308 60%, #f97316 80%, #ef4444 100%)",
+                    }}
+                  />
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px] font-medium text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
+                      <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;200)</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#eab308] shrink-0" />
+                      <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(200+)</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] shrink-0" />
+                      <span>Elevated <span className="text-[9px] text-slate-400 font-normal">(350+)</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
+                      <span>Critical <span className="text-[9px] text-slate-400 font-normal">(500+)</span></span>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-emerald-400/40" />
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-blue-600 bg-white flex items-center justify-center shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                  </span>
                   <span className="text-xs text-slate-600 font-medium">
-                    IoT Sensor Zone (Auto-updates)
+                    Live IoT Sensor Pin
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1744,7 +1902,12 @@ export default function HeatmapAnalytics() {
       <div className="flex-1 relative h-full bg-slate-200">
         {/* Map Overlays & Controls */}
         <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-3 pointer-events-none">
-          <div className="flex gap-2 pointer-events-auto">
+          <div className="flex gap-2 pointer-events-auto items-center">
+            <MapTileControl
+              activeTileKey={activeTileKey}
+              onChangeTile={setActiveTileKey}
+              className="relative pointer-events-auto"
+            />
             <button
               onClick={() => setShowCityBoundary(!showCityBoundary)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${showCityBoundary ? "bg-blue-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
@@ -1842,6 +2005,45 @@ export default function HeatmapAnalytics() {
             {official?.barangay}!
           </div>
         )}
+
+        {/* Floating On-Map Air Quality Heatmap Legend Badge */}
+        <div className="absolute bottom-6 left-6 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 p-3.5 max-w-[260px] pointer-events-auto transition-all">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Air Quality Heatmap
+            </span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">
+              MQ-135
+            </span>
+          </div>
+          {/* Smooth Continuous Gradient Bar */}
+          <div
+            className="h-2 w-full rounded-full mb-2.5 shadow-inner"
+            style={{
+              background:
+                "linear-gradient(to right, #10b981 0%, #84cc16 35%, #eab308 60%, #f97316 80%, #ef4444 100%)",
+            }}
+          />
+          <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10px] font-semibold">
+            <div className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
+              <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;200)</span></span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#eab308] shrink-0" />
+              <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(200+)</span></span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] shrink-0" />
+              <span>Elevated <span className="text-[9px] text-slate-400 font-normal">(350+)</span></span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
+              <span>Critical <span className="text-[9px] text-slate-400 font-normal">(500+)</span></span>
+            </div>
+          </div>
+        </div>
 
         {/* Toast notification stack */}
         <div className="absolute bottom-6 right-6 z-[1001] flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
@@ -1948,28 +2150,27 @@ export default function HeatmapAnalytics() {
 
         <MapContainer
           center={CEBU_CENTER}
-          zoom={14}
+          zoom={18}
           style={{ width: "100%", height: "100%" }}
           className="z-0"
         >
-          {/* Base Layer: Esri World Topo */}
-
+          {/* Base Layer: Grayscale / Dynamic Map Tile */}
           <FitBoundsToSensors zones={zones} boundary={boundary} />
 
           <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
-            attribution="&copy; Esri"
-          />
-
-          <TileLayer
-            url="https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png"
-            opacity={0.3}
-            attribution=""
-          />
-
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-            opacity={0.8}
+            key={activeTileKey}
+            className={
+              GOOGLE_MAP_TILES[activeTileKey]?.className ||
+              "leaflet-tile-grayscale"
+            }
+            url={
+              GOOGLE_MAP_TILES[activeTileKey]?.url ||
+              GOOGLE_MAP_TILES.grayscale.url
+            }
+            attribution={
+              GOOGLE_MAP_TILES[activeTileKey]?.attribution ||
+              "&copy; OpenStreetMap contributors"
+            }
           />
 
           {/* Cebu City Boundary */}
@@ -2001,99 +2202,67 @@ export default function HeatmapAnalytics() {
 
           <MapClickHandler onMapClick={handleMapClick} />
 
-          {/* Visible markers and status-colored volumetric smoke/heat circles for the IoT sensors */}
+          {/* Interactive GPU-accelerated Leaflet Canvas Heatmap Layer */}
+          <HeatmapLayer data={heatmapPoints} options={heatmapOptions} />
+
+          {/* Visible interactive markers and popups for the IoT sensors */}
           {zones
             .filter((z) => z.sensorId)
             .map((zone) => {
               const rawVal = zone.rawValue || 0;
-              const riskLabel = healthRiskView
-                ? healthRiskLabel(rawVal)
-                : zone.status;
-              const circleColor = healthRiskView
-                ? healthRiskColor(rawVal)
-                : zoneColor[zone.status];
+              // Synchronize marker color directly with the heatmap air quality intensity
+              const syncColor = getAirQualityColor(rawVal, zone.status, zone.airQuality);
+              const syncLabel = getAirQualityLabel(rawVal, zone.status, zone.airQuality);
+              const isCritAlert = rawVal >= 500 || zone.status === "critical";
 
               return (
                 <Fragment key={zone._id}>
-                  {/* Volumetric gas/smoke cloud - 3 concentric layers with fading opacities */}
-                  {zone.isActive !== false && (
-                    <>
-                      {/* Layer 1: Outer soft halo & dashed perimeter border */}
-                      <Circle
-                        center={[zone.lat, zone.lng]}
-                        radius={250} // 250 meters maximum reach
-                        eventHandlers={{
-                          click: () => setSelectedAirQualityZone(zone),
-                        }}
-                        pathOptions={{
-                          color: circleColor,
-                          fillColor: circleColor,
-                          fillOpacity: 0.04,
-                          weight: 1.5,
-                          dashArray:
-                            zone.status === "critical" ? "5, 5" : undefined,
-                        }}
-                      />
-                      {/* Layer 2: Mid-level smoke thickness */}
-                      <Circle
-                        center={[zone.lat, zone.lng]}
-                        radius={160}
-                        eventHandlers={{
-                          click: () => setSelectedAirQualityZone(zone),
-                        }}
-                        pathOptions={{
-                          fillColor: circleColor,
-                          fillOpacity: 0.08,
-                          weight: 0,
-                        }}
-                      />
-                      {/* Layer 3: Inner core dense smoke concentration */}
-                      <Circle
-                        center={[zone.lat, zone.lng]}
-                        radius={90}
-                        eventHandlers={{
-                          click: () => setSelectedAirQualityZone(zone),
-                        }}
-                        pathOptions={{
-                          fillColor: circleColor,
-                          fillOpacity: 0.13,
-                          weight: 0,
-                        }}
-                      />
-                    </>
-                  )}
-
                   <Marker
                     position={[zone.lat, zone.lng]}
                     icon={L.divIcon({
                       className: "bg-transparent",
                       html: `
                       <div style="
-                        width: 28px; 
-                        height: 28px; 
-                        background: white; 
-                        border: 2.5px solid ${circleColor}; 
-                        border-radius: 50%; 
+                        position: relative;
+                        width: 14px; 
+                        height: 14px; 
                         display: flex; 
                         align-items: center; 
                         justify-content: center;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                         cursor: pointer;
-                        ${zone.status === "critical" ? "animation: pulseBorder 1.5s infinite;" : ""}
                       ">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${circleColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+                        ${isCritAlert ? `<span style="position: absolute; width: 22px; height: 22px; border-radius: 50%; background: ${syncColor}; opacity: 0.35; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>` : ""}
+                        <div style="
+                          width: 14px; 
+                          height: 14px; 
+                          background: #ffffff; 
+                          border: 2.5px solid ${syncColor}; 
+                          border-radius: 50%; 
+                          box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                          display: flex; 
+                          align-items: center; 
+                          justify-content: center;
+                          z-index: 2;
+                        ">
+                          <div style="
+                            width: 5px; 
+                            height: 5px; 
+                            background: ${syncColor}; 
+                            border-radius: 50%;
+                          "></div>
+                        </div>
                       </div>
                     `,
-                      iconSize: [28, 28],
-                      iconAnchor: [14, 14],
+                      iconSize: [14, 14],
+                      iconAnchor: [7, 7],
                     })}
                   >
                     <Popup className="custom-popup" minWidth={320}>
                       <div className="p-1">
                         <div className="flex items-start gap-3 mb-4">
                           <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 shadow-sm"
-                            style={{ backgroundColor: circleColor }}
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-100 shadow-sm"
+                            style={{ backgroundColor: syncColor }}
                           >
                             <MapPin className="w-5 h-5" />
                           </div>
@@ -2110,10 +2279,10 @@ export default function HeatmapAnalytics() {
 
                         <div className="flex flex-wrap items-center gap-2 mb-5">
                           <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize text-slate-900"
-                            style={{ backgroundColor: circleColor }}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize text-slate-100"
+                            style={{ backgroundColor: syncColor }}
                           >
-                            {riskLabel}
+                            {syncLabel}
                           </span>
                           <label className="flex items-center gap-2 cursor-pointer ml-auto">
                             <span className="text-xs font-bold text-slate-500 uppercase">
@@ -2191,6 +2360,12 @@ export default function HeatmapAnalytics() {
                               </span>
                             </div>
                           )}
+                        </div>
+
+                        {/* Air Quality Environmental Intensity */}
+                        <div className="mb-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-600 leading-snug">
+                          <span className="font-bold text-slate-700 block mb-0.5">Air-Quality Intensity:</span>
+                          MQ-135 Environmental Indicator · Heat Intensity {(normalizeMQ135RawValue(zone.rawValue || 0, zone.status, zone.airQuality)).toFixed(2)} (Raw ADC: {zone.rawValue || 0})
                         </div>
 
                         <button
@@ -2563,11 +2738,11 @@ export default function HeatmapAnalytics() {
                             Risk Level: {riskLabel}
                           </p>
                           <p className="text-xs text-slate-600 font-medium">
-                            {rawVal >= 700
-                              ? "Critical risk level. Sensor ADC value exceeded critical threshold (700+)."
-                              : rawVal >= 400
-                                ? "Moderate risk level. Sensor ADC value in moderate range (400 - 699)."
-                                : "Clean air quality. Sensor ADC value in normal range (< 400)."}
+                            {rawVal >= 500
+                              ? "Critical risk level. Sensor ADC value exceeded critical threshold (500+)."
+                              : rawVal >= 200
+                                ? "Moderate risk level. Sensor ADC value in moderate range (200 - 499)."
+                                : "Clean air quality. Sensor ADC value in normal range (< 200)."}
                           </p>
                         </div>
                       </div>

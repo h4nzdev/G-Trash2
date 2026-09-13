@@ -124,6 +124,9 @@ export default function CalendarScreen() {
         );
         const isDone = matchingSched?.status === "completed" ||
           (matchingSched?.sitioTasks?.length > 0 && matchingSched.sitioTasks.every((t) => t.completed));
+        const wasteType = matchingSched?.wasteType || "Malata";
+        const isMalata = wasteType !== "Di-Malata";
+        const wasteDesc = isMalata ? "Biodegradable" : "Non-Biodegradable";
 
         if (diff === 0) {
           if (isDone) {
@@ -133,28 +136,32 @@ export default function CalendarScreen() {
               truck: matchingSched?.truckId,
               urgent: false,
               isCompleted: true,
+              wasteType,
             };
           }
           return {
             label: "Today!",
-            sub: matchingSched ? `Route: ${matchingSched.routeName || matchingSched.barangay}` : "Collection scheduled for today",
+            sub: `${wasteType} (${wasteDesc}) · Prepare bins`,
             truck: matchingSched?.truckId,
             urgent: true,
+            wasteType,
           };
         }
         if (diff === 1) {
           return {
             label: "Tomorrow",
-            sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}${matchingSched ? ` · ${matchingSched.routeName || matchingSched.barangay}` : ""}`,
+            sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]} · ${wasteType} (${wasteDesc})`,
             truck: matchingSched?.truckId,
             urgent: false,
+            wasteType,
           };
         }
         return {
           label: `In ${diff} days`,
-          sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]}${matchingSched ? ` · ${matchingSched.routeName || matchingSched.barangay}` : ""}`,
+          sub: `${MONTH_NAMES[currentMonth]} ${upcoming[0]} · ${wasteType} (${matchingSched?.routeName || matchingSched?.barangay || "Scheduled"})`,
           truck: matchingSched?.truckId,
           urgent: false,
+          wasteType,
         };
       }
       return { label: "Completed ✓", sub: "No more pickups remaining this month", urgent: false, isCompleted: true };
@@ -212,6 +219,18 @@ export default function CalendarScreen() {
                 {nextPickup.label}
               </Text>
             </View>
+            {nextPickup.wasteType && (
+              <View style={[styles.wasteTypeHeroBadge, nextPickup.wasteType === "Di-Malata" ? styles.wasteTypeHeroDiMalata : styles.wasteTypeHeroMalata]}>
+                <MaterialIcons
+                  name={nextPickup.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                  size={12}
+                  color={nextPickup.wasteType === "Di-Malata" ? "#1D4ED8" : "#065F46"}
+                />
+                <Text style={[styles.wasteTypeHeroText, nextPickup.wasteType === "Di-Malata" ? styles.wasteTypeHeroTextDiMalata : styles.wasteTypeHeroTextMalata]}>
+                  {nextPickup.wasteType.toUpperCase()}
+                </Text>
+              </View>
+            )}
             {nextPickup.truck && (
               <View style={[styles.truckBadge, nextPickup.urgent && styles.truckBadgeUrgent]}>
                 <MaterialIcons name="directions-car" size={13} color={nextPickup.urgent ? "#FFFFFF" : "#006A3B"} />
@@ -286,9 +305,22 @@ export default function CalendarScreen() {
                       {day}
                     </Text>
                   </View>
-                  {isCol && (
-                    <View style={[styles.collectionDot, isSel && styles.collectionDotSelected]} />
-                  )}
+                  {isCol && (() => {
+                    const dayDateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                    const dayScheds = schedules.filter(s => s.date === dayDateStr);
+                    const hasDiMalata = dayScheds.some(s => s.wasteType === "Di-Malata");
+                    const hasMalata = dayScheds.some(s => !s.wasteType || s.wasteType === "Malata");
+                    return (
+                      <View style={{ flexDirection: "row", gap: 2, marginTop: 2, alignItems: "center" }}>
+                        {hasMalata && (
+                          <View style={[styles.collectionDot, isSel && styles.collectionDotSelected]} />
+                        )}
+                        {hasDiMalata && (
+                          <View style={[styles.collectionDot, { backgroundColor: "#3B82F6" }, isSel && { backgroundColor: "#1D4ED8" }]} />
+                        )}
+                      </View>
+                    );
+                  })()}
                 </TouchableOpacity>
               );
             })}
@@ -298,7 +330,11 @@ export default function CalendarScreen() {
           <View style={styles.legendContainer}>
             <View style={styles.legendItem}>
               <View style={[styles.legendIndicator, { backgroundColor: "#DCFCE7", borderColor: "#059669" }]} />
-              <Text style={styles.legendLabel}>Collection Day</Text>
+              <Text style={styles.legendLabel}>Malata (Bio)</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, { backgroundColor: "#DBEAFE", borderColor: "#2563EB" }]} />
+              <Text style={styles.legendLabel}>Di-Malata</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendIndicator, { backgroundColor: "#FFFFFF", borderColor: "#006A3B" }]} />
@@ -349,6 +385,22 @@ export default function CalendarScreen() {
                       <MaterialIcons name="local-shipping" size={20} color="#006A3B" />
                     </View>
                     <View style={{ flex: 1, marginLeft: 10 }}>
+                      <View style={[
+                        styles.wasteTypePill,
+                        sched.wasteType === "Di-Malata" ? styles.wasteTypePillDiMalata : styles.wasteTypePillMalata
+                      ]}>
+                        <MaterialIcons
+                          name={sched.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                          size={11}
+                          color={sched.wasteType === "Di-Malata" ? "#1D4ED8" : "#047857"}
+                        />
+                        <Text style={[
+                          styles.wasteTypePillText,
+                          sched.wasteType === "Di-Malata" ? styles.wasteTypePillTextDiMalata : styles.wasteTypePillTextMalata
+                        ]}>
+                          {sched.wasteType === "Di-Malata" ? "DI-MALATA (Non-Bio)" : "MALATA (Bio)"}
+                        </Text>
+                      </View>
                       <Text style={styles.scheduleRouteName}>
                         {sched.routeName || sched.barangay || "Collection Route"}
                       </Text>
@@ -445,11 +497,27 @@ export default function CalendarScreen() {
                       </View>
 
                       <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={styles.scheduleRouteName} numberOfLines={1}>
-                            {sched.routeName || sched.barangay || "Collection Route"}
-                          </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                          <View style={[
+                            styles.wasteTypePill,
+                            sched.wasteType === "Di-Malata" ? styles.wasteTypePillDiMalata : styles.wasteTypePillMalata
+                          ]}>
+                            <MaterialIcons
+                              name={sched.wasteType === "Di-Malata" ? "recycling" : "eco"}
+                              size={10}
+                              color={sched.wasteType === "Di-Malata" ? "#1D4ED8" : "#047857"}
+                            />
+                            <Text style={[
+                              styles.wasteTypePillText,
+                              sched.wasteType === "Di-Malata" ? styles.wasteTypePillTextDiMalata : styles.wasteTypePillTextMalata
+                            ]}>
+                              {sched.wasteType === "Di-Malata" ? "DI-MALATA" : "MALATA"}
+                            </Text>
+                          </View>
                         </View>
+                        <Text style={styles.scheduleRouteName} numberOfLines={1}>
+                          {sched.routeName || sched.barangay || "Collection Route"}
+                        </Text>
                         <Text style={styles.scheduleTruckMeta} numberOfLines={1}>
                           Truck {sched.truckId || "GT-001"} · {sched.driverName || "Driver Assigned"}
                         </Text>
@@ -921,6 +989,69 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     color: "#94A3B8",
+  },
+
+  wasteTypeHeroBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 6,
+  },
+  wasteTypeHeroMalata: {
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  wasteTypeHeroDiMalata: {
+    backgroundColor: "#DBEAFE",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  wasteTypeHeroText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  wasteTypeHeroTextMalata: {
+    color: "#065F46",
+  },
+  wasteTypeHeroTextDiMalata: {
+    color: "#1D4ED8",
+  },
+
+  wasteTypePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginBottom: 4,
+  },
+  wasteTypePillMalata: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  wasteTypePillDiMalata: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  wasteTypePillText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  wasteTypePillTextMalata: {
+    color: "#059669",
+  },
+  wasteTypePillTextDiMalata: {
+    color: "#2563EB",
   },
 
   scheduleTimeRow: {

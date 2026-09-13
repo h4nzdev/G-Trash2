@@ -37,7 +37,7 @@ const char* LOCATION      = "2nd Street";
 const char* BARANGAY      = "Apas";
 
 // Threshold & Timing Configuration
-const int RAW_ALERT_THRESHOLD  = 700;   // Threshold for LED & Buzzer alarm (>700 ADC)
+const int RAW_ALERT_THRESHOLD  = 500;   // Threshold for LED & Buzzer alarm (>500 ADC)
 const unsigned long UPLOAD_INTERVAL_MS = 60000; // Telemetry upload interval (60s)
 const unsigned long SERIAL_INTERVAL_MS = 1000;  // Serial monitor output interval (1s)
 
@@ -97,8 +97,8 @@ void uploadTelemetry() {
   }
 
   int rawValue = readSmoothedSensor();
-  String airQuality = (rawValue > RAW_ALERT_THRESHOLD) ? "Unhealthy" : (rawValue > 400 ? "Moderate" : "Good");
-  float estimatedPpm = (rawValue > RAW_ALERT_THRESHOLD) ? 35.0 : (rawValue > 400 ? 18.0 : 8.0);
+  String airQuality = (rawValue > RAW_ALERT_THRESHOLD) ? "Unhealthy" : (rawValue > 200 ? "Moderate" : "Good");
+  float estimatedPpm = (rawValue > RAW_ALERT_THRESHOLD) ? 35.0 : (rawValue > 200 ? 18.0 : 8.0);
 
   // Construct JSON Payload matching G-TRASH backend schema
   StaticJsonDocument<512> doc;
@@ -183,7 +183,7 @@ void loop() {
   unsigned long now = millis();
   int rawValue = analogRead(mqSensor);
 
-  // 1. Instant Continuous Local Hardware Alarm Check (> 700 ADC)
+  // 1. Instant Continuous Local Hardware Alarm Check (> 500 ADC)
   if (rawValue > RAW_ALERT_THRESHOLD) {
     digitalWrite(ledRed, HIGH);
     digitalWrite(buzzer, HIGH);
@@ -202,9 +202,9 @@ void loop() {
 
     String statusStr;
     if (rawValue > RAW_ALERT_THRESHOLD) {
-      statusStr = "ALERT (>700) - Poor Air Quality";
-    } else if (rawValue > 400) {
-      statusStr = "WARNING (400-700) - Moderate";
+      statusStr = "ALERT (>500) - Poor Air Quality";
+    } else if (rawValue > 200) {
+      statusStr = "WARNING (200-500) - Moderate";
     } else {
       statusStr = "NORMAL - Clean Air";
     }

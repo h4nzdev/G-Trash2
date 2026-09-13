@@ -50,8 +50,8 @@ import MapTileControl, {
   GOOGLE_MAP_TILES,
 } from "../components/route/MapTileControl";
 
-// === CUSTOM IMPORTED ASSETS (SVG ICONS) ===
-import gtruck from "../assets/svg/garbage-truck.svg?url";
+// === CUSTOM IMPORTED ASSETS (SVG & PNG ICONS) ===
+import truckPng from "../assets/truck.png";
 import trashIcon from "../assets/svg/trash.svg?url";
 
 import {
@@ -67,62 +67,30 @@ import {
 // ============================================================
 
 /**
- * Creates a dynamic, rotating Truck Icon using the imported SVG.
- * - Rotates based on the map heading (offset by -90 degrees to align North).
- * - Pulse effect appears when the truck status is 'online'.
+ * Creates a dynamic Truck Icon using the imported top-down truck.png.
+ * - Renders only the clean vehicle icon without box borders or pin envelopes.
+ * - Autorotates smoothly according to vehicle heading/direction.
  */
 function makeTruckIcon(status, heading = 0, isOffRoute = false) {
-  const isOnline = status === "online";
-  const pinColor = isOffRoute ? "#dc2626" : isOnline ? "#059669" : "#475569";
-  const pulseColor = isOffRoute
-    ? "rgba(220, 38, 38, 0.6)"
-    : isOnline
-      ? "rgba(16, 185, 129, 0.4)"
-      : "rgba(100, 116, 139, 0.2)";
-  const isMovingWest = heading > 180 && heading < 360;
-  const flipStyle = isMovingWest ? "transform: scaleX(-1);" : "";
+  const rot = typeof heading === "number" && !isNaN(heading) ? heading : 0;
 
   return L.divIcon({
     html: `
-      <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
+      <div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;position:relative;">
         ${
           isOffRoute
-            ? `<div class="absolute -top-4 px-1.5 py-0.5 rounded bg-red-600 text-white text-[8px] font-black tracking-wider uppercase border border-white shadow-xl z-30 animate-bounce">OFF ROUTE</div>`
+            ? `<div style="position:absolute;top:-16px;left:50%;transform:translateX(-50%);padding:1px 5px;border-radius:4px;background:#dc2626;color:#fff;font-size:8px;font-weight:900;letter-spacing:0.5px;text-transform:uppercase;border:1px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;z-index:30;">OFF ROUTE</div>`
             : ""
         }
-        <!-- Pulsing Aura Ring for Online / Off-Route Truck -->
-        ${
-          isOnline || isOffRoute
-            ? `<div class="absolute top-1 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>`
-            : ""
-        }
-
-        <!-- Teardrop Pinpoint Container -->
-        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.4)]">
-          <!-- Pin Head Teardrop Body -->
-          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[2.5px] border-white shadow-2xl flex items-center justify-center" style="background:${pinColor};">
-             <!-- White Inner Core Circle Housing Truck Icon -->
-             <div class="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-inner">
-               <!-- Truck SVG (Rotated back upright + flipped if moving West) -->
-               <div class="rotate-45 w-5 h-5 flex items-center justify-center" style="${flipStyle}">
-                 <img src="${gtruck}" class="w-4 h-4 object-contain" alt="Truck" />
-               </div>
-             </div>
-          </div>
-          
-          <!-- Sharp Downward Pointer Tip -->
-          <div class="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[9px] -mt-[2px]" style="border-top-color:${pinColor};"></div>
-        </div>
-
-        <!-- Status Dot Badge -->
-        <div class="absolute -top-1 -right-0.5 w-4 h-4 rounded-full ${isOffRoute ? "bg-red-600" : isOnline ? "bg-emerald-500" : "bg-slate-400"} border-2 border-white shadow-md z-20"></div>
-
-        <!-- Pinpoint Target Dot on Road Ground -->
-        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full ${isOffRoute ? "bg-red-600/40 border-red-600" : "bg-emerald-600/30 border-emerald-600"} border animate-pulse"></div>
+        <img 
+          src="${truckPng}" 
+          style="width:26px;height:44px;object-fit:contain;display:block;transform:rotate(${rot}deg);transform-origin:center center;transition:transform 0.4s ease-out;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.4));" 
+          alt="Truck" 
+        />
       </div>
     `,
-    iconSize: [48, 56],
-    iconAnchor: [24, 56],
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
     className: "",
   });
 }
@@ -135,22 +103,16 @@ function makeTruckIcon(status, heading = 0, isOffRoute = false) {
 function makeBinIcon(score) {
   const isHighUrgency = score >= 5;
   const bgColor = isHighUrgency ? "#9f1239" : "#e11d48"; // Rose-Red (#e11d48) or Dark Crimson (#9f1239)
-  const pulseColor = isHighUrgency
-    ? "rgba(159, 18, 57, 0.7)"
-    : "rgba(225, 29, 72, 0.5)";
 
   return L.divIcon({
     html: `
       <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
-        <!-- Pulsing Red Hazard Aura -->
-        <div class="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full animate-ping pointer-events-none" style="background:${pulseColor};"></div>
-
         <!-- Teardrop Pin Container -->
-        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.45)]">
+        <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.25)]">
           <!-- Pin Head (Crimson Red with Dark Core) -->
-          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[3px] border-white shadow-2xl flex items-center justify-center" style="background:${bgColor};">
+          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[2.5px] border-white shadow-md flex items-center justify-center" style="background:${bgColor};">
              <!-- Dark Contrast Inner Core -->
-             <div class="w-7 h-7 rounded-full bg-slate-950 flex items-center justify-center shadow-inner">
+             <div class="w-7 h-7 rounded-full bg-slate-950 flex items-center justify-center">
                <!-- Rotated back upright SVG Warning Trash Can Icon -->
                <div class="rotate-45 text-amber-400 flex items-center justify-center">
                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -169,12 +131,9 @@ function makeBinIcon(score) {
         </div>
 
         <!-- Score / Upvote Badge -->
-        <div class="absolute -top-1 -right-1 min-w-[22px] h-5 px-1 bg-amber-400 text-slate-950 rounded-full text-[10px] font-black flex items-center justify-center border-2 border-white shadow-xl z-20">
+        <div class="absolute -top-1 -right-1 min-w-[22px] h-5 px-1 bg-amber-400 text-slate-950 rounded-full text-[10px] font-black flex items-center justify-center border-2 border-white shadow-md z-20">
           ${score}
         </div>
-        
-        <!-- Ground Shadow -->
-        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-black/40 rounded-full blur-[1px]"></div>
       </div>
     `,
     iconSize: [48, 56],
@@ -847,7 +806,7 @@ export default function RouteMonitoring() {
   const [deviationAlerts, setDeviationAlerts] = useState([]);
   const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [showReports, setShowReports] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [showZones, setShowZones] = useState(true);
   const [selectedColorHex, setSelectedColorHex] = useState("#059669");
   const [selectedBarangay, setSelectedBarangay] = useState(
@@ -930,35 +889,10 @@ export default function RouteMonitoring() {
     return routes.filter((r) => r.barangay?.toLowerCase()?.trim() === activeBrgy);
   }, [routes, selectedBarangay]);
 
-  // Dynamic Heatmap Points calculation for report clusters & truck activity
+  // Heatmap Points kept empty to prevent unnecessary aura colors encircling report markers
   const heatmapPoints = useMemo(() => {
-    const pts = [];
-    filteredReports.forEach((r) => {
-      if (r.lat != null && r.lng != null && !isNaN(r.lat) && !isNaN(r.lng)) {
-        const score = (r.upvotes?.length || 0) - (r.downvotes?.length || 0);
-        const intensity = Math.min(1.0, Math.max(0.4, (score + 2) / 6));
-        pts.push([r.lat, r.lng, intensity]);
-      }
-    });
-    Object.values(trucks).forEach((t) => {
-      if (t.lat != null && t.lng != null && !isNaN(t.lat) && !isNaN(t.lng)) {
-        pts.push([t.lat, t.lng, t.status === "online" ? 0.9 : 0.4]);
-      }
-    });
-    visibleRoutes.forEach((rt) => {
-      (rt.waypoints || []).forEach((wp) => {
-        if (
-          wp.lat != null &&
-          wp.lng != null &&
-          !isNaN(wp.lat) &&
-          !isNaN(wp.lng)
-        ) {
-          pts.push([wp.lat, wp.lng, 0.4]);
-        }
-      });
-    });
-    return pts;
-  }, [filteredReports, trucks, visibleRoutes]);
+    return [];
+  }, []);
 
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
   useEffect(() => {
@@ -1118,11 +1052,27 @@ export default function RouteMonitoring() {
         const existing = prev[data.truckId] || {};
         const isOff =
           data.isOffRoute !== undefined ? data.isOffRoute : existing.isOffRoute;
+
+        let heading = (typeof data.heading === "number" && !isNaN(data.heading) && data.heading !== 0) ? data.heading : null;
+        if (heading === null && existing.lat != null && existing.lng != null && data.lat != null && data.lng != null) {
+          if (existing.lat !== data.lat || existing.lng !== data.lng) {
+            const dLng = ((data.lng - existing.lng) * Math.PI) / 180;
+            const phi1 = (existing.lat * Math.PI) / 180;
+            const phi2 = (data.lat * Math.PI) / 180;
+            const y = Math.sin(dLng) * Math.cos(phi2);
+            const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+            heading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+          } else {
+            heading = existing.heading || 0;
+          }
+        }
+
         return {
           ...prev,
           [data.truckId]: {
             ...existing,
             ...data,
+            heading: heading ?? existing.heading ?? 0,
             isOffRoute: isOff,
             updatedAt: new Date(),
           },
@@ -1905,16 +1855,44 @@ export default function RouteMonitoring() {
                       !isNaN(t.lat) &&
                       !isNaN(t.lng),
                   )
-                  .map((truck) => (
-                    <Marker
-                      key={truck.truckId}
-                      position={[truck.lat, truck.lng]}
-                      icon={makeTruckIcon(
-                        truck.status,
-                        truck.heading || 0,
-                        truck.isOffRoute,
-                      )}
-                    >
+                  .map((truck) => {
+                    let heading = truck.heading || 0;
+                    if (!heading) {
+                      const assignedRoute = (visibleRoutes || routes || []).find(
+                        (r) => r.truckId === truck.truckId,
+                      );
+                      if (assignedRoute?.routeCoords && assignedRoute.routeCoords.length >= 2) {
+                        let minDist = Infinity;
+                        let bestIdx = 0;
+                        for (let i = 0; i < assignedRoute.routeCoords.length - 1; i++) {
+                          const [cLat, cLng] = assignedRoute.routeCoords[i];
+                          const d = Math.hypot(truck.lat - cLat, truck.lng - cLng);
+                          if (d < minDist) {
+                            minDist = d;
+                            bestIdx = i;
+                          }
+                        }
+                        const p1 = assignedRoute.routeCoords[bestIdx];
+                        const p2 = assignedRoute.routeCoords[Math.min(bestIdx + 1, assignedRoute.routeCoords.length - 1)];
+                        const dLng = ((p2[1] - p1[1]) * Math.PI) / 180;
+                        const phi1 = (p1[0] * Math.PI) / 180;
+                        const phi2 = (p2[0] * Math.PI) / 180;
+                        const y = Math.sin(dLng) * Math.cos(phi2);
+                        const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+                        heading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+                      }
+                    }
+
+                    return (
+                      <Marker
+                        key={truck.truckId}
+                        position={[truck.lat, truck.lng]}
+                        icon={makeTruckIcon(
+                          truck.status,
+                          heading,
+                          truck.isOffRoute,
+                        )}
+                      >
                       <Popup className="custom-report-popup" minWidth={240}>
                         <div className="p-3 bg-white rounded-xl text-slate-800 space-y-2">
                           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -1958,7 +1936,8 @@ export default function RouteMonitoring() {
                         </span>
                       </Tooltip>
                     </Marker>
-                  ))}
+                  );
+                })}
 
                 {/* Overflowing Bin Markers */}
                 {showReports &&

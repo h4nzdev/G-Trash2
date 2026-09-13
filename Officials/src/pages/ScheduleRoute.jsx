@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check, Leaf, Recycle } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -46,6 +46,8 @@ export default function ScheduleRoute() {
   // Modal form state
   const [modalStep, setModalStep] = useState(1);
   const [selTruck, setSelTruck] = useState('');
+  const [wasteType, setWasteType] = useState('Malata');
+  const [filterWasteType, setFilterWasteType] = useState('All');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [notes, setNotes] = useState('');
@@ -230,10 +232,12 @@ export default function ScheduleRoute() {
         isPriority,
         priorityLevel,
         priorityReason,
+        wasteType,
       });
 
       setShowModal(false);
       setSelTruck('');
+      setWasteType('Malata');
       setStartTime('');
       setEndTime('');
       setNotes('');
@@ -354,7 +358,9 @@ export default function ScheduleRoute() {
   };
 
   const openModal = () => {
+    setModalStep(1);
     setSelTruck('');
+    setWasteType('Malata');
     setStartTime('');
     setEndTime('');
     setNotes('');
@@ -459,11 +465,20 @@ export default function ScheduleRoute() {
                   >
                     {day}
                     {hasSched && (
-                      <div className="flex gap-1 mt-1">
-                        {Array.from({ length: Math.min(count, 3) }).map((_, i) => (
-                          <span key={i} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-600' : 'bg-emerald-400'}`} />
-                        ))}
-                        {count > 3 && <span className={`text-[9px] font-bold ${isSelected ? 'text-emerald-700' : 'text-emerald-500'}`}>+{count - 3}</span>}
+                      <div className="flex gap-1 mt-1 items-center">
+                        {(schedulesByDate[ymd] || []).slice(0, 3).map((s, i) => {
+                          const isDiMalata = s.wasteType === 'Di-Malata';
+                          return (
+                            <span
+                              key={i}
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isDiMalata ? 'bg-blue-500' : 'bg-emerald-500'
+                              }`}
+                              title={isDiMalata ? 'Di-Malata' : 'Malata'}
+                            />
+                          );
+                        })}
+                        {count > 3 && <span className={`text-[9px] font-bold ${isSelected ? 'text-emerald-700' : 'text-slate-500'}`}>+{count - 3}</span>}
                       </div>
                     )}
                   </button>
@@ -473,15 +488,18 @@ export default function ScheduleRoute() {
           )}
 
           {/* Legend */}
-          <div className="flex items-center gap-5 mt-4 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <div className="w-3 h-3 rounded-full bg-emerald-400" /> Has schedule
+          <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Malata (Bio)
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-blue-200" /> Today
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Di-Malata (Non-Bio)
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <div className="w-3 h-3 rounded-full bg-emerald-50 border-2 border-emerald-500" /> Selected
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-50 border-2 border-blue-200" /> Today
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-50 border-2 border-emerald-500" /> Selected
             </div>
           </div>
         </div>
@@ -508,22 +526,55 @@ export default function ScheduleRoute() {
             </div>
           )}
 
+          {/* Waste Type Filter Toggle */}
+          {daySchedules.length > 0 && (
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-3">
+              {['All', 'Malata', 'Di-Malata'].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFilterWasteType(t)}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    filterWasteType === t
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t === 'All' ? 'All Types' : t === 'Malata' ? '🍃 Malata' : '♻️ Di-Malata'}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto space-y-3">
-            {daySchedules.length === 0 && !scheduleError ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm border border-slate-100">
-                  <Calendar className="w-5 h-5 text-emerald-600" />
-                </div>
-                <p className="text-sm font-semibold text-slate-600">No scheduled routes</p>
-                <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Assign a truck to a route for this date to get started.</p>
-              </div>
-            ) : daySchedules.length === 0 ? null : (
-              daySchedules.map(s => (
+            {(() => {
+              const filteredSchedules = daySchedules.filter(s => {
+                if (filterWasteType === 'All') return true;
+                return (s.wasteType || 'Malata') === filterWasteType;
+              });
+
+              if (filteredSchedules.length === 0 && !scheduleError) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm border border-slate-100">
+                      <Calendar className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-600">
+                      {daySchedules.length > 0 ? `No ${filterWasteType} routes scheduled` : 'No scheduled routes'}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
+                      {daySchedules.length > 0 ? 'Try selecting another waste category filter.' : 'Assign a truck to a route for this date to get started.'}
+                    </p>
+                  </div>
+                );
+              }
+
+              return filteredSchedules.map(s => (
                 <div key={s._id} className="group relative p-4 bg-white hover:bg-slate-50 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0 flex flex-col gap-2">
-                      {/* Top row: Time & Truck Badge */}
-                      <div className="flex items-center gap-2">
+                      {/* Top row: Time, Truck, Waste Type & Status Badges */}
+                      <div className="flex items-center gap-2 flex-wrap">
                         {s.startTime ? (
                           <div className="flex items-center gap-1.5 bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
                             <Clock className="w-3.5 h-3.5 text-slate-500" />
@@ -532,10 +583,22 @@ export default function ScheduleRoute() {
                         ) : (
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-md border border-slate-100">Any Time</span>
                         )}
-                        <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-100 px-2.5 py-1 rounded-md">
-                          <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                        <div className="flex items-center gap-1.5 bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-1 rounded-md">
+                          <Truck className="w-3.5 h-3.5 text-slate-600" />
                           <span className="text-xs font-bold truncate max-w-[120px]">{s.driverName || 'No Driver'}</span>
                         </div>
+                        {/* Waste Category Badge */}
+                        {s.wasteType === 'Di-Malata' ? (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                            <Recycle className="w-3 h-3 text-blue-600" />
+                            Di-Malata
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                            <Leaf className="w-3 h-3 text-emerald-600" />
+                            Malata
+                          </span>
+                        )}
                         {s.isPriority && (
                           <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -621,8 +684,8 @@ export default function ScheduleRoute() {
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+              ));
+            })()}
           </div>
 
           {/* Month summary */}
@@ -924,8 +987,61 @@ export default function ScheduleRoute() {
               {/* STEP 2: Truck & Time */}
               {modalStep === 2 && (
                 <div className="space-y-5 animate-in fade-in duration-150">
+                  {/* Waste Category Selection */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Truck / Driver Assignment *</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Waste Category *</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setWasteType('Malata')}
+                        className={`flex items-center gap-3 p-3.5 rounded-xl border-2 transition-all text-left ${
+                          wasteType === 'Malata'
+                            ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 shadow-sm ring-1 ring-emerald-500/20'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className={`p-2 rounded-lg ${wasteType === 'Malata' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                          <Leaf className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold flex items-center gap-1.5">
+                            Malata
+                            {wasteType === 'Malata' && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Active</span>}
+                          </div>
+                          <p className="text-[11px] text-slate-500">Biodegradable / Organics</p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWasteType('Di-Malata')}
+                        className={`flex items-center gap-3 p-3.5 rounded-xl border-2 transition-all text-left ${
+                          wasteType === 'Di-Malata'
+                            ? 'border-blue-600 bg-blue-50/70 text-blue-950 shadow-sm ring-1 ring-blue-500/20'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className={`p-2 rounded-lg ${wasteType === 'Di-Malata' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                          <Recycle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold flex items-center gap-1.5">
+                            Di-Malata
+                            {wasteType === 'Di-Malata' && <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded font-bold">Active</span>}
+                          </div>
+                          <p className="text-[11px] text-slate-500">Non-Bio / Recyclables</p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Truck / Driver Assignment *</label>
+                      <span className="text-[11px] font-medium text-slate-400">
+                        Targeting: <strong className={wasteType === 'Di-Malata' ? 'text-blue-600' : 'text-emerald-600'}>{wasteType}</strong>
+                      </span>
+                    </div>
                     {fleetError ? (
                       <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
                         Could not load fleet. Make sure the backend is running and you are logged in.
@@ -947,11 +1063,15 @@ export default function ScheduleRoute() {
                             if (t.type === 'shared' && t.serviceBarangays && t.serviceBarangays.map(b => b.toLowerCase()).includes(selectedBarangay.toLowerCase())) return true;
                             if (!t.barangay && (!t.serviceBarangays || t.serviceBarangays.length === 0)) return true;
                             return false;
-                          }).map(t => (
-                            <option key={t.truckId} value={t.truckId}>
-                              {t.truckId} — {t.driverName}{t.driverPhone ? ` (${t.driverPhone})` : ''}
-                            </option>
-                          ))}
+                          }).map(t => {
+                            const truckWaste = t.wasteType || 'Both';
+                            const tag = truckWaste === 'Both' ? '' : ` [${truckWaste}]`;
+                            return (
+                              <option key={t.truckId} value={t.truckId}>
+                                {t.truckId} — {t.driverName}{t.driverPhone ? ` (${t.driverPhone})` : ''}{tag}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
                     )}
@@ -1070,6 +1190,14 @@ export default function ScheduleRoute() {
                         <span className="font-bold text-emerald-700">{selTruck || '—'}</span>
                       </div>
                       <div>
+                        <span className="text-slate-400 block font-medium">Waste Category:</span>
+                        <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-xs mt-0.5 ${
+                          wasteType === 'Di-Malata' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {wasteType === 'Di-Malata' ? '♻️ Di-Malata (Non-Bio)' : '🍃 Malata (Bio)'}
+                        </span>
+                      </div>
+                      <div className="col-span-2">
                         <span className="text-slate-400 block font-medium">Sitios Covered:</span>
                         <span className="font-bold text-slate-800">{selectedSitios.length} sitio stops</span>
                       </div>

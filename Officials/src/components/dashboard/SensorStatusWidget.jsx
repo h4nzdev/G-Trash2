@@ -1,11 +1,69 @@
-import React from 'react';
-import { Wind, AlertTriangle, CheckCircle, Activity, MapPin, Radio } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Wind, AlertTriangle, CheckCircle, Activity, MapPin, Radio, History, TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
+import API from '../../config';
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) {
+  const [historyMap, setHistoryMap] = useState({});
+  const lastReadingsRef = useRef({});
+
+  useEffect(() => {
+    readings.forEach(async (sensor) => {
+      const sId = sensor.sensorId;
+      if (!sId) return;
+
+      // Track runtime changes when new readings stream in
+      const prevStored = lastReadingsRef.current[sId];
+      if (prevStored && prevStored.rawValue !== sensor.rawValue) {
+        setHistoryMap((h) => ({
+          ...h,
+          [sId]: prevStored,
+        }));
+      }
+      lastReadingsRef.current[sId] = {
+        rawValue: sensor.rawValue,
+        airQuality: sensor.airQuality,
+        timestamp: sensor.timestamp || new Date().toISOString(),
+      };
+
+      // Also query historical readings from the database if not yet cached
+      if (!historyMap[sId] && !sensor.previousReading) {
+        try {
+          const headers = {};
+          const token = localStorage.getItem('gtrash_token');
+          if (token) headers.Authorization = `Bearer ${token}`;
+
+          const res = await fetch(`${API}/api/iot/readings?sensorId=${encodeURIComponent(sId)}&limit=5`, { headers });
+          if (res.ok) {
+            const list = await res.json();
+            // list[0] is current reading; list[1] is the data prior to the current main reading
+            if (Array.isArray(list) && list.length > 1) {
+              setHistoryMap((h) => ({
+                ...h,
+                [sId]: list[1],
+              }));
+            }
+          }
+        } catch (e) {
+          // gracefully fallback
+        }
+      }
+    });
+  }, [readings]);
 
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex-1">
       {/* Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
         <div>
@@ -35,12 +93,29 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
         ) : (
           readings.map((sensor) => {
             const raw = sensor.rawValue || 0;
-            const status = sensor.airQuality || (raw >= 700 ? 'Critical' : raw >= 400 ? 'Moderate' : 'Clean');
-            const isCritical = status === 'Critical' || status === 'Unhealthy' || status === 'Hazardous' || raw >= 700;
-            const isModerate = status === 'Moderate' || (raw >= 400 && raw < 700);
+            const status = raw >= 500
+              ? 'Critical'
+              : raw >= 200
+              ? 'Moderate'
+              : raw > 0
+              ? 'Clean'
+              : (sensor.airQuality || 'Clean');
+            const isCritical = status === 'Critical' || status === 'Unhealthy' || status === 'Hazardous' || raw >= 500;
+            const isModerate = status === 'Moderate' || (raw >= 200 && raw < 500);
 
             const adcPercentage = Math.min(100, Math.max(0, Math.round((raw / 4095) * 100)));
             const voltage = (raw * (3.3 / 4095.0)).toFixed(2);
+
+            // Previous data prior to the current main reading
+            const prevReading = sensor.previousReading || historyMap[sensor.sensorId] || null;
+            const prevRaw = prevReading?.rawValue ?? null;
+            const prevVoltage = prevRaw !== null ? (prevRaw * (3.3 / 4095.0)).toFixed(2) : null;
+            const prevStatus = prevRaw !== null
+              ? (prevRaw >= 500 ? 'Critical' : prevRaw >= 200 ? 'Moderate' : 'Clean')
+              : (prevReading?.airQuality || null);
+            const prevIsCritical = prevStatus === 'Critical' || prevStatus === 'Unhealthy' || prevStatus === 'Hazardous' || (prevRaw !== null && prevRaw >= 500);
+            const prevIsModerate = prevStatus === 'Moderate' || (prevRaw !== null && prevRaw >= 200 && prevRaw < 500);
+            const deltaRaw = prevRaw !== null ? raw - prevRaw : null;
 
             return (
               <div
@@ -119,10 +194,10 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
                     <span className="flex items-center gap-1">
                       <Activity className="w-3 h-3 text-indigo-500" /> Air Quality Threshold Scale
                     </span>
-                    <span>Critical Limit: 700 ADC</span>
+                    <span>Critical Limit: 500 ADC</span>
                   </div>
                   <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden relative">
-                    <div className="absolute top-0 bottom-0 left-[17%] w-0.5 bg-slate-800 z-10 opacity-60" />
+                    <div className="absolute top-0 bottom-0 left-[12.2%] w-0.5 bg-slate-800 z-10 opacity-60" title="Critical Limit: 500 ADC" />
                     <div
                       className={`h-full transition-all duration-500 rounded-full ${
                         isCritical ? 'bg-red-500' : isModerate ? 'bg-amber-500' : 'bg-emerald-500'
@@ -130,6 +205,84 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
                       style={{ width: `${Math.max(5, adcPercentage)}%` }}
                     />
                   </div>
+                </div>
+
+                {/* Previous Reading (Recent Data Prior to Current Push) */}
+                <div className="mt-3 pt-2.5 border-t border-slate-200/70 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-slate-600">
+                    <History className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="font-semibold text-slate-500">Prior Reading:</span>
+                    {prevRaw !== null ? (
+                      <span className="font-bold text-slate-800">
+                        {prevRaw} ADC
+                        <span className="text-[10px] text-slate-400 font-normal ml-1">
+                          ({prevVoltage} V)
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 italic text-[10px]">Initial baseline broadcast</span>
+                    )}
+                  </div>
+
+                  {prevRaw !== null && (
+                    <div className="flex items-center gap-2">
+                      {/* Previous Status Badge */}
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          prevIsCritical
+                            ? 'bg-red-100 text-red-700'
+                            : prevIsModerate
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {prevStatus}
+                      </span>
+
+                      {/* Delta Shift Indicator */}
+                      <span
+                        className={`font-extrabold flex items-center gap-0.5 text-[10px] ${
+                          deltaRaw > 0
+                            ? 'text-red-600'
+                            : deltaRaw < 0
+                            ? 'text-emerald-600'
+                            : 'text-slate-500'
+                        }`}
+                        title={
+                          deltaRaw > 0
+                            ? `Increased by ${deltaRaw} ADC from prior reading`
+                            : deltaRaw < 0
+                            ? `Decreased by ${Math.abs(deltaRaw)} ADC from prior reading`
+                            : 'No change from prior reading'
+                        }
+                      >
+                        {deltaRaw > 0 ? (
+                          <>
+                            <TrendingUp className="w-3 h-3" />
+                            +{deltaRaw} ADC
+                          </>
+                        ) : deltaRaw < 0 ? (
+                          <>
+                            <TrendingDown className="w-3 h-3" />
+                            {deltaRaw} ADC
+                          </>
+                        ) : (
+                          <>
+                            <Minus className="w-3 h-3" />
+                            Steady
+                          </>
+                        )}
+                      </span>
+
+                      {/* Timestamp */}
+                      {prevReading?.timestamp && (
+                        <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5 text-slate-300" />
+                          {timeAgo(prevReading.timestamp)}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

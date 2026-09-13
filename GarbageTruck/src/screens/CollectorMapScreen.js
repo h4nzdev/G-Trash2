@@ -34,6 +34,7 @@ import NetworkBanner from "../components/NetworkBanner";
 import { saveRouteCache, loadRouteCache } from "../utils/routeCache";
 import API_URL from "../config";
 import TRUCK_B64 from "../constants/truckBase64";
+import CAR_ARROW_GLB_B64 from "../constants/carArrowBase64";
 
 const TRACKING_SERVER = API_URL;
 
@@ -141,13 +142,15 @@ function formatGarbageArea(area) {
 }
 
 // ── MapLibre GL 3D Map HTML (100% Free Open-Source Vector Map) ──
-function buildLeafletHTML(truckB64) {
+function buildLeafletHTML(truckB64, carArrowB64) {
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body, #map { height:100%; width:100%; overflow:hidden; background: #e8ede8; }
@@ -163,6 +166,10 @@ function buildLeafletHTML(truckB64) {
       var followMode = true;
       var stopMarkers = [];
       var reportMarkers = [];
+      var driverLat = null, driverLng = null, driverBearing = 0;
+      var is3DArrowVisible = true;
+      var arrowModelLoaded = false;
+      var CAR_ARROW_GLB_B64 = "${carArrowB64 || ''}";
 
       var CEBU_OUTLINE = [
         [10.3565,123.8808],[10.3592,123.8842],[10.3610,123.8882],[10.3620,123.8925],
@@ -183,6 +190,170 @@ function buildLeafletHTML(truckB64) {
         [10.3558,123.8802],[10.3565,123.8808]
       ];
       var CEBU_OUTLINE_LNGLAT = CEBU_OUTLINE.map(function(c) { return [c[1], c[0]]; });
+
+      // ── Custom MapLibre 3D WebGL Layer with Three.js ──
+      var custom3DLayer = {
+        id: '3d-car-arrow-model',
+        type: 'custom',
+        renderingMode: '3d',
+        onAdd: function (mapInstance, gl) {
+          this.camera = new THREE.Camera();
+          this.scene = new THREE.Scene();
+
+          var ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+          this.scene.add(ambientLight);
+
+          // Top-right directional sunlight
+          var dirLight1 = new THREE.DirectionalLight(0xffffff, 0.95);
+          dirLight1.position.set(25, -40, 60).normalize();
+          this.scene.add(dirLight1);
+
+          // Secondary fill light for contrasting faceted bevels
+          var dirLight2 = new THREE.DirectionalLight(0xbae6fd, 0.45);
+          dirLight2.position.set(-25, 40, 40).normalize();
+          this.scene.add(dirLight2);
+
+          this.renderer = new THREE.WebGLRenderer({
+            canvas: mapInstance.getCanvas(),
+            context: gl,
+            antialias: true
+          });
+          this.renderer.autoClear = false;
+
+          var self = this;
+          if (typeof THREE.GLTFLoader !== 'undefined' && CAR_ARROW_GLB_B64) {
+            try {
+              var binaryString = window.atob(CAR_ARROW_GLB_B64);
+              var len = binaryString.length;
+              var bytes = new Uint8Array(len);
+              for (var i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              var loader = new THREE.GLTFLoader();
+              loader.parse(bytes.buffer, '', function (gltf) {
+                var model = gltf.scene;
+
+                // Vibrant navigation blue material with faceted specular shading
+                var blueMaterial = new THREE.MeshStandardMaterial({
+                  color: 0x0284C7,
+                  roughness: 0.25,
+                  metalness: 0.15,
+                  flatShading: true,
+                  side: THREE.DoubleSide
+                });
+
+                var whiteEdgeMaterial = new THREE.LineBasicMaterial({
+                  color: 0xffffff,
+                  linewidth: 2
+                });
+
+                model.traverse(function (child) {
+                  if (child.isMesh) {
+                    child.material = blueMaterial;
+                    try {
+                      var edges = new THREE.EdgesGeometry(child.geometry, 15);
+                      var edgeLines = new THREE.LineSegments(edges, whiteEdgeMaterial);
+                      child.add(edgeLines);
+                    } catch (_) {}
+                  }
+                });
+
+                // Soft circular ground shadow under the chevron
+                try {
+                  var shadowCanvas = document.createElement('canvas');
+                  shadowCanvas.width = 128;
+                  shadowCanvas.height = 128;
+                  var sCtx = shadowCanvas.getContext('2d');
+                  var gradient = sCtx.createRadialGradient(64, 64, 0, 64, 64, 60);
+                  gradient.addColorStop(0, 'rgba(15, 23, 42, 0.45)');
+                  gradient.addColorStop(0.5, 'rgba(15, 23, 42, 0.15)');
+                  gradient.addColorStop(1, 'rgba(15, 23, 42, 0)');
+                  sCtx.fillStyle = gradient;
+                  sCtx.fillRect(0, 0, 128, 128);
+
+                  var shadowTexture = new THREE.CanvasTexture(shadowCanvas);
+                  var shadowPlane = new THREE.Mesh(
+                    new THREE.PlaneGeometry(6.5, 6.5),
+                    new THREE.MeshBasicMaterial({
+                      map: shadowTexture,
+                      transparent: true,
+                      opacity: 0.75,
+                      depthWrite: false
+                    })
+                  );
+                  shadowPlane.rotation.x = -Math.PI / 2;
+                  shadowPlane.position.y = -0.38;
+                  model.add(shadowPlane);
+                } catch (_) {}
+
+                self.model = model;
+                self.scene.add(model);
+                arrowModelLoaded = true;
+                if (currentMarker && is3DArrowVisible) {
+                  currentMarker.remove();
+                  currentMarker = null;
+                }
+                map.triggerRepaint();
+              });
+            } catch (err) {
+              console.error('Error parsing GLB arrow:', err);
+            }
+          }
+        },
+        render: function (gl, matrix) {
+          if (!is3DArrowVisible || !this.model || driverLat === null || driverLng === null) return;
+
+          var modelAsMercator = maplibregl.MercatorCoordinate.fromLngLat(
+            [driverLng, driverLat],
+            0
+          );
+
+          var currentZoom = map.getZoom();
+          var pixelsPerMercator = 512 * Math.pow(2, currentZoom);
+          // Scale smoothly between 30px and 52px across zoom levels
+          var targetPx = Math.min(Math.max(30, (currentZoom - 12) * 3 + 30), 52);
+          var mercatorUnitsForTarget = targetPx / pixelsPerMercator;
+          var meterScale = mercatorUnitsForTarget / 4.71;
+
+          var radBearing = ((driverBearing || 0) * Math.PI) / 180;
+          var rotationX = new THREE.Matrix4().makeRotationAxis(
+            new THREE.Vector3(1, 0, 0),
+            Math.PI / 2
+          );
+          var rotationY = new THREE.Matrix4().makeRotationAxis(
+            new THREE.Vector3(0, 1, 0),
+            -radBearing
+          );
+
+          var m = new THREE.Matrix4().fromArray(matrix);
+          var l = new THREE.Matrix4()
+            .makeTranslation(
+              modelAsMercator.x,
+              modelAsMercator.y,
+              modelAsMercator.z
+            )
+            .scale(new THREE.Vector3(meterScale, -meterScale, meterScale))
+            .multiply(rotationX)
+            .multiply(rotationY);
+
+          this.camera.projectionMatrix = m.multiply(l);
+          this.renderer.resetState();
+          this.renderer.render(this.scene, this.camera);
+        }
+      };
+
+      function init3DLayer() {
+        if (!map || map.getLayer('3d-car-arrow-model')) return;
+        if (typeof THREE === 'undefined' || typeof THREE.GLTFLoader === 'undefined') {
+          setTimeout(init3DLayer, 100);
+          return;
+        }
+        try {
+          map.addLayer(custom3DLayer);
+        } catch (e) {
+          console.error('Error adding 3D layer:', e);
+        }
+      }
 
       map = new maplibregl.Map({
         container: 'map',
@@ -214,6 +385,8 @@ function buildLeafletHTML(truckB64) {
             'line-dasharray': [3, 2]
           }
         });
+
+        init3DLayer();
 
         setTimeout(function() {
           map.resize();
@@ -372,7 +545,7 @@ function buildLeafletHTML(truckB64) {
               'line-width': 5,
               'line-opacity': 0.85
             }
-          });
+          }, map.getLayer('3d-car-arrow-model') ? '3d-car-arrow-model' : undefined);
         }
 
         var bounds = new maplibregl.LngLatBounds();
@@ -408,7 +581,7 @@ function buildLeafletHTML(truckB64) {
               'line-width': 6,
               'line-opacity': 0.9
             }
-          });
+          }, map.getLayer('3d-car-arrow-model') ? '3d-car-arrow-model' : undefined);
         }
       };
 
@@ -439,6 +612,9 @@ function buildLeafletHTML(truckB64) {
         if (currentMarker) {
           bounds.extend(currentMarker.getLngLat());
           hasBounds = true;
+        } else if (driverLat !== null && driverLng !== null) {
+          bounds.extend([driverLng, driverLat]);
+          hasBounds = true;
         }
         if (hasBounds) {
           map.fitBounds(bounds, { padding: 50 });
@@ -450,18 +626,28 @@ function buildLeafletHTML(truckB64) {
         el.innerHTML =
           '<div style="transform: rotate(' + (bearing || 0) + 'deg); filter: drop-shadow(0 4px 10px rgba(0,106,59,0.3));">' +
             '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-              '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#2196F3" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
+              '<path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#0284C7" stroke="white" stroke-width="2.5" stroke-linejoin="round" />' +
             '</svg>' +
           '</div>';
         return el;
       }
 
       window.updateDriverPosition = function(lat, lng, bearing) {
-        if (currentMarker) { currentMarker.remove(); }
-        var el = createArrowEl(bearing || 0);
-        currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([lng, lat])
-          .addTo(map);
+        driverLat = lat;
+        driverLng = lng;
+        driverBearing = bearing || 0;
+        is3DArrowVisible = true;
+
+        if (custom3DLayer && custom3DLayer.model) {
+          if (currentMarker) { currentMarker.remove(); currentMarker = null; }
+          map.triggerRepaint();
+        } else {
+          if (currentMarker) { currentMarker.remove(); }
+          var el = createArrowEl(bearing || 0);
+          currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        }
         if (followMode) {
           map.panTo([lng, lat], { duration: 500 });
         }
@@ -469,11 +655,21 @@ function buildLeafletHTML(truckB64) {
 
       window.startFollow = function(lat, lng, heading) {
         followMode = true;
-        if (currentMarker) { currentMarker.remove(); }
-        var el = createArrowEl(heading || 0);
-        currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([lng, lat])
-          .addTo(map);
+        driverLat = lat;
+        driverLng = lng;
+        driverBearing = heading || 0;
+        is3DArrowVisible = true;
+
+        if (custom3DLayer && custom3DLayer.model) {
+          if (currentMarker) { currentMarker.remove(); currentMarker = null; }
+          map.triggerRepaint();
+        } else {
+          if (currentMarker) { currentMarker.remove(); }
+          var el = createArrowEl(heading || 0);
+          currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        }
         map.flyTo({ center: [lng, lat], zoom: 17, duration: 1200 });
       };
 
@@ -482,6 +678,9 @@ function buildLeafletHTML(truckB64) {
       };
 
       window.showIdleTruck = function(lat, lng) {
+        is3DArrowVisible = false;
+        driverLat = lat;
+        driverLng = lng;
         if (currentMarker) { currentMarker.remove(); }
         var el = document.createElement('div');
         el.innerHTML =
@@ -493,6 +692,7 @@ function buildLeafletHTML(truckB64) {
         currentMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
           .setLngLat([lng, lat])
           .addTo(map);
+        map.triggerRepaint();
       };
 
       window.centerMap = function(lat, lng) {
@@ -500,10 +700,12 @@ function buildLeafletHTML(truckB64) {
       };
 
       window.stopNavigation = function(lat, lng) {
+        is3DArrowVisible = false;
         if (currentMarker) { currentMarker.remove(); currentMarker = null; }
         if (lat !== undefined && lng !== undefined) {
           window.showIdleTruck(lat, lng);
         }
+        map.triggerRepaint();
       };
 
     })();
@@ -1849,7 +2051,7 @@ export default function CollectorMapScreen() {
       <View style={styles.mapContainer}>
         <WebView
           ref={webViewRef}
-          source={{ html: buildLeafletHTML(TRUCK_B64) }}
+          source={{ html: buildLeafletHTML(TRUCK_B64, CAR_ARROW_GLB_B64) }}
           style={styles.webView}
           onMessage={handleWebViewMessage}
           onLoad={handleWebViewLoad}
