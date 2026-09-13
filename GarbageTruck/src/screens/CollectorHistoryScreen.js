@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -18,11 +19,13 @@ import API_URL from "../config";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const DATE_FILTERS = ["Today", "This Week", "This Month"];
+const DATE_FILTERS = ["Today", "This Week", "This Month", "All"];
 const DAILY_STOP_GOAL = 8;
 
 function formatTime(dateStr) {
+  if (!dateStr) return "—";
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
   let h = d.getHours();
   const m = d.getMinutes();
   const ampm = h >= 12 ? "PM" : "AM";
@@ -30,17 +33,54 @@ function formatTime(dateStr) {
   return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function getWeekDates() {
+function formatYMD(dateInput) {
+  if (!dateInput) return "";
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getLogDateStr(log) {
+  if (!log) return "";
+  // 1. If completedAt exists (when the route or stop was completed)
+  if (log.completedAt) {
+    const ymd = formatYMD(log.completedAt);
+    if (ymd) return ymd;
+  }
+  // 2. If date is already in YYYY-MM-DD format
+  if (typeof log.date === "string" && /^\d{4}-\d{2}-\d{2}/.test(log.date)) {
+    return log.date.substring(0, 10);
+  }
+  // 3. Fallback to createdAt
+  if (log.createdAt) {
+    const ymd = formatYMD(log.createdAt);
+    if (ymd) return ymd;
+  }
+  // 4. Fallback to parsing log.date if string
+  if (log.date) {
+    const ymd = formatYMD(log.date);
+    if (ymd) return ymd;
+  }
+  return "";
+}
+
+function getWeekInfo() {
   const now = new Date();
   const dow = now.getDay();
   const diffToMon = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMon);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d.toLocaleDateString("en-CA");
-  });
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon, 0, 0, 0, 0);
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
+  const startYMD = formatYMD(monday);
+  const endYMD = formatYMD(sunday);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    days.push(formatYMD(d));
+  }
+  return { startYMD, endYMD, days };
 }
 
 export default function CollectorHistoryScreen() {
@@ -54,15 +94,19 @@ export default function CollectorHistoryScreen() {
   const [hasError, setHasError] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const today = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
-  const weekDates = useMemo(() => getWeekDates(), []);
+  const todayYMD = useMemo(() => formatYMD(new Date()), []);
+  const { startYMD: weekStartYMD, endYMD: weekEndYMD, days: weekDays } = useMemo(() => getWeekInfo(), []);
+  const currentYM = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
     setHasError(false);
     try {
       const [logsRes, routeRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/collections/truck/${TRUCK_ID}?period=month`).then((r) => r.json()),
+        fetch(`${API_URL}/api/collections/truck/${TRUCK_ID}?period=all`).then((r) => r.json()),
         fetch(`${API_URL}/api/routes/truck/${TRUCK_ID}`).then((r) => r.json()),
       ]);
       if (logsRes.status === "fulfilled" && Array.isArray(logsRes.value)) {
@@ -82,24 +126,56 @@ export default function CollectorHistoryScreen() {
     fetchHistory();
   }, [fetchHistory]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory();
+    }, [fetchHistory])
+  );
+
   // Filter logs for the selected chip
   const filteredLogs = useMemo(() => {
-    if (activeFilter === "Today") return allLogs.filter((l) => l.date === today);
-    if (activeFilter === "This Week") return allLogs.filter((l) => weekDates.includes(l.date));
+    if (activeFilter === "Today") {
+      return allLogs.filter((l) => {
+        const dStr = getLogDateStr(l);
+        if (dStr === todayYMD) return true;
+        if (typeof l.date === "string" && l.date.startsWith(todayYMD)) return true;
+        if (l.completedAt && formatYMD(l.completedAt) === todayYMD) return true;
+        return false;
+      });
+    }
+    if (activeFilter === "This Week") {
+      return allLogs.filter((l) => {
+        const dStr = getLogDateStr(l);
+        if (dStr && dStr >= weekStartYMD && dStr <= weekEndYMD) return true;
+        if (l.date && weekDays.includes(l.date)) return true;
+        return false;
+      });
+    }
+    if (activeFilter === "This Month") {
+      return allLogs.filter((l) => {
+        const dStr = getLogDateStr(l);
+        if (dStr && dStr.startsWith(currentYM)) return true;
+        if (typeof l.date === "string" && l.date.startsWith(currentYM)) return true;
+        return false;
+      });
+    }
     return allLogs;
-  }, [allLogs, activeFilter, today, weekDates]);
+  }, [allLogs, activeFilter, todayYMD, weekStartYMD, weekEndYMD, weekDays, currentYM]);
 
   // Weekly chart always shows the current week regardless of chip
   const weeklyData = useMemo(() => {
     const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     return DAYS_SHORT.map((day, i) => {
-      const dateStr = weekDates[i];
-      const dayLogs = allLogs.filter((l) => l.date === dateStr);
+      const dateStr = weekDays[i];
+      const dayLogs = allLogs.filter((l) => {
+        const dStr = getLogDateStr(l);
+        return dStr === dateStr || l.date === dateStr;
+      });
       const stops = dayLogs.length;
       const bins = dayLogs.reduce((sum, l) => sum + (l.bins || 0), 0);
       return { day, stops, bins, target: DAILY_STOP_GOAL, date: dateStr };
     });
-  }, [allLogs, weekDates]);
+  }, [allLogs, weekDays]);
 
   // Derived stats
   const totalBins = filteredLogs.reduce((sum, l) => sum + (l.bins || 0), 0);
@@ -116,12 +192,14 @@ export default function CollectorHistoryScreen() {
   const summaryLabel =
     activeFilter === "Today" ? "Today's Summary" :
     activeFilter === "This Week" ? "This Week's Summary" :
-    "This Month's Summary";
+    activeFilter === "This Month" ? "This Month's Summary" :
+    "All-Time Summary";
 
   const periodStopGoal =
     activeFilter === "Today" ? DAILY_STOP_GOAL :
     activeFilter === "This Week" ? DAILY_STOP_GOAL * 5 :
-    DAILY_STOP_GOAL * 22;
+    activeFilter === "This Month" ? DAILY_STOP_GOAL * 22 :
+    DAILY_STOP_GOAL * 30;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -264,16 +342,27 @@ export default function CollectorHistoryScreen() {
                           <View style={styles.logContent}>
                             <View style={styles.logContentLeft}>
                               <Text style={styles.logLocation}>{item.stopName || "—"}</Text>
-                              <Text style={styles.logAddress}>{item.stopAddress || "—"}</Text>
+                              <Text style={styles.logAddress}>{item.stopAddress || item.routeName || "—"}</Text>
                               <View style={styles.logMetaRow}>
-                                <Text style={styles.logTimeText}>{formatTime(item.completedAt)}</Text>
+                                <Text style={styles.logTimeText}>{formatTime(item.completedAt || item.createdAt)}</Text>
                                 <View style={styles.logMetaDot} />
                                 <Text style={styles.logMetaText}>{item.wasteType || "General"}</Text>
                                 <View style={styles.logMetaDot} />
-                                <Text style={styles.logMetaText}>{item.bins} bins</Text>
-                                <View style={styles.logMetaDot} />
-                                <Text style={styles.logMetaText}>{item.durationMinutes || item.duration || 30} mins</Text>
+                                <Text style={styles.logMetaText}>{item.bins || 1} bins</Text>
+                                {item.weight > 0 && (
+                                  <>
+                                    <View style={styles.logMetaDot} />
+                                    <Text style={[styles.logMetaText, { color: "#006A3B", fontWeight: "800" }]}>
+                                      {item.weight} {item.weightUnit || "kg"}
+                                    </Text>
+                                  </>
+                                )}
                               </View>
+                              {item.disposalFacility ? (
+                                <Text style={{ fontSize: 10, color: "#006A3B", fontWeight: "700", marginTop: 2 }}>
+                                  🏭 {item.disposalFacility}
+                                </Text>
+                              ) : null}
                             </View>
                             <View style={styles.logContentRight}>
                               <Text style={styles.logBins}>{item.bins || 0}</Text>
@@ -303,7 +392,7 @@ export default function CollectorHistoryScreen() {
                   {weeklyData.map((item, index) => {
                     const barHeight = item.stops > 0 ? Math.max(4, (item.stops / MAX_STOPS) * 100) : 0;
                     const isAbove = item.stops >= item.target;
-                    const isTodayBar = item.date === today;
+                    const isTodayBar = item.date === todayYMD;
                     return (
                       <View key={item.day} style={styles.barGroup}>
                         <Text style={[styles.barValue, isAbove && styles.barValueGood]}>

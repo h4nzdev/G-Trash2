@@ -1179,11 +1179,15 @@ export default function RouteMonitoring() {
         ...prev,
         [data.truckId]: {
           ...prev[data.truckId],
-          status: "completed",
+          status: "waste_processing",
           isShiftCompleted: true,
           driverName: data.driverName || prev[data.truckId]?.driverName,
+          disposalFacility: data.disposalFacility,
+          totalWeight: data.totalWeight,
+          weightUnit: data.weightUnit,
         },
       }));
+      setCompletedRouteAlert(data);
       setDeviationAlerts((prev) => {
         const filtered = prev.filter(
           (a) => a.truckId !== data.truckId || a.type !== "completed",
@@ -1265,84 +1269,7 @@ export default function RouteMonitoring() {
     <div className="flex flex-col h-screen bg-[#f0f4f8] overflow-hidden relative">
       <style>{animationStyles}</style>
 
-      {/* ── Deviation & Off-Route Banner Alerts (Floating Header Overlay) ── */}
-      {deviationAlerts.length > 0 && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1500] w-full max-w-xl space-y-2 px-4 pointer-events-auto">
-          {deviationAlerts.map((alert) => {
-            const isCompleted = alert.type === "completed";
-            const isContact = alert.type === "contact";
-            return (
-              <div
-                key={alert.id}
-                className={`flex items-center gap-3.5 rounded-2xl p-3.5 border-2 shadow-2xl backdrop-blur-md transition-all ${
-                  isCompleted || isContact
-                    ? "bg-emerald-950/95 border-emerald-400 text-white"
-                    : "bg-red-950/95 border-red-500 text-white animate-pulse"
-                }`}
-              >
-                <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    isCompleted || isContact
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-red-500/30 text-red-400 animate-bounce"
-                  }`}
-                >
-                  {isCompleted ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-400" />
-                  ) : isContact ? (
-                    <Phone className="w-5 h-5" />
-                  ) : (
-                    <AlertTriangle className="w-5 h-5" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                        isCompleted || isContact
-                          ? "bg-emerald-500/30 text-emerald-200"
-                          : "bg-red-500/40 text-red-200"
-                      }`}
-                    >
-                      {isCompleted
-                        ? "SHIFT & PICKUP COMPLETED"
-                        : isContact
-                          ? "📞 DISPATCH REQUEST"
-                          : "⚠️ DRIVER NOT ON ROUTE"}
-                    </span>
-                    <span className="text-xs font-bold text-slate-200 truncate">
-                      Truck {alert.truckId}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-slate-100 mt-1 truncate">
-                    {alert.driverName ? `${alert.driverName} · ` : ""}
-                    {isCompleted
-                      ? `Completed shift & waste pickups for ${alert.routeName || "the route"}`
-                      : isContact
-                        ? alert.message
-                        : `Deviated ~${alert.distanceM || 100}m away from assigned path`}
-                    {" · "}
-                    {new Date(alert.ts).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                </div>
-                <button
-                  onClick={() =>
-                    setDeviationAlerts((prev) =>
-                      prev.filter((a) => a.id !== alert.id),
-                    )
-                  }
-                  className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+
 
       {/* ── Main Page Layout (Sidebar + Map) ── */}
       <div className="flex flex-1 overflow-hidden gap-0 p-4 pb-0">
@@ -1903,6 +1830,10 @@ export default function RouteMonitoring() {
                               <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-black animate-pulse border border-red-200">
                                 ⚠️ OFF ROUTE
                               </span>
+                            ) : truck.status === "waste_processing" || truck.isShiftCompleted ? (
+                              <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold border border-teal-200">
+                                🚛 To Waste Processing
+                              </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
                                 {truck.status === "online"
@@ -1918,6 +1849,23 @@ export default function RouteMonitoring() {
                                 {truck.driverName}
                               </strong>
                             </p>
+                          )}
+                          {(truck.status === "waste_processing" || truck.isShiftCompleted) && (
+                            <div className="p-2 rounded-lg bg-teal-50 border border-teal-200 text-xs text-teal-800 space-y-0.5">
+                              <div className="font-bold text-teal-900 flex items-center gap-1">
+                                <span>♻️ Transporting to Facility</span>
+                              </div>
+                              {truck.disposalFacility && (
+                                <p className="text-[11px] text-teal-700">
+                                  📍 <strong>Facility:</strong> {truck.disposalFacility}
+                                </p>
+                              )}
+                              {truck.totalWeight ? (
+                                <p className="text-[11px] text-teal-700">
+                                  ⚖️ <strong>Load:</strong> {truck.totalWeight} {truck.weightUnit || "tons"}
+                                </p>
+                              ) : null}
+                            </div>
                           )}
                           {truck.isOffRoute && (
                             <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700">
@@ -2057,46 +2005,52 @@ export default function RouteMonitoring() {
 
             {/* ── MAP OVERLAYS ── */}
 
-            {/* Live Clearing In Progress Banner Alert */}
-            {Object.keys(clearingSites).length > 0 && (
-              <div className="absolute top-3 right-3 z-[1000] bg-slate-900/95 backdrop-blur-md text-slate-100 px-4 py-2.5 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 animate-fadeIn">
-                <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-black text-emerald-400 uppercase tracking-wider">
-                    🧹 Clearing In Progress
-                  </p>
-                  <p className="text-xs font-bold text-slate-200">
-                    {Object.values(clearingSites)
-                      .map((c) => `${c.sitioName} (${c.truckId})`)
-                      .join(", ")}
-                  </p>
-                </div>
-              </div>
-            )}
+
 
             {/* Live Route Completed Banner Alert */}
             {completedRouteAlert && (
-              <div className="absolute top-3 right-3 z-[1000] bg-emerald-950/95 backdrop-blur-md text-slate-100 px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500 flex items-center gap-3 animate-fadeIn">
-                <div className="w-8 h-8 rounded-full bg-emerald-600/40 border border-emerald-400 flex items-center justify-center flex-shrink-0 text-emerald-300">
-                  <Check className="w-5 h-5 stroke-[3]" />
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1100] w-[92%] max-w-xl bg-emerald-950/95 backdrop-blur-md text-slate-100 px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-500/80 flex items-center gap-3.5 animate-fadeIn pointer-events-auto">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600/30 border border-emerald-400/50 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
+                  <Check className="w-5 h-5 stroke-[2.5]" />
                 </div>
-                <div className="pr-2">
-                  <p className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                    Route Completed 100%
-                  </p>
-                  <p className="text-xs font-bold text-slate-100">
+                <div className="pr-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[11px] font-black text-emerald-400 uppercase tracking-wider">
+                      Route Completed 100%
+                    </p>
+                    <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                      To Waste Processing
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-100 truncate mt-0.5">
                     {completedRouteAlert.routeName ||
-                      `${completedRouteAlert.barangay} Collection Route`}
+                      `${completedRouteAlert.barangay || "Barangay"} Collection Route`}
                   </p>
-                  <p className="text-[10px] text-emerald-300/80">
-                    Truck: {completedRouteAlert.truckId} · Driver: {completedRouteAlert.driverName || "Collector"}
-                    {completedRouteAlert.totalWeight ? ` · ⚖️ ${completedRouteAlert.totalWeight} ${completedRouteAlert.weightUnit || 'tons'}` : ''}
-                    {completedRouteAlert.disposalFacility ? ` · 📍 ${completedRouteAlert.disposalFacility.replace(' (ARN)', '')}` : ''}
+                  <p className="text-[11px] text-emerald-200/90 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <span>
+                      🚛 <strong className="text-white">{completedRouteAlert.truckId}</strong>
+                    </span>
+                    <span>👤 {completedRouteAlert.driverName || "Collector"}</span>
+                    {completedRouteAlert.totalWeight ? (
+                      <span>
+                        ⚖️{" "}
+                        <strong className="text-white">
+                          {completedRouteAlert.totalWeight}{" "}
+                          {completedRouteAlert.weightUnit || "tons"}
+                        </strong>
+                      </span>
+                    ) : null}
+                    {completedRouteAlert.disposalFacility ? (
+                      <span className="text-emerald-300">
+                        📍 {completedRouteAlert.disposalFacility.replace(" (ARN)", "")}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
                 <button
                   onClick={() => setCompletedRouteAlert(null)}
-                  className="text-slate-400 hover:text-white p-1"
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-emerald-900/50 transition-colors flex-shrink-0 ml-1"
+                  title="Dismiss alert"
                 >
                   <X className="w-4 h-4" />
                 </button>

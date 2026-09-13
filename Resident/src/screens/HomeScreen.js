@@ -1207,25 +1207,26 @@ export default function HomeScreen({ navigation }) {
 
   const isRouteCompleted = useMemo(() => {
     if (todayPickupDone) return true;
-    const brgy = user?.barangay;
-    if (firstSchedule && firstSchedule.status === 'completed') return true;
+    const brgy = user?.barangay?.trim()?.toLowerCase();
     if (brgy && todaySchedules.length > 0) {
       const userScheds = todaySchedules.filter(
-        (s) => s.barangay?.toLowerCase() === brgy.toLowerCase()
+        (s) =>
+          s.barangay?.trim()?.toLowerCase() === brgy ||
+          s.routeName?.toLowerCase().includes(brgy)
       );
-      if (
-        userScheds.length > 0 &&
-        userScheds.every(
+      if (userScheds.length > 0) {
+        return userScheds.every(
           (s) =>
-            s.status === 'completed' ||
+            s.status === "completed" ||
             (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed))
-        )
-      ) {
-        return true;
+        );
       }
     }
+    if (todaySchedules.length > 0) {
+      return todaySchedules.every((s) => s.status === "completed");
+    }
     return false;
-  }, [todayPickupDone, firstSchedule, todaySchedules, user?.barangay]);
+  }, [todayPickupDone, todaySchedules, user?.barangay]);
 
   const isTruckCollecting = useMemo(() => {
     if (isRouteCompleted) return false;
@@ -1235,41 +1236,52 @@ export default function HomeScreen({ navigation }) {
   const isTruckActiveNearby = isTruckCollecting;
 
   const isTruckNearOrActive = useMemo(() => {
+    // 1. If today's pickup is already done or route is completed, hide
     if (todayPickupDone || isRouteCompleted) return false;
-    if (onlineTrucks.length === 0) return false;
 
-    // 1. If distance is calculated and truck is within 3km (3000m), it is NEAR
-    if (distToTruck !== null && distToTruck <= 3000) {
-      return true;
+    // 2. If there are no trucks available or online, hide
+    if (!onlineTrucks || onlineTrucks.length === 0) return false;
+
+    // 3. Must have a schedule for today
+    if (!todaySchedules || todaySchedules.length === 0) return false;
+
+    // 4. Find the schedule for the resident's barangay
+    const brgy = user?.barangay?.trim()?.toLowerCase();
+    const brgySched = brgy
+      ? todaySchedules.find(
+          (s) =>
+            s.barangay?.trim()?.toLowerCase() === brgy ||
+            s.routeName?.toLowerCase().includes(brgy)
+        )
+      : todaySchedules.find((s) => s.status !== "completed") || todaySchedules[0];
+
+    // If no schedule exists for the user's area, hide
+    if (!brgySched) return false;
+
+    // 5. Schedule must still be active and not completed
+    if (brgySched.status === "completed") return false;
+    if (
+      brgySched.sitioTasks?.length > 0 &&
+      brgySched.sitioTasks.every((t) => t.completed)
+    ) {
+      return false;
     }
 
-    // 2. Check if an active truck is on schedule for the user's barangay
-    const brgy = user?.barangay;
-    if (brgy && todaySchedules.length > 0) {
-      const brgySched = todaySchedules.find(
-        (s) =>
-          s.barangay?.toLowerCase() === brgy.toLowerCase() ||
-          s.routeName?.toLowerCase().includes(brgy.toLowerCase())
+    // 6. Truck assigned to this schedule must be available and active (online)
+    if (brgySched.truckId || brgySched.truckPlate) {
+      const isAssignedTruckOnline = onlineTrucks.some(
+        (t) =>
+          (brgySched.truckId && t.truckId === brgySched.truckId) ||
+          (brgySched.truckPlate && t.plateNumber === brgySched.truckPlate)
       );
-      if (brgySched) {
-        // Truck assigned to this schedule is online
-        const isSchedTruckOnline = onlineTrucks.some(
-          (t) => t.truckId === brgySched.truckId || t.plateNumber === brgySched.truckPlate
-        );
-        if (isSchedTruckOnline && brgySched.status !== 'completed') {
-          return true;
-        }
-      }
+      if (!isAssignedTruckOnline) return false;
+    } else {
+      // If schedule does not specify a truckId, at least one truck must be collecting online
+      if (onlineTrucks.length === 0) return false;
     }
 
-    // 3. Fallback: if user location is not available (distToTruck is null),
-    // consider active if there is any collecting truck online
-    if (distToTruck === null && isTruckCollecting) {
-      return true;
-    }
-
-    return false;
-  }, [todayPickupDone, isRouteCompleted, onlineTrucks, distToTruck, user?.barangay, todaySchedules, isTruckCollecting]);
+    return true;
+  }, [todayPickupDone, isRouteCompleted, onlineTrucks, user?.barangay, todaySchedules]);
 
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {

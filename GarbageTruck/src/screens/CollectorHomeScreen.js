@@ -484,10 +484,14 @@ export default function CollectorHomeScreen() {
     return todaySchedules.every((sched) => sched.status === "completed");
   }, [todaySchedules, analyticsStats]);
 
-  // Broadcast shift completion to Officials app
+  // Broadcast shift completion to Officials app & auto-end shift
   useEffect(() => {
     if (isRouteCompleted && todaySchedules.length > 0) {
+      setShiftActive(false);
+      AsyncStorage.setItem("@truck_shift_active", "false").catch(() => {});
+      AsyncStorage.setItem("@truck_nav_active", "false").catch(() => {});
       const socket = io(API_URL, { transports: ["websocket", "polling"] });
+      socket.emit("truck:offline", { truckId: TRUCK_ID });
       socket.emit("truck:shift-completed", {
         truckId: TRUCK_ID,
         driverName,
@@ -663,7 +667,7 @@ export default function CollectorHomeScreen() {
             ]}
             onPress={() => {
               if (isRouteCompleted) {
-                setShowFinishModal(true);
+                navigation.navigate("DisposalReport");
               } else {
                 goToMap();
               }
@@ -1373,7 +1377,19 @@ export default function CollectorHomeScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.finishModalBtnPrimary}
+              style={[styles.finishModalBtnPrimary, { marginBottom: 10 }]}
+              onPress={() => {
+                setShowFinishModal(false);
+                navigation.navigate("DisposalReport");
+              }}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="scale" size={20} color="#FFFFFF" />
+              <Text style={styles.finishModalBtnText}>Log Weighbridge & Disposal</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.finishModalBtnPrimary, { backgroundColor: "#64748B" }]}
               onPress={() => setShowFinishModal(false)}
               activeOpacity={0.85}
             >

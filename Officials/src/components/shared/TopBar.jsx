@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Bell, Search, ChevronDown, User, Settings, LogOut, Radio, Wind, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Bell, Search, ChevronDown, User, Settings, LogOut, Radio, Wind, AlertTriangle, CheckCircle2, Trash2, Truck } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
 import API from '../../config';
@@ -37,6 +37,7 @@ function timeAgo(dateStr) {
 
 export default function TopBar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { official, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -110,6 +111,24 @@ export default function TopBar() {
       }
     });
 
+    socket.on('truck:shift-completed', (payload) => {
+      const notif = {
+        id: `shift_${payload.truckId}_${Date.now()}`,
+        msg: `Truck ${payload.truckId} (${payload.driverName || 'Collector'}) completed route in ${payload.barangay || payload.routeName || 'assigned area'}. En route to waste processing at ${payload.disposalFacility || 'Landfill / MRF'}.`,
+        time: payload.completedAt || new Date().toISOString(),
+        severity: 'info',
+        location: payload.disposalFacility || 'Waste Processing Facility',
+        barangay: payload.barangay,
+        truckId: payload.truckId,
+        weight: payload.totalWeight ? `${payload.totalWeight} ${payload.weightUnit || 'tons'}` : null,
+        facility: payload.disposalFacility,
+        acknowledged: false,
+        type: 'waste-processing',
+      };
+      setNotifications(prev => [notif, ...prev].slice(0, 50));
+      setUnreadCount(prev => prev + 1);
+    });
+
     return () => socket.disconnect();
   }, []);
 
@@ -121,6 +140,17 @@ export default function TopBar() {
   const clearAll = () => {
     setNotifications([]);
     setUnreadCount(0);
+  };
+
+  const handleNotifClick = (n) => {
+    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, acknowledged: true } : item));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    setShowNotifs(false);
+    if (n.type === 'waste-processing' || n.type === 'iot') {
+      navigate('/routes');
+    } else if (n.type === 'report') {
+      navigate('/reports');
+    }
   };
 
   return (
@@ -182,17 +212,33 @@ export default function TopBar() {
                   </div>
                 ) : (
                   notifications.map((n) => {
-                    const dotColor = n.severity === 'critical' ? 'bg-red-500' : n.severity === 'moderate' ? 'bg-amber-500' : 'bg-blue-500';
-                    const IconComp = n.type === 'iot' ? Wind : n.type === 'report' ? AlertTriangle : Radio;
+                    const isProcessing = n.type === 'waste-processing';
+                    const dotColor = isProcessing ? 'bg-emerald-500' : n.severity === 'critical' ? 'bg-red-500' : n.severity === 'moderate' ? 'bg-amber-500' : 'bg-blue-500';
+                    const IconComp = isProcessing ? Truck : n.type === 'iot' ? Wind : n.type === 'report' ? AlertTriangle : Radio;
+                    const iconBg = isProcessing ? 'bg-emerald-100 text-emerald-700' : n.severity === 'critical' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600';
+
                     return (
                       <div
                         key={n.id}
+                        onClick={() => handleNotifClick(n)}
                         className={`flex items-start gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors ${!n.acknowledged ? 'bg-emerald-50/30' : ''}`}
                       >
-                        <div className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${n.severity === 'critical' ? 'bg-red-100' : 'bg-amber-100'}`}>
-                          <IconComp className={`w-3.5 h-3.5 ${n.severity === 'critical' ? 'text-red-600' : 'text-amber-600'}`} />
+                        <div className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                          <IconComp className="w-3.5 h-3.5" />
                         </div>
                         <div className="flex-1 min-w-0">
+                          {isProcessing && (
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                To Waste Processing
+                              </span>
+                              {n.weight && (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  ⚖️ {n.weight}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <p className={`text-xs leading-snug ${!n.acknowledged ? 'text-slate-900 font-semibold' : 'text-slate-600'}`}>
                             {n.msg}
                           </p>

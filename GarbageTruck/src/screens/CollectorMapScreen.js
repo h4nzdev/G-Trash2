@@ -821,7 +821,7 @@ async function fetchRoadRoutePolyline(waypoints) {
 }
 
 // ── Main Component ──────────────────────────────────────
-export default function CollectorMapScreen() {
+export default function CollectorMapScreen({ navigation }) {
   const { user } = useAuth();
   const { networkChangeKey } = useNetwork();
 
@@ -856,12 +856,18 @@ export default function CollectorMapScreen() {
               : [];
           setTodaySchedules(list);
           setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (list[0]?._id || null));
-          if (list.length === 0) {
-            // Unscheduled truck -> reset shift state to default inactive
+          
+          const isDone = list.length === 0 || list.every(s => 
+            s.status === 'completed' || 
+            (s.sitioTasks && s.sitioTasks.length > 0 && s.sitioTasks.every(t => t.completed))
+          );
+          if (isDone) {
+            // Unscheduled or completed truck route -> automatically end shift
             setNavigationActive(false);
             navigationActiveRef.current = false;
             AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
             AsyncStorage.setItem('@truck_shift_active', 'false').catch(() => {});
+            socketRef.current?.emit('truck:offline', { truckId: TRUCK_ID });
           }
         } catch (e) {
           setTodaySchedules([]);
@@ -897,10 +903,18 @@ export default function CollectorMapScreen() {
       // Synchronize shift status from AsyncStorage
       AsyncStorage.getItem("@truck_shift_active").then((val) => {
         const active = val === "true";
+        // If route is already completed, do not re-activate shift
+        if (isRouteCompleted) {
+          setNavigationActive(false);
+          navigationActiveRef.current = false;
+          AsyncStorage.setItem('@truck_shift_active', 'false').catch(() => {});
+          AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
+          return;
+        }
         setNavigationActive(active);
         navigationActiveRef.current = active;
       }).catch(() => {});
-    }, [fetchTodaySchedules])
+    }, [fetchTodaySchedules, isRouteCompleted])
   );
 
   const [isExpanded, setIsExpanded] = useState(false);
@@ -917,12 +931,9 @@ export default function CollectorMapScreen() {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isLocationLoading, setIsLocationLoading] = useState(true);
   const [clearingSitio, setClearingSitio] = useState(null);
-  const [showRouteCompletionModal, setShowRouteCompletionModal] = useState(false);
-  const [completedRouteInfo, setCompletedRouteInfo] = useState(null);
 
   const MOCK_BEFORE_IMAGE = "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=600&q=80";
   const MOCK_AFTER_IMAGE = "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=600&q=80";
-  const MOCK_DISPOSAL_IMAGE = "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=600&q=80";
 
   const [activeFlowTask, setActiveFlowTask] = useState(null);
   const [beforeImage, setBeforeImage] = useState("");
@@ -932,34 +943,6 @@ export default function CollectorMapScreen() {
   const [flowWasteType, setFlowWasteType] = useState("General");
   const [flowBins, setFlowBins] = useState(1);
   const [isSubmittingFlow, setIsSubmittingFlow] = useState(false);
-
-  // Post-Collection Weighbridge & Final Disposal Report state
-  const [disposalFacility, setDisposalFacility] = useState("Binaliw Sanitary Landfill (ARN)");
-  const [disposalWeight, setDisposalWeight] = useState("2.40");
-  const [disposalWeightUnit, setDisposalWeightUnit] = useState("tons");
-  const [disposalPhoto, setDisposalPhoto] = useState("");
-  const [isSubmittingDisposal, setIsSubmittingDisposal] = useState(false);
-
-  const takeDisposalPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status === 'granted') {
-        let result = await ImagePicker.launchCameraAsync({
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.6,
-          base64: true,
-        });
-        if (!result.canceled) {
-          setDisposalPhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Disposal photo error:", e);
-    }
-    setDisposalPhoto(MOCK_DISPOSAL_IMAGE);
-  };
 
   const [showBasicReportModal, setShowBasicReportModal] = useState(false);
   const [basicReportCategory, setBasicReportCategory] = useState("Other");
@@ -1025,67 +1008,6 @@ export default function CollectorMapScreen() {
         setShowBasicReportModal(false);
         setActiveFlowTask(null);
       });
-  };
-
-  const handleSubmitDisposalReport = async () => {
-    if (isSubmittingDisposal) return;
-    setIsSubmittingDisposal(true);
-    try {
-      const scheduleId = completedRouteInfo?.scheduleId || todaySchedules?.[0]?._id;
-      let finalPhotoUrl = disposalPhoto;
-      if (disposalPhoto && disposalPhoto.startsWith("data:")) {
-        try {
-          const res = await fetch(`${TRACKING_SERVER}/api/upload`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: disposalPhoto }),
-          });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.url) finalPhotoUrl = json.url;
-          }
-        } catch (_) {}
-      }
-      if (!finalPhotoUrl) finalPhotoUrl = MOCK_DISPOSAL_IMAGE;
-
-      if (scheduleId) {
-        await fetch(`${TRACKING_SERVER}/api/schedules/${scheduleId}/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            totalWeight: Number(disposalWeight) || 0,
-            weightUnit: disposalWeightUnit,
-            disposalFacility,
-            disposalPhoto: finalPhotoUrl,
-            completedAt: new Date().toISOString(),
-          }),
-        }).catch(() => {});
-      }
-
-      socketRef.current?.emit("truck:shift-completed", {
-        truckId: TRUCK_ID,
-        driverName: user?.driverName || user?.name || "Collector",
-        routeName: assignedRouteBarangay || "Collection Duty",
-        completedStops: completedRouteInfo?.sitiosCleared || 0,
-        totalStops: completedRouteInfo?.sitiosCleared || 0,
-        totalWeight: Number(disposalWeight) || 0,
-        weightUnit: disposalWeightUnit,
-        disposalFacility,
-        timestamp: new Date().toISOString(),
-      });
-
-      Alert.alert(
-        "Shift Completed & Weighed! 🚛",
-        `Weighbridge report logged: ${disposalWeight} ${disposalWeightUnit} at ${disposalFacility}. Great job!`
-      );
-      setShowRouteCompletionModal(false);
-      fetchTodaySchedules();
-    } catch (err) {
-      Alert.alert("Notice", "Weighbridge report recorded. Shift completed!");
-      setShowRouteCompletionModal(false);
-    } finally {
-      setIsSubmittingDisposal(false);
-    }
   };
 
   const submitCleaningFlow = async () => {
@@ -1175,7 +1097,9 @@ export default function CollectorMapScreen() {
           truckId: TRUCK_ID,
           driverName: user?.name || user?.driverName || 'Driver',
           stopName: sitioName,
-          route: `${barangay} Route`,
+          routeId: scheduleId || sched?._id || "",
+          routeName: sched?.routeName || `${barangay} Route`,
+          route: sched?.routeName || `${barangay} Route`,
           wasteType: flowWasteType || 'General',
           bins: flowBins || 1,
           barangay,
@@ -1204,14 +1128,16 @@ export default function CollectorMapScreen() {
             const allDone = updatedTasks.length > 0 ? updatedTasks.every(t => t.completed) : true;
 
             if (allDone) {
-              setCompletedRouteInfo({
-                scheduleId: s._id,
-                routeName: s.routeName || `${barangay} Route`,
-                barangay,
-                sitiosCleared: updatedTasks.length,
-                driverName: user?.name || user?.driverName || 'Collector',
-              });
-              setShowRouteCompletionModal(true);
+              stopNavigation();
+              if (navigation?.navigate) {
+                navigation.navigate("DisposalReport", {
+                  scheduleId: s._id,
+                  routeName: s.routeName || `${barangay} Route`,
+                  barangay,
+                  sitiosCleared: updatedTasks.length,
+                  totalSitios: updatedTasks.length,
+                });
+              }
             }
 
             return {
@@ -1288,18 +1214,26 @@ export default function CollectorMapScreen() {
   }, [todaySchedules]);
 
   const handleOpenCompletionSummary = useCallback(() => {
-    setCompletedRouteInfo({
-      scheduleId: todaySchedules?.[0]?._id,
-      routeName: todaySchedules?.[0]?.routeName || `${assignedRouteBarangay || 'Assigned Area'} Route`,
-      barangay: assignedRouteBarangay || 'Service Area',
-      sitiosCleared: todaySchedules?.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s.status === 'completed' ? 1 : 0)), 0),
-      driverName: user?.name || user?.driverName || 'Collector',
-    });
-    setShowRouteCompletionModal(true);
-  }, [todaySchedules, assignedRouteBarangay, user]);
+    const s = todaySchedules?.[0];
+    const sitiosCleared = todaySchedules?.reduce((sum, sch) => sum + (sch.sitioTasks ? sch.sitioTasks.filter(t => t.completed).length : (sch.status === 'completed' ? 1 : 0)), 0) || 0;
+    const totalSitios = todaySchedules?.reduce((sum, sch) => sum + (sch.sitioTasks ? sch.sitioTasks.length : 1), 0) || 0;
+
+    if (navigation?.navigate) {
+      navigation.navigate("DisposalReport", {
+        scheduleId: s?._id,
+        routeName: s?.routeName || `${assignedRouteBarangay || 'Assigned Area'} Route`,
+        barangay: assignedRouteBarangay || 'Service Area',
+        sitiosCleared,
+        totalSitios,
+      });
+    }
+  }, [todaySchedules, assignedRouteBarangay, navigation]);
 
   useEffect(() => {
     if (isRouteCompleted && todaySchedules?.length > 0) {
+      if (navigationActive || navigationActiveRef.current) {
+        stopNavigation();
+      }
       socketRef.current?.emit("truck:shift-completed", {
         truckId: TRUCK_ID,
         driverName: user?.driverName || user?.name || "Collector",
@@ -1309,7 +1243,7 @@ export default function CollectorMapScreen() {
         timestamp: new Date().toISOString(),
       });
     }
-  }, [isRouteCompleted, todaySchedules, TRUCK_ID, user, assignedRouteBarangay]);
+  }, [isRouteCompleted, todaySchedules, TRUCK_ID, user, assignedRouteBarangay, navigationActive]);
 
   const allStops = useMemo(() => {
     if (sitioList && sitioList.length > 0) {
@@ -3192,203 +3126,6 @@ export default function CollectorMapScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Route Accomplishment & Weighbridge Disposal Report Modal ── */}
-      <Modal
-        visible={showRouteCompletionModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowRouteCompletionModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.88)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
-          <View style={{ width: '100%', maxWidth: 390, maxHeight: '90%', backgroundColor: '#0F172A', borderRadius: 24, padding: 20, borderWidth: 1.5, borderColor: '#059669', shadowColor: '#059669', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 12 }}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', paddingBottom: 10 }}>
-              
-              {/* Header Icon */}
-              <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#065F46', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 3, borderColor: '#10B981' }}>
-                <MaterialIcons name="local-shipping" size={36} color="#34D399" />
-              </View>
-
-              <Text style={{ fontSize: 20, fontWeight: '900', color: '#F8FAFC', textAlign: 'center', marginBottom: 4 }}>
-                Sitios 100% Cleared!
-              </Text>
-              <Text style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center', marginBottom: 16, lineHeight: 17 }}>
-                Submit the weighbridge scale report to officially conclude collection for <Text style={{ color: '#34D399', fontWeight: '800' }}>{completedRouteInfo?.barangay || 'Assigned Barangay'}</Text>.
-              </Text>
-
-              {/* Quick Summary Pill */}
-              <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#1E293B', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#334155', marginBottom: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MaterialIcons name="check-circle" size={16} color="#10B981" />
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#CBD5E1' }}>Sitios Collected</Text>
-                </View>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: '#34D399' }}>
-                  {completedRouteInfo?.sitiosCleared || 0} / {completedRouteInfo?.sitiosCleared || 0} (Complete)
-                </Text>
-              </View>
-
-              {/* Section 1: Final Disposal Facility */}
-              <View style={{ width: '100%', marginBottom: 14 }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                  1. Designated Disposal Facility
-                </Text>
-                <View style={{ gap: 6 }}>
-                  {[
-                    { name: "Binaliw Sanitary Landfill (ARN)", short: "Binaliw Landfill (ARN)" },
-                    { name: "Inayawan Transfer Station", short: "Inayawan Transfer Station" },
-                    { name: "Barangay MRF", short: "Barangay Materials Recovery (MRF)" },
-                  ].map((fac) => {
-                    const isSelected = disposalFacility === fac.name;
-                    return (
-                      <TouchableOpacity
-                        key={fac.name}
-                        onPress={() => setDisposalFacility(fac.name)}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                          borderRadius: 12,
-                          backgroundColor: isSelected ? '#064E3B' : '#1E293B',
-                          borderWidth: 1.5,
-                          borderColor: isSelected ? '#10B981' : '#334155',
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <MaterialIcons
-                            name={isSelected ? "radio-button-checked" : "radio-button-unchecked"}
-                            size={16}
-                            color={isSelected ? "#34D399" : "#64748B"}
-                          />
-                          <Text style={{ fontSize: 12, fontWeight: isSelected ? '800' : '600', color: isSelected ? '#F8FAFC' : '#CBD5E1' }}>
-                            {fac.short}
-                          </Text>
-                        </View>
-                        {isSelected && (
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#34D399' }}>SELECTED</Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Section 2: Scale Weight / Tonnage */}
-              <View style={{ width: '100%', marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    2. Weighed Waste (Scale Net)
-                  </Text>
-                  {/* Unit Toggle */}
-                  <View style={{ flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 8, padding: 2, borderWidth: 1, borderColor: '#334155' }}>
-                    {['tons', 'kg'].map((u) => (
-                      <TouchableOpacity
-                        key={u}
-                        onPress={() => setDisposalWeightUnit(u)}
-                        style={{
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: 6,
-                          backgroundColor: disposalWeightUnit === u ? '#10B981' : 'transparent',
-                        }}
-                      >
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: disposalWeightUnit === u ? '#FFFFFF' : '#94A3B8' }}>
-                          {u.toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', borderRadius: 12, borderWidth: 1.5, borderColor: '#334155', paddingHorizontal: 12, height: 48 }}>
-                  <MaterialIcons name="scale" size={20} color="#34D399" style={{ marginRight: 8 }} />
-                  <TextInput
-                    value={disposalWeight}
-                    onChangeText={setDisposalWeight}
-                    keyboardType="numeric"
-                    placeholder="Enter net weight"
-                    placeholderTextColor="#64748B"
-                    style={{ flex: 1, color: '#F8FAFC', fontSize: 16, fontWeight: '800' }}
-                  />
-                  <Text style={{ color: '#94A3B8', fontWeight: '800', fontSize: 13 }}>
-                    {disposalWeightUnit}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Section 3: Photo Proof of Scale Ticket / Dump */}
-              <View style={{ width: '100%', marginBottom: 20 }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                  3. Scale Slip / Disposal Photo Proof
-                </Text>
-                {disposalPhoto ? (
-                  <View style={{ position: 'relative', width: '100%', height: 130, borderRadius: 12, overflow: 'hidden', borderWidth: 1.5, borderColor: '#10B981' }}>
-                    <Image source={{ uri: disposalPhoto }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                    <TouchableOpacity
-                      onPress={takeDisposalPhoto}
-                      style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(15, 23, 42, 0.85)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                    >
-                      <MaterialIcons name="refresh" size={14} color="#34D399" />
-                      <Text style={{ fontSize: 11, color: '#F8FAFC', fontWeight: '700' }}>Retake</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    onPress={takeDisposalPhoto}
-                    style={{
-                      width: '100%',
-                      height: 64,
-                      borderRadius: 12,
-                      backgroundColor: '#1E293B',
-                      borderWidth: 1.5,
-                      borderColor: '#334155',
-                      borderStyle: 'dashed',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <MaterialIcons name="camera-alt" size={20} color="#34D399" />
-                    <Text style={{ color: '#CBD5E1', fontSize: 12, fontWeight: '700' }}>
-                      Capture Scale Ticket / Dump Proof
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Action Buttons */}
-              <TouchableOpacity
-                onPress={handleSubmitDisposalReport}
-                disabled={isSubmittingDisposal}
-                style={{ width: '100%', height: 48, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 8, flexDirection: 'row', gap: 6 }}
-              >
-                {isSubmittingDisposal ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
-                      Submit Weighbridge Report & Finish Shift
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setShowRouteCompletionModal(false)}
-                style={{ paddingVertical: 8 }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B' }}>
-                  Review Later / Close
-                </Text>
-              </TouchableOpacity>
-
-            </ScrollView>
           </View>
         </View>
       </Modal>

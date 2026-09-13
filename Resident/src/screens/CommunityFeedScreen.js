@@ -108,26 +108,6 @@ function StatusBar({ statusHistory = [], resolutionConfirmed }) {
 export default function CommunityFeedScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
-
-  // Hide bottom tab bar while Community screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      navigation.setOptions({ tabBarStyle: { display: "none" } });
-      return () => {
-        navigation.setOptions({
-          tabBarStyle: {
-            backgroundColor: "#FFFFFF",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 8,
-            elevation: 10,
-            position: "absolute",
-          },
-        });
-      };
-    }, [navigation]),
-  );
   const [reports, setReports] = useState([]);
   const [pickupRuns, setPickupRuns] = useState([]);
   const [cleanups, setCleanups] = useState([]);

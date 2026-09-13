@@ -94,14 +94,23 @@ export default function DashboardLayout() {
           <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
             <CheckCircle className="w-5 h-5 text-emerald-600" />
           </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-bold text-slate-900">Shift & Pickups Completed</h4>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-slate-900">Route Cleared</h4>
+              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                To Waste Processing
+              </span>
+            </div>
             <p className="text-xs text-slate-600 mt-1">
-              Truck <span className="font-bold text-emerald-700">{alert.truckId}</span> completes shift / pick up.
+              Truck <span className="font-bold text-emerald-700">{alert.truckId}</span> has completed all assigned stops.
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Driver: {alert.driverName || 'Collector'} • Route: {alert.routeName || 'Assigned Area'}
-            </p>
+            <div className="mt-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100 text-[11px] text-slate-700 space-y-0.5">
+              <div>📍 <span className="font-semibold">Facility:</span> {alert.disposalFacility || 'Waste Processing Facility'}</div>
+              {alert.totalWeight && (
+                <div>⚖️ <span className="font-semibold">Weight:</span> {alert.totalWeight} {alert.weightUnit || 'tons'}</div>
+              )}
+              <div>👤 <span className="font-semibold">Driver:</span> {alert.driverName || 'Collector'}</div>
+            </div>
             <button
               onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
               className="mt-2.5 flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-wider"
@@ -110,7 +119,7 @@ export default function DashboardLayout() {
               View Route Monitoring
             </button>
           </div>
-          <button onClick={() => dismissAlert(alert.id)} className="text-slate-400 hover:text-slate-600">
+          <button onClick={() => dismissAlert(alert.id)} className="text-slate-400 hover:text-slate-600 self-start">
             <X className="w-4 h-4" />
           </button>
         </div>

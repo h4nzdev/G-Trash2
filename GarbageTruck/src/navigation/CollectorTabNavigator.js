@@ -8,6 +8,7 @@ import CollectorMapScreen from "../screens/CollectorMapScreen";
 import CollectorHistoryScreen from "../screens/CollectorHistoryScreen";
 import CollectorNotificationScreen from "../screens/CollectorNotificationScreen";
 import CollectorProfileScreen from "../screens/CollectorProfileScreen";
+import DisposalReportScreen from "../screens/DisposalReportScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -18,13 +19,14 @@ export default function CollectorTabNavigator() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
           borderTopColor: "#F0EDED",
-          paddingBottom: 8 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
           paddingTop: 8,
-          height: 60 + insets.bottom,
+          height: insets.bottom > 0 ? 56 + insets.bottom : 64,
           elevation: 15,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -4 },
@@ -32,10 +34,10 @@ export default function CollectorTabNavigator() {
           shadowRadius: 16,
         },
         tabBarActiveTintColor: "#006A3B",
-        tabBarInactiveTintColor: "#BECABE",
+        tabBarInactiveTintColor: "#94A3B8",
         tabBarLabelStyle: {
           fontSize: 9,
-          fontWeight: "600",
+          fontWeight: "700",
           textTransform: "uppercase",
           letterSpacing: 0.3,
           marginTop: 2,
@@ -50,8 +52,8 @@ export default function CollectorTabNavigator() {
           };
           return (
             <MaterialIcons
-              name={icons[route.name]}
-              size={focused ? 26 : 24}
+              name={icons[route.name] || "circle"}
+              size={focused ? 25 : 23}
               color={color}
             />
           );
@@ -63,6 +65,15 @@ export default function CollectorTabNavigator() {
       <Tab.Screen name="History" component={CollectorHistoryScreen} />
       <Tab.Screen name="Alerts" component={CollectorNotificationScreen} />
       <Tab.Screen name="Profile" component={CollectorProfileScreen} />
+      <Tab.Screen
+        name="DisposalReport"
+        component={DisposalReportScreen}
+        options={{
+          tabBarItemStyle: { display: "none" },
+          tabBarButton: () => null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
     </Tab.Navigator>
   );
 }

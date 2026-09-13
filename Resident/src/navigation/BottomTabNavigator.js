@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import HomeScreen from '../screens/HomeScreen';
 import MapScreen from '../screens/MapScreen';
 import ScannerScreen from '../screens/ScannerScreen';
@@ -14,6 +15,7 @@ const Tab = createBottomTabNavigator();
 
 export default function BottomTabNavigator() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   if (!user) {
     return (
@@ -32,27 +34,38 @@ export default function BottomTabNavigator() {
     <Tab.Navigator
       initialRouteName="Home"
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          if (route.name === 'Home') iconName = 'home-outline';
-          else if (route.name === 'Map') iconName = 'map-outline';
-          else if (route.name === 'Scanner') iconName = 'scan-outline';
-          else if (route.name === 'Report') iconName = 'alert-circle-outline';
-          else if (route.name === 'Calendar') iconName = 'calendar-outline';
-          else if (route.name === 'Profile') iconName = 'person-outline';
-          else if (route.name === 'Community') iconName = 'megaphone-outline';
-          return <Ionicons name={iconName} size={size} color={color} />;
+          if (route.name === 'Home') iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'Map') iconName = focused ? 'map' : 'map-outline';
+          else if (route.name === 'Scanner') iconName = focused ? 'scan' : 'scan-outline';
+          else if (route.name === 'Report') iconName = focused ? 'alert-circle' : 'alert-circle-outline';
+          else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
+          else if (route.name === 'Community') iconName = focused ? 'megaphone' : 'megaphone-outline';
+          else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
+          return <Ionicons name={iconName} size={focused ? 23 : 21} color={color} />;
         },
-        tabBarActiveTintColor: colors.primaryGreen,
-        tabBarInactiveTintColor: 'grey',
+        tabBarActiveTintColor: colors.primaryGreen || '#006A3B',
+        tabBarInactiveTintColor: '#94A3B8',
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+          letterSpacing: 0.2,
+          marginTop: 1,
+        },
         tabBarStyle: !user ? { display: 'none' } : {
-          backgroundColor: colors.white,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#F0EDED',
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          paddingTop: 8,
+          height: insets.bottom > 0 ? 58 + insets.bottom : 64,
+          elevation: 12,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 10,
-          position: 'absolute',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.08,
+          shadowRadius: 10,
         },
         headerShown: false,
       })}

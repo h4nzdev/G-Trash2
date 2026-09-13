@@ -4389,24 +4389,9 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
 
     // Preserve old status for validation
     const oldStatus = schedule.status;
-    // Validation for completing schedule
-    if (true) { // always attempting to complete via this endpoint
-      // Must have at least one sitio task
-      if (!schedule.sitioTasks || schedule.sitioTasks.length === 0) {
-        return res.status(400).json({ error: 'Schedule must have at least one sitio task before completion.' });
-      }
-      // Ensure all sitioTasks are completed
-      if (schedule.sitioTasks.some(t => !t.completed)) {
-        return res.status(400).json({ error: 'All sitio tasks must be completed before marking schedule as completed.' });
-      }
-      // Ensure a driver is assigned
-      if (!schedule.driverName || !schedule.driverName.trim()) {
-        return res.status(400).json({ error: 'Schedule must have a driver assigned before completion.' });
-      }
-      // Ensure the schedule was previously accepted
-      if (oldStatus !== "accepted") {
-        return res.status(400).json({ error: 'Schedule must be in accepted state before completing.' });
-      }
+    // Allow completion/weighbridge reporting if accepted, in_progress, or already auto-completed
+    if (oldStatus !== "accepted" && oldStatus !== "completed" && oldStatus !== "in_progress") {
+      return res.status(400).json({ error: 'Schedule must be in accepted or active state before completing.' });
     }
 
     // Update status to completed and store weighbridge/disposal reporting
@@ -4417,9 +4402,9 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
     if (weightUnit) schedule.weightUnit = weightUnit;
     if (disposalFacility) schedule.disposalFacility = disposalFacility;
     if (disposalPhoto) schedule.disposalPhoto = disposalPhoto;
-    schedule.completedAt = completedAt ? new Date(completedAt) : new Date();
+    schedule.completedAt = completedAt ? new Date(completedAt) : (schedule.completedAt || new Date());
 
-    // Ensure sitio tasks are flagged completed (in case they aren't already)
+    // Ensure sitio tasks are flagged completed
     if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach(t => {
         t.completed = true;
@@ -4429,13 +4414,85 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
 
     await schedule.save();
 
-    // Award points to barangay (10 points per schedule)
-    const POINTS_PER_SCHEDULE = 10;
-    await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null,
-      `Schedule ${schedule._id} completed`);
+    // Award points to barangay only if not already previously awarded
+    if (oldStatus !== "completed") {
+      const POINTS_PER_SCHEDULE = 10;
+      await addBarangayScore(schedule.barangay, POINTS_PER_SCHEDULE, null, null,
+        `Schedule ${schedule._id} completed`);
+    }
+
+    // Sync weighbridge and route info to associated CollectionLog entries
+    try {
+      const scheduleIdStr = String(schedule._id);
+      const sitioNames = (schedule.sitioTasks || []).map(t => (t.name || '').trim().toLowerCase());
+      
+      const matchingLogs = await CollectionLog.find({
+        $or: [
+          { routeId: scheduleIdStr },
+          { truckId: schedule.truckId, date: schedule.date },
+          { truckId: schedule.truckId, stopName: { $in: schedule.sitioTasks?.map(t => t.name) || [] } }
+        ]
+      });
+
+      // Filter to logs belonging to this schedule/shift
+      const relevantLogs = matchingLogs.filter(log => !log.routeId || log.routeId === scheduleIdStr);
+      
+      if (relevantLogs.length > 0) {
+        const numLogs = relevantLogs.length;
+        const totalW = schedule.totalWeight || 0;
+        const perStopWeight = numLogs > 0 ? Math.round((totalW / numLogs) * 100) / 100 : totalW;
+
+        for (let i = 0; i < relevantLogs.length; i++) {
+          const logDoc = relevantLogs[i];
+          if (totalW > 0) {
+            if (i === relevantLogs.length - 1) {
+              logDoc.weight = Math.round((totalW - perStopWeight * (numLogs - 1)) * 100) / 100;
+            } else {
+              logDoc.weight = perStopWeight;
+            }
+          }
+          if (schedule.weightUnit) logDoc.weightUnit = schedule.weightUnit;
+          if (schedule.disposalFacility) logDoc.disposalFacility = schedule.disposalFacility;
+          if (schedule.disposalPhoto) logDoc.disposalPhoto = schedule.disposalPhoto;
+          if (!logDoc.routeName || logDoc.routeName === '—') {
+            logDoc.routeName = schedule.routeName || `${schedule.barangay || 'Barangay'} Route`;
+          }
+          logDoc.routeId = scheduleIdStr;
+          await logDoc.save();
+
+          if (global._io) global._io.emit("collection:updated", logDoc);
+        }
+      } else if (schedule.totalWeight > 0 || schedule.disposalFacility) {
+        // If no individual stop logs exist, create a summary collection log so it appears in history
+        const now = new Date();
+        const compDate = schedule.completedAt ? new Date(schedule.completedAt) : now;
+        const compYMD = `${compDate.getFullYear()}-${String(compDate.getMonth() + 1).padStart(2, "0")}-${String(compDate.getDate()).padStart(2, "0")}`;
+        const summaryLog = await CollectionLog.create({
+          truckId: schedule.truckId,
+          date: compYMD,
+          stopName: schedule.sitio || schedule.sitioTasks?.[0]?.name || "Route Completed",
+          stopAddress: `${schedule.barangay || 'Barangay'} Service Area`,
+          wasteType: schedule.wasteType || "General",
+          weight: schedule.totalWeight || 0,
+          weightUnit: schedule.weightUnit || "kg",
+          disposalFacility: schedule.disposalFacility || "Binaliw Sanitary Landfill (ARN)",
+          disposalPhoto: schedule.disposalPhoto || "",
+          bins: schedule.sitioTasks?.length || 1,
+          routeId: scheduleIdStr,
+          routeName: schedule.routeName || `${schedule.barangay || 'Barangay'} Route`,
+          driverName: schedule.driverName || schedule.truckId,
+          status: "verified",
+          durationMinutes: 30,
+          completedAt: compDate,
+        });
+        if (global._io) global._io.emit("collection:new", summaryLog);
+      }
+    } catch (syncErr) {
+      console.error("Error syncing collection logs on route complete:", syncErr.message);
+    }
 
     io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
-    io.emit("route:completed", {
+    const shiftPayload = {
       scheduleId: schedule._id,
       truckId: schedule.truckId,
       driverName: schedule.driverName,
@@ -4447,21 +4504,22 @@ app.post("/api/schedules/:id/complete", async (req, res) => {
       disposalFacility: schedule.disposalFacility,
       disposalPhoto: schedule.disposalPhoto,
       completedAt: schedule.completedAt,
-    });
+    };
+    io.emit("route:completed", shiftPayload);
+    io.emit("truck:shift-completed", shiftPayload);
 
+    // Persist as IoTAlert so officials see it across all pages and on page refresh
     try {
-      const residents = await Resident.find({ barangay: schedule.barangay });
-      for (const resDoc of residents) {
-        resDoc.totalPoints = (resDoc.totalPoints || 0) + 10;
-        await resDoc.save();
-        if (global._io) {
-          global._io.to(`resident:${resDoc._id}`).emit("resident:points:update", {
-            pointsEarned: 10,
-            description: `Route completed in ${schedule.barangay}!`,
-            newTotal: resDoc.totalPoints,
-          });
-        }
-      }
+      const alertMsg = `Truck ${schedule.truckId} (${schedule.driverName || 'Collector'}) completed route in ${schedule.barangay || 'assigned area'}. Transporting collected waste to ${schedule.disposalFacility || 'waste processing'}.`;
+      const alertDoc = await IoTAlert.create({
+        sensorId: schedule.truckId,
+        location: schedule.disposalFacility || "Waste Processing Facility",
+        barangay: schedule.barangay || "Cebu City",
+        severity: "info",
+        message: alertMsg,
+        acknowledged: false,
+      });
+      io.emit("iot:alert", alertDoc);
     } catch (_) {}
 
     res.json(schedule);
@@ -4527,21 +4585,6 @@ app.post("/api/schedules/:id/complete-task", async (req, res) => {
         totalSitios: schedule.sitioTasks?.length || 1,
         completedAt: new Date(),
       });
-
-      try {
-        const residents = await Resident.find({ barangay: schedule.barangay });
-        for (const resDoc of residents) {
-          resDoc.totalPoints = (resDoc.totalPoints || 0) + 10;
-          await resDoc.save();
-          if (global._io) {
-            global._io.to(`resident:${resDoc._id}`).emit("resident:points:update", {
-              pointsEarned: 10,
-              description: `Route completed in ${schedule.barangay}!`,
-              newTotal: resDoc.totalPoints,
-            });
-          }
-        }
-      } catch (_) {}
     }
 
     await schedule.save();
@@ -4691,6 +4734,69 @@ app.patch("/api/schedules/:id/status", authMiddleware, async (req, res) => {
 });
 
 // --- Collection logs -----------------------------------------
+// Helper to enrich collection logs with Schedule details (route name, disposal facility, weight)
+async function enrichCollectionLogs(logs) {
+  if (!Array.isArray(logs) || logs.length === 0) return logs;
+  return await Promise.all(
+    logs.map(async (rawLog) => {
+      try {
+        const isMissingInfo =
+          !rawLog.routeName ||
+          rawLog.routeName === "—" ||
+          !rawLog.disposalFacility ||
+          !rawLog.weight ||
+          rawLog.weight === 0;
+
+        if (isMissingInfo) {
+          let schedule = null;
+          if (rawLog.routeId) {
+            schedule = await Schedule.findById(rawLog.routeId).catch(() => null);
+          }
+          if (!schedule) {
+            schedule = await Schedule.findOne({
+              truckId: rawLog.truckId,
+              $or: [
+                { date: rawLog.date },
+                { "sitioTasks.name": rawLog.stopName }
+              ]
+            }).sort({ completedAt: -1, createdAt: -1 }).catch(() => null);
+          }
+
+          if (schedule) {
+            let updated = false;
+            if ((!rawLog.routeName || rawLog.routeName === "—") && schedule.routeName) {
+              rawLog.routeName = schedule.routeName;
+              updated = true;
+            }
+            if (!rawLog.disposalFacility && schedule.disposalFacility) {
+              rawLog.disposalFacility = schedule.disposalFacility;
+              updated = true;
+            }
+            if (!rawLog.disposalPhoto && schedule.disposalPhoto) {
+              rawLog.disposalPhoto = schedule.disposalPhoto;
+              updated = true;
+            }
+            if ((!rawLog.weight || rawLog.weight === 0) && schedule.totalWeight > 0) {
+              const stopCount = schedule.sitioTasks?.length || 1;
+              rawLog.weight = Math.round((schedule.totalWeight / stopCount) * 100) / 100;
+              rawLog.weightUnit = schedule.weightUnit || "kg";
+              updated = true;
+            }
+            if (!rawLog.routeId) {
+              rawLog.routeId = String(schedule._id);
+              updated = true;
+            }
+            if (updated && typeof rawLog.save === "function") {
+              rawLog.save().catch(() => {});
+            }
+          }
+        }
+      } catch (_) {}
+      return rawLog;
+    })
+  );
+}
+
 // GET: All collection logs — supports ?period=today|week|month, ?truckId, ?date
 app.get("/api/collections", optionalAuth, async (req, res) => {
   const { period, truckId, date } = req.query;
@@ -4720,7 +4826,8 @@ app.get("/api/collections", optionalAuth, async (req, res) => {
     }
 
     const logs = await CollectionLog.find(filter).sort({ completedAt: -1 });
-    res.json(logs);
+    const enriched = await enrichCollectionLogs(logs);
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4728,28 +4835,214 @@ app.get("/api/collections", optionalAuth, async (req, res) => {
 
 app.get("/api/collections/truck/:truckId", async (req, res) => {
   const { truckId } = req.params;
-  const { period = "today" } = req.query;
+  const { period = "all" } = req.query;
   try {
-    const today = new Date().toLocaleDateString("en-CA");
-    const filter = { truckId };
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const filter = { truckId: { $regex: new RegExp(`^${truckId}$`, "i") } };
+
     if (period === "today") {
-      filter.date = today;
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      filter.$or = [
+        { date: today },
+        { completedAt: { $gte: startOfDay } }
+      ];
     } else if (period === "week") {
-      const now = new Date();
       const dow = now.getDay();
       const diffToMon = dow === 0 ? -6 : 1 - dow;
-      const mon = new Date(now);
-      mon.setDate(now.getDate() + diffToMon);
-      const sun = new Date(mon);
-      sun.setDate(mon.getDate() + 6);
-      const fmt = (d) => d.toLocaleDateString("en-CA");
+      const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon);
+      const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       filter.date = { $gte: fmt(mon), $lte: fmt(sun) };
     } else if (period === "month") {
-      const [y, m] = today.split("-");
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
       filter.date = { $gte: `${y}-${m}-01`, $lte: `${y}-${m}-31` };
     }
-    const logs = await CollectionLog.find(filter).sort({ completedAt: -1 });
-    res.json(logs);
+
+    let logs = await CollectionLog.find(filter).sort({ completedAt: -1 });
+
+    // Auto-heal: If no logs exist in collectionlogs for this truck, check completed schedules
+    if (logs.length === 0) {
+      const completedScheds = await Schedule.find({
+        truckId: { $regex: new RegExp(`^${truckId}$`, "i") },
+        status: "completed",
+      }).sort({ completedAt: -1, date: -1 });
+
+      for (const cs of completedScheds) {
+        const existing = await CollectionLog.findOne({ routeId: String(cs._id) });
+        if (!existing) {
+          const compDate = cs.completedAt ? new Date(cs.completedAt) : new Date();
+          const compYMD = `${compDate.getFullYear()}-${String(compDate.getMonth() + 1).padStart(2, "0")}-${String(compDate.getDate()).padStart(2, "0")}`;
+          const newLog = await CollectionLog.create({
+            truckId: cs.truckId,
+            date: compYMD,
+            stopName: cs.sitio || cs.sitioTasks?.[0]?.name || "Route Cleared",
+            stopAddress: `${cs.barangay || 'Barangay'} Service Area`,
+            wasteType: cs.wasteType || "General",
+            weight: cs.totalWeight || 0,
+            weightUnit: cs.weightUnit || "kg",
+            disposalFacility: cs.disposalFacility || "Binaliw Sanitary Landfill (ARN)",
+            disposalPhoto: cs.disposalPhoto || "",
+            bins: cs.sitioTasks?.length || 1,
+            routeId: String(cs._id),
+            routeName: cs.routeName || `${cs.barangay || 'Barangay'} Route`,
+            driverName: cs.driverName || cs.truckId,
+            status: "clean",
+            durationMinutes: 45,
+            completedAt: compDate,
+          });
+          logs.push(newLog);
+        }
+      }
+    }
+
+    const enriched = await enrichCollectionLogs(logs);
+    res.json(enriched);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: Update single collection log (weight, unit, disposal facility, etc.)
+app.patch("/api/collections/:id", async (req, res) => {
+  try {
+    const { weight, weightUnit, disposalFacility, disposalPhoto, routeName, applyToRoute } = req.body;
+    const log = await CollectionLog.findById(req.params.id);
+    if (!log) return res.status(404).json({ error: "Collection log not found" });
+
+    if (weight !== undefined && weight !== null && !isNaN(Number(weight))) {
+      log.weight = Number(weight);
+    }
+    if (weightUnit) log.weightUnit = weightUnit;
+    if (disposalFacility) log.disposalFacility = disposalFacility;
+    if (disposalPhoto) log.disposalPhoto = disposalPhoto;
+    if (routeName) log.routeName = routeName;
+    await log.save();
+
+    if (applyToRoute) {
+      const matchCriteria = log.routeId
+        ? { routeId: log.routeId }
+        : { truckId: log.truckId, date: log.date };
+      const siblings = await CollectionLog.find(matchCriteria);
+      for (const sib of siblings) {
+        if (String(sib._id) !== String(log._id)) {
+          if (weight !== undefined && weight !== null && !isNaN(Number(weight))) sib.weight = Number(weight);
+          if (weightUnit) sib.weightUnit = weightUnit;
+          if (disposalFacility) sib.disposalFacility = disposalFacility;
+          if (disposalPhoto) sib.disposalPhoto = disposalPhoto;
+          if (routeName) sib.routeName = routeName;
+          await sib.save();
+          if (global._io) global._io.emit("collection:updated", sib);
+        }
+      }
+      if (log.routeId) {
+        const schedule = await Schedule.findById(log.routeId).catch(() => null);
+        if (schedule) {
+          if (weight !== undefined && weight !== null && !isNaN(Number(weight))) {
+            schedule.totalWeight = Number(weight) * (siblings.length || 1);
+          }
+          if (weightUnit) schedule.weightUnit = weightUnit;
+          if (disposalFacility) schedule.disposalFacility = disposalFacility;
+          if (disposalPhoto) schedule.disposalPhoto = disposalPhoto;
+          await schedule.save();
+        }
+      }
+    }
+
+    if (global._io) global._io.emit("collection:updated", log);
+    res.json(log);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Batch weigh collection logs for a truck shift/route
+app.post("/api/collections/batch-weigh", async (req, res) => {
+  try {
+    const { truckId, date, scheduleId, totalWeight, weightUnit = "kg", disposalFacility, disposalPhoto } = req.body;
+    if (!truckId) return res.status(400).json({ error: "truckId is required" });
+    const targetDate = date || new Date().toLocaleDateString("en-CA");
+
+    const query = scheduleId
+      ? { $or: [{ routeId: scheduleId }, { truckId: truckId.toUpperCase(), date: targetDate }] }
+      : { truckId: truckId.toUpperCase(), date: targetDate };
+
+    const logs = await CollectionLog.find(query);
+    const numLogs = logs.length;
+    const totalW = Number(totalWeight) || 0;
+    const perStopWeight = numLogs > 0 ? Math.round((totalW / numLogs) * 100) / 100 : totalW;
+
+    for (let i = 0; i < logs.length; i++) {
+      const l = logs[i];
+      if (totalW > 0) {
+        l.weight = (i === logs.length - 1)
+          ? Math.round((totalW - perStopWeight * (numLogs - 1)) * 100) / 100
+          : perStopWeight;
+      }
+      if (weightUnit) l.weightUnit = weightUnit;
+      if (disposalFacility) l.disposalFacility = disposalFacility;
+      if (disposalPhoto) l.disposalPhoto = disposalPhoto;
+      if (scheduleId && !l.routeId) l.routeId = scheduleId;
+      await l.save();
+      if (global._io) global._io.emit("collection:updated", l);
+    }
+
+    if (scheduleId) {
+      const schedule = await Schedule.findById(scheduleId).catch(() => null);
+      if (schedule) {
+        schedule.status = "completed";
+        if (totalW > 0) schedule.totalWeight = totalW;
+        if (weightUnit) schedule.weightUnit = weightUnit;
+        if (disposalFacility) schedule.disposalFacility = disposalFacility;
+        if (disposalPhoto) schedule.disposalPhoto = disposalPhoto;
+        await schedule.save();
+
+        if (global._io) {
+          const shiftPayload = {
+            scheduleId: schedule._id,
+            truckId: schedule.truckId,
+            driverName: schedule.driverName,
+            barangay: schedule.barangay,
+            routeName: schedule.routeName,
+            totalSitios: schedule.sitioTasks?.length || 1,
+            totalWeight: schedule.totalWeight,
+            weightUnit: schedule.weightUnit,
+            disposalFacility: schedule.disposalFacility,
+            disposalPhoto: schedule.disposalPhoto,
+            completedAt: schedule.completedAt || new Date(),
+          };
+          global._io.emit("truck:shift-completed", shiftPayload);
+          global._io.emit("route:completed", shiftPayload);
+        }
+        if (logs.length === 0) {
+          const now = new Date();
+          const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          const newLog = await CollectionLog.create({
+            truckId: schedule.truckId,
+            date: todayYMD,
+            stopName: schedule.sitio || schedule.sitioTasks?.[0]?.name || "Route Cleared",
+            stopAddress: `${schedule.barangay || 'Barangay'} Service Area`,
+            wasteType: schedule.wasteType || "General",
+            weight: totalW || 0,
+            weightUnit: weightUnit || "kg",
+            disposalFacility: disposalFacility || schedule.disposalFacility || "Binaliw Sanitary Landfill (ARN)",
+            disposalPhoto: disposalPhoto || schedule.disposalPhoto || "",
+            bins: schedule.sitioTasks?.length || 1,
+            routeId: scheduleId,
+            routeName: schedule.routeName || `${schedule.barangay || 'Barangay'} Route`,
+            driverName: schedule.driverName || schedule.truckId,
+            status: "clean",
+            durationMinutes: 45,
+            completedAt: new Date(),
+          });
+          if (global._io) global._io.emit("collection:new", newLog);
+          return res.json({ success: true, updatedCount: 1 });
+        }
+      }
+    }
+
+    res.json({ success: true, updatedCount: logs.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4769,6 +5062,8 @@ app.post("/api/collections", async (req, res) => {
     bins,
     routeId,
     routeName,
+    route,
+    scheduleId,
     lat,
     lng,
     driverName,
@@ -4785,19 +5080,45 @@ app.post("/api/collections", async (req, res) => {
   const date = rawDate || new Date().toLocaleDateString("en-CA");
   try {
     const parsedDuration = Number(durationMinutes || duration || 30);
+    const resolvedRouteId = routeId || scheduleId || "";
+    let resolvedRouteName = routeName || route || "";
+    let resolvedFacility = disposalFacility || "";
+    let resolvedPhoto = disposalPhoto || "";
+    let resolvedWeight = weight != null ? Number(weight) : 0;
+    let resolvedUnit = weightUnit || "kg";
+
+    // Auto-lookup matching schedule to fill routeName / facility / weight if missing
+    if (!resolvedRouteName || !resolvedFacility || resolvedWeight === 0) {
+      try {
+        const sched = resolvedRouteId
+          ? await Schedule.findById(resolvedRouteId).catch(() => null)
+          : await Schedule.findOne({ truckId: truckId.toUpperCase(), date }).sort({ createdAt: -1 }).catch(() => null);
+        if (sched) {
+          if (!resolvedRouteName) resolvedRouteName = sched.routeName || `${sched.barangay || 'Barangay'} Route`;
+          if (!resolvedFacility && sched.disposalFacility) resolvedFacility = sched.disposalFacility;
+          if (!resolvedPhoto && sched.disposalPhoto) resolvedPhoto = sched.disposalPhoto;
+          if (resolvedWeight === 0 && sched.totalWeight > 0) {
+            const stopCount = sched.sitioTasks?.length || 1;
+            resolvedWeight = Math.round((sched.totalWeight / stopCount) * 100) / 100;
+            resolvedUnit = sched.weightUnit || "kg";
+          }
+        }
+      } catch (_) {}
+    }
+
     const log = await CollectionLog.create({
       truckId,
       date,
       stopName: stopName || "",
       stopAddress: stopAddress || "",
       wasteType: wasteType || "General",
-      weight: weight != null ? weight : 0,
-      weightUnit: weightUnit || "kg",
-      disposalFacility: disposalFacility || "",
-      disposalPhoto: disposalPhoto || "",
+      weight: resolvedWeight,
+      weightUnit: resolvedUnit,
+      disposalFacility: resolvedFacility,
+      disposalPhoto: resolvedPhoto,
       bins: bins != null ? bins : 1,
-      routeId: routeId || "",
-      routeName: routeName || "",
+      routeId: resolvedRouteId,
+      routeName: resolvedRouteName,
       lat: lat != null ? lat : null,
       lng: lng != null ? lng : null,
       driverName: driverName || truckId || "",
@@ -5700,6 +6021,23 @@ io.on("connection", (socket) => {
   // Driver requests help from dispatch â€” relay to Officials dashboard
   socket.on("truck:contact-dispatch", (data) => {
     socket.broadcast.emit("truck:contact-dispatch", data);
+  });
+
+  // Truck completes its shift and route — relay to Officials dashboard and persist alert
+  socket.on("truck:shift-completed", async (data) => {
+    io.emit("truck:shift-completed", data);
+    try {
+      const alertMsg = `Truck ${data.truckId} (${data.driverName || 'Collector'}) completed route in ${data.barangay || 'assigned area'}. Transporting collected waste to ${data.disposalFacility || 'waste processing'}.`;
+      const alertDoc = await IoTAlert.create({
+        sensorId: data.truckId || "TRUCK",
+        location: data.disposalFacility || "Waste Processing Facility",
+        barangay: data.barangay || "Cebu City",
+        severity: "info",
+        message: alertMsg,
+        acknowledged: false,
+      });
+      io.emit("iot:alert", alertDoc);
+    } catch (_) {}
   });
 
   socket.on("disconnect", async () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock, Scale } from 'lucide-react';
+import { Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock, Scale, Edit3, Check } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
@@ -43,10 +43,9 @@ function exportCSV(data) {
     formatDuration(r.durationMinutes || r.duration || 30),
     new Date(r.completedAt).toLocaleString(),
   ]);
-  const csv = [headers, ...rows]
-    .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+
+  const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
@@ -55,23 +54,82 @@ function exportCSV(data) {
   URL.revokeObjectURL(url);
 }
 
+// Days elapsed since date string / ISO
 function daysSince(dateStr) {
   if (!dateStr) return null;
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  const diff = Date.now() - new Date(dateStr).getTime();
+  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 }
 
 export default function CollectionHistory() {
   const { official } = useAuth();
-  const isChd = official?.role === 'chd';
+  const isChd = official?.role === 'city_health' || official?.role === 'superadmin';
+
   const [logs,       setLogs]       = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [period,     setPeriod]     = useState('month');
   const [search,     setSearch]     = useState('');
+  const [period,     setPeriod]     = useState('month');
   const [dateFilter, setDateFilter] = useState('');
   const [truckFilter,setTruckFilter]= useState('');
   const [page,       setPage]       = useState(0);
   const [healthAlertOnly, setHealthAlertOnly] = useState(false);
   const [selectedLogProof, setSelectedLogProof] = useState(null);
+
+  // Weighbridge / weight logging state
+  const [editingLogWeight, setEditingLogWeight] = useState(null);
+  const [editWeightVal, setEditWeightVal] = useState('');
+  const [editWeightUnit, setEditWeightUnit] = useState('kg');
+  const [editFacility, setEditFacility] = useState('Binaliw Sanitary Landfill (ARN)');
+  const [applyToWholeRoute, setApplyToWholeRoute] = useState(true);
+  const [isSavingWeight, setIsSavingWeight] = useState(false);
+
+  const handleOpenEditWeight = (log) => {
+    setEditingLogWeight(log);
+    setEditWeightVal(log.weight ? String(log.weight) : '');
+    setEditWeightUnit(log.weightUnit || 'kg');
+    setEditFacility(log.disposalFacility || 'Binaliw Sanitary Landfill (ARN)');
+    setApplyToWholeRoute(true);
+  };
+
+  const handleSaveWeight = async (e) => {
+    e?.preventDefault();
+    if (!editingLogWeight) return;
+    setIsSavingWeight(true);
+    try {
+      const parsedWeight = parseFloat(editWeightVal) || 0;
+      await axios.patch(`${API}/api/collections/${editingLogWeight._id}`, {
+        weight: parsedWeight,
+        weightUnit: editWeightUnit,
+        disposalFacility: editFacility,
+        applyToRoute: applyToWholeRoute,
+      });
+
+      // Update state locally
+      setLogs((prev) =>
+        prev.map((l) => {
+          const isMatch =
+            l._id === editingLogWeight._id ||
+            (applyToWholeRoute &&
+              ((l.routeId && editingLogWeight.routeId && l.routeId === editingLogWeight.routeId) ||
+                (l.truckId === editingLogWeight.truckId && l.date === editingLogWeight.date)));
+          if (isMatch) {
+            return {
+              ...l,
+              weight: parsedWeight,
+              weightUnit: editWeightUnit,
+              disposalFacility: editFacility,
+            };
+          }
+          return l;
+        })
+      );
+      setEditingLogWeight(null);
+    } catch (err) {
+      console.error('Failed to save weight:', err.message);
+    } finally {
+      setIsSavingWeight(false);
+    }
+  };
 
   // Fetch logs whenever period or dateFilter changes
   useEffect(() => {
@@ -124,9 +182,13 @@ export default function CollectionHistory() {
   const paged      = filtered.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
   const totalPages = Math.ceil(filtered.length / ROWS_PER_PAGE);
 
-  // Summary stats — derived from fetched (pre-filtered) logs
+  // Summary stats — derived from fetched (pre-filtered) logs with unit normalization
   const stats = useMemo(() => {
-    const totalWeight = logs.reduce((s, r) => s + (r.weight ?? 0), 0);
+    const getWeightInKg = (r) => {
+      const w = Number(r.weight) || 0;
+      return r.weightUnit === 'tons' ? w * 1000 : w;
+    };
+    const totalWeightKg = logs.reduce((s, r) => s + getWeightInKg(r), 0);
     const totalBins   = logs.reduce((s, r) => s + (r.bins   ?? 0), 0);
     const totalDurationMins = logs.reduce((s, r) => s + (r.durationMinutes || r.duration || 30), 0);
     const avgDurationMins = logs.length > 0 ? Math.round(totalDurationMins / logs.length) : 0;
@@ -135,7 +197,7 @@ export default function CollectionHistory() {
     logs.forEach((r) => { truckCounts[r.truckId] = (truckCounts[r.truckId] || 0) + 1; });
     const mostActive = Object.entries(truckCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
 
-    return { totalWeight, totalBins, totalStops: logs.length, mostActive, totalDurationMins, avgDurationMins };
+    return { totalWeight: totalWeightKg, totalBins, totalStops: logs.length, mostActive, totalDurationMins, avgDurationMins };
   }, [logs]);
 
   const handlePeriodChange = (val) => {
@@ -368,7 +430,7 @@ export default function CollectionHistory() {
                       {row.stopName || <span className="text-slate-400 italic text-xs">No stop name</span>}
                     </td>
                     <td className="px-5 py-3.5 text-sm text-slate-600 max-w-[160px] truncate">
-                      {row.routeName || '—'}
+                      {row.routeName || row.route || (row.barangay ? `${row.barangay} Route` : '—')}
                     </td>
                     <td className="px-5 py-3.5">
                       <span className={`text-xs font-semibold px-2 py-1 rounded-full ${WASTE_COLORS[row.wasteType] ?? WASTE_COLORS.General}`}>
@@ -376,14 +438,23 @@ export default function CollectionHistory() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-sm font-bold text-slate-800 whitespace-nowrap">
-                      {row.weight ? (
-                        <span className="inline-flex items-center gap-1 text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md text-xs font-black">
-                          <Scale className="w-3 h-3 text-teal-600" />
-                          {row.weight} {row.weightUnit || 'kg'}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 font-normal text-xs">—</span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {row.weight ? (
+                          <span className="inline-flex items-center gap-1 text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md text-xs font-black">
+                            <Scale className="w-3 h-3 text-teal-600" />
+                            {row.weight} {row.weightUnit || 'kg'}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-normal text-xs">—</span>
+                        )}
+                        <button
+                          onClick={() => handleOpenEditWeight(row)}
+                          title="Log or edit weighbridge weight"
+                          className="p-1 hover:bg-teal-50 text-slate-400 hover:text-teal-700 rounded transition-colors"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-600 max-w-[150px] truncate">
                       {row.disposalFacility ? (
@@ -391,7 +462,13 @@ export default function CollectionHistory() {
                           {row.disposalFacility.replace(' (ARN)', '').replace('Materials Recovery (MRF)', 'MRF')}
                         </span>
                       ) : (
-                        <span className="text-slate-400 italic">Pending disposal</span>
+                        <button
+                          onClick={() => handleOpenEditWeight(row)}
+                          className="text-amber-600 hover:text-amber-700 italic text-xs flex items-center gap-1 hover:underline"
+                        >
+                          <span>Pending disposal</span>
+                          <Edit3 className="w-2.5 h-2.5" />
+                        </button>
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-sm font-semibold text-slate-700">
@@ -599,7 +676,6 @@ export default function CollectionHistory() {
                 </div>
               )}
             </div>
-
             {/* Footer */}
             <div className="px-6 py-4 border-t border-slate-100 flex justify-end bg-slate-50">
               <button
@@ -609,6 +685,126 @@ export default function CollectionHistory() {
                 Close Proof
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weighbridge / Weight Edit Modal */}
+      {editingLogWeight && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Record Weighbridge Data</h3>
+                  <p className="text-xs text-slate-500">
+                    {editingLogWeight.truckId} • {editingLogWeight.stopName || editingLogWeight.date}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingLogWeight(null)}
+                className="w-8 h-8 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWeight} className="p-6 space-y-4">
+              {/* Weight & Unit */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Verified Waste Weight
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={editWeightVal}
+                      onChange={(e) => setEditWeightVal(e.target.value)}
+                      placeholder="e.g. 2400 or 2.4"
+                      className="w-full px-4 py-2.5 text-sm font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <select
+                    value={editWeightUnit}
+                    onChange={(e) => setEditWeightUnit(e.target.value)}
+                    className="px-3 py-2.5 text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  >
+                    <option value="kg">kg</option>
+                    <option value="tons">tons</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Disposal Facility Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Disposal / Weighbridge Facility
+                </label>
+                <select
+                  value={editFacility}
+                  onChange={(e) => setEditFacility(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm text-slate-800 font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                >
+                  <option value="Binaliw Sanitary Landfill (ARN)">Binaliw Sanitary Landfill (ARN)</option>
+                  <option value="Inayawan Transfer Station">Inayawan Transfer Station</option>
+                  <option value="Barangay Materials Recovery (MRF)">Barangay Materials Recovery (MRF)</option>
+                  <option value="Consolacion Waste Facility">Consolacion Waste Facility</option>
+                  <option value="Green Loop Composting Site">Green Loop Composting Site</option>
+                </select>
+              </div>
+
+              {/* Apply to route checkbox */}
+              <div className="pt-1">
+                <label className="flex items-center gap-2.5 p-3 rounded-xl bg-teal-50/60 border border-teal-100 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={applyToWholeRoute}
+                    onChange={(e) => setApplyToWholeRoute(e.target.checked)}
+                    className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-teal-900 block">Apply to entire truck route</span>
+                    <span className="text-teal-700 font-medium">
+                      Updates all collection stops for {editingLogWeight.truckId} on {editingLogWeight.date}
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingLogWeight(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingWeight || !editWeightVal}
+                  className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-teal-700/20 flex items-center gap-1.5 transition-all"
+                >
+                  {isSavingWeight ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      Save Weighbridge Record
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
