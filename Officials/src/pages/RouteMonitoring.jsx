@@ -901,6 +901,38 @@ export default function RouteMonitoring() {
     });
   }, []);
 
+// === Road Route Coordinates Snapper (OSRM) ===
+async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
+  // If we already have dense road-snapped coordinates, use them
+  if (existingRouteCoords && existingRouteCoords.length > (waypoints?.length || 0) + 2) {
+    return existingRouteCoords;
+  }
+  const validWps = (waypoints || []).filter(
+    (w) => w.lat != null && w.lng != null && !isNaN(w.lat) && !isNaN(w.lng),
+  );
+  if (validWps.length < 2) {
+    return validWps.map((w) => [w.lat, w.lng]);
+  }
+  try {
+    const locStr = validWps.map((w) => `${w.lng},${w.lat}`).join(";");
+    const res = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const coords = data.routes?.[0]?.geometry?.coordinates;
+      if (coords && coords.length > 0) {
+        return coords.map((c) => [c[1], c[0]]);
+      }
+    }
+  } catch (err) {
+    console.warn("[RouteMonitoring] OSRM road routing failed:", err);
+  }
+  return existingRouteCoords && existingRouteCoords.length > 0
+    ? existingRouteCoords
+    : validWps.map((w) => [w.lat, w.lng]);
+}
+
   // ── API Data Fetching ──
   const fetchData = async () => {
     setLoading(true);
@@ -913,11 +945,20 @@ export default function RouteMonitoring() {
         return `${y}-${m}-${day}`;
       })();
 
+      const barangayParam =
+        official?.barangay && official.barangay !== "All"
+          ? `&barangay=${encodeURIComponent(official.barangay)}`
+          : "";
+
       const [schedulesRes, trucksRes, fleetRes, reportsRes, collectionsRes] =
         await Promise.all([
           axios
-            .get(`${API}/api/schedules?date=${localDate}`)
-            .catch(() => axios.get(`${API}/api/schedules/today?date=${localDate}`)),
+            .get(`${API}/api/schedules?date=${localDate}${barangayParam}`)
+            .catch(() =>
+              axios.get(
+                `${API}/api/schedules/today?date=${localDate}${barangayParam}`,
+              ),
+            ),
           axios.get(`${API}/api/trucks`),
           axios.get(`${API}/api/fleet`),
           axios.get(`${API}/api/reports?category=Overflowing Bin`),
@@ -932,52 +973,57 @@ export default function RouteMonitoring() {
       // Fallback: If no schedules returned for query date, try /api/schedules/today endpoint
       if (todayScheds.length === 0) {
         try {
-          const fallbackRes = await axios.get(`${API}/api/schedules/today?date=${localDate}`);
+          const fallbackRes = await axios.get(
+            `${API}/api/schedules/today?date=${localDate}${barangayParam}`,
+          );
           todayScheds = Array.isArray(fallbackRes.data)
             ? fallbackRes.data
             : fallbackRes.data?.schedules || [];
         } catch (_) {}
       }
 
-      const mappedRoutes = todayScheds.map((sched) => {
-        const coords =
-          sched.routeCoords && sched.routeCoords.length > 0
-            ? sched.routeCoords
-            : (sched.sitioTasks || []).map((t) => [t.lat, t.lng]);
-        const waypoints = (sched.sitioTasks || []).map((t) => ({
-          name: t.name,
-          lat: t.lat,
-          lng: t.lng,
-          completed: t.completed,
-        }));
+      const mappedRoutes = await Promise.all(
+        todayScheds.map(async (sched) => {
+          const waypoints = (sched.sitioTasks || []).map((t) => ({
+            name: t.name,
+            lat: t.lat,
+            lng: t.lng,
+            completed: t.completed,
+          }));
 
-        const completedCount = (sched.sitioTasks || []).filter(
-          (t) => t.completed,
-        ).length;
+          const coords = await resolveRoadRouteCoords(
+            waypoints,
+            sched.routeCoords,
+          );
 
-        return {
-          _id: sched._id,
-          name: sched.routeName || sched.barangay || "Collection Duty",
-          truckId: sched.truckId,
-          driverName: sched.driverName,
-          notes: sched.notes,
-          isPriority: !!sched.isPriority,
-          priorityLevel: sched.priorityLevel || "Normal",
-          priorityReason: sched.priorityReason || "",
-          barangay: sched.barangay,
-          routeCoords: coords,
-          waypoints: waypoints,
-          currentStopIndex: completedCount,
-          status: sched.status,
-          runNumber: sched.runNumber || 1,
-          startTime: sched.startTime || "",
-          endTime: sched.endTime || "",
-          createdAt: sched.createdAt,
-          totalWeight: sched.totalWeight || 0,
-          weightUnit: sched.weightUnit || "tons",
-          disposalFacility: sched.disposalFacility || "",
-        };
-      });
+          const completedCount = (sched.sitioTasks || []).filter(
+            (t) => t.completed,
+          ).length;
+
+          return {
+            _id: sched._id,
+            name: sched.routeName || sched.barangay || "Collection Duty",
+            truckId: sched.truckId,
+            driverName: sched.driverName,
+            notes: sched.notes,
+            isPriority: !!sched.isPriority,
+            priorityLevel: sched.priorityLevel || "Normal",
+            priorityReason: sched.priorityReason || "",
+            barangay: sched.barangay,
+            routeCoords: coords,
+            waypoints: waypoints,
+            currentStopIndex: completedCount,
+            status: sched.status,
+            runNumber: sched.runNumber || 1,
+            startTime: sched.startTime || "",
+            endTime: sched.endTime || "",
+            createdAt: sched.createdAt,
+            totalWeight: sched.totalWeight || 0,
+            weightUnit: sched.weightUnit || "tons",
+            disposalFacility: sched.disposalFacility || "",
+          };
+        }),
+      );
 
       // Filter routes by LGU official's barangay restriction if set
       const officialBrgy = official?.barangay?.toLowerCase()?.trim();

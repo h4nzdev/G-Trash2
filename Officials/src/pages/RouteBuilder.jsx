@@ -88,11 +88,28 @@ function MapController({ center }) {
 
 async function fetchORSRoute(waypoints) {
   if (waypoints.length < 2) return null;
+  // 1. Try OSRM first
+  try {
+    const locStr = waypoints.map(w => `${w.lng},${w.lat}`).join(';');
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`);
+    if (res.ok) {
+      const data = await res.json();
+      const coords = data.routes?.[0]?.geometry?.coordinates;
+      const distance = data.routes?.[0]?.distance;
+      if (coords && coords.length > 0) {
+        return { coords: coords.map(c => [c[1], c[0]]), distance };
+      }
+    }
+  } catch (err) {
+    console.warn("OSRM RouteBuilder failed, trying ORS:", err);
+  }
+
+  // 2. Try OpenRouteService
   try {
     const res = await axios.post(
       'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
       { coordinates: waypoints.map(w => [w.lng, w.lat]) },
-      { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' } },
+      { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' }, timeout: 4000 },
     );
     const coords = res.data.features?.[0]?.geometry?.coordinates;
     const distance = res.data.features?.[0]?.properties?.summary?.distance;

@@ -4017,30 +4017,45 @@ app.get("/api/schedules/truck/:truckId/priority-stops", async (req, res) => {
       // Re-assembled sequence: completed tasks kept at start/history, pending tasks prioritized
       const prioritizedTasks = [...completedTasks, ...pendingTasks];
 
-      // Re-fetch road driving path coordinates from ORS for the new sequence
+      // Re-fetch road driving path coordinates from OSRM / ORS for the new sequence
       let newRouteCoords = [];
       if (prioritizedTasks.length >= 2) {
         try {
-          const coordinates = prioritizedTasks.map(t => [t.lng, t.lat]);
           const axios = require("axios");
-          const orsRes = await axios.post(
-            'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
-            { coordinates },
-            { 
-              headers: { 
-                'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
-                'Content-Type': 'application/json' 
-              },
-              timeout: 5000
-            }
+          const locStr = prioritizedTasks.map(t => `${t.lng},${t.lat}`).join(';');
+          const osrmRes = await axios.get(
+            `https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`,
+            { timeout: 5000 }
           );
-          const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+          const coords = osrmRes.data.routes?.[0]?.geometry?.coordinates;
           if (coords && coords.length > 0) {
             newRouteCoords = coords.map(c => [c[1], c[0]]);
-            console.log(`[Priority Routing] Re-routed ${prioritizedTasks.length} stops via ORS successfully.`);
+            console.log(`[Priority Routing] Re-routed ${prioritizedTasks.length} stops via OSRM successfully.`);
           }
-        } catch (err) {
-          console.warn("[Priority Routing] ORS failed, using straight lines fallback:", err.message);
+        } catch (osrmErr) {
+          console.warn("[Priority Routing] OSRM failed, trying ORS fallback:", osrmErr.message);
+          try {
+            const coordinates = prioritizedTasks.map(t => [t.lng, t.lat]);
+            const axios = require("axios");
+            const orsRes = await axios.post(
+              'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+              { coordinates },
+              { 
+                headers: { 
+                  'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
+                  'Content-Type': 'application/json' 
+                },
+                timeout: 5000
+              }
+            );
+            const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+            if (coords && coords.length > 0) {
+              newRouteCoords = coords.map(c => [c[1], c[0]]);
+              console.log(`[Priority Routing] Re-routed ${prioritizedTasks.length} stops via ORS successfully.`);
+            }
+          } catch (err) {
+            console.warn("[Priority Routing] ORS also failed, using straight lines fallback:", err.message);
+          }
         }
       }
       if (newRouteCoords.length === 0) {
@@ -4083,9 +4098,18 @@ app.get("/api/schedules", optionalAuth, async (req, res) => {
       const pad = (n) => String(n).padStart(2, "0");
       filter.date = { $gte: `${y}-${pad(m)}-01`, $lte: `${y}-${pad(m)}-31` };
     }
-    // Officials with barangay scope: filter by truckIds that belong to their barangay
-    // (schedules don't have a barangay field, so we scope by routeName prefix if needed)
-    // For simplicity, all authenticated officials see all schedules â€” superadmin filter applies
+
+    // Filter by barangay if specified via query or if authenticated official is scoped to a barangay
+    const requestedBarangay = req.query.barangay || (req.user?.barangay && req.user.barangay !== "All" && req.user.role !== "superadmin" ? req.user.barangay : null);
+    if (requestedBarangay && requestedBarangay !== "All") {
+      const bRegex = new RegExp(`^${requestedBarangay.trim()}$`, "i");
+      const bWordRegex = new RegExp(`\\b${requestedBarangay.trim()}\\b`, "i");
+      filter.$or = [
+        { barangay: bRegex },
+        { routeName: bWordRegex }
+      ];
+    }
+
     const schedules = await Schedule.find(filter).sort({
       date: 1,
       createdAt: -1,
@@ -4239,29 +4263,44 @@ app.post("/api/schedules", authMiddleware, async (req, res) => {
       ? `${finalRouteName} (Run ${runNumber})`
       : finalRouteName;
 
-    // Call OpenRouteService to obtain actual road driving path coordinates
+    // Call OSRM / OpenRouteService to obtain actual road driving path coordinates
     let routeCoords = [];
     if (sitioTasks.length >= 2) {
-      console.log(`[ORS Routing] Attempting road routing for ${sitioTasks.length} stops:`, sitioTasks.map(t => t.name).join(' -> '));
+      console.log(`[Routing] Attempting road routing for ${sitioTasks.length} stops:`, sitioTasks.map(t => t.name).join(' -> '));
       try {
-        const coordinates = sitioTasks.map(t => [t.lng, t.lat]);
-        const orsRes = await axios.post(
-          'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
-          { coordinates },
-          { 
-            headers: { 
-              'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
-              'Content-Type': 'application/json' 
-            },
-            timeout: 5000
-          }
+        const locStr = sitioTasks.map(t => `${t.lng},${t.lat}`).join(';');
+        const osrmRes = await axios.get(
+          `https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`,
+          { timeout: 5000 }
         );
-        const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+        const coords = osrmRes.data.routes?.[0]?.geometry?.coordinates;
         if (coords && coords.length > 0) {
           routeCoords = coords.map(c => [c[1], c[0]]);
+          console.log(`[Routing] Routed ${sitioTasks.length} stops via OSRM successfully.`);
         }
-      } catch (err) {
-        console.error(`[ORS Routing] ERROR: Request failed:`, err.message);
+      } catch (osrmErr) {
+        console.warn(`[Routing] OSRM failed, trying ORS fallback:`, osrmErr.message);
+        try {
+          const coordinates = sitioTasks.map(t => [t.lng, t.lat]);
+          const orsRes = await axios.post(
+            'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+            { coordinates },
+            { 
+              headers: { 
+                'Authorization': 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=',
+                'Content-Type': 'application/json' 
+              },
+              timeout: 5000
+            }
+          );
+          const coords = orsRes.data.features?.[0]?.geometry?.coordinates;
+          if (coords && coords.length > 0) {
+            routeCoords = coords.map(c => [c[1], c[0]]);
+            console.log(`[Routing] Routed ${sitioTasks.length} stops via ORS successfully.`);
+          }
+        } catch (err) {
+          console.error(`[ORS Routing] ERROR: Request failed:`, err.message);
+        }
       }
     }
     if (routeCoords.length === 0) {

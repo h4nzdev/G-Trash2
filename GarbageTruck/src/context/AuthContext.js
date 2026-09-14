@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  const login = (truckId) =>
+  const login = useCallback((truckId) =>
     new Promise((resolve, reject) => {
       setIsLoading(true);
       const xhr = new XMLHttpRequest();
@@ -137,20 +137,32 @@ export const AuthProvider = ({ children }) => {
       xhr.onerror = () => { setIsLoading(false); reject(new Error('Network error. Check your connection.')); };
       xhr.ontimeout = () => { setIsLoading(false); reject(new Error('Server timeout. Try again.')); };
       xhr.send();
-    });
+    }), []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setUser(null);
-    await AsyncStorage.removeItem('@AuthData');
-  };
+    try {
+      await AsyncStorage.multiRemove([
+        '@AuthData',
+        '@truck_shift_active',
+        '@truck_nav_active',
+        '@schedule_refresh_needed'
+      ]);
+    } catch (e) {
+      console.warn('Logout storage cleanup error:', e);
+    }
+  }, []);
 
-  const updateUser = async (patch) => {
-    const updated = { ...user, ...patch };
-    setUser(updated);
-    await AsyncStorage.setItem('@AuthData', JSON.stringify(updated));
-  };
+  const updateUser = useCallback(async (patch) => {
+    setUser((prev) => {
+      if (!prev) return null; // If logged out, prevent reviving user session
+      const updated = { ...prev, ...patch };
+      AsyncStorage.setItem('@AuthData', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
 
-  const clearUnread = () => setUnreadCount(0);
+  const clearUnread = useCallback(() => setUnreadCount(0), []);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading, unreadCount, clearUnread }}>

@@ -64,7 +64,7 @@ export default function ScheduleRoute() {
   const [selectedSitios, setSelectedSitios] = useState([]);
   const [previewCoords, setPreviewCoords] = useState([]);
 
-  // Fetch real road route coordinates from OpenRouteService for modal preview
+  // Fetch real road route coordinates from OSRM / OpenRouteService for modal preview
   useEffect(() => {
     if (selectedSitios.length < 2) {
       setPreviewCoords([]);
@@ -80,22 +80,51 @@ export default function ScheduleRoute() {
       return;
     }
 
-    const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=';
-    axios.post(
-      'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
-      { coordinates: wps.map(w => [w.lng, w.lat]) },
-      { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' } }
-    ).then(res => {
-      const coords = res.data.features?.[0]?.geometry?.coordinates;
-      if (coords && coords.length > 0) {
-        setPreviewCoords(coords.map(c => [c[1], c[0]]));
-      } else {
+    let isMounted = true;
+
+    async function fetchPreviewRoute() {
+      // 1. Try OSRM first (free, no API key limit, returns accurate road geometry)
+      try {
+        const locStr = wps.map(w => `${w.lng},${w.lat}`).join(';');
+        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`);
+        if (res.ok) {
+          const data = await res.json();
+          const coords = data.routes?.[0]?.geometry?.coordinates;
+          if (coords && coords.length > 0 && isMounted) {
+            setPreviewCoords(coords.map(c => [c[1], c[0]]));
+            return;
+          }
+        }
+      } catch (osrmErr) {
+        console.warn("OSRM preview routing failed, trying ORS fallback:", osrmErr);
+      }
+
+      // 2. Try OpenRouteService
+      const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQ1N2I3YTYyYzZiMTRjZTc5MjI5OTdhNWI3NTIzY2I1IiwiaCI6Im11cm11cjY0In0=';
+      try {
+        const res = await axios.post(
+          'https://api.openrouteservice.org/v2/directions/driving-car/geojson',
+          { coordinates: wps.map(w => [w.lng, w.lat]) },
+          { headers: { Authorization: ORS_KEY, 'Content-Type': 'application/json' }, timeout: 4000 }
+        );
+        const coords = res.data.features?.[0]?.geometry?.coordinates;
+        if (coords && coords.length > 0 && isMounted) {
+          setPreviewCoords(coords.map(c => [c[1], c[0]]));
+          return;
+        }
+      } catch (orsErr) {
+        console.warn("OpenRouteService preview routing failed:", orsErr);
+      }
+
+      // 3. Fallback to straight lines if both services fail
+      if (isMounted) {
         setPreviewCoords(wps.map(w => [w.lat, w.lng]));
       }
-    }).catch(err => {
-      console.warn("OpenRouteService preview routing failed, using straight lines:", err);
-      setPreviewCoords(wps.map(w => [w.lat, w.lng]));
-    });
+    }
+
+    fetchPreviewRoute();
+
+    return () => { isMounted = false; };
   }, [selectedSitios, sitioList]);
 
   // Add Sitio inline form states
@@ -116,8 +145,9 @@ export default function ScheduleRoute() {
   const fetchAll = async () => {
     setLoading(true);
     setScheduleError('');
+    const barangayParam = official?.barangay && official.barangay !== 'All' ? `&barangay=${encodeURIComponent(official.barangay)}` : '';
     const [sRes, fRes] = await Promise.allSettled([
-      axios.get(`${API}/api/schedules?month=${monthKey}`),
+      axios.get(`${API}/api/schedules?month=${monthKey}${barangayParam}`),
       axios.get(`${API}/api/fleet`),
     ]);
     if (sRes.status === 'fulfilled') {
@@ -132,7 +162,7 @@ export default function ScheduleRoute() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, [monthKey]);
+  useEffect(() => { fetchAll(); }, [monthKey, official?.barangay]);
 
   // Load Cebu City barangays from backend API on mount
   useEffect(() => {
@@ -179,12 +209,28 @@ export default function ScheduleRoute() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
 
+  // Filter schedules strictly to official's barangay if restricted
+  const scopedSchedules = useMemo(() => {
+    if (!official?.barangay || official.barangay === 'All' || official.role === 'superadmin') {
+      return schedules;
+    }
+    const target = official.barangay.toLowerCase().trim();
+    return schedules.filter(s => {
+      const b = (s.barangay || '').toLowerCase().trim();
+      if (b) return b === target;
+      return (s.routeName || '').toLowerCase().includes(target);
+    });
+  }, [schedules, official]);
+
   // Map date → schedules for quick lookup
-  const schedulesByDate = {};
-  schedules.forEach(s => {
-    if (!schedulesByDate[s.date]) schedulesByDate[s.date] = [];
-    schedulesByDate[s.date].push(s);
-  });
+  const schedulesByDate = useMemo(() => {
+    const map = {};
+    scopedSchedules.forEach(s => {
+      if (!map[s.date]) map[s.date] = [];
+      map[s.date].push(s);
+    });
+    return map;
+  }, [scopedSchedules]);
 
   const prevMonth = () => {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
@@ -580,7 +626,7 @@ export default function ScheduleRoute() {
             </div>
           </div>
           <p className="text-xs font-semibold text-slate-500">
-            <span className="font-bold text-slate-800">{schedules.length}</span> total schedules in {MONTHS[month]}
+            <span className="font-bold text-slate-800">{scopedSchedules.length}</span> total schedules in {MONTHS[month]}
           </p>
         </div>
       </div>

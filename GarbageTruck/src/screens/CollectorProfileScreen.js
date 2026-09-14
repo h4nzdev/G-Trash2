@@ -51,19 +51,24 @@ export default function CollectorProfileScreen() {
   const [editPhone, setEditPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const fetchProfileData = useCallback(async () => {
+  useEffect(() => {
+    let isMounted = true;
     if (!truckId) return;
     setLoadingData(true);
-    try {
-      const [fleetRes, routeRes, truckRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/fleet/${truckId}`).then((r) => r.json()),
-        fetch(`${API_URL}/api/routes/truck/${truckId}`).then((r) => r.json()),
-        fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
-      ]);
 
+    Promise.allSettled([
+      fetch(`${API_URL}/api/fleet/${truckId}`).then((r) => r.json()),
+      fetch(`${API_URL}/api/routes/truck/${truckId}`).then((r) => r.json()),
+      fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
+    ]).then(([fleetRes, routeRes, truckRes]) => {
+      if (!isMounted) return;
       if (fleetRes.status === 'fulfilled' && fleetRes.value?.truckId) {
         setFleetData(fleetRes.value);
-        await updateUser({ driverName: fleetRes.value.driverName, driverPhone: fleetRes.value.driverPhone, route: fleetRes.value.route });
+        updateUser({
+          driverName: fleetRes.value.driverName,
+          driverPhone: fleetRes.value.driverPhone,
+          route: fleetRes.value.route,
+        });
       }
       if (routeRes.status === 'fulfilled' && routeRes.value?.name) {
         setRouteData(routeRes.value);
@@ -72,16 +77,15 @@ export default function CollectorProfileScreen() {
         const mine = truckRes.value.find((t) => t.truckId === truckId);
         setTruckStatus(mine ?? null);
       }
-    } catch (_) {
-      // Silently fall back to local auth data
-    } finally {
-      setLoadingData(false);
-    }
-  }, [truckId, updateUser]);
+    }).catch(() => {})
+    .finally(() => {
+      if (isMounted) setLoadingData(false);
+    });
 
-  useEffect(() => {
-    fetchProfileData();
-  }, [fetchProfileData]);
+    return () => {
+      isMounted = false;
+    };
+  }, [truckId]);
 
   // Derived display values
   const driverName = fleetData?.driverName || user?.driverName || user?.name || 'Driver';
