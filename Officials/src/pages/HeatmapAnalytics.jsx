@@ -81,7 +81,7 @@ import MapTileControl, {
 
 const zoneColor = {
   critical: "#ef4444",
-  moderate: "#f59e0b",
+  moderate: "#f97316",
   clean: "#10b981",
   inactive: "#94a3b8",
 };
@@ -94,14 +94,14 @@ function parseRawValue(val) {
 function healthRiskColor(rawValue) {
   const raw = Number(rawValue) || 0;
   if (raw >= 500) return "#ef4444"; // Critical — red
-  if (raw >= 200) return "#f59e0b"; // Moderate — yellow
-  return "#10b981"; // Safe — green
+  if (raw >= 150) return "#f97316"; // Moderate — orange
+  return "#10b981"; // Clean — green
 }
 
 function healthRiskLabel(rawValue) {
   const raw = Number(rawValue) || 0;
   if (raw >= 500) return "Critical";
-  if (raw >= 200) return "Moderate";
+  if (raw >= 150) return "Moderate";
   return "Clean";
 }
 
@@ -174,20 +174,20 @@ function AirQualityTrendModal({ zone, onClose }) {
   const voltageVal = ((rawVal * 3.3) / 4095.0).toFixed(2);
 
   let statusBg = "bg-emerald-600";
-  let statusBadge = "Clean (<200 ADC)";
+  let statusBadge = "Clean (<150 ADC)";
   let healthAdvice =
-    "Raw ADC < 200: Air quality is safe with normal background environmental readings.";
+    "Raw ADC < 150: Air quality is safe with normal background environmental readings.";
 
   if (rawVal >= 500 || zone.status === "critical") {
     statusBg = "bg-red-600";
     statusBadge = "Critical Risk (500+ ADC)";
     healthAdvice =
       "Raw ADC >= 500: High decomposition gas concentration detected. Priority waste collection required.";
-  } else if (rawVal >= 200 || zone.status === "moderate") {
-    statusBg = "bg-amber-500";
-    statusBadge = "Moderate (200-499 ADC)";
+  } else if (rawVal >= 150 || zone.status === "moderate") {
+    statusBg = "bg-orange-500";
+    statusBadge = "Moderate (150-499 ADC)";
     healthAdvice =
-      "Raw ADC 200-499: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
+      "Raw ADC 150-499: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
   }
 
   const historyData = generateAirQualityHistory(zone);
@@ -396,14 +396,14 @@ function AirQualityTrendModal({ zone, onClose }) {
 
                   <ReferenceArea
                     y1={0}
-                    y2={200}
+                    y2={150}
                     fillColor="#10b981"
                     fillOpacity={0.08}
                   />
                   <ReferenceArea
-                    y1={200}
+                    y1={150}
                     y2={500}
-                    fillColor="#f59e0b"
+                    fillColor="#f97316"
                     fillOpacity={0.1}
                   />
                   <ReferenceArea
@@ -426,13 +426,13 @@ function AirQualityTrendModal({ zone, onClose }) {
                     }}
                   />
                   <ReferenceLine
-                    y={200}
-                    stroke="#f59e0b"
+                    y={150}
+                    stroke="#f97316"
                     strokeDasharray="3 3"
                     label={{
-                      value: "Moderate (200 ADC)",
+                      value: "Moderate (150 ADC)",
                       position: "right",
-                      fill: "#d97706",
+                      fill: "#ea580c",
                       fontSize: 10,
                       fontWeight: "bold",
                     }}
@@ -475,11 +475,11 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               {/* Color Scale Bar */}
               <div className="relative w-full h-3 rounded-full overflow-hidden flex shadow-inner">
-                <div className="h-full bg-emerald-500 w-[20%] flex items-center justify-center text-[9px] font-black text-white">
-                  Clean (&lt;200)
+                <div className="h-full bg-emerald-500 w-[15%] flex items-center justify-center text-[9px] font-black text-white">
+                  Clean (&lt;150)
                 </div>
-                <div className="h-full bg-amber-500 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
-                  Moderate (200-499)
+                <div className="h-full bg-orange-500 w-[35%] flex items-center justify-center text-[9px] font-black text-white">
+                  Moderate (150-499)
                 </div>
                 <div className="h-full bg-red-600 w-[50%] flex items-center justify-center text-[9px] font-black text-white">
                   Critical (500+)
@@ -496,7 +496,7 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               <div className="flex justify-between text-[9px] text-slate-400 font-semibold mt-1">
                 <span>0 ADC</span>
-                <span>200 ADC</span>
+                <span>150 ADC</span>
                 <span>500 ADC</span>
                 <span>1000+ ADC</span>
               </div>
@@ -542,8 +542,8 @@ function AirQualityTrendModal({ zone, onClose }) {
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
 
 // Normalize MQ-135 rawValue (0 - 1000+ ADC) and status into 0 - 1 heat intensity
-// < 200 ADC (Clean)        -> 0.15 - 0.35 (Green aura)
-// 200 - 499 ADC (Moderate) -> 0.60 - 0.78 (Amber/Yellow aura)
+// < 150 ADC (Clean)        -> 0.15 - 0.35 (Green aura)
+// 150 - 499 ADC (Moderate) -> 0.60 - 0.78 (Orange aura)
 // >= 500 ADC (Critical)    -> 0.85 - 1.00 (Red aura)
 function normalizeMQ135RawValue(rawValue, status, airQuality) {
   const isCrit = status === "critical" || airQuality === "Critical" || airQuality === "Hazardous";
@@ -557,27 +557,27 @@ function normalizeMQ135RawValue(rawValue, status, airQuality) {
     return Math.min(1.0, 0.88 + (excess / 800) * 0.12);
   }
 
-  if (val >= 200 || isMod) {
-    const prog = Math.max(0, Math.min(299, val - 200));
-    return 0.60 + (prog / 300) * 0.18;
+  if (val >= 150 || isMod) {
+    const prog = Math.max(0, Math.min(349, val - 150));
+    return 0.60 + (prog / 350) * 0.18;
   }
 
   if (val > 0 || isCln) {
-    return Math.max(0.15, Math.min(0.35, (val / 200) * 0.35));
+    return Math.max(0.15, Math.min(0.35, (val / 150) * 0.35));
   }
 
   return 0.20;
 }
 
 // Synchronized color matching the Heatmap gradient
-// < 200 ADC  -> Green (#10b981) Clean
-// 200 - 499  -> Amber (#f59e0b) Moderate
+// < 150 ADC  -> Green (#10b981) Clean
+// 150 - 499  -> Orange (#f97316) Moderate
 // 500+ ADC   -> Red (#ef4444) Critical
 function getAirQualityColor(rawValue, status, airQuality) {
   if (status === "inactive") return "#94a3b8";
   const val = Number(rawValue) || 0;
   if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "#ef4444";
-  if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "#f59e0b";
+  if (val >= 150 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "#f97316";
   if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "#10b981";
 
   return "#10b981";
@@ -587,10 +587,10 @@ function getAirQualityLabel(rawValue, status, airQuality) {
   if (status === "inactive") return "Sensor Inactive";
   const val = Number(rawValue) || 0;
   if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "Critical Risk (500+ ADC)";
-  if (val >= 200 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "Moderate Air Quality (200-499 ADC)";
-  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "Clean Air (<200 ADC)";
+  if (val >= 150 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "Moderate Air Quality (150-499 ADC)";
+  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "Clean Air (<150 ADC)";
 
-  return "Clean Air (<200 ADC)";
+  return "Clean Air (<150 ADC)";
 }
 
 function HeatmapLayer({ data, options }) {
@@ -1221,7 +1221,7 @@ export default function HeatmapAnalytics() {
   const toastTimers = useRef({});
 
   // Real-time Leaflet Canvas Heatmap Options
-  // Smooth gradient: Green (Clean <200) -> Lime -> Yellow (Moderate 200-499) -> Orange (Elevated) -> Red (Critical 500+)
+  // Smooth gradient: Green (Clean <150) -> Orange (Moderate 150-499) -> Red (Critical 500+)
   const heatmapOptions = useMemo(
     () => ({
       radius: 42,
@@ -1230,11 +1230,9 @@ export default function HeatmapAnalytics() {
       max: 1.0,
       minOpacity: 0.12,
       gradient: {
-        0.2: "#10b981", // Clean (<200 ADC)
-        0.45: "#84cc16",
-        0.55: "#eab308", // Moderate (200-499 ADC)
-        0.72: "#f97316", // Elevated Moderate
-        0.88: "#ef4444", // Critical (500+ ADC)
+        0.2: "#10b981", // Clean (<150 ADC) - green
+        0.55: "#f97316", // Moderate (150-499 ADC) - orange
+        0.88: "#ef4444", // Critical (500+ ADC) - red
       },
     }),
     [],
@@ -1622,7 +1620,7 @@ export default function HeatmapAnalytics() {
 
   const pieData = [
     { name: "Critical", value: criticalCt, color: "#ef4444" },
-    { name: "Moderate", value: moderateCt, color: "#f59e0b" },
+    { name: "Moderate", value: moderateCt, color: "#f97316" },
     { name: "Clean", value: cleanCt, color: "#10b981" },
   ].filter((d) => d.value > 0);
 
@@ -1733,7 +1731,7 @@ export default function HeatmapAnalytics() {
                   {healthRiskView
                     ? zones.filter(
                         (z) =>
-                          (z.rawValue || 0) >= 200 && (z.rawValue || 0) < 500,
+                          (z.rawValue || 0) >= 150 && (z.rawValue || 0) < 500,
                       ).length
                     : moderateCt}
                 </p>
@@ -1878,21 +1876,17 @@ export default function HeatmapAnalytics() {
                     className="h-2 w-full rounded-full shadow-inner"
                     style={{
                       background:
-                        "linear-gradient(to right, #10b981 0%, #84cc16 35%, #eab308 60%, #f97316 80%, #ef4444 100%)",
+                        "linear-gradient(to right, #10b981 0%, #f97316 50%, #ef4444 100%)",
                     }}
                   />
-                  <div className="grid grid-cols-2 gap-1.5 text-[10px] font-medium text-slate-600">
+                  <div className="grid grid-cols-3 gap-1 text-[10px] font-medium text-slate-600">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
-                      <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;200)</span></span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#eab308] shrink-0" />
-                      <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(200+)</span></span>
+                      <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;150)</span></span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] shrink-0" />
-                      <span>Elevated <span className="text-[9px] text-slate-400 font-normal">(350+)</span></span>
+                      <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(150+)</span></span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
@@ -2050,21 +2044,17 @@ export default function HeatmapAnalytics() {
             className="h-2 w-full rounded-full mb-2.5 shadow-inner"
             style={{
               background:
-                "linear-gradient(to right, #10b981 0%, #84cc16 35%, #eab308 60%, #f97316 80%, #ef4444 100%)",
+                "linear-gradient(to right, #10b981 0%, #f97316 50%, #ef4444 100%)",
             }}
           />
-          <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10px] font-semibold">
+          <div className="grid grid-cols-3 gap-y-1.5 gap-x-1 text-[10px] font-semibold">
             <div className="flex items-center gap-1.5 text-slate-700">
               <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shrink-0" />
-              <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;200)</span></span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-700">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#eab308] shrink-0" />
-              <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(200+)</span></span>
+              <span>Clean <span className="text-[9px] text-slate-400 font-normal">(&lt;150)</span></span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-700">
               <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] shrink-0" />
-              <span>Elevated <span className="text-[9px] text-slate-400 font-normal">(350+)</span></span>
+              <span>Moderate <span className="text-[9px] text-slate-400 font-normal">(150+)</span></span>
             </div>
             <div className="flex items-center gap-1.5 text-slate-700">
               <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0" />
@@ -2768,9 +2758,9 @@ export default function HeatmapAnalytics() {
                           <p className="text-xs text-slate-600 font-medium">
                             {rawVal >= 500
                               ? "Critical risk level. Sensor ADC value exceeded critical threshold (500+)."
-                              : rawVal >= 200
-                                ? "Moderate risk level. Sensor ADC value in moderate range (200 - 499)."
-                                : "Clean air quality. Sensor ADC value in normal range (< 200)."}
+                              : rawVal >= 150
+                                ? "Moderate risk level. Sensor ADC value in moderate range (150 - 499)."
+                                : "Clean air quality. Sensor ADC value in normal range (< 150)."}
                           </p>
                         </div>
                       </div>

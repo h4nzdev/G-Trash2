@@ -95,7 +95,7 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
             const raw = sensor.rawValue || 0;
             const status = raw >= 500
               ? 'Critical'
-              : raw >= 200
+              : raw >= 150
               ? 'Moderate'
               : raw > 0
               ? 'Clean'
