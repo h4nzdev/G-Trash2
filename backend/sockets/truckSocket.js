@@ -149,7 +149,7 @@ module.exports = function registerTruckSockets(io, socket) {
     } catch (err) {
       console.error("DB write error:", err.message);
     }
-    io.emit("truck:status", { truckId, status: "offline" });
+    io.emit("truck:status", { truckId, status: "offline", reason: "offline" });
   });
 
   // Truck reports it is off its assigned route
@@ -178,7 +178,7 @@ module.exports = function registerTruckSockets(io, socket) {
     } catch (_) {}
   });
 
-  // Auto-offline on disconnect
+  // Auto-offline on disconnect (app closed, wifi/data disconnected)
   socket.on("disconnect", async () => {
     const truckId = socketTruckMap.get(socket.id);
     if (truckId) {
@@ -186,8 +186,8 @@ module.exports = function registerTruckSockets(io, socket) {
       try {
         await Truck.findOneAndUpdate({ truckId }, { status: "offline" });
       } catch (_) {}
-      io.emit("truck:status", { truckId, status: "offline" });
-      console.log(`[Socket] Truck ${truckId} auto-offline on disconnect`);
+      io.emit("truck:status", { truckId, status: "offline", reason: "offline" });
+      console.log(`[Socket] Truck ${truckId} auto-offline on disconnect (app closed or off wifi)`);
     }
   });
 };

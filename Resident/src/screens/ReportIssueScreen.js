@@ -324,6 +324,13 @@ export default function ReportIssueScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (!imageBase64 && !image) {
+      Alert.alert(
+        'Photo Required',
+        'Please attach or take a photo of the issue before submitting. Photo proof is required.',
+      );
+      return;
+    }
     if (!description.trim()) {
       Alert.alert('Missing Description', 'Please describe the issue.');
       return;
@@ -374,11 +381,20 @@ export default function ReportIssueScreen({ navigation }) {
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
           {/* Photo Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('photo_issue')}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>{t('photo_issue')}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#EF4444' }}>* Required</Text>
+            </View>
             {image ? (
               <View style={styles.imageContainer}>
                 <Image source={{ uri: image }} style={styles.previewImage} />
-                <TouchableOpacity style={styles.removeImageBtn} onPress={() => setImage(null)}>
+                <TouchableOpacity
+                  style={styles.removeImageBtn}
+                  onPress={() => {
+                    setImage(null);
+                    setImageBase64(null);
+                  }}
+                >
                   <MaterialIcons name="cancel" size={24} color="#EF4444" />
                 </TouchableOpacity>
               </View>

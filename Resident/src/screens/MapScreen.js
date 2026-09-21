@@ -851,39 +851,6 @@ export default function MapScreen() {
           `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}); true;`,
         );
       }
-
-      // Proximity notification when truck is active and approaches user location
-      const loc = userLocationRef.current;
-      if (loc) {
-        const distM = getDistanceM(loc.lat, loc.lng, lat, lng);
-        if (distM < 25 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
-          truckAlertFiredRef.current.add(`near-${truckId}`);
-          clearTimeout(toastTimerRef.current);
-          setProximityToast(`🚚 Truck ${truckId} is right at your location (~${Math.round(distM)}m) — prepare your bin!`);
-          toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Garbage Truck Very Close!",
-              body: `Truck ${truckId} is passing right near your location — please have your bin ready.`,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        } else if (distM < 100 && !truckAlertFiredRef.current.has(`approach-${truckId}`)) {
-          truckAlertFiredRef.current.add(`approach-${truckId}`);
-          clearTimeout(toastTimerRef.current);
-          setProximityToast(`🚚 Truck ${truckId} is approaching your area (~${Math.round(distM)}m).`);
-          toastTimerRef.current = setTimeout(() => setProximityToast(null), 6000);
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Garbage Truck Approaching",
-              body: `Truck ${truckId} is on its way to your neighborhood.`,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        }
-      }
     });
 
     socket.on("truck:status", ({ truckId, status }) => {
@@ -964,14 +931,6 @@ export default function MapScreen() {
         clearTimeout(toastTimerRef.current);
         setProximityToast(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
         toastTimerRef.current = setTimeout(() => setProximityToast(null), 10000);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "🧹 Waste Clearing in Progress!",
-            body: `Truck ${data.truckId} is actively clearing waste bins at ${data.sitioName}.`,
-            sound: true,
-          },
-          trigger: null,
-        }).catch(() => {});
       } else {
         setClearingNotif((prev) => (prev?.sitioName === data.sitioName ? null : prev));
       }

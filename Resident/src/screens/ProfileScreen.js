@@ -485,10 +485,10 @@ export default function ProfileScreen({ navigation }) {
 
               <TouchableOpacity style={styles.menuRow} activeOpacity={0.5} onPress={handleLogout}>
                 <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#F0EDED" }]}>
-                    <Ionicons name="log-out-outline" size={18} color="#7A8C7F" />
+                  <View style={[styles.iconBox, { backgroundColor: "#FEE2E2" }]}>
+                    <Ionicons name="log-out-outline" size={18} color="#DC2626" />
                   </View>
-                  <Text style={[styles.menuText, { color: "#7A8C7F" }]}>Logout</Text>
+                  <Text style={[styles.menuText, { color: "#DC2626" }]}>Logout</Text>
                 </View>
               </TouchableOpacity>
             </View>

@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const https = require("https");
-const { Report, GarbageArea, Fleet, Schedule, Route, Truck } = require("../models");
+const { Report, GarbageArea, Fleet, Schedule, Route, Truck, Announcement } = require("../models");
 const { getIO } = require("../config/socket");
 const { barangayFilter } = require("../middleware/barangayScope");
 const { haversineDistanceMeters } = require("../utils/geoUtils");
@@ -57,6 +57,15 @@ exports.getReportById = async (req, res, next) => {
 exports.createReport = async (req, res, next) => {
   try {
     const { userId, lat, lng, barangay, force } = req.body;
+
+    const isIot = (req.body.reportedBy || "").toLowerCase().startsWith("iot");
+    const isTruck = (req.body.reportedBy || "").toLowerCase().startsWith("truck");
+    if (!isIot && !isTruck && !req.body.reportImage) {
+      return res.status(400).json({
+        error: "photo_required",
+        message: "Photo proof is required when submitting a report.",
+      });
+    }
 
     if (userId) {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -592,22 +601,27 @@ exports.deleteReport = async (req, res, next) => {
 exports.updateReport = async (req, res, next) => {
   try {
     const updateData = { ...req.body };
+    const actionNote = req.body.actionNote || req.body.notes || "";
+    const officialName = req.official?.name || req.official?.email || "Barangay Official";
+
     if (updateData.status) {
       updateData.$push = {
         statusHistory: {
           status: updateData.status,
-          changedBy: req.official?.name || "Official",
+          changedBy: officialName,
           changedAt: new Date(),
+          note: actionNote,
         },
       };
 
+      if (req.body.resolutionImage) {
+        updateData.resolutionImage = req.body.resolutionImage;
+      }
+
       if (updateData.status === "resolved") {
         updateData.resolvedAt = new Date();
-        updateData.resolvedBy = req.official?.name || req.official?.email || "Official";
+        updateData.resolvedBy = officialName;
         updateData.resolutionConfirmed = "pending";
-        if (req.body.resolutionImage) {
-          updateData.resolutionImage = req.body.resolutionImage;
-        }
         // Award resident points for resolved report
         const existing = await Report.findById(req.params.id).select("userId").lean();
         if (existing?.userId) {
@@ -621,11 +635,43 @@ exports.updateReport = async (req, res, next) => {
         }
       }
     }
+
     const report = await Report.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     const io = getIO();
     if (io) io.emit("report:updated", report);
+
+    // If requested, broadcast an official update/announcement to the resident community
+    if (req.body.postToCommunity || req.body.notifyCommunity) {
+      const isResolved = report.status === "resolved";
+      const annTitle = isResolved
+        ? `Issue Resolved: ${report.title}`
+        : `Action in Progress: ${report.title}`;
+      
+      const locationSnippet = report.sitio
+        ? `Sitio ${report.sitio}, Barangay ${report.barangay || "Area"}`
+        : (report.location || report.barangay || "Barangay Area");
+
+      const defaultMsg = isResolved
+        ? `Barangay officials have resolved the reported issue at ${locationSnippet}.${actionNote ? ` Note: ${actionNote}` : ""}`
+        : `Barangay response team has acknowledged and started action on the report at ${locationSnippet}.${actionNote ? ` Note: ${actionNote}` : ""}`;
+
+      const announcement = await Announcement.create({
+        title: annTitle,
+        message: actionNote ? `${officialName}: ${actionNote}` : defaultMsg,
+        type: isResolved ? "success" : "info",
+        createdBy: officialName,
+        barangay: report.barangay || "All",
+        image: report.resolutionImage || report.reportImage || null,
+        reportId: report._id,
+      }).catch((err) => console.error("Failed to create community announcement:", err));
+
+      if (announcement && io) {
+        io.emit("announcement:new", announcement);
+      }
+    }
+
     res.json(report);
   } catch (err) {
     next(err);

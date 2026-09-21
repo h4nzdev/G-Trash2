@@ -284,30 +284,15 @@ export default function NotificationScreen({ navigation }) {
       });
     });
 
-    socket.on('truck:location:update', ({ truckId }) => {
-      if (seenTrucksRef.current.has(truckId)) return;
-      seenTrucksRef.current.add(truckId);
-      setTruckNotifs((prev) => [
-        {
-          id: `truck-online-${truckId}-${Date.now()}`,
-          title: 'Truck Active',
-          message: `Truck ${truckId} is currently collecting in your area.`,
-          time: 'Just now',
-          type: 'truck',
-          read: false,
-        },
-        ...prev,
-      ]);
-    });
-
+    // Strict notification rule: only add notification when a truck goes offline (app closed, wifi off, or disconnected)
     socket.on('truck:status', ({ truckId, status }) => {
       if (status === 'offline') {
         seenTrucksRef.current.delete(truckId);
         setTruckNotifs((prev) => [
           {
-            id: `truck-done-${truckId}-${Date.now()}`,
-            title: 'Collection Complete',
-            message: `Truck ${truckId} has finished collection in your area.`,
+            id: `truck-offline-${truckId}-${Date.now()}`,
+            title: 'Truck Offline',
+            message: `Truck ${truckId} is currently offline (collector app closed, wifi disconnected, or route finished).`,
             time: 'Just now',
             type: 'truck',
             read: false,

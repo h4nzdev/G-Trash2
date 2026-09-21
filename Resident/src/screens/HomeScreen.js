@@ -763,43 +763,7 @@ export default function HomeScreen({ navigation }) {
         ];
       });
 
-      // Proximity notification
-      const loc = userLocationRef.current;
-      if (loc) {
-        const distM = getDistanceM(loc.lat, loc.lng, lat, lng);
-        if (distM < 350 && !truckAlertFiredRef.current.has(`near-${truckId}`)) {
-          truckAlertFiredRef.current.add(`near-${truckId}`);
-          setTruckAlertCount((c) => c + 1);
-          clearTimeout(toastTimerRef.current);
-          setToastMsg(`Truck ${truckId} is very close — prepare your bin!`);
-          toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Garbage Truck Very Close!",
-              body: `Truck ${truckId} is nearby — prepare your bin now.`,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        } else if (
-          distM < 1050 &&
-          !truckAlertFiredRef.current.has(`approach-${truckId}`)
-        ) {
-          truckAlertFiredRef.current.add(`approach-${truckId}`);
-          setTruckAlertCount((c) => c + 1);
-          clearTimeout(toastTimerRef.current);
-          setToastMsg(`Truck ${truckId} is approaching your area.`);
-          toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Garbage Truck Approaching",
-              body: `Truck ${truckId} is on its way to your area.`,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        }
-      }
+      // Live truck position update (silent map/dashboard telemetry without spamming notifications)
     });
 
     socket.on("truck:status", ({ truckId, status }) => {
@@ -810,12 +774,12 @@ export default function HomeScreen({ navigation }) {
         truckAlertFiredRef.current.delete(`near-${truckId}`);
         truckAlertFiredRef.current.delete(`approach-${truckId}`);
         clearTimeout(toastTimerRef.current);
-        setToastMsg(`Truck ${truckId} has finished collection.`);
+        setToastMsg(`Truck ${truckId} is now offline.`);
         toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
         Notifications.scheduleNotificationAsync({
           content: {
-            title: "Collection Complete",
-            body: `Truck ${truckId} has finished collection in your area.`,
+            title: "Truck Offline",
+            body: `Truck ${truckId} is currently offline (app closed or wifi disconnected).`,
           },
           trigger: null,
         }).catch(() => {});
@@ -838,20 +802,6 @@ export default function HomeScreen({ navigation }) {
       if (brgy && reading.barangay && reading.barangay !== brgy) return;
       setLatestIotReading(reading);
       setIotReadingsHistory((prev) => [reading, ...prev.filter((r) => r._id !== reading._id).slice(0, 6)]);
-      if (reading.airQuality === "Unhealthy" || reading.airQuality === "Hazardous") {
-        const now = Date.now();
-        if (now - aqAlertLastFiredRef.current > 5 * 60 * 1000) {
-          aqAlertLastFiredRef.current = now;
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Poor Air Quality Alert",
-              body: `${reading.airQuality} air detected in ${reading.location || reading.barangay || "your area"}. NH₃: ${reading.ammonia} ppm, CH₄: ${reading.methane}%.`,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        }
-      }
     });
 
     socket.on("truck:clearing:update", (data) => {
@@ -859,14 +809,6 @@ export default function HomeScreen({ navigation }) {
         clearTimeout(toastTimerRef.current);
         setToastMsg(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
         toastTimerRef.current = setTimeout(() => setToastMsg(null), 10000);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "🧹 Waste Clearing in Progress!",
-            body: `Truck ${data.truckId} is actively clearing waste bins at ${data.sitioName}.`,
-            sound: true,
-          },
-          trigger: null,
-        }).catch(() => {});
       }
     });
 
@@ -876,14 +818,6 @@ export default function HomeScreen({ navigation }) {
         clearTimeout(toastTimerRef.current);
         setToastMsg(`🎉 Route Finished! Waste collection complete for today in ${data.barangay}. +10 Eco-Points earned!`);
         toastTimerRef.current = setTimeout(() => setToastMsg(null), 12000);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "🎉 Waste Collection Route Complete!",
-            body: `Truck ${data.truckId} has finished all collection stops in ${data.barangay}. Thank you for keeping our community clean!`,
-            sound: true,
-          },
-          trigger: null,
-        }).catch(() => {});
       }
     });
 

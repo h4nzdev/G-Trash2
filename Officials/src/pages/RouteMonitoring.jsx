@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
+import ReportActionModal from "../components/reports/ReportActionModal";
 import MapTileControl, {
   GOOGLE_MAP_TILES,
 } from "../components/route/MapTileControl";
@@ -473,20 +474,10 @@ function timeAgo(dateStr) {
 }
 
 // ── Inline Report Leaflet Popup Content ──
-function ReportPopupContent({ report, onStatusUpdate }) {
-  const [updating, setUpdating] = useState(false);
+function ReportPopupContent({ report, onOpenAction }) {
   const score = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = score >= 5;
   const status = report.status?.toLowerCase() || "pending";
-
-  const handleAction = async (newStatus) => {
-    setUpdating(true);
-    try {
-      await onStatusUpdate(report._id, newStatus);
-    } finally {
-      setUpdating(false);
-    }
-  };
 
   return (
     <div className="p-4 bg-white rounded-2xl w-[310px] sm:w-[330px] text-slate-800">
@@ -577,30 +568,20 @@ function ReportPopupContent({ report, onStatusUpdate }) {
         {/* Quick Action Button */}
         {status === "pending" ? (
           <button
-            onClick={() => handleAction("acknowledged")}
-            disabled={updating}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+            onClick={() => onOpenAction && onOpenAction(report, "acknowledged")}
+            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
           >
-            {updating ? (
-              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <CheckCircle className="w-3.5 h-3.5" />
-            )}
+            <CheckCircle className="w-3.5 h-3.5" />
             Acknowledge
           </button>
         ) : status === "acknowledged" ||
           status === "in_progress" ||
           status === "in-progress" ? (
           <button
-            onClick={() => handleAction("resolved")}
-            disabled={updating}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+            onClick={() => onOpenAction && onOpenAction(report, "resolved")}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
           >
-            {updating ? (
-              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Check className="w-3.5 h-3.5" />
-            )}
+            <Check className="w-3.5 h-3.5" />
             Mark Resolved
           </button>
         ) : null}
@@ -799,6 +780,8 @@ export default function RouteMonitoring() {
   const [trucks, setTrucks] = useState({});
   const [fleet, setFleet] = useState([]);
   const [reports, setReports] = useState([]);
+  const [actionReport, setActionReport] = useState(null);
+  const [actionType, setActionType] = useState("acknowledged");
   const [collections, setCollections] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
@@ -815,6 +798,7 @@ export default function RouteMonitoring() {
   const [barangayList, setBarangayList] = useState([]);
   const [clearingSites, setClearingSites] = useState({});
   const [completedRouteAlert, setCompletedRouteAlert] = useState(null);
+  const [dismissedNoSchedule, setDismissedNoSchedule] = useState(false);
   const socketRef = useRef(null);
 
   function FitBoundsToRoutes({ routes }) {
@@ -1318,10 +1302,14 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
   const animationStyles = `
     @keyframes pulse-truck { 0% { transform: scale(0.95); opacity: 0.7; } 100% { transform: scale(1.4); opacity: 0; } }
     @keyframes pulse-area { 0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } 50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.5; } 100% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } }
-    @keyframes pop-in { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+    @keyframes pop-in-center {
+      0% { transform: translate(-50%, -24px) scale(0.92); opacity: 0; }
+      60% { transform: translate(-50%, 3px) scale(1.01); opacity: 1; }
+      100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+    }
     .animate-pulse-truck { animation: pulse-truck 1.8s ease-out infinite; }
     .animate-pulse-area { animation: pulse-area 2s ease-in-out infinite; }
-    .animate-pop-in { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    .animate-pop-in { animation: pop-in-center 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
   `;
 
   return (
@@ -2036,7 +2024,10 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                         >
                           <ReportPopupContent
                             report={r}
-                            onStatusUpdate={handleReportStatusUpdate}
+                            onOpenAction={(rep, type) => {
+                              setActionReport(rep);
+                              setActionType(type || "acknowledged");
+                            }}
                           />
                         </Popup>
                         <Tooltip direction="top" offset={[0, -20]}>
@@ -2133,76 +2124,85 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
 
             {/* Live Route Completed Banner Alert */}
             {completedRouteAlert && activeRoute?.status === "completed" && (
-              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1100] w-[92%] max-w-xl bg-emerald-950/95 backdrop-blur-md text-slate-100 px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-500/80 flex items-center gap-3.5 animate-fadeIn pointer-events-auto">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600/30 border border-emerald-400/50 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
-                  <Check className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <div className="pr-2 min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[11px] font-black text-emerald-400 uppercase tracking-wider">
-                      Route Completed 100%
-                    </p>
-                    <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                      To Waste Processing
-                    </span>
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1100] w-auto max-w-xl pointer-events-auto animate-pop-in">
+                <div className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center flex-shrink-0 text-emerald-600">
+                    <Check className="w-5 h-5 stroke-[2.5]" />
                   </div>
-                  <p className="text-xs font-bold text-slate-100 truncate mt-0.5">
-                    {completedRouteAlert.routeName ||
-                      `${completedRouteAlert.barangay || "Barangay"} Collection Route`}
-                  </p>
-                  <p className="text-[11px] text-emerald-200/90 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                    <span>
-                      🚛 <strong className="text-white">{completedRouteAlert.truckId}</strong>
-                    </span>
-                    <span>👤 {completedRouteAlert.driverName || "Collector"}</span>
-                    {completedRouteAlert.totalWeight ? (
+                  <div className="pr-2 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900">
+                        Route Completed 100%
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60">
+                        To Waste Processing
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 truncate mt-0.5">
+                      {completedRouteAlert.routeName ||
+                        `${completedRouteAlert.barangay || "Barangay"} Collection Route`}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                       <span>
-                        ⚖️{" "}
-                        <strong className="text-white">
-                          {completedRouteAlert.totalWeight}{" "}
-                          {completedRouteAlert.weightUnit || "tons"}
-                        </strong>
+                        🚛 <strong className="text-slate-800">{completedRouteAlert.truckId}</strong>
                       </span>
-                    ) : null}
-                    {completedRouteAlert.disposalFacility ? (
-                      <span className="text-emerald-300">
-                        📍 {completedRouteAlert.disposalFacility.replace(" (ARN)", "")}
-                      </span>
-                    ) : null}
-                  </p>
+                      <span>👤 {completedRouteAlert.driverName || "Collector"}</span>
+                      {completedRouteAlert.totalWeight ? (
+                        <span>
+                          ⚖️{" "}
+                          <strong className="text-slate-800">
+                            {completedRouteAlert.totalWeight}{" "}
+                            {completedRouteAlert.weightUnit || "tons"}
+                          </strong>
+                        </span>
+                      ) : null}
+                      {completedRouteAlert.disposalFacility ? (
+                        <span className="text-emerald-700 font-medium">
+                          📍 {completedRouteAlert.disposalFacility.replace(" (ARN)", "")}
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCompletedRouteAlert(null)}
+                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors flex-shrink-0 ml-1"
+                    title="Dismiss alert"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setCompletedRouteAlert(null)}
-                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-emerald-900/50 transition-colors flex-shrink-0 ml-1"
-                  title="Dismiss alert"
-                >
-                  <X className="w-4 h-4" />
-                </button>
               </div>
             )}
 
             {/* No Schedule for Today Floating Banner Overlay */}
-            {!hasScheduleToday && !loading && (
-              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto animate-pop-in">
-                <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 flex-shrink-0">
+            {!hasScheduleToday && !loading && !dismissedNoSchedule && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto animate-pop-in">
+                <div className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 flex-shrink-0">
                     <Clock className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900">
+                      <span className="text-sm font-bold text-slate-900">
                         No Schedule for Today
                       </span>
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200">
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200/80">
                         {selectedBarangay && selectedBarangay !== "All"
                           ? selectedBarangay
                           : "All Barangays"}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       There are no waste collection truck routes scheduled for today.
                     </p>
                   </div>
+                  <button
+                    onClick={() => setDismissedNoSchedule(true)}
+                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors ml-2"
+                    title="Dismiss alert"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}
@@ -2350,6 +2350,29 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
           fleet={fleet}
           onClose={() => setAssignTarget(null)}
           onSave={handleAssignSave}
+        />
+      )}
+
+      {actionReport && (
+        <ReportActionModal
+          report={actionReport}
+          isOpen={!!actionReport}
+          defaultAction={actionType}
+          onClose={() => setActionReport(null)}
+          onSuccess={(updatedReport) => {
+            if (updatedReport.status === "resolved") {
+              setReports((prev) =>
+                prev.filter((r) => r._id !== updatedReport._id),
+              );
+            } else {
+              setReports((prev) =>
+                prev.map((r) =>
+                  r._id === updatedReport._id ? { ...r, ...updatedReport } : r,
+                ),
+              );
+            }
+            setActionReport(null);
+          }}
         />
       )}
     </div>

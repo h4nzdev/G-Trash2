@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileText, MapPin, ThumbsUp, Clock, CheckCircle2, ChevronRight, Eye, Loader2 } from 'lucide-react';
-import axios from 'axios';
-import API from '../../config';
+import ReportActionModal from '../reports/ReportActionModal';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -30,32 +29,12 @@ function getStatusBadge(status) {
 
 export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
   const navigate = useNavigate();
-  const [updatingId, setUpdatingId] = useState(null);
+  const [actionReport, setActionReport] = useState(null);
+  const [actionType, setActionType] = useState('acknowledged');
 
-  const handleAcknowledge = async (reportId) => {
-    setUpdatingId(reportId);
-    try {
-      const headers = { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` };
-      await axios.patch(`${API}/api/reports/${reportId}`, { status: 'acknowledged' }, { headers });
-      if (onReportUpdated) onReportUpdated();
-    } catch (err) {
-      console.error('Failed to acknowledge report:', err);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const handleResolve = async (reportId) => {
-    setUpdatingId(reportId);
-    try {
-      const headers = { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` };
-      await axios.patch(`${API}/api/reports/${reportId}`, { status: 'resolved' }, { headers });
-      if (onReportUpdated) onReportUpdated();
-    } catch (err) {
-      console.error('Failed to resolve report:', err);
-    } finally {
-      setUpdatingId(null);
-    }
+  const openActionModal = (report, defaultType = 'acknowledged') => {
+    setActionReport(report);
+    setActionType(defaultType);
   };
 
   const activeReports = reports.slice(0, 5);
@@ -151,24 +130,22 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
                 <div className="flex flex-col items-end justify-between self-stretch flex-shrink-0">
                   {status === 'pending' ? (
                     <button
-                      onClick={() => handleAcknowledge(report._id || report.id)}
-                      disabled={isUpdating}
-                      className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      onClick={() => openActionModal(report, 'acknowledged')}
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm transition-colors flex items-center gap-1.5"
                     >
-                      {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Acknowledge'}
+                      Acknowledge
                     </button>
-                  ) : status === 'acknowledged' || status === 'in-progress' ? (
+                  ) : status === 'acknowledged' || status === 'in-progress' || status === 'in_progress' ? (
                     <button
-                      onClick={() => handleResolve(report._id || report.id)}
-                      disabled={isUpdating}
-                      className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      onClick={() => openActionModal(report, 'resolved')}
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm transition-colors flex items-center gap-1.5"
                     >
-                      {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Mark Resolved'}
+                      Mark Resolved
                     </button>
                   ) : (
                     <button
                       onClick={() => navigate('/reports')}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1"
+                      className="text-xs font-semibold px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1"
                     >
                       <Eye className="w-3.5 h-3.5 text-slate-500" /> Details
                     </button>
@@ -178,6 +155,19 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
             );
           })}
         </div>
+      )}
+
+      {/* Official Action & Response Modal */}
+      {actionReport && (
+        <ReportActionModal
+          report={actionReport}
+          isOpen={!!actionReport}
+          defaultAction={actionType}
+          onClose={() => setActionReport(null)}
+          onSuccess={() => {
+            if (onReportUpdated) onReportUpdated();
+          }}
+        />
       )}
     </div>
   );

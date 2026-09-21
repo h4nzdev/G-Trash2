@@ -1456,22 +1456,25 @@ export default function HeatmapAnalytics() {
       }
     });
 
-    // When a new IoT alert arrives, show as toast for non-clean alerts within jurisdiction
+    // When a new IoT alert arrives, show as toast for all alerts within jurisdiction (including clean)
     socket.on("iot:alert", (alert) => {
-      const isClean = alert.severity === "info" || alert.gasType === "normal";
-      if (isClean) return;
       const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
       const userBrgy = official?.barangay?.toLowerCase()?.trim();
       if (isScoped && userBrgy && alert.barangay && alert.barangay.toLowerCase().trim() !== userBrgy) {
         return;
       }
+      const isClean = alert.severity === "clean" || alert.severity === "info" || alert.gasType === "normal";
+      const isCrit = alert.severity === "critical";
+
       addToast({
-        type: "alert",
-        sensorId: `${alert.sensorId}-${alert.gasType}`,
-        status: alert.severity,
-        title: alert.severity === "critical"
-            ? `Critical: ${alert.location || alert.sensorId}`
-            : `Warning: ${alert.location || alert.sensorId}`,
+        type: isClean ? "clean" : "alert",
+        sensorId: `${alert.sensorId}-${alert.gasType || 'air'}-${alert.severity}`,
+        status: alert.severity || "clean",
+        title: isCrit
+          ? `Critical: ${alert.location || alert.sensorId}`
+          : isClean
+          ? `Clean Air: ${alert.location || alert.sensorId}`
+          : `Warning: ${alert.location || alert.sensorId}`,
         body: alert.message,
       });
     });
@@ -2065,86 +2068,73 @@ export default function HeatmapAnalytics() {
         </div>
 
         {/* Toast notification stack */}
-        <div className="absolute bottom-6 right-6 z-[1001] flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
+        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1001] flex flex-col items-center gap-2.5 max-w-md w-full px-4 pointer-events-none">
           {toasts.map((t) => {
-            const bg =
-              t.type === "cleaned"
-                ? "#059669"
-                : t.status === "critical"
-                  ? "#dc2626"
-                  : t.status === "moderate"
-                    ? "#d97706"
-                    : "#059669";
-            const icon =
-              t.type === "cleaned" ? (
-                <CheckCircle2 className="w-5 h-5 text-slate-900" />
-              ) : t.status === "critical" ? (
-                <AlertTriangle className="w-5 h-5 text-slate-900" />
-              ) : t.status === "moderate" ? (
-                <Info className="w-5 h-5 text-slate-900" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-slate-900" />
-              );
+            const isCleaned = t.type === "cleaned";
+            const isCrit = t.status === "critical";
+            const isMod = t.status === "moderate";
+
+            const iconBg = isCleaned
+              ? "bg-emerald-50 border-emerald-200/80 text-emerald-600"
+              : isCrit
+                ? "bg-rose-50 border-rose-200/80 text-rose-600"
+                : isMod
+                  ? "bg-amber-50 border-amber-200/80 text-amber-600"
+                  : "bg-emerald-50 border-emerald-200/80 text-emerald-600";
+
+            const badgeBg = isCleaned
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200/60"
+              : isCrit
+                ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                : isMod
+                  ? "bg-amber-50 text-amber-700 border-amber-200/60"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200/60";
+
+            const badgeText = isCleaned
+              ? "Cleaned"
+              : isCrit
+                ? "Critical"
+                : isMod
+                  ? "Moderate"
+                  : "Clean";
+
             return (
               <div
                 key={t.id}
-                className="pointer-events-auto"
-                style={{
-                  background: bg,
-                  borderRadius: "14px",
-                  padding: "10px 14px",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "10px",
-                  animation: "toastIn 0.3s ease-out",
-                }}
+                className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3 w-full pointer-events-auto animate-notification-drop"
               >
-                <div style={{ flexShrink: 0, marginTop: "2px" }}>{icon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      color: "#fff",
-                      lineHeight: "16px",
-                    }}
-                  >
-                    {t.title}
-                  </p>
+                <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                  {isCleaned ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : isCrit ? (
+                    <AlertTriangle className="w-4 h-4 animate-pulse" />
+                  ) : isMod ? (
+                    <Info className="w-4 h-4" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-900">
+                      {t.title}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold border ${badgeBg}`}>
+                      {badgeText}
+                    </span>
+                  </div>
                   {t.body && (
-                    <p
-                      style={{
-                        margin: "2px 0 0",
-                        fontSize: "11px",
-                        color: "rgba(255,255,255,0.85)",
-                        lineHeight: "15px",
-                        wordBreak: "break-word",
-                      }}
-                    >
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                       {t.body}
                     </p>
                   )}
                 </div>
                 <button
                   onClick={() => dismissToast(t.id)}
-                  style={{
-                    background: "rgba(255,255,255,0.2)",
-                    border: "none",
-                    borderRadius: "6px",
-                    width: "20px",
-                    height: "20px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    color: "#fff",
-                    padding: 0,
-                  }}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors flex-shrink-0"
+                  title="Dismiss"
                 >
-                  <X style={{ width: "11px", height: "11px" }} />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             );

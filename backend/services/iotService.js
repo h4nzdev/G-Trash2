@@ -71,6 +71,17 @@ function generateIoTAlerts(reading) {
       value: rawVal,
       threshold: cleanThresh,
     });
+  } else {
+    alerts.push({
+      sensorId: reading.sensorId,
+      location: reading.location || "",
+      barangay: reading.barangay || "",
+      severity: "clean",
+      message: `Clean air conditions verified (${rawVal} ADC, threshold: <${cleanThresh})`,
+      gasType: "MQ-135 Air Quality",
+      value: rawVal,
+      threshold: cleanThresh,
+    });
   }
 
   return alerts;

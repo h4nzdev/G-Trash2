@@ -762,12 +762,30 @@ export default function OfficialsDashboard() {
   }, [isChd]);
 
   const accessDeniedBanner = accessDeniedToast && (
-    <div className="fixed top-4 right-4 z-[2000] flex items-center gap-3 bg-red-600 text-white px-4 py-3 rounded-xl shadow-lg">
-      <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-      <span className="text-sm font-semibold">Access Denied — CHD does not have access to that page</span>
-      <button onClick={() => setAccessDeniedToast(false)} className="ml-2 hover:opacity-70">
-        <X className="w-4 h-4" />
-      </button>
+    <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[3000] pointer-events-auto animate-notification-drop">
+      <div className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-rose-200/90 flex items-center gap-3.5">
+        <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center text-rose-600 flex-shrink-0">
+          <ShieldAlert className="w-5 h-5" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-900">Access Restricted</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-semibold border border-rose-200/60">
+              CHD Access
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            City Health Department accounts do not have permission to access that section.
+          </p>
+        </div>
+        <button
+          onClick={() => setAccessDeniedToast(false)}
+          className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors ml-2"
+          title="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 

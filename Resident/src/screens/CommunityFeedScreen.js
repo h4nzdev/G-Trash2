@@ -106,6 +106,20 @@ function StatusBar({ statusHistory = [], resolutionConfirmed }) {
   );
 }
 
+function isIotReport(r) {
+  if (!r) return false;
+  const reportedBy = (r.reportedBy || "").toLowerCase();
+  const category = (r.category || "").toLowerCase();
+  const title = (r.title || "").toLowerCase();
+  return (
+    reportedBy.startsWith("iot") ||
+    reportedBy.includes("iot sensor") ||
+    category.includes("iot") ||
+    title.includes("iot sensor") ||
+    category === "iot sensor critical aqi"
+  );
+}
+
 export default function CommunityFeedScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
@@ -142,7 +156,7 @@ export default function CommunityFeedScreen() {
       ]);
       if (reportsRes.status === "fulfilled" && reportsRes.value.ok) {
         const data = await reportsRes.value.json();
-        if (Array.isArray(data)) setReports(data);
+        if (Array.isArray(data)) setReports(data.filter((r) => !isIotReport(r)));
       }
       if (pickupRes.status === "fulfilled" && pickupRes.value.ok) {
         const data = await pickupRes.value.json();
@@ -169,12 +183,13 @@ export default function CommunityFeedScreen() {
     const socket = io(API_URL, { transports: ["polling", "websocket"] });
     socketRef.current = socket;
     socket.on("report:updated", (updated) => {
+      if (isIotReport(updated)) return;
       setReports((prev) =>
         prev.map((r) => (r._id === updated._id ? { ...r, ...updated } : r)),
       );
     });
     socket.on("report:new", (newReport) => {
-      if (newReport.barangay === user?.barangay) {
+      if (newReport.barangay === user?.barangay && !isIotReport(newReport)) {
         setReports((prev) => [newReport, ...prev]);
       }
     });
@@ -537,10 +552,10 @@ export default function CommunityFeedScreen() {
     </View>
   );
 
-  // Merge reports + pickup runs sorted by date
+  // Merge reports + pickup runs sorted by date (excluding IoT reports)
   const feedItems = [
     ...reports
-      .filter((r) => !hiddenReports.includes(r._id))
+      .filter((r) => !hiddenReports.includes(r._id) && !isIotReport(r))
       .map((r) => ({ ...r, _feedType: "report" })),
     ...pickupRuns.map((p) => ({ ...p, _feedType: "pickup" })),
   ].sort(

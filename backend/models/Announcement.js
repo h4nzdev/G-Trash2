@@ -10,6 +10,9 @@ const announcementSchema = new mongoose.Schema(
       default: "info",
     },
     createdBy: { type: String, default: "Admin" },
+    barangay: { type: String, default: "All" },
+    image: { type: String, default: null },
+    reportId: { type: mongoose.Schema.Types.ObjectId, ref: "Report", default: null },
   },
   { timestamps: true }
 );

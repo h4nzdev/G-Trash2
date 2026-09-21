@@ -73,6 +73,25 @@ body {
 .animate-fadeIn {
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+@keyframes notificationSlideDown {
+  0% {
+    transform: translateY(-24px) scale(0.94);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(3px) scale(1.01);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-notification-drop {
+  animation: notificationSlideDown 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 .custom-green-scrollbar::-webkit-scrollbar-button {
   display: none;
   width: 0;
