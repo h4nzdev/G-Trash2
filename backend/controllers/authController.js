@@ -1,8 +1,14 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { Resident } = require("../models");
+const { Resident, Official } = require("../models");
 const { JWT_SECRET } = require("../middleware/auth");
 const { generateHouseholdId } = require("../utils/addressUtils");
+
+const CHD_ALLOWED_PAGES = ["dashboard", "heatmap", "reports", "history"];
+function getAllowedPages(role) {
+  if (role === "chd") return CHD_ALLOWED_PAGES;
+  return null;
+}
 
 // Register a new resident
 exports.registerResident = async (req, res, next) => {
@@ -80,41 +86,123 @@ exports.registerResident = async (req, res, next) => {
   }
 };
 
-// Login a resident
-exports.loginResident = async (req, res, next) => {
+// Login user (Official / Superadmin / CHD or Resident)
+exports.login = async (req, res, next) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password required" });
   }
   try {
-    const resident = await Resident.findOne({ email: email.toLowerCase() });
-    if (!resident || !(await bcrypt.compare(password, resident.passwordHash))) {
-      return res.status(401).json({ error: "Invalid credentials" });
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Check Official / Superadmin / CHD
+    const official = await Official.findOne({ email: cleanEmail });
+    if (official && (await bcrypt.compare(password, official.passwordHash))) {
+      const token = jwt.sign(
+        {
+          id: official._id,
+          name: official.name,
+          email: official.email,
+          barangay: official.barangay,
+          role: official.role,
+        },
+        JWT_SECRET,
+        { expiresIn: "30d" }
+      );
+      return res.json({
+        token,
+        official: {
+          id: official._id,
+          name: official.name,
+          email: official.email,
+          barangay: official.barangay,
+          role: official.role,
+          allowedPages: getAllowedPages(official.role),
+        },
+        user: {
+          id: official._id,
+          name: official.name,
+          email: official.email,
+          barangay: official.barangay,
+          role: official.role,
+        },
+      });
     }
 
-    const token = jwt.sign(
-      {
-        id: resident._id,
-        name: `${resident.firstName} ${resident.lastName}`,
-        email: resident.email,
-        barangay: resident.barangay,
-        role: "resident",
-      },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
+    // 2. Check Resident
+    const resident = await Resident.findOne({ email: cleanEmail });
+    if (resident && (await bcrypt.compare(password, resident.passwordHash))) {
+      const token = jwt.sign(
+        {
+          id: resident._id,
+          name: `${resident.firstName} ${resident.lastName}`,
+          email: resident.email,
+          barangay: resident.barangay,
+          role: "resident",
+        },
+        JWT_SECRET,
+        { expiresIn: "30d" }
+      );
 
-    res.json({
-      token,
-      user: {
-        id: resident._id,
-        name: `${resident.firstName} ${resident.lastName}`,
-        email: resident.email,
-        barangay: resident.barangay,
-        address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
-        notificationsClearedAt: resident.notificationsClearedAt || null,
-      },
-    });
+      return res.json({
+        token,
+        user: {
+          id: resident._id,
+          name: `${resident.firstName} ${resident.lastName}`,
+          email: resident.email,
+          barangay: resident.barangay,
+          address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
+          notificationsClearedAt: resident.notificationsClearedAt || null,
+        },
+      });
+    }
+
+    return res.status(401).json({ error: "Invalid credentials" });
+  } catch (err) {
+    next(err);
+  }
+};
+exports.loginResident = exports.login;
+
+// Get current authenticated user / official session
+exports.getMe = async (req, res, next) => {
+  try {
+    const authData = req.official || req.user;
+    if (!authData) return res.status(401).json({ error: "Unauthorized" });
+
+    if (authData.role === "resident") {
+      const resident = await Resident.findById(authData.id);
+      if (!resident) return res.status(404).json({ error: "Resident not found" });
+      return res.json({
+        user: {
+          id: resident._id,
+          name: `${resident.firstName} ${resident.lastName}`,
+          email: resident.email,
+          barangay: resident.barangay,
+          address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
+          notificationsClearedAt: resident.notificationsClearedAt || null,
+        },
+      });
+    } else {
+      const official = await Official.findById(authData.id);
+      const officialObj = official
+        ? {
+            id: official._id,
+            name: official.name,
+            email: official.email,
+            barangay: official.barangay,
+            role: official.role,
+            allowedPages: getAllowedPages(official.role),
+          }
+        : {
+            ...authData,
+            allowedPages: getAllowedPages(authData.role),
+          };
+      return res.json({
+        official: officialObj,
+        user: officialObj,
+      });
+    }
   } catch (err) {
     next(err);
   }

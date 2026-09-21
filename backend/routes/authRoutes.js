@@ -4,11 +4,12 @@ const authController = require("../controllers/authController");
 const { authMiddleware, optionalAuth } = require("../middleware/auth");
 const { Resident } = require("../models");
 
-// Resident registration & login
+// Auth & Session
 router.post("/register", authController.registerResident);
 router.post("/resident/register", authController.registerResident);
-router.post("/login", authController.loginResident);
+router.post("/login", authController.login);
 router.post("/resident/login", authController.loginResident);
+router.get("/me", authMiddleware, authController.getMe);
 
 // Residents lookup
 router.get("/residents/search", authMiddleware, authController.searchResidents);
