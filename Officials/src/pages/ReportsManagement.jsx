@@ -78,6 +78,8 @@ export default function ReportsManagement() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: null, target: null });
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resolutionProofImage, setResolutionProofImage] = useState("");
+  const [resolving, setResolving] = useState(false);
 
   const fetchReports = async () => {
     setLoading(true);
@@ -207,19 +209,37 @@ export default function ReportsManagement() {
   };
 
   const handleResolve = async (report) => {
+    setResolving(true);
     try {
-      await axios.patch(`${API}/api/reports/${report._id}`, {
+      const payload = {
         status: "resolved",
-      });
+      };
+      if (resolutionProofImage) {
+        payload.resolutionImage = resolutionProofImage;
+      }
+      const { data } = await axios.patch(`${API}/api/reports/${report._id}`, payload);
       setReportList((prev) =>
         prev.map((r) =>
-          r._id === report._id ? { ...r, status: "resolved" } : r,
+          r._id === report._id ? { ...r, ...data, status: "resolved" } : r,
         ),
       );
       setSelectedReport(null);
+      setResolutionProofImage("");
     } catch {
       /* silent */
+    } finally {
+      setResolving(false);
     }
+  };
+
+  const handleResolutionPhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setResolutionProofImage(reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleAssign = async (report, truckId) => {
@@ -873,23 +893,88 @@ export default function ReportsManagement() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5">
-              {/* Image Display */}
-              {selectedReport.reportImage ? (
-                <div className="w-full overflow-hidden rounded-xl border border-slate-100">
-                  <img
-                    src={selectedReport.reportImage}
-                    alt="Report"
-                    className="w-full h-auto object-cover max-h-60"
-                  />
-                </div>
-              ) : (
-                <div className="w-full h-40 bg-slate-100 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-200">
-                  <div className="text-center">
-                    <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-                    <p className="text-xs text-slate-400">No images attached</p>
+              {/* Photo Evidence & Image Validation Audit */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Photo Evidence & Verification Audit
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {/* 1. Original Report Photo */}
+                  <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+                    <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700">1. Original Report</span>
+                      <span className="text-[10px] text-slate-500">Resident</span>
+                    </div>
+                    {selectedReport.reportImage ? (
+                      <img
+                        src={selectedReport.reportImage}
+                        alt="Original Report"
+                        className="w-full h-36 object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() => window.open(selectedReport.reportImage, '_blank')}
+                        title="Click to view full photo"
+                      />
+                    ) : (
+                      <div className="h-36 flex flex-col items-center justify-center text-slate-400 text-xs">
+                        <Camera className="w-6 h-6 mb-1 text-slate-300" />
+                        No initial photo
+                      </div>
+                    )}
                   </div>
+
+                  {/* 2. Official Resolution Clean-up Proof */}
+                  <div className="rounded-xl border border-emerald-200 overflow-hidden bg-emerald-50/30">
+                    <div className="px-3 py-1.5 bg-emerald-100/70 border-b border-emerald-200 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-800">2. Clean-up Proof</span>
+                      <span className="text-[10px] text-emerald-700 font-semibold">Barangay</span>
+                    </div>
+                    {selectedReport.resolutionImage ? (
+                      <img
+                        src={selectedReport.resolutionImage}
+                        alt="Clean-up Proof"
+                        className="w-full h-36 object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() => window.open(selectedReport.resolutionImage, '_blank')}
+                        title="Click to view full photo"
+                      />
+                    ) : (
+                      <div className="h-36 flex flex-col items-center justify-center text-slate-400 text-xs p-2 text-center">
+                        <CheckCircle className="w-6 h-6 mb-1 text-slate-300" />
+                        No clean-up photo uploaded
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Resident Dispute Photo Proof */}
+                  {selectedReport.disputeImage ? (
+                    <div className="rounded-xl border border-red-300 overflow-hidden bg-red-50/30">
+                      <div className="px-3 py-1.5 bg-red-100 border-b border-red-200 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-red-800">3. Resident Dispute Photo</span>
+                        <span className="text-[10px] text-red-700 font-semibold">Validation Proof</span>
+                      </div>
+                      <img
+                        src={selectedReport.disputeImage}
+                        alt="Dispute Photo Proof"
+                        className="w-full h-36 object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() => window.open(selectedReport.disputeImage, '_blank')}
+                        title="Click to view full photo"
+                      />
+                      {selectedReport.disputeReason && (
+                        <div className="p-2 text-[11px] text-red-700 bg-red-50 border-t border-red-100">
+                          <strong>Note:</strong> {selectedReport.disputeReason}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-100 overflow-hidden bg-slate-50/50 hidden md:block">
+                      <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100">
+                        <span className="text-[11px] font-medium text-slate-400">3. Dispute Verification</span>
+                      </div>
+                      <div className="h-36 flex flex-col items-center justify-center text-slate-300 text-xs p-2 text-center">
+                        No dispute raised
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* Details */}
               <div className="space-y-3">
@@ -929,12 +1014,24 @@ export default function ReportsManagement() {
                 </p>
               </div>
 
-              {/* SLA / Escalation indicator */}
-              {selectedReport.escalated ? (
+              {/* SLA / Escalation / Dispute indicator */}
+              {selectedReport.resolutionConfirmed === "disputed" ? (
+                <div className="flex items-start gap-2.5 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl">
+                  <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-red-800">
+                      📸 RESIDENT DISPUTED RESOLUTION — Photo Proof Provided
+                    </p>
+                    <p className="text-[11px] text-red-600 mt-0.5">
+                      The resident verified that the waste was not properly cleared and provided photo proof above. Report has been reopened.
+                    </p>
+                  </div>
+                </div>
+              ) : selectedReport.escalated ? (
                 <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
                   <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
                   <p className="text-xs font-bold text-red-700">
-                    ESCALATED — No action within 72h. Barangay lost 10 points.
+                    OVERDUE SLA — Exceeded 72h response limit. Barangay penalised -10 pts.
                   </p>
                 </div>
               ) : selectedReport.status === "pending" &&
@@ -981,8 +1078,7 @@ export default function ReportsManagement() {
                     <>
                       <ThumbsDown className="w-4 h-4 text-red-600" />
                       <p className="text-xs font-bold text-red-700">
-                        Resident says issue persists — Report reopened, -15
-                        points
+                        Resident says issue persists with photo proof (-15 pts)
                       </p>
                     </>
                   ) : (
@@ -1320,6 +1416,56 @@ export default function ReportsManagement() {
                   </div>
                 </div>
               )}
+              {/* Resolution Proof Upload Section */}
+              {!isChd && selectedReport.status !== "resolved" && (
+                <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                        Clean-up Proof Photo (Resolution Evidence)
+                      </p>
+                      <p className="text-[11px] text-emerald-700 mt-0.5">
+                        Attach a photo of the cleaned area so residents and officials have verifiable proof.
+                      </p>
+                    </div>
+                    {resolutionProofImage && (
+                      <button
+                        onClick={() => setResolutionProofImage("")}
+                        className="text-xs text-red-600 hover:underline font-medium"
+                      >
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
+
+                  {resolutionProofImage ? (
+                    <div className="relative w-full h-32 rounded-lg overflow-hidden border border-emerald-300">
+                      <img
+                        src={resolutionProofImage}
+                        alt="Clean-up Proof Preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-emerald-800/85 text-white text-[10px] rounded font-semibold backdrop-blur-sm">
+                        Clean-up Photo Attached ✓
+                      </span>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-2 p-3 bg-white border border-dashed border-emerald-300 rounded-xl cursor-pointer hover:bg-emerald-50/50 transition-colors">
+                      <Camera className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-semibold text-emerald-800">
+                        Upload Clean-up Photo Proof
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleResolutionPhotoUpload}
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
@@ -1338,6 +1484,7 @@ export default function ReportsManagement() {
                 onClick={() => {
                   setSelectedReport(null);
                   setSuggestions([]);
+                  setResolutionProofImage("");
                 }}
                 className="flex-1 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
               >
@@ -1346,9 +1493,20 @@ export default function ReportsManagement() {
               {!isChd && selectedReport.status !== "resolved" && (
                 <button
                   onClick={() => handleResolve(selectedReport)}
-                  className="flex-1 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-900 hover:to-emerald-800 rounded-xl transition-colors"
+                  disabled={resolving}
+                  className="flex-1 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-900 hover:to-emerald-800 disabled:opacity-50 rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                 >
-                  Mark as Resolved
+                  {resolving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Resolving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Mark as Resolved</span>
+                    </>
+                  )}
                 </button>
               )}
             </div>

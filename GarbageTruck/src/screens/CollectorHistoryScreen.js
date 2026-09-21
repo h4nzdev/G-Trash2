@@ -21,6 +21,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const DATE_FILTERS = ["Today", "This Week", "This Month", "All"];
 const DAILY_STOP_GOAL = 8;
+const INITIAL_VISIBLE_COUNT = 5;
 
 function formatTime(dateStr) {
   if (!dateStr) return "—";
@@ -88,6 +89,7 @@ export default function CollectorHistoryScreen() {
   const TRUCK_ID = user?.truckId ?? "GT-000";
 
   const [activeFilter, setActiveFilter] = useState("Today");
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [allLogs, setAllLogs] = useState([]);
   const [scheduledStops, setScheduledStops] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -161,6 +163,10 @@ export default function CollectorHistoryScreen() {
     }
     return allLogs;
   }, [allLogs, activeFilter, todayYMD, weekStartYMD, weekEndYMD, weekDays, currentYM]);
+
+  const displayedLogs = useMemo(() => {
+    return filteredLogs.slice(0, visibleCount);
+  }, [filteredLogs, visibleCount]);
 
   // Weekly chart always shows the current week regardless of chip
   const weeklyData = useMemo(() => {
@@ -241,7 +247,10 @@ export default function CollectorHistoryScreen() {
               <TouchableOpacity
                 key={filter}
                 style={[styles.filterChip, isActive && styles.filterChipActive]}
-                onPress={() => setActiveFilter(filter)}
+                onPress={() => {
+                  setActiveFilter(filter);
+                  setVisibleCount(INITIAL_VISIBLE_COUNT);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
@@ -320,7 +329,43 @@ export default function CollectorHistoryScreen() {
 
             {/* Collection Log */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Collection Log</Text>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>Collection Log</Text>
+                  {filteredLogs.length > 0 && (
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>
+                        {filteredLogs.length > INITIAL_VISIBLE_COUNT
+                          ? `${displayedLogs.length} of ${filteredLogs.length}`
+                          : `${filteredLogs.length}`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {filteredLogs.length > INITIAL_VISIBLE_COUNT && (
+                  <TouchableOpacity
+                    style={styles.seeAllHeaderBtn}
+                    onPress={() => {
+                      if (visibleCount < filteredLogs.length) {
+                        setVisibleCount(filteredLogs.length);
+                      } else {
+                        setVisibleCount(INITIAL_VISIBLE_COUNT);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.seeAllHeaderText}>
+                      {visibleCount < filteredLogs.length ? "See All" : "Show Less"}
+                    </Text>
+                    <MaterialIcons
+                      name={visibleCount < filteredLogs.length ? "chevron-right" : "expand-less"}
+                      size={18}
+                      color="#006A3B"
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+
               {filteredLogs.length === 0 ? (
                 <View style={styles.emptyLog}>
                   <MaterialIcons name="history" size={32} color="#DCD9D9" />
@@ -328,8 +373,8 @@ export default function CollectorHistoryScreen() {
                 </View>
               ) : (
                 <View style={styles.logCard}>
-                  {filteredLogs.map((item, index) => {
-                    const isLast = index === filteredLogs.length - 1;
+                  {displayedLogs.map((item, index) => {
+                    const isLast = index === displayedLogs.length - 1;
                     return (
                       <View key={item._id || index}>
                         <View style={styles.logItem}>
@@ -337,7 +382,9 @@ export default function CollectorHistoryScreen() {
                             <View style={styles.logTimeDot}>
                               <MaterialIcons name="check-circle" size={16} color="#006A3B" />
                             </View>
-                            {!isLast && <View style={styles.logTimeLine} />}
+                            {(!isLast || (filteredLogs.length > displayedLogs.length)) && (
+                              <View style={styles.logTimeLine} />
+                            )}
                           </View>
                           <View style={styles.logContent}>
                             <View style={styles.logContentLeft}>
@@ -370,10 +417,53 @@ export default function CollectorHistoryScreen() {
                             </View>
                           </View>
                         </View>
-                        {!isLast && <View style={styles.logDivider} />}
+                        {(!isLast || filteredLogs.length > displayedLogs.length) && <View style={styles.logDivider} />}
                       </View>
                     );
                   })}
+
+                  {filteredLogs.length > INITIAL_VISIBLE_COUNT && (
+                    <View style={styles.paginationFooter}>
+                      {visibleCount < filteredLogs.length ? (
+                        <View style={styles.paginationRow}>
+                          <TouchableOpacity
+                            style={styles.loadMoreBtn}
+                            onPress={() =>
+                              setVisibleCount((prev) =>
+                                Math.min(prev + INITIAL_VISIBLE_COUNT, filteredLogs.length)
+                              )
+                            }
+                            activeOpacity={0.7}
+                          >
+                            <MaterialIcons name="expand-more" size={18} color="#006A3B" />
+                            <Text style={styles.loadMoreBtnText}>
+                              Load More (+{Math.min(INITIAL_VISIBLE_COUNT, filteredLogs.length - visibleCount)})
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.seeAllBtn}
+                            onPress={() => setVisibleCount(filteredLogs.length)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.seeAllBtnText}>See All ({filteredLogs.length})</Text>
+                            <MaterialIcons name="arrow-forward" size={14} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.showLessBtn}
+                          onPress={() => setVisibleCount(INITIAL_VISIBLE_COUNT)}
+                          activeOpacity={0.7}
+                        >
+                          <MaterialIcons name="expand-less" size={18} color="#6F7A70" />
+                          <Text style={styles.showLessBtnText}>
+                            Show Less (Top {INITIAL_VISIBLE_COUNT})
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -632,12 +722,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  countBadge: {
+    backgroundColor: "#E4EEE9",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  seeAllHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  seeAllHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#006A3B",
+  },
   sectionTitle: {
     fontSize: 17,
     fontWeight: "600",
     color: "#1B1C1C",
     lineHeight: 22,
-    marginBottom: 16,
   },
 
   // Collection Log
@@ -698,6 +815,63 @@ const styles = StyleSheet.create({
   logBins: { fontSize: 20, fontWeight: "800", color: "#006A3B" },
   logBinsLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
   logDivider: { height: 1, backgroundColor: "#F6F3F2", marginLeft: 48 },
+
+  // Pagination Footer
+  paginationFooter: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F6F3F2",
+  },
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  loadMoreBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    backgroundColor: "#E4EEE9",
+    borderRadius: 14,
+  },
+  loadMoreBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  seeAllBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    backgroundColor: "#006A3B",
+    borderRadius: 14,
+  },
+  seeAllBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  showLessBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    backgroundColor: "#F0EDED",
+    borderRadius: 14,
+  },
+  showLessBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6F7A70",
+  },
 
   // Weekly Card
   weekTotalBadge: {

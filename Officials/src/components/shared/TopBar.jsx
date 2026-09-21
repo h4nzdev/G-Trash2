@@ -52,12 +52,23 @@ export default function TopBar() {
 
   // Fetch existing IoT alerts on mount + listen for new ones
   useEffect(() => {
-    // Load existing alerts
-    fetch(`${API}/api/iot/alerts?limit=20`)
+    const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
+    const userBrgy = official?.barangay?.toLowerCase()?.trim();
+    const token = localStorage.getItem('token');
+
+    // Load existing alerts with auth headers for barangay filtering
+    fetch(`${API}/api/iot/alerts?limit=20`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) {
-          const notifs = data.map(a => ({
+          const filteredData = data.filter(a => {
+            if (a.severity === 'info' || a.gasType === 'normal') return false;
+            if (isScoped && userBrgy && a.barangay && a.barangay.toLowerCase().trim() !== userBrgy) return false;
+            return true;
+          });
+          const notifs = filteredData.map(a => ({
             id: a._id,
             msg: a.message,
             time: a.createdAt,
@@ -79,58 +90,151 @@ export default function TopBar() {
     socketRef.current = socket;
 
     socket.on('iot:alert', (alert) => {
-      const notif = {
-        id: alert._id,
-        msg: alert.message,
-        time: alert.createdAt,
-        severity: alert.severity,
-        location: alert.location,
-        barangay: alert.barangay,
-        sensorId: alert.sensorId,
-        acknowledged: false,
-        type: 'iot',
-      };
-      setNotifications(prev => [notif, ...prev].slice(0, 50));
-      setUnreadCount(prev => prev + 1);
+      if (alert.severity === 'info' || alert.gasType === 'normal') return;
+      if (isScoped && userBrgy && alert.barangay && alert.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = alert._id || `iot_${alert.sensorId}_${Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId || (n.sensorId === alert.sensorId && n.severity === alert.severity && Date.now() - new Date(n.time).getTime() < 300000))) {
+          return prev;
+        }
+        const notif = {
+          id: notifId,
+          msg: alert.message,
+          time: alert.createdAt || new Date().toISOString(),
+          severity: alert.severity,
+          location: alert.location,
+          barangay: alert.barangay,
+          sensorId: alert.sensorId,
+          acknowledged: false,
+          type: 'iot',
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
+    });
+
+    socket.on('report:overdue', (report) => {
+      if (isScoped && userBrgy && report.barangay && report.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = `overdue_${report.reportId || report._id}_${Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId || n.reportId === (report.reportId || report._id))) return prev;
+        const notif = {
+          id: notifId,
+          reportId: report.reportId || report._id,
+          msg: `🚨 OVERDUE REPORT: "${report.title || 'Resident Report'}" has exceeded 72h SLA! Action required.`,
+          time: report.escalatedAt || new Date().toISOString(),
+          severity: 'critical',
+          location: report.location || report.barangay,
+          barangay: report.barangay,
+          acknowledged: false,
+          type: 'report-overdue',
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
+    });
+
+    socket.on('report:escalated', (report) => {
+      if (isScoped && userBrgy && report.barangay && report.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = `escalated_${report.reportId || report._id}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId || n.reportId === (report.reportId || report._id))) return prev;
+        const notif = {
+          id: notifId,
+          reportId: report.reportId || report._id,
+          msg: `⚠️ SLA Escalation: "${report.title || 'Resident Report'}" is overdue. Penalty applied.`,
+          time: report.escalatedAt || new Date().toISOString(),
+          severity: 'critical',
+          location: report.location || report.barangay,
+          barangay: report.barangay,
+          acknowledged: false,
+          type: 'report-overdue',
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
+    });
+
+    socket.on('report:disputed', (payload) => {
+      if (isScoped && userBrgy && payload.barangay && payload.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = `disputed_${payload.reportId}_${Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId)) return prev;
+        const notif = {
+          id: notifId,
+          reportId: payload.reportId,
+          msg: `📸 Resident Disputed Resolution with Photo Proof: "${payload.title || 'Garbage Report'}".`,
+          time: payload.disputedAt || new Date().toISOString(),
+          severity: 'critical',
+          location: payload.location || payload.barangay,
+          barangay: payload.barangay,
+          acknowledged: false,
+          type: 'report-disputed',
+          disputeImage: payload.disputeImage,
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
     });
 
     socket.on('report:new', (report) => {
-      if (report.reportedBy?.startsWith('IoT Sensor')) {
+      if (isScoped && userBrgy && report.barangay && report.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = report._id || `report_${Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId)) return prev;
         const notif = {
-          id: report._id,
-          msg: report.title,
-          time: report.createdAt,
+          id: notifId,
+          reportId: report._id,
+          msg: `📋 New Report: ${report.title} (${report.category || 'General'})`,
+          time: report.createdAt || new Date().toISOString(),
           severity: report.priority === 'Critical' ? 'critical' : 'moderate',
           location: report.location,
           barangay: report.barangay,
           acknowledged: false,
           type: 'report',
         };
-        setNotifications(prev => [notif, ...prev].slice(0, 50));
-        setUnreadCount(prev => prev + 1);
-      }
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
     });
 
     socket.on('truck:shift-completed', (payload) => {
-      const notif = {
-        id: `shift_${payload.truckId}_${Date.now()}`,
-        msg: `Truck ${payload.truckId} (${payload.driverName || 'Collector'}) completed route in ${payload.barangay || payload.routeName || 'assigned area'}. En route to waste processing at ${payload.disposalFacility || 'Landfill / MRF'}.`,
-        time: payload.completedAt || new Date().toISOString(),
-        severity: 'info',
-        location: payload.disposalFacility || 'Waste Processing Facility',
-        barangay: payload.barangay,
-        truckId: payload.truckId,
-        weight: payload.totalWeight ? `${payload.totalWeight} ${payload.weightUnit || 'tons'}` : null,
-        facility: payload.disposalFacility,
-        acknowledged: false,
-        type: 'waste-processing',
-      };
-      setNotifications(prev => [notif, ...prev].slice(0, 50));
-      setUnreadCount(prev => prev + 1);
+      if (isScoped && userBrgy && payload.barangay && payload.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const notifId = `shift_${payload.truckId}_${payload.completedAt || Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId)) return prev;
+        const notif = {
+          id: notifId,
+          msg: `Truck ${payload.truckId} (${payload.driverName || 'Collector'}) completed route in ${payload.barangay || payload.routeName || 'assigned area'}. En route to waste processing at ${payload.disposalFacility || 'Landfill / MRF'}.`,
+          time: payload.completedAt || new Date().toISOString(),
+          severity: 'info',
+          location: payload.disposalFacility || 'Waste Processing Facility',
+          barangay: payload.barangay,
+          truckId: payload.truckId,
+          weight: payload.totalWeight ? `${payload.totalWeight} ${payload.weightUnit || 'tons'}` : null,
+          facility: payload.disposalFacility,
+          acknowledged: false,
+          type: 'waste-processing',
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [official]);
 
   const markAllRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, acknowledged: true })));
@@ -148,7 +252,7 @@ export default function TopBar() {
     setShowNotifs(false);
     if (n.type === 'waste-processing' || n.type === 'iot') {
       navigate('/routes');
-    } else if (n.type === 'report') {
+    } else if (n.type === 'report' || n.type === 'report-overdue' || n.type === 'report-disputed') {
       navigate('/reports');
     }
   };

@@ -1,12 +1,12 @@
 {
   "name": "gtrash-backend",
   "version": "1.0.0",
-  "main": "app.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "description": "G-TRASH unified backend — tracking + officials in one server",
+  "description": "G-TRASH unified backend — modular MVC + Service Layer architecture",
   "dependencies": {
     "axios": "^1.6.0",
     "bcryptjs": "^3.0.3",

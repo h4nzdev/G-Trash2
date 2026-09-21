@@ -87,7 +87,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-red-600">{loading ? '–' : riskCounts.high}</p>
             <p className="text-xs font-semibold text-slate-700">High Risk Zones</p>
-            <p className="text-[10px] text-slate-400">Raw ADC &ge; 500</p>
+            <p className="text-[10px] text-slate-400">Raw ADC &ge; 400</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-amber-200 p-5 flex items-center gap-4">
@@ -97,7 +97,7 @@ function ChdDashboard() {
           <div>
             <p className="text-2xl font-bold text-amber-600">{loading ? '–' : riskCounts.moderate}</p>
             <p className="text-xs font-semibold text-slate-700">Moderate Risk Zones</p>
-            <p className="text-[10px] text-slate-400">Raw ADC 200 – 499</p>
+            <p className="text-[10px] text-slate-400">Raw ADC 200 – 399</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-emerald-100 p-5 flex items-center gap-4">
@@ -184,7 +184,7 @@ function ChdDashboard() {
           ) : (
             <div className="space-y-2">
               {barangaysAtRisk.map((b, i) => {
-                const isHigh = b.maxRawValue !== undefined ? b.maxRawValue >= 500 : (b.maxAmmonia > 50 || b.maxMethane > 25);
+                const isHigh = (b.maxRawValue ?? 0) >= 400;
                 const rawVal = b.maxRawValue ?? 0;
                 const voltageVal = (rawVal * 3.3) / 4095.0;
                 return (
@@ -731,12 +731,18 @@ export default function OfficialsDashboard() {
     });
 
     socket.on('iot:alert', (alert) => {
+      if (alert.severity === 'info' || alert.gasType === 'normal') return;
       const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
       const userBrgy = official?.barangay?.toLowerCase()?.trim();
       if (isScoped && userBrgy && alert.barangay && alert.barangay.toLowerCase().trim() !== userBrgy) {
         return;
       }
-      setIotAlerts(prev => [alert, ...prev].slice(0, 10));
+      setIotAlerts(prev => {
+        if (prev.some(a => a._id === alert._id || (a.sensorId === alert.sensorId && a.severity === alert.severity))) {
+          return prev;
+        }
+        return [alert, ...prev].slice(0, 10);
+      });
       setIotSummary(prev => ({
         ...prev,
         activeAlerts: (prev.activeAlerts || 0) + 1,

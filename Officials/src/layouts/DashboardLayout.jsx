@@ -4,18 +4,25 @@ import { io } from 'socket.io-client';
 import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone, CheckCircle } from 'lucide-react';
 import Sidebar from '../components/sidebar/Sidebar';
 import TopBar from '../components/shared/TopBar';
+import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
 export default function DashboardLayout() {
   const [alerts, setAlerts] = useState([]);
   const navigate = useNavigate();
+  const { official } = useAuth();
 
   useEffect(() => {
+    const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
+    const userBrgy = official?.barangay?.toLowerCase()?.trim();
     const socket = io(API, { transports: ['websocket', 'polling'] });
 
     // Truck shift completion toast notification
     socket.on('truck:shift-completed', (data) => {
-      const alertId = `truck_completed_${data.truckId}_${Date.now()}`;
+      if (isScoped && userBrgy && data.barangay && data.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const alertId = `truck_completed_${data.truckId}`;
       setAlerts(prev => {
         const filtered = prev.filter(a => !(a.type === 'truck-completed' && a.truckId === data.truckId));
         return [{ ...data, id: alertId, type: 'truck-completed', ts: Date.now() }, ...filtered].slice(0, 5);
@@ -27,6 +34,9 @@ export default function DashboardLayout() {
 
     // Truck off-route alerts (Deduplicated per truck)
     socket.on('truck:off-route', (data) => {
+      if (isScoped && userBrgy && data.barangay && data.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
       const alertId = `truck_off_route_${data.truckId}`;
       setAlerts(prev => {
         const filtered = prev.filter(a => a.id !== alertId && !(a.type === 'truck-off-route' && a.truckId === data.truckId));
@@ -38,46 +48,60 @@ export default function DashboardLayout() {
       }, 12000);
     });
 
-    // IoT sensor alerts (critical/moderate threshold breaches)
+    // IoT sensor alerts (critical/moderate threshold breaches only, deduplicated per sensor)
     socket.on('iot:alert', (data) => {
-      const id = Date.now() + Math.random();
-      const newAlert = { ...data, id, type: 'iot-alert' };
-      setAlerts(prev => [newAlert, ...prev].slice(0, 5));
+      if (data.severity === 'info' || data.gasType === 'normal') return;
+      if (isScoped && userBrgy && data.barangay && data.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
+      const alertId = `iot_${data.sensorId || data._id}`;
+      setAlerts(prev => {
+        // If alert for this sensor already exists, don't create multiple floating cards
+        const filtered = prev.filter(a => a.id !== alertId);
+        const newAlert = { ...data, id: alertId, type: 'iot-alert' };
+        return [newAlert, ...filtered].slice(0, 5);
+      });
       setTimeout(() => {
-        setAlerts(prev => prev.filter(a => a.id !== id));
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
       }, 12000);
     });
 
     // IoT auto-generated report (unhealthy/hazardous air quality)
     socket.on('report:new', (data) => {
       if (data.reportedBy?.startsWith('IoT Sensor')) {
-        const id = Date.now() + Math.random();
-        const newAlert = {
-          id,
-          type: 'iot-report',
-          title: data.title,
-          priority: data.priority,
-          location: data.location,
-          barangay: data.barangay,
-        };
-        setAlerts(prev => [newAlert, ...prev].slice(0, 5));
+        if (isScoped && userBrgy && data.barangay && data.barangay.toLowerCase().trim() !== userBrgy) {
+          return;
+        }
+        const alertId = `iot_rep_${data._id || data.title}`;
+        setAlerts(prev => {
+          if (prev.some(a => a.id === alertId)) return prev;
+          const newAlert = {
+            id: alertId,
+            type: 'iot-report',
+            title: data.title,
+            priority: data.priority,
+            location: data.location,
+            barangay: data.barangay,
+          };
+          return [newAlert, ...prev].slice(0, 5);
+        });
         setTimeout(() => {
-          setAlerts(prev => prev.filter(a => a.id !== id));
+          setAlerts(prev => prev.filter(a => a.id !== alertId));
         }, 15000);
       }
     });
 
     // System announcements from Admin Panel
     socket.on('announcement:new', (data) => {
-      const id = Date.now() + Math.random();
-      setAlerts(prev => [{ ...data, id, type: 'announcement', annType: data.type }, ...prev].slice(0, 5));
+      const alertId = `ann_${data._id || Date.now()}`;
+      setAlerts(prev => [{ ...data, id: alertId, type: 'announcement', annType: data.type }, ...prev].slice(0, 5));
       setTimeout(() => {
-        setAlerts(prev => prev.filter(a => a.id !== id));
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
       }, 20000);
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [official]);
 
   const dismissAlert = (id) => {
     setAlerts(prev => prev.filter(a => a.id !== id));

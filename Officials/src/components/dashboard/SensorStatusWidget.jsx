@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Wind, AlertTriangle, CheckCircle, Activity, MapPin, Radio, History, TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
+import { Wind, AlertTriangle, CheckCircle, Activity, MapPin, Radio, History, TrendingUp, TrendingDown, Minus, Clock, Info } from 'lucide-react';
 import API from '../../config';
 
 function timeAgo(dateStr) {
@@ -61,16 +61,15 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
     });
   }, [readings]);
 
-
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex-1">
       {/* Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-emerald-500 animate-pulse" /> Live MQ-135 Air Quality Telemetry
+            <Radio className="w-4 h-4 text-emerald-500 animate-pulse" /> Garbage-Area Air Quality Status
           </h2>
-          <p className="text-[11px] text-slate-500 mt-0.5">Real-time environmental sensor updates</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Real-time MQ-135 environmental operational classification</p>
         </div>
         {onNavigateAlerts && (
           <button
@@ -93,15 +92,24 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
         ) : (
           readings.map((sensor) => {
             const raw = sensor.rawValue || 0;
-            const status = raw >= 500
-              ? 'Critical'
-              : raw >= 150
-              ? 'Moderate'
-              : raw > 0
-              ? 'Clean'
-              : (sensor.airQuality || 'Clean');
-            const isCritical = status === 'Critical' || status === 'Unhealthy' || status === 'Hazardous' || raw >= 500;
-            const isModerate = status === 'Moderate' || (raw >= 200 && raw < 500);
+            const cleanThresh = sensor.cleanThreshold || 200;
+            const critThresh = sensor.criticalThreshold || 400;
+
+            // Strict 3-level operational classification: CLEAN | MODERATE | CRITICAL
+            let status = 'CLEAN';
+            if (sensor.airQuality) {
+              const u = String(sensor.airQuality).toUpperCase();
+              if (u === 'CRITICAL' || u === 'UNHEALTHY' || u === 'HAZARDOUS') status = 'CRITICAL';
+              else if (u === 'MODERATE') status = 'MODERATE';
+              else status = 'CLEAN';
+            } else {
+              if (raw >= critThresh) status = 'CRITICAL';
+              else if (raw >= cleanThresh) status = 'MODERATE';
+              else status = 'CLEAN';
+            }
+
+            const isCritical = status === 'CRITICAL';
+            const isModerate = status === 'MODERATE';
 
             const adcPercentage = Math.min(100, Math.max(0, Math.round((raw / 4095) * 100)));
             const voltage = (raw * (3.3 / 4095.0)).toFixed(2);
@@ -110,11 +118,15 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
             const prevReading = sensor.previousReading || historyMap[sensor.sensorId] || null;
             const prevRaw = prevReading?.rawValue ?? null;
             const prevVoltage = prevRaw !== null ? (prevRaw * (3.3 / 4095.0)).toFixed(2) : null;
-            const prevStatus = prevRaw !== null
-              ? (prevRaw >= 500 ? 'Critical' : prevRaw >= 200 ? 'Moderate' : 'Clean')
-              : (prevReading?.airQuality || null);
-            const prevIsCritical = prevStatus === 'Critical' || prevStatus === 'Unhealthy' || prevStatus === 'Hazardous' || (prevRaw !== null && prevRaw >= 500);
-            const prevIsModerate = prevStatus === 'Moderate' || (prevRaw !== null && prevRaw >= 200 && prevRaw < 500);
+            let prevStatus = null;
+            if (prevRaw !== null) {
+              prevStatus = prevRaw >= critThresh ? 'CRITICAL' : prevRaw >= cleanThresh ? 'MODERATE' : 'CLEAN';
+            } else if (prevReading?.airQuality) {
+              const pu = String(prevReading.airQuality).toUpperCase();
+              prevStatus = (pu === 'CRITICAL' || pu === 'UNHEALTHY' || pu === 'HAZARDOUS') ? 'CRITICAL' : pu === 'MODERATE' ? 'MODERATE' : 'CLEAN';
+            }
+            const prevIsCritical = prevStatus === 'CRITICAL';
+            const prevIsModerate = prevStatus === 'MODERATE';
             const deltaRaw = prevRaw !== null ? raw - prevRaw : null;
 
             return (
@@ -164,7 +176,7 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
                     ) : (
                       <CheckCircle className="w-3.5 h-3.5" />
                     )}
-                    {status.toUpperCase()}
+                    {status}
                   </div>
                 </div>
 
@@ -181,23 +193,23 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
                     <p className="text-sm font-bold text-slate-800">{voltage} V</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Air Quality Rating</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Operational Status</p>
                     <p className={`text-sm font-bold ${isCritical ? 'text-red-600' : isModerate ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {status}
                     </p>
                   </div>
                 </div>
 
-                {/* Bottom Row: ADC Meter Bar */}
+                {/* Bottom Row: ADC Meter Bar & Active Thresholds */}
                 <div>
                   <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold mb-1">
                     <span className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-indigo-500" /> Air Quality Threshold Scale
+                      <Activity className="w-3 h-3 text-indigo-500" /> Operational Scale: Clean (&lt;{cleanThresh}) | Moderate ({cleanThresh}-{critThresh}) | Critical (&ge;{critThresh})
                     </span>
-                    <span>Critical Limit: 500 ADC</span>
+                    <span>Critical: {critThresh} ADC</span>
                   </div>
                   <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden relative">
-                    <div className="absolute top-0 bottom-0 left-[12.2%] w-0.5 bg-slate-800 z-10 opacity-60" title="Critical Limit: 500 ADC" />
+                    <div className="absolute top-0 bottom-0 left-[9.8%] w-0.5 bg-slate-800 z-10 opacity-60" title={`Critical Limit: ${critThresh} ADC`} />
                     <div
                       className={`h-full transition-all duration-500 rounded-full ${
                         isCritical ? 'bg-red-500' : isModerate ? 'bg-amber-500' : 'bg-emerald-500'
@@ -288,6 +300,14 @@ export default function SensorStatusWidget({ readings = [], onNavigateAlerts }) 
             );
           })
         )}
+      </div>
+
+      {/* Research Disclaimer Footer */}
+      <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-start gap-2 text-[10px] text-slate-500 leading-normal">
+        <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+        <p>
+          <span className="font-bold text-slate-600">Research Disclaimer:</span> The G-TRASH air-quality status is an MQ-135-based operational classification for garbage-area monitoring and is not a direct measurement of the official national Air Quality Index.
+        </p>
       </div>
     </div>
   );

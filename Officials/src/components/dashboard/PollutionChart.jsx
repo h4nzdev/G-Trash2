@@ -8,7 +8,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   const rawData = payload[0]?.payload || {};
   const raw = payload[0]?.value || rawData.rawValue || 0;
   const voltage = ((raw * 3.3) / 4095.0).toFixed(2);
-  const status = raw >= 500 ? 'Critical' : raw >= 200 ? 'Moderate' : 'Clean';
+  const status = raw >= 400 ? 'CRITICAL' : raw >= 200 ? 'MODERATE' : 'CLEAN';
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-xs space-y-1">
       <p className="font-bold text-slate-700 mb-1 border-b border-slate-100 pb-1">{label}</p>
@@ -24,8 +24,8 @@ const CustomTooltip = ({ active, payload, label }) => {
       </div>
       <div className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-        <span className="text-slate-600">Air Quality Rating:</span>
-        <span className={`font-bold ${raw >= 500 ? 'text-red-600' : raw >= 200 ? 'text-amber-600' : 'text-emerald-600'}`}>{status}</span>
+        <span className="text-slate-600">Operational Status:</span>
+        <span className={`font-bold ${raw >= 400 ? 'text-red-600' : raw >= 200 ? 'text-amber-600' : 'text-emerald-600'}`}>{status}</span>
       </div>
     </div>
   );

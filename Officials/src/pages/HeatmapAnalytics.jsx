@@ -93,16 +93,16 @@ function parseRawValue(val) {
 
 function healthRiskColor(rawValue) {
   const raw = Number(rawValue) || 0;
-  if (raw >= 500) return "#ef4444"; // Critical — red
-  if (raw >= 150) return "#f97316"; // Moderate — orange
+  if (raw >= 400) return "#ef4444"; // Critical — red
+  if (raw >= 200) return "#f97316"; // Moderate — orange
   return "#10b981"; // Clean — green
 }
 
 function healthRiskLabel(rawValue) {
   const raw = Number(rawValue) || 0;
-  if (raw >= 500) return "Critical";
-  if (raw >= 150) return "Moderate";
-  return "Clean";
+  if (raw >= 400) return "CRITICAL";
+  if (raw >= 200) return "MODERATE";
+  return "CLEAN";
 }
 
 const ChartTooltip = ({ active, payload, label }) => {
@@ -126,7 +126,7 @@ const ChartTooltip = ({ active, payload, label }) => {
             {p.name}:
           </span>
           <strong className="font-mono">
-            {p.value} {p.dataKey === "aqi" ? "" : "ppm"}
+            {p.value} {p.dataKey === "rawValue" ? "ADC" : ""}
           </strong>
         </p>
       ))}
@@ -174,20 +174,20 @@ function AirQualityTrendModal({ zone, onClose }) {
   const voltageVal = ((rawVal * 3.3) / 4095.0).toFixed(2);
 
   let statusBg = "bg-emerald-600";
-  let statusBadge = "Clean (<150 ADC)";
+  let statusBadge = "CLEAN (<200 ADC)";
   let healthAdvice =
-    "Raw ADC < 150: Air quality is safe with normal background environmental readings.";
+    "Raw ADC < 200: Air quality is safe with normal background environmental readings.";
 
-  if (rawVal >= 500 || zone.status === "critical") {
+  if (rawVal >= 400 || zone.status === "critical" || zone.airQuality === "CRITICAL") {
     statusBg = "bg-red-600";
-    statusBadge = "Critical Risk (500+ ADC)";
+    statusBadge = "CRITICAL (400+ ADC)";
     healthAdvice =
-      "Raw ADC >= 500: High decomposition gas concentration detected. Priority waste collection required.";
-  } else if (rawVal >= 150 || zone.status === "moderate") {
+      "Raw ADC >= 400: Elevated gas concentration detected. Priority waste collection required.";
+  } else if (rawVal >= 200 || zone.status === "moderate" || zone.airQuality === "MODERATE") {
     statusBg = "bg-orange-500";
-    statusBadge = "Moderate (150-499 ADC)";
+    statusBadge = "MODERATE (200-399 ADC)";
     healthAdvice =
-      "Raw ADC 150-499: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
+      "Raw ADC 200-399: Increased organic gas emissions detected. Monitor area and schedule routine pickup.";
   }
 
   const historyData = generateAirQualityHistory(zone);
@@ -396,29 +396,29 @@ function AirQualityTrendModal({ zone, onClose }) {
 
                   <ReferenceArea
                     y1={0}
-                    y2={150}
+                    y2={200}
                     fillColor="#10b981"
                     fillOpacity={0.08}
                   />
                   <ReferenceArea
-                    y1={150}
-                    y2={500}
+                    y1={200}
+                    y2={400}
                     fillColor="#f97316"
                     fillOpacity={0.1}
                   />
                   <ReferenceArea
-                    y1={500}
+                    y1={400}
                     y2={4095}
                     fillColor="#ef4444"
                     fillOpacity={0.12}
                   />
 
                   <ReferenceLine
-                    y={500}
+                    y={400}
                     stroke="#ef4444"
                     strokeDasharray="3 3"
                     label={{
-                      value: "Critical (500 ADC)",
+                      value: "Critical (400 ADC)",
                       position: "right",
                       fill: "#ef4444",
                       fontSize: 10,
@@ -426,11 +426,11 @@ function AirQualityTrendModal({ zone, onClose }) {
                     }}
                   />
                   <ReferenceLine
-                    y={150}
+                    y={200}
                     stroke="#f97316"
                     strokeDasharray="3 3"
                     label={{
-                      value: "Moderate (150 ADC)",
+                      value: "Moderate (200 ADC)",
                       position: "right",
                       fill: "#ea580c",
                       fontSize: 10,
@@ -467,7 +467,7 @@ function AirQualityTrendModal({ zone, onClose }) {
             {/* Bottom Air Quality Scale Bar */}
             <div className="mt-4 pt-3 border-t border-slate-100">
               <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5">
-                <span>Raw ADC Air Quality Scale:</span>
+                <span>Garbage-Area Operational Scale:</span>
                 <span className="text-slate-700 font-bold">
                   Current Raw ADC: {rawVal}
                 </span>
@@ -475,14 +475,14 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               {/* Color Scale Bar */}
               <div className="relative w-full h-3 rounded-full overflow-hidden flex shadow-inner">
-                <div className="h-full bg-emerald-500 w-[15%] flex items-center justify-center text-[9px] font-black text-white">
-                  Clean (&lt;150)
+                <div className="h-full bg-emerald-500 w-[20%] flex items-center justify-center text-[9px] font-black text-white">
+                  CLEAN (&lt;200)
                 </div>
-                <div className="h-full bg-orange-500 w-[35%] flex items-center justify-center text-[9px] font-black text-white">
-                  Moderate (150-499)
+                <div className="h-full bg-orange-500 w-[30%] flex items-center justify-center text-[9px] font-black text-white">
+                  MODERATE (200-399)
                 </div>
                 <div className="h-full bg-red-600 w-[50%] flex items-center justify-center text-[9px] font-black text-white">
-                  Critical (500+)
+                  CRITICAL (400+)
                 </div>
 
                 {/* Pointer indicator */}
@@ -496,8 +496,8 @@ function AirQualityTrendModal({ zone, onClose }) {
 
               <div className="flex justify-between text-[9px] text-slate-400 font-semibold mt-1">
                 <span>0 ADC</span>
-                <span>150 ADC</span>
-                <span>500 ADC</span>
+                <span>200 ADC</span>
+                <span>400 ADC</span>
                 <span>1000+ ADC</span>
               </div>
             </div>
@@ -542,43 +542,43 @@ function AirQualityTrendModal({ zone, onClose }) {
 // Simple Point-in-Polygon check (Ray Casting Algorithm)
 
 // Normalize MQ-135 rawValue (0 - 1000+ ADC) and status into 0 - 1 heat intensity
-// < 150 ADC (Clean)        -> 0.15 - 0.35 (Green aura)
-// 150 - 499 ADC (Moderate) -> 0.60 - 0.78 (Orange aura)
-// >= 500 ADC (Critical)    -> 0.85 - 1.00 (Red aura)
+// < 200 ADC (Clean)        -> 0.15 - 0.35 (Green aura)
+// 200 - 399 ADC (Moderate) -> 0.60 - 0.78 (Orange aura)
+// >= 400 ADC (Critical)    -> 0.85 - 1.00 (Red aura)
 function normalizeMQ135RawValue(rawValue, status, airQuality) {
-  const isCrit = status === "critical" || airQuality === "Critical" || airQuality === "Hazardous";
-  const isMod = status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated";
-  const isCln = status === "clean" || airQuality === "Clean" || airQuality === "Safe";
+  const isCrit = status === "critical" || airQuality === "CRITICAL" || airQuality === "Critical" || airQuality === "Hazardous";
+  const isMod = status === "moderate" || airQuality === "MODERATE" || airQuality === "Moderate" || airQuality === "Elevated";
+  const isCln = status === "clean" || airQuality === "CLEAN" || airQuality === "Clean" || airQuality === "Safe";
 
   const val = Number(rawValue) || 0;
 
-  if (val >= 500 || isCrit) {
-    const excess = Math.max(0, val - 500);
+  if (val >= 400 || isCrit) {
+    const excess = Math.max(0, val - 400);
     return Math.min(1.0, 0.88 + (excess / 800) * 0.12);
   }
 
-  if (val >= 150 || isMod) {
-    const prog = Math.max(0, Math.min(349, val - 150));
-    return 0.60 + (prog / 350) * 0.18;
+  if (val >= 200 || isMod) {
+    const prog = Math.max(0, Math.min(199, val - 200));
+    return 0.60 + (prog / 200) * 0.18;
   }
 
   if (val > 0 || isCln) {
-    return Math.max(0.15, Math.min(0.35, (val / 150) * 0.35));
+    return Math.max(0.15, Math.min(0.35, (val / 200) * 0.35));
   }
 
   return 0.20;
 }
 
 // Synchronized color matching the Heatmap gradient
-// < 150 ADC  -> Green (#10b981) Clean
-// 150 - 499  -> Orange (#f97316) Moderate
-// 500+ ADC   -> Red (#ef4444) Critical
+// < 200 ADC  -> Green (#10b981) Clean
+// 200 - 399  -> Orange (#f97316) Moderate
+// 400+ ADC   -> Red (#ef4444) Critical
 function getAirQualityColor(rawValue, status, airQuality) {
   if (status === "inactive") return "#94a3b8";
   const val = Number(rawValue) || 0;
-  if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "#ef4444";
-  if (val >= 150 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "#f97316";
-  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "#10b981";
+  if (val >= 400 || status === "critical" || airQuality === "CRITICAL" || airQuality === "Critical" || airQuality === "Hazardous") return "#ef4444";
+  if (val >= 200 || status === "moderate" || airQuality === "MODERATE" || airQuality === "Moderate" || airQuality === "Elevated") return "#f97316";
+  if (val > 0 || status === "clean" || airQuality === "CLEAN" || airQuality === "Clean" || airQuality === "Safe") return "#10b981";
 
   return "#10b981";
 }
@@ -586,11 +586,11 @@ function getAirQualityColor(rawValue, status, airQuality) {
 function getAirQualityLabel(rawValue, status, airQuality) {
   if (status === "inactive") return "Sensor Inactive";
   const val = Number(rawValue) || 0;
-  if (val >= 500 || status === "critical" || airQuality === "Critical" || airQuality === "Hazardous") return "Critical Risk (500+ ADC)";
-  if (val >= 150 || status === "moderate" || airQuality === "Moderate" || airQuality === "Elevated") return "Moderate Air Quality (150-499 ADC)";
-  if (val > 0 || status === "clean" || airQuality === "Clean" || airQuality === "Safe") return "Clean Air (<150 ADC)";
+  if (val >= 400 || status === "critical" || airQuality === "CRITICAL" || airQuality === "Critical" || airQuality === "Hazardous") return "CRITICAL (400+ ADC)";
+  if (val >= 200 || status === "moderate" || airQuality === "MODERATE" || airQuality === "Moderate" || airQuality === "Elevated") return "MODERATE (200-399 ADC)";
+  if (val > 0 || status === "clean" || airQuality === "CLEAN" || airQuality === "Clean" || airQuality === "Safe") return "CLEAN (<200 ADC)";
 
-  return "Clean Air (<150 ADC)";
+  return "CLEAN (<200 ADC)";
 }
 
 function HeatmapLayer({ data, options }) {
@@ -1454,26 +1454,22 @@ export default function HeatmapAnalytics() {
           return [updatedArea, ...prev];
         });
       }
-
-      addToast({
-        type: "iot",
-        sensorId: updatedArea.sensorId || updatedArea._id,
-        status: updatedArea.status,
-        title: `IoT: ${updatedArea.name}`,
-        body: `Status → ${updatedArea.status?.toUpperCase()}${updatedArea.rawValue ? `  ·  Raw ADC: ${updatedArea.rawValue}` : ""}${updatedArea.airQuality ? `  ·  ${updatedArea.airQuality}` : ""}`,
-      });
     });
 
-    // When a new IoT alert arrives, show as toast for all severities
+    // When a new IoT alert arrives, show as toast for non-clean alerts within jurisdiction
     socket.on("iot:alert", (alert) => {
       const isClean = alert.severity === "info" || alert.gasType === "normal";
+      if (isClean) return;
+      const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
+      const userBrgy = official?.barangay?.toLowerCase()?.trim();
+      if (isScoped && userBrgy && alert.barangay && alert.barangay.toLowerCase().trim() !== userBrgy) {
+        return;
+      }
       addToast({
-        type: isClean ? "cleaned" : "alert",
+        type: "alert",
         sensorId: `${alert.sensorId}-${alert.gasType}`,
-        status: isClean ? "clean" : alert.severity,
-        title: isClean
-          ? `Clean Air: ${alert.location || alert.sensorId}`
-          : alert.severity === "critical"
+        status: alert.severity,
+        title: alert.severity === "critical"
             ? `Critical: ${alert.location || alert.sensorId}`
             : `Warning: ${alert.location || alert.sensorId}`,
         body: alert.message,
@@ -1509,6 +1505,11 @@ export default function HeatmapAnalytics() {
         ),
       );
       if (update.reason === "collection_completed") {
+        const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
+        const userBrgy = official?.barangay?.toLowerCase()?.trim();
+        if (isScoped && userBrgy && update.barangay && update.barangay.toLowerCase().trim() !== userBrgy) {
+          return;
+        }
         addToast({
           type: "cleaned",
           sensorId: `cleaned-${update.areaId}`,

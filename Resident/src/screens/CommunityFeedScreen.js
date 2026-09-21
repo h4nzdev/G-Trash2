@@ -22,6 +22,7 @@ import {
   MaterialCommunityIcons,
 } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
@@ -119,6 +120,13 @@ export default function CommunityFeedScreen() {
   const [verifyingId, setVerifyingId] = useState(null);
   const socketRef = useRef(null);
 
+  // Dispute & Image Validation States
+  const [disputeModalReport, setDisputeModalReport] = useState(null);
+  const [disputeImageBase64, setDisputeImageBase64] = useState(null);
+  const [disputeImageUri, setDisputeImageUri] = useState(null);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [isSubmittingDispute, setIsSubmittingDispute] = useState(false);
+
   // Discussion States
   const [activeReportForComments, setActiveReportForComments] = useState(null);
   const [commentText, setCommentText] = useState("");
@@ -184,33 +192,125 @@ export default function CommunityFeedScreen() {
   }, [user?.barangay]);
 
   const handleVerify = async (reportId, confirmed) => {
+    if (!confirmed) {
+      // If resident wants to dispute, open the Image Validation modal to require photo evidence
+      const rep = reports.find((r) => r._id === reportId);
+      if (rep) {
+        setDisputeModalReport(rep);
+        setDisputeImageBase64(null);
+        setDisputeImageUri(null);
+        setDisputeReason("");
+      }
+      return;
+    }
+
     setVerifyingId(reportId);
     try {
       const res = await fetch(`${API_URL}/api/reports/${reportId}/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed, userId: user?.id }),
+        body: JSON.stringify({ confirmed: true, userId: user?.id }),
       });
       if (!res.ok) throw new Error();
       const updated = await res.json();
       setReports((prev) =>
         prev.map((r) => (r._id === reportId ? { ...r, ...updated } : r)),
       );
-      if (confirmed) {
-        Alert.alert(
-          "Thank you!",
-          "Your confirmation has been recorded. Barangay officials receive +20 points.",
-        );
-      } else {
-        Alert.alert(
-          "Report Reopened",
-          "The issue has been reopened. Officials have been notified and -15 points deducted.",
-        );
-      }
+      Alert.alert(
+        "Thank you!",
+        "Your confirmation has been recorded. Barangay officials receive +20 points.",
+      );
     } catch {
-      Alert.alert("Error", "Could not submit your response. Please try again.");
+      Alert.alert("Error", "Could not submit your confirmation. Please try again.");
     } finally {
       setVerifyingId(null);
+    }
+  };
+
+  const pickDisputeImage = async (fromCamera = false) => {
+    try {
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Denied", "Camera access is required to take photo proof.");
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.5,
+          base64: true,
+        });
+        if (!result.canceled && result.assets?.[0]) {
+          setDisputeImageUri(result.assets[0].uri);
+          setDisputeImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Denied", "Gallery access is required to choose photo proof.");
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.5,
+          base64: true,
+        });
+        if (!result.canceled && result.assets?.[0]) {
+          setDisputeImageUri(result.assets[0].uri);
+          setDisputeImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
+        }
+      }
+    } catch (err) {
+      console.error("Image pick error:", err);
+      Alert.alert("Error", "Could not capture or pick image.");
+    }
+  };
+
+  const handleSubmitDispute = async () => {
+    if (!disputeImageBase64) {
+      Alert.alert(
+        "Photo Proof Required",
+        "Please take or upload a photo showing that the trash or issue is still unresolved. Photo evidence is required for image validation.",
+      );
+      return;
+    }
+    if (!disputeModalReport) return;
+
+    setIsSubmittingDispute(true);
+    try {
+      const res = await fetch(`${API_URL}/api/reports/${disputeModalReport._id}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmed: false,
+          userId: user?.id,
+          disputeImage: disputeImageBase64,
+          disputeReason: disputeReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert("Validation Error", data.error || "Failed to submit dispute.");
+        return;
+      }
+      setReports((prev) =>
+        prev.map((r) => (r._id === disputeModalReport._id ? { ...r, ...data } : r)),
+      );
+      Alert.alert(
+        "Dispute Submitted",
+        "Your photo proof has been submitted. The report is reopened and barangay officials have been notified in realtime.",
+      );
+      setDisputeModalReport(null);
+      setDisputeImageBase64(null);
+      setDisputeImageUri(null);
+      setDisputeReason("");
+    } catch (err) {
+      Alert.alert("Error", "Could not submit dispute. Please check your connection.");
+    } finally {
+      setIsSubmittingDispute(false);
     }
   };
 
@@ -465,15 +565,22 @@ export default function CommunityFeedScreen() {
 
     return (
       <View style={[styles.card, item.escalated && styles.cardEscalated]}>
-        {/* Escalation banner */}
-        {item.escalated && item.status === "pending" && (
+        {/* Escalation / Disputed banner */}
+        {item.resolutionConfirmed === "disputed" ? (
+          <View style={[styles.escalationBanner, { backgroundColor: "#FEF2F2", borderColor: "#FECACA" }]}>
+            <MaterialIcons name="error-outline" size={14} color="#EF4444" />
+            <Text style={[styles.escalationText, { color: "#B91C1C" }]}>
+              DISPUTED — Reopened with photo proof. Awaiting barangay action.
+            </Text>
+          </View>
+        ) : item.escalated && item.status === "pending" ? (
           <View style={styles.escalationBanner}>
             <MaterialIcons name="warning" size={14} color="#EF4444" />
             <Text style={styles.escalationText}>
               OVERDUE — No action taken within 72h. Barangay penalised.
             </Text>
           </View>
-        )}
+        ) : null}
 
         {/* Header: User Info */}
         <View style={styles.cardHeader}>
@@ -587,12 +694,43 @@ export default function CommunityFeedScreen() {
             )}
         </View>
 
-        {/* Image */}
+        {/* Report Image */}
         {item.reportImage && (
           <Image
             source={{ uri: item.reportImage }}
             style={styles.reportImage}
           />
+        )}
+
+        {/* Official Resolution Proof Image */}
+        {item.resolutionImage && (
+          <View style={styles.proofCardWrap}>
+            <View style={styles.proofBadgeRow}>
+              <MaterialIcons name="verified" size={13} color="#059669" />
+              <Text style={styles.proofBadgeText}>Official Clean-up Proof</Text>
+            </View>
+            <Image
+              source={{ uri: item.resolutionImage }}
+              style={styles.proofImage}
+            />
+          </View>
+        )}
+
+        {/* Resident Dispute Image */}
+        {item.disputeImage && (
+          <View style={[styles.proofCardWrap, { borderColor: "#FECACA", backgroundColor: "#FEF2F2" }]}>
+            <View style={styles.proofBadgeRow}>
+              <MaterialIcons name="error-outline" size={13} color="#EF4444" />
+              <Text style={[styles.proofBadgeText, { color: "#B91C1C" }]}>Resident Dispute Photo Proof</Text>
+            </View>
+            <Image
+              source={{ uri: item.disputeImage }}
+              style={styles.proofImage}
+            />
+            {item.disputeReason ? (
+              <Text style={styles.disputeReasonText}>"{item.disputeReason}"</Text>
+            ) : null}
+          </View>
         )}
 
         {/* Verification prompt — only for report owner when status is resolved & unconfirmed */}
@@ -620,7 +758,12 @@ export default function CommunityFeedScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.verifyBtnNo}
-              onPress={() => handleVerify(item._id, false)}
+              onPress={() => {
+                setDisputeModalReport(item);
+                setDisputeImageBase64(null);
+                setDisputeImageUri(null);
+                setDisputeReason("");
+              }}
               disabled={verifyingId === item._id}
             >
               <Text style={[styles.verifyBtnText, { color: "#EF4444" }]}>
@@ -972,6 +1115,124 @@ export default function CommunityFeedScreen() {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Image Validation Dispute Modal */}
+      <Modal
+        visible={!!disputeModalReport}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          if (!isSubmittingDispute) {
+            setDisputeModalReport(null);
+            setDisputeImageBase64(null);
+            setDisputeImageUri(null);
+            setDisputeReason("");
+          }
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.disputeModalOverlay}
+        >
+          <View style={styles.disputeModalContent}>
+            <View style={styles.disputeModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.disputeModalTitle}>Dispute Resolution</Text>
+                <Text style={styles.disputeModalSubtitle}>
+                  Photo evidence is required to verify the issue still exists
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!isSubmittingDispute) {
+                    setDisputeModalReport(null);
+                    setDisputeImageBase64(null);
+                    setDisputeImageUri(null);
+                    setDisputeReason("");
+                  }
+                }}
+                disabled={isSubmittingDispute}
+              >
+                <MaterialIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.disputeNoticeBox}>
+              <MaterialIcons name="info-outline" size={16} color="#B91C1C" />
+              <Text style={styles.disputeNoticeText}>
+                To prevent false reports and trolling, you must attach a real-time photo proving the trash is still at the location.
+              </Text>
+            </View>
+
+            {/* Photo Preview / Capture */}
+            {disputeImageUri ? (
+              <View style={styles.disputeImagePreviewContainer}>
+                <Image source={{ uri: disputeImageUri }} style={styles.disputeImagePreview} />
+                <TouchableOpacity
+                  style={styles.retakeBtn}
+                  onPress={() => {
+                    setDisputeImageUri(null);
+                    setDisputeImageBase64(null);
+                  }}
+                >
+                  <MaterialIcons name="refresh" size={16} color="#fff" />
+                  <Text style={styles.retakeText}>Retake Photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.disputePickersRow}>
+                <TouchableOpacity
+                  style={styles.disputePickerBtn}
+                  onPress={() => pickDisputeImage(true)}
+                >
+                  <MaterialIcons name="photo-camera" size={24} color="#006A3B" />
+                  <Text style={styles.disputePickerText}>Take Photo Proof</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.disputePickerBtn}
+                  onPress={() => pickDisputeImage(false)}
+                >
+                  <MaterialIcons name="photo-library" size={24} color="#006A3B" />
+                  <Text style={styles.disputePickerText}>Choose Gallery</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Optional Reason Note */}
+            <Text style={styles.disputeInputLabel}>Details / Location note (Optional):</Text>
+            <TextInput
+              style={styles.disputeInput}
+              placeholder="e.g. Only half of the waste was collected, large pile remains..."
+              placeholderTextColor="#9CA3AF"
+              value={disputeReason}
+              onChangeText={setDisputeReason}
+              multiline
+              numberOfLines={3}
+            />
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              style={[
+                styles.submitDisputeBtn,
+                (!disputeImageBase64 || isSubmittingDispute) && styles.submitDisputeBtnDisabled,
+              ]}
+              onPress={handleSubmitDispute}
+              disabled={!disputeImageBase64 || isSubmittingDispute}
+            >
+              {isSubmittingDispute ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <MaterialIcons name="verified" size={18} color="#fff" />
+                  <Text style={styles.submitDisputeBtnText}>
+                    Submit Photo Proof & Dispute
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1612,6 +1873,170 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontStyle: "italic",
     lineHeight: 18,
+  },
+
+  // Proof Card styles
+  proofCardWrap: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    backgroundColor: "#ECFDF5",
+    overflow: "hidden",
+  },
+  proofBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  proofBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  proofImage: {
+    width: "100%",
+    height: 160,
+    backgroundColor: "#F3F4F6",
+  },
+  disputeReasonText: {
+    padding: 8,
+    fontSize: 12,
+    color: "#991B1B",
+    fontStyle: "italic",
+  },
+
+  // Dispute Modal styles
+  disputeModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  disputeModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "90%",
+  },
+  disputeModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  disputeModalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  disputeModalSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  disputeNoticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+  },
+  disputeNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#991B1B",
+    lineHeight: 15,
+    fontWeight: "500",
+  },
+  disputePickersRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+  disputePickerBtn: {
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 18,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1.5,
+    borderColor: "#BBF7D0",
+    borderRadius: 14,
+    borderStyle: "dashed",
+  },
+  disputePickerText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  disputeImagePreviewContainer: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  disputeImagePreview: {
+    width: "100%",
+    height: 180,
+  },
+  retakeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#374151",
+    paddingVertical: 8,
+  },
+  retakeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  disputeInputLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 6,
+  },
+  disputeInput: {
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 10,
+    fontSize: 13,
+    color: "#1F2937",
+    minHeight: 65,
+    textAlignVertical: "top",
+    marginBottom: 16,
+  },
+  submitDisputeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#DC2626",
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  submitDisputeBtnDisabled: {
+    backgroundColor: "#FCA5A5",
+  },
+  submitDisputeBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
 
