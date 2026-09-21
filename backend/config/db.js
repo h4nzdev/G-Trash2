@@ -1,8 +1,7 @@
 const mongoose = require("mongoose");
 
 const MONGO_URI =
-  process.env.MONGO_URI ||
-  "mongodb+srv://hanzcarillo2_db_user:w3n23R2b4i9XoRkI@trashcollection.0sq8v58.mongodb.net/smart-waste-system?retryWrites=true&w=majority";
+  process.env.MONGO_URI
 
 async function connectDB() {
   try {
