@@ -765,7 +765,7 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#006A3B" },
-  scroll:   { backgroundColor: "#FBF9F8", marginBottom: 16 },
+  scroll:   { flex: 1, backgroundColor: "#FBF9F8" },
 
   // ── Cover ──
   coverHeader: {

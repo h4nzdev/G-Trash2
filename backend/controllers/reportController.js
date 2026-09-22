@@ -1,10 +1,11 @@
 const mongoose = require("mongoose");
 const https = require("https");
-const { Report, GarbageArea, Fleet, Schedule, Route, Truck, Announcement } = require("../models");
+const { Report, GarbageArea, Fleet, Schedule, Route, Truck, Announcement, Sitio } = require("../models");
 const { getIO } = require("../config/socket");
 const { barangayFilter } = require("../middleware/barangayScope");
 const { haversineDistanceMeters } = require("../utils/geoUtils");
 const { awardResidentPoints, addBarangayScore } = require("../services/gamificationService");
+const { getRouteDirections } = require("../services/routingService");
 
 function haversineM(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -538,6 +539,15 @@ exports.assignPriority = async (req, res, next) => {
     const report = await Report.findById(id);
     if (!report) return res.status(404).json({ error: "Report not found" });
 
+    if (report.assignedTruck || report.priorityScheduleId) {
+      return res.status(400).json({
+        error: `This report is already assigned to Truck ${report.assignedTruck || "another schedule/truck"}. Dispatch is locked.`,
+      });
+    }
+    if (report.status === "resolved") {
+      return res.status(400).json({ error: "Cannot dispatch a report that is already resolved." });
+    }
+
     report.isPriorityArea = true;
     report.priority = priorityLevel;
     report.status = "in-progress";
@@ -546,10 +556,99 @@ exports.assignPriority = async (req, res, next) => {
       const fleetEntry = await Fleet.findOne({ truckId });
       if (fleetEntry) report.assignedDriver = fleetEntry.driverName;
     }
+
+    // Determine accurate coordinates
+    let reportLat = report.lat;
+    let reportLng = report.lng;
+    if (!reportLat || !reportLng) {
+      if (report.sitio && report.barangay) {
+        const sitioDoc = await Sitio.findOne({ name: report.sitio, barangay: report.barangay });
+        if (sitioDoc) {
+          reportLat = sitioDoc.lat;
+          reportLng = sitioDoc.lng;
+        }
+      }
+    }
+    if (!reportLat || !reportLng) {
+      reportLat = 10.325;
+      reportLng = 123.893;
+    }
+
+    const taskName = report.sitio || report.location || report.title || "Priority Cleanup Stop";
+    let schedule = null;
+    if (truckId) {
+      const today = date || new Date().toISOString().substring(0, 10);
+      schedule = await Schedule.findOne({ truckId, date: today, status: { $ne: "completed" } });
+      if (!schedule) {
+        schedule = await Schedule.findOne({ truckId, status: { $ne: "completed" } }).sort({ date: -1 });
+      }
+
+      if (schedule) {
+        if (!Array.isArray(schedule.sitioTasks)) schedule.sitioTasks = [];
+        const newTask = {
+          name: `🚨 PRIORITY: ${taskName}`,
+          lat: reportLat,
+          lng: reportLng,
+          completed: false,
+          isPriority: true,
+          reportId: report._id,
+        };
+
+        const nextIncompleteIdx = schedule.sitioTasks.findIndex((t) => !t.completed);
+        if (nextIncompleteIdx >= 0) {
+          schedule.sitioTasks.splice(nextIncompleteIdx, 0, newTask);
+        } else {
+          schedule.sitioTasks.unshift(newTask);
+        }
+
+        schedule.isPriority = true;
+        schedule.priorityLevel = priorityLevel;
+        schedule.priorityReason = reason;
+
+        const validWaypoints = schedule.sitioTasks.filter((t) => t.lat && t.lng).map((t) => [t.lat, t.lng]);
+        if (validWaypoints.length >= 2) {
+          try {
+            const directions = await getRouteDirections(validWaypoints);
+            if (Array.isArray(directions) && directions.length > 0) {
+              schedule.routeCoords = directions;
+            } else if (directions?.coordinates?.length) {
+              schedule.routeCoords = directions.coordinates;
+            }
+          } catch (_) {
+            schedule.routeCoords = validWaypoints;
+          }
+        } else {
+          schedule.routeCoords = validWaypoints;
+        }
+
+        await schedule.save();
+        report.priorityScheduleId = schedule._id;
+      }
+    }
+
     await report.save();
 
     const io = getIO();
-    if (io) io.emit("report:updated", report);
+    if (io) {
+      io.emit("report:updated", report);
+      if (schedule) {
+        io.emit("schedule:changed", {
+          truckId: schedule.truckId,
+          date: schedule.date,
+          scheduleId: schedule._id,
+          routeCoords: schedule.routeCoords,
+        });
+        io.emit("route:updated", {
+          truckId: schedule.truckId,
+          routeCoords: schedule.routeCoords,
+        });
+        io.emit("truck:priority:assigned", {
+          truckId: schedule.truckId,
+          report,
+          schedule,
+        });
+      }
+    }
     res.json(report);
   } catch (err) {
     next(err);
@@ -564,6 +663,15 @@ exports.applyNextSchedule = async (req, res, next) => {
     const report = await Report.findById(id);
     if (!report) return res.status(404).json({ error: "Report not found" });
 
+    if (report.priorityScheduleId || report.assignedTruck) {
+      return res.status(400).json({
+        error: `This report is already assigned to Truck ${report.assignedTruck || "another schedule/truck"}. Scheduling is locked.`,
+      });
+    }
+    if (report.status === "resolved") {
+      return res.status(400).json({ error: "Cannot schedule a report that is already resolved." });
+    }
+
     let schedule = null;
     if (scheduleId) {
       schedule = await Schedule.findById(scheduleId);
@@ -576,23 +684,109 @@ exports.applyNextSchedule = async (req, res, next) => {
       }).sort({ date: 1, startTime: 1 });
     }
 
-    const taskName = report.sitio || report.location || report.title || "Report Pickup Stop";
-    if (schedule) {
-      if (!Array.isArray(schedule.sitioTasks)) schedule.sitioTasks = [];
-      if (!schedule.sitioTasks.some((t) => t.name.toLowerCase() === taskName.toLowerCase())) {
-        schedule.sitioTasks.push({
-          name: taskName,
-          lat: report.lat || 10.325,
-          lng: report.lng || 123.893,
-          completed: false,
-        });
-        await schedule.save();
-      }
-      report.priorityScheduleId = schedule._id;
-      report.assignedTruck = schedule.truckId;
-      report.assignedDriver = schedule.driverName;
+    if (!schedule) {
+      return res.status(404).json({ error: "No upcoming collection schedule found to apply to." });
     }
 
+    // Determine accurate coordinates for the report
+    let reportLat = report.lat;
+    let reportLng = report.lng;
+    if (!reportLat || !reportLng) {
+      if (report.sitio && report.barangay) {
+        const sitioDoc = await Sitio.findOne({ name: report.sitio, barangay: report.barangay });
+        if (sitioDoc) {
+          reportLat = sitioDoc.lat;
+          reportLng = sitioDoc.lng;
+        }
+      }
+    }
+    if (!reportLat || !reportLng) {
+      reportLat = 10.325;
+      reportLng = 123.893;
+    }
+
+    const taskName = report.sitio || report.location || report.title || "Report Pickup Stop";
+    if (!Array.isArray(schedule.sitioTasks)) schedule.sitioTasks = [];
+
+    // Check if task is already in schedule
+    const existingIndex = schedule.sitioTasks.findIndex(
+      (t) => t.name.toLowerCase() === taskName.toLowerCase() ||
+             (Math.abs((t.lat || 0) - reportLat) < 0.0001 && Math.abs((t.lng || 0) - reportLng) < 0.0001)
+    );
+
+    const newTask = {
+      name: taskName,
+      lat: reportLat,
+      lng: reportLng,
+      completed: false,
+      isReport: true,
+      reportId: report._id,
+    };
+
+    if (existingIndex === -1) {
+      // Find optimal insertion point along the route to minimize detour
+      if (schedule.sitioTasks.length < 2) {
+        schedule.sitioTasks.push(newTask);
+      } else {
+        let bestIndex = schedule.sitioTasks.length;
+        let minDetour = Infinity;
+        for (let i = 0; i < schedule.sitioTasks.length - 1; i++) {
+          const p1 = schedule.sitioTasks[i];
+          const p2 = schedule.sitioTasks[i + 1];
+          if (p1.lat && p1.lng && p2.lat && p2.lng) {
+            const d1 = haversineM(p1.lat, p1.lng, reportLat, reportLng);
+            const d2 = haversineM(reportLat, reportLng, p2.lat, p2.lng);
+            const dDirect = haversineM(p1.lat, p1.lng, p2.lat, p2.lng);
+            const detour = d1 + d2 - dDirect;
+            if (detour < minDetour) {
+              minDetour = detour;
+              bestIndex = i + 1;
+            }
+          }
+        }
+        schedule.sitioTasks.splice(bestIndex, 0, newTask);
+      }
+    }
+
+    // Recompute schedule routeCoords with actual road driving directions
+    const validWaypoints = schedule.sitioTasks
+      .filter((t) => t.lat && t.lng)
+      .map((t) => [t.lat, t.lng]);
+
+    if (validWaypoints.length >= 2) {
+      try {
+        const directions = await getRouteDirections(validWaypoints);
+        if (Array.isArray(directions) && directions.length > 0) {
+          schedule.routeCoords = directions;
+        } else if (directions?.coordinates?.length) {
+          schedule.routeCoords = directions.coordinates;
+        }
+      } catch (err) {
+        console.warn("[applyNextSchedule] Failed to calculate road directions, using waypoints:", err.message);
+        schedule.routeCoords = validWaypoints;
+      }
+    } else {
+      schedule.routeCoords = validWaypoints;
+    }
+
+    // Also update linked route if exists
+    if (schedule.routeId) {
+      try {
+        const linkedRoute = await Route.findById(schedule.routeId);
+        if (linkedRoute) {
+          linkedRoute.waypoints = schedule.sitioTasks.map((t) => ({ name: t.name, lat: t.lat, lng: t.lng }));
+          linkedRoute.routeCoords = schedule.routeCoords;
+          linkedRoute.totalStops = schedule.sitioTasks.length;
+          await linkedRoute.save();
+        }
+      } catch (_) {}
+    }
+
+    await schedule.save();
+
+    report.priorityScheduleId = schedule._id;
+    report.assignedTruck = schedule.truckId;
+    report.assignedDriver = schedule.driverName;
     report.status = "in-progress";
     report.isPriorityArea = false;
     await report.save();
@@ -600,7 +794,16 @@ exports.applyNextSchedule = async (req, res, next) => {
     const io = getIO();
     if (io) {
       io.emit("report:updated", report);
-      if (schedule) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
+      io.emit("schedule:changed", {
+        truckId: schedule.truckId,
+        date: schedule.date,
+        scheduleId: schedule._id,
+        routeCoords: schedule.routeCoords,
+      });
+      io.emit("route:updated", {
+        truckId: schedule.truckId,
+        routeCoords: schedule.routeCoords,
+      });
     }
 
     res.json({ report, schedule });

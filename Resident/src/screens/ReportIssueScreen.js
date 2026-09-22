@@ -216,7 +216,7 @@ export default function ReportIssueScreen({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.5,
+      quality: 0.4,
       base64: true,
     });
 
@@ -236,7 +236,7 @@ export default function ReportIssueScreen({ navigation }) {
     let result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.5,
+      quality: 0.4,
       base64: true,
     });
 
@@ -268,7 +268,6 @@ export default function ReportIssueScreen({ navigation }) {
       ? JSON.stringify({ ...JSON.parse(payload), force: true })
       : payload;
 
-    setIsSubmitting(true);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/reports`);
     xhr.setRequestHeader('Content-Type', 'application/json');
@@ -305,7 +304,13 @@ export default function ReportIssueScreen({ navigation }) {
           body.message || 'A similar report was already submitted for this area.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Submit Anyway', onPress: () => submitReport(payload, true) },
+            {
+              text: 'Submit Anyway',
+              onPress: () => {
+                setIsSubmitting(true);
+                submitReport(payload, true);
+              },
+            },
           ]
         );
       } else {
@@ -324,6 +329,8 @@ export default function ReportIssueScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     if (!imageBase64 && !image) {
       Alert.alert(
         'Photo Required',
@@ -339,6 +346,8 @@ export default function ReportIssueScreen({ navigation }) {
       Alert.alert('Missing Location', 'Please enter a location or street address.');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       let reportImage = null;
@@ -360,7 +369,8 @@ export default function ReportIssueScreen({ navigation }) {
 
       submitReport(payload);
     } catch (err) {
-      Alert.alert('Upload Error', err.message || 'Failed to upload image');
+      setIsSubmitting(false);
+      Alert.alert('Upload Error', err.message || 'Failed to upload image. Please try again.');
     }
   };
 
@@ -502,9 +512,13 @@ export default function ReportIssueScreen({ navigation }) {
             style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}
             onPress={handleSubmit}
             disabled={isSubmitting}
+            activeOpacity={0.7}
           >
             {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ActivityIndicator color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.submitBtnText}>Submitting Report...</Text>
+              </View>
             ) : (
               <>
                 <MaterialIcons name="send" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />

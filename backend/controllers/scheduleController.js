@@ -172,6 +172,94 @@ exports.getTruckTodaySchedule = async (req, res, next) => {
       return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
 
+    // Check if there are active reports assigned to this truck that need to be incorporated
+    const assignedReports = await Report.find({
+      assignedTruck: truckId,
+      status: "in-progress",
+    });
+
+    for (const sched of schedules) {
+      if (sched.status === "completed") continue;
+      let scheduleUpdated = false;
+      if (!Array.isArray(sched.sitioTasks)) sched.sitioTasks = [];
+
+      for (const rep of assignedReports) {
+        let repLat = rep.lat;
+        let repLng = rep.lng;
+        if (!repLat || !repLng) {
+          if (rep.sitio && rep.barangay) {
+            const sitioDoc = await Sitio.findOne({ name: rep.sitio, barangay: rep.barangay });
+            if (sitioDoc) {
+              repLat = sitioDoc.lat;
+              repLng = sitioDoc.lng;
+            }
+          }
+        }
+        if (!repLat || !repLng) continue;
+
+        const taskName = rep.sitio || rep.location || rep.title || "Report Pickup Stop";
+        const alreadyInTasks = sched.sitioTasks.some(
+          (t) =>
+            (t.reportId && t.reportId.toString() === rep._id.toString()) ||
+            t.name.toLowerCase() === taskName.toLowerCase() ||
+            (Math.abs((t.lat || 0) - repLat) < 0.0001 && Math.abs((t.lng || 0) - repLng) < 0.0001)
+        );
+
+        if (!alreadyInTasks) {
+          const newTask = {
+            name: rep.isPriorityArea ? `🚨 PRIORITY: ${taskName}` : taskName,
+            lat: repLat,
+            lng: repLng,
+            completed: false,
+            isPriority: !!rep.isPriorityArea,
+            isReport: true,
+            reportId: rep._id,
+          };
+
+          if (sched.sitioTasks.length < 2) {
+            sched.sitioTasks.push(newTask);
+          } else {
+            let bestIndex = sched.sitioTasks.length;
+            let minDetour = Infinity;
+            for (let i = 0; i < sched.sitioTasks.length - 1; i++) {
+              const p1 = sched.sitioTasks[i];
+              const p2 = sched.sitioTasks[i + 1];
+              if (p1.lat && p1.lng && p2.lat && p2.lng) {
+                const d1 = haversineM(p1.lat, p1.lng, repLat, repLng);
+                const d2 = haversineM(repLat, repLng, p2.lat, p2.lng);
+                const dDirect = haversineM(p1.lat, p1.lng, p2.lat, p2.lng);
+                const detour = d1 + d2 - dDirect;
+                if (detour < minDetour) {
+                  minDetour = detour;
+                  bestIndex = i + 1;
+                }
+              }
+            }
+            sched.sitioTasks.splice(bestIndex, 0, newTask);
+          }
+          scheduleUpdated = true;
+        }
+      }
+
+      // If tasks were updated or routeCoords is missing/stale, recalculate road driving directions!
+      if (scheduleUpdated || !sched.routeCoords || sched.routeCoords.length < 2) {
+        const validCoords = sched.sitioTasks.filter((t) => t.lat && t.lng).map((t) => [t.lat, t.lng]);
+        if (validCoords.length >= 2) {
+          try {
+            const directions = await getRouteDirections(validCoords);
+            if (Array.isArray(directions) && directions.length > 0) {
+              sched.routeCoords = directions;
+            } else if (directions?.coordinates?.length) {
+              sched.routeCoords = directions.coordinates;
+            }
+          } catch (_) {
+            sched.routeCoords = validCoords;
+          }
+        }
+        await sched.save();
+      }
+    }
+
     res.json({ schedules, today });
   } catch (err) {
     next(err);
@@ -378,28 +466,35 @@ exports.completeSchedule = async (req, res, next) => {
 // POST /api/schedules/:id/complete-task
 exports.completeTask = async (req, res, next) => {
   try {
-    const { sitioName, completedAt } = req.body;
+    const { sitioName, completedAt, proofImage, afterImage, beforeImage, lat, lng } = req.body;
     if (!sitioName) return res.status(400).json({ error: "sitioName is required" });
 
     const schedule = await Schedule.findById(req.params.id);
     if (!schedule) return res.status(404).json({ error: "Schedule not found" });
 
     const taskCompletedAt = completedAt ? new Date(completedAt) : new Date();
-    let matched = false;
+    const finalProofImage = proofImage || afterImage || beforeImage || "";
+    let matchedTask = null;
 
     if (schedule.sitioTasks && schedule.sitioTasks.length > 0) {
       schedule.sitioTasks.forEach((t) => {
-        if (t.name?.trim().toLowerCase() === sitioName.trim().toLowerCase()) {
+        const isNameMatch = t.name?.trim().toLowerCase() === sitioName.trim().toLowerCase();
+        const isCoordMatch = lat && lng && t.lat && t.lng && Math.abs(t.lat - lat) < 0.0005 && Math.abs(t.lng - lng) < 0.0005;
+        if (isNameMatch || isCoordMatch) {
           if (!t.completed) {
             t.completed = true;
             t.completedAt = taskCompletedAt;
+            if (finalProofImage) {
+              t.proofImage = finalProofImage;
+              t.afterImage = finalProofImage;
+            }
           }
-          matched = true;
+          matchedTask = t;
         }
       });
     }
 
-    if (!matched) {
+    if (!matchedTask) {
       return res.status(404).json({ error: `Sitio "${sitioName}" not found in this schedule` });
     }
 
@@ -411,6 +506,66 @@ exports.completeTask = async (req, res, next) => {
 
     await schedule.save();
 
+    // Auto-resolve corresponding waste report(s) and attach the truck clean-up photo proof
+    const cleanSitioName = sitioName.replace(/^🚨\s*PRIORITY:\s*/i, "").trim().toLowerCase();
+    const linkedReports = await Report.find({
+      $or: [
+        { priorityScheduleId: schedule._id },
+        { assignedTruck: schedule.truckId, status: "in-progress" },
+        { sitio: { $regex: new RegExp(`^${cleanSitioName}$`, "i") }, status: { $ne: "resolved" } },
+      ],
+      status: { $ne: "resolved" },
+    });
+
+    for (const rep of linkedReports) {
+      const isDirectMatch =
+        (matchedTask?.reportId && matchedTask.reportId.toString() === rep._id.toString()) ||
+        (rep.sitio && (cleanSitioName.includes(rep.sitio.toLowerCase()) || rep.sitio.toLowerCase().includes(cleanSitioName))) ||
+        (rep.location && (cleanSitioName.includes(rep.location.toLowerCase()) || rep.location.toLowerCase().includes(cleanSitioName))) ||
+        (rep.lat && rep.lng && matchedTask?.lat && matchedTask?.lng && haversineM(rep.lat, rep.lng, matchedTask.lat, matchedTask.lng) < 200);
+
+      if (isDirectMatch) {
+        rep.status = "resolved";
+        rep.resolvedAt = taskCompletedAt;
+        rep.resolvedBy = schedule.driverName ? `Truck ${schedule.truckId} (${schedule.driverName})` : `Truck ${schedule.truckId}`;
+        if (finalProofImage) {
+          rep.resolutionImage = finalProofImage;
+        }
+        rep.resolutionConfirmed = "pending";
+        if (!Array.isArray(rep.statusHistory)) rep.statusHistory = [];
+        rep.statusHistory.push({
+          status: "resolved",
+          changedBy: rep.resolvedBy,
+          changedAt: taskCompletedAt,
+        });
+        await rep.save();
+
+        if (rep.barangay) {
+          await addBarangayScore(
+            rep.barangay,
+            20,
+            "reportScore",
+            null,
+            `Waste report "${rep.title}" resolved & verified by Truck ${schedule.truckId}`
+          );
+        }
+
+        const io = getIO();
+        if (io) {
+          io.emit("report:updated", rep);
+          io.emit("report:resolved", {
+            reportId: rep._id,
+            title: rep.title,
+            barangay: rep.barangay,
+            location: rep.location,
+            resolutionImage: rep.resolutionImage,
+            resolvedBy: rep.resolvedBy,
+            resolvedAt: rep.resolvedAt,
+          });
+        }
+      }
+    }
+
     const io = getIO();
     if (io) {
       io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
@@ -418,6 +573,7 @@ exports.completeTask = async (req, res, next) => {
         scheduleId: schedule._id,
         truckId: schedule.truckId,
         sitioName,
+        proofImage: finalProofImage,
         completedAt: taskCompletedAt,
         allDone,
       });
@@ -848,20 +1004,61 @@ exports.createCollection = async (req, res, next) => {
     const io = getIO();
     if (io) io.emit("collection:new", log);
 
-    if (lat != null && lng != null) {
-      const latDelta = 0.003;
-      const lngDelta = 0.003;
-      const nearbyAreas = await GarbageArea.find({
-        lat: { $gte: lat - latDelta, $lte: lat + latDelta },
-        lng: { $gte: lng - lngDelta, $lte: lng + lngDelta },
+    // Auto-resolve any pending waste reports matching this collection stop
+    const cleanStopName = (stopName || "").replace(/^🚨\s*PRIORITY:\s*/i, "").trim().toLowerCase();
+    const finalProofUrl = afterImage || beforeImage || resolvedPhoto || "";
+    if (cleanStopName || (lat != null && lng != null)) {
+      const matchingReports = await Report.find({
+        $or: [
+          { assignedTruck: truckId, status: "in-progress" },
+          ...(cleanStopName ? [{ sitio: { $regex: new RegExp(`^${cleanStopName}$`, "i") }, status: { $ne: "resolved" } }] : []),
+        ],
+        status: { $ne: "resolved" },
       });
-      for (const area of nearbyAreas) {
-        if (haversineM(lat, lng, area.lat, area.lng) <= 300) {
-          area.lastCollectionAt = new Date();
-          area.lastCollectionBy = driverName || truckId || "Unknown";
-          area.lastCollectionId = log._id;
-          await area.save();
-          await recalculateAndEmitZone(area._id, "collection_completed", driverName || truckId, resolvedWeight, log._id);
+
+      for (const rep of matchingReports) {
+        const isMatch =
+          (cleanStopName && ((rep.sitio && cleanStopName.includes(rep.sitio.toLowerCase())) || (rep.location && cleanStopName.includes(rep.location.toLowerCase())))) ||
+          (lat != null && lng != null && rep.lat && rep.lng && haversineM(lat, lng, rep.lat, rep.lng) <= 300);
+
+        if (isMatch) {
+          rep.status = "resolved";
+          rep.resolvedAt = new Date();
+          rep.resolvedBy = driverName ? `Truck ${truckId} (${driverName})` : `Truck ${truckId}`;
+          if (finalProofUrl) {
+            rep.resolutionImage = finalProofUrl;
+          }
+          rep.resolutionConfirmed = "pending";
+          if (!Array.isArray(rep.statusHistory)) rep.statusHistory = [];
+          rep.statusHistory.push({
+            status: "resolved",
+            changedBy: rep.resolvedBy,
+            changedAt: new Date(),
+          });
+          await rep.save();
+
+          if (rep.barangay) {
+            await addBarangayScore(
+              rep.barangay,
+              20,
+              "reportScore",
+              null,
+              `Waste report "${rep.title}" resolved & verified by Truck ${truckId}`
+            );
+          }
+
+          if (io) {
+            io.emit("report:updated", rep);
+            io.emit("report:resolved", {
+              reportId: rep._id,
+              title: rep.title,
+              barangay: rep.barangay,
+              location: rep.location,
+              resolutionImage: rep.resolutionImage,
+              resolvedBy: rep.resolvedBy,
+              resolvedAt: rep.resolvedAt,
+            });
+          }
         }
       }
     }

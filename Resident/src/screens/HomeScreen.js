@@ -342,6 +342,7 @@ export default function HomeScreen({ navigation }) {
       if (!result.canceled && result.assets && result.assets[0]) {
         setSelectedPhoto(result.assets[0].uri);
         setCapturedBase64(result.assets[0].base64 || null);
+        setModalVisible(false);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -373,6 +374,7 @@ export default function HomeScreen({ navigation }) {
       if (!result.canceled && result.assets && result.assets[0]) {
         setSelectedPhoto(result.assets[0].uri);
         setCapturedBase64(result.assets[0].base64 || null);
+        setModalVisible(false);
         setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
@@ -455,6 +457,15 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
+      // Notify bin preparation endpoint
+      if (user?.id && user?.barangay) {
+        fetch(`${API_URL}/api/bin/prepare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+        }).catch(() => {});
+      }
+
       // Mark locally as snapped today & bin ready & save photo
       setHasSnappedToday(true);
       setTodayDisposalPhoto(finalPhotoUrl);
@@ -493,8 +504,16 @@ export default function HomeScreen({ navigation }) {
       setHasSnappedToday(true);
       setTodayDisposalPhoto(selectedPhoto);
       setBinReady(true);
+      if (user?.id && user?.barangay) {
+        fetch(`${API_URL}/api/bin/prepare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+        }).catch(() => {});
+      }
       AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
       AsyncStorage.setItem(`@disposal_photo_${today}`, selectedPhoto).catch(() => {});
+      AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
       Alert.alert(
@@ -1149,6 +1168,14 @@ export default function HomeScreen({ navigation }) {
 
   const handleOpenModal = () => {
     if (binReady) return;
+    if (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") {
+      Alert.alert(
+        "Route Completed",
+        "The garbage truck has already completed its collection route in your area for today.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
     if (onlineTrucks.length === 0) {
       Alert.alert(
         "Truck Not Active",
@@ -1344,8 +1371,8 @@ export default function HomeScreen({ navigation }) {
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
   const isRouteCompleted = useMemo(() => {
-    if (onlineTrucks.length > 0) return false;
     if (todayPickupDone) return true;
+    if (firstSchedule?.status === "completed") return true;
     const brgy = user?.barangay?.trim()?.toLowerCase();
     if (brgy && todaySchedules.length > 0) {
       const userScheds = todaySchedules.filter(
@@ -1365,7 +1392,7 @@ export default function HomeScreen({ navigation }) {
       return todaySchedules.every((s) => s.status === "completed");
     }
     return false;
-  }, [todayPickupDone, todaySchedules, user?.barangay, onlineTrucks.length]);
+  }, [todayPickupDone, todaySchedules, user?.barangay, firstSchedule]);
 
   const isTruckCollecting = useMemo(() => {
     return onlineTrucks.length > 0;
@@ -1680,15 +1707,41 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* DAILY GARBAGE DISPOSAL PHOTO CARD (1 SNAP PER DAY • RESETS IN 1 DAY) */}
+        {/* DAILY GARBAGE DISPOSAL & BIN PREPARATION CARD (RESIDENT WORKFLOW) */}
         {isTruckNearOrActive && (
           <View style={styles.proximityCard}>
             <View style={styles.proximityCardHeader}>
-              <View style={[styles.proximityBadgePill, hasSnappedToday && { backgroundColor: "#ECFDF5" }]}>
-                <View style={[styles.livePulseDot, hasSnappedToday && { backgroundColor: "#059669" }]} />
-                <Text style={[styles.proximityBadgeText, hasSnappedToday && { color: "#047857" }]}>
+              <View
+                style={[
+                  styles.proximityBadgePill,
+                  hasSnappedToday && { backgroundColor: "#ECFDF5" },
+                  (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
+                    backgroundColor: "#F3F4F6",
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.livePulseDot,
+                    hasSnappedToday && { backgroundColor: "#059669" },
+                    (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
+                      backgroundColor: "#9CA3AF",
+                    },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.proximityBadgeText,
+                    hasSnappedToday && { color: "#047857" },
+                    (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
+                      color: "#4B5563",
+                    },
+                  ]}
+                >
                   {hasSnappedToday
-                    ? "SNAPPED TODAY (1/DAY)"
+                    ? "PREPARED & VERIFIED (1/DAY)"
+                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                    ? "COLLECTION ROUTE COMPLETED"
                     : isTruckNear
                     ? (distToTruck != null && distToTruck < 350 ? "TRUCK AT YOUR STREET" : "TRUCK NEARBY")
                     : isTruckCollecting
@@ -1701,27 +1754,62 @@ export default function HomeScreen({ navigation }) {
                   styles.streakTagPill,
                   hasSnappedToday
                     ? { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }
+                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                    ? { backgroundColor: "#F9FAFB", borderColor: "#E5E7EB" }
                     : { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
                 ]}
               >
                 <MaterialIcons
-                  name={hasSnappedToday ? "check-circle" : "camera-alt"}
+                  name={
+                    hasSnappedToday
+                      ? "check-circle"
+                      : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                      ? "task-alt"
+                      : "emoji-events"
+                  }
                   size={14}
-                  color="#059669"
+                  color={
+                    hasSnappedToday
+                      ? "#059669"
+                      : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                      ? "#6B7280"
+                      : "#059669"
+                  }
                 />
-                <Text style={[styles.streakTagText, { color: "#059669" }]}>
-                  {hasSnappedToday ? "Resets Tomorrow" : "1 Snap / Day"}
+                <Text
+                  style={[
+                    styles.streakTagText,
+                    {
+                      color: hasSnappedToday
+                        ? "#059669"
+                        : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                        ? "#6B7280"
+                        : "#059669",
+                    },
+                  ]}
+                >
+                  {hasSnappedToday
+                    ? "Resets Tomorrow"
+                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                    ? "Finished for Today"
+                    : "+10 Eco Pts"}
                 </Text>
               </View>
             </View>
 
             <Text style={styles.proximityCardTitle}>
-              {hasSnappedToday ? "Daily Disposal Photo ✓" : "Garbage Disposal Photo"}
+              {hasSnappedToday
+                ? "Garbage Disposal Prepared ✓"
+                : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                ? "Collection Route Completed ✓"
+                : "Garbage Disposal Preparation"}
             </Text>
             <Text style={styles.proximityCardSub}>
               {hasSnappedToday
-                ? "You have already submitted your garbage disposal photo report today! Your 1-snap limit resets tomorrow at midnight."
-                : "Snap a photo of your waste bin or curb disposal area to report to Barangay Officials (1 snap per day • resets tomorrow)."}
+                ? "You have already completed your segregation checklist and submitted your bin photo for today! Resets tomorrow at midnight."
+                : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
+                ? "The collection truck has already completed its route in your area for today. Bin preparation is closed until the next scheduled collection."
+                : "Complete your waste segregation checklist and snap a photo of your prepared bin to earn points and notify the collection crew."}
             </Text>
 
             {/* If user snapped a photo today, show the thumbnail preview in the card */}
@@ -1772,22 +1860,11 @@ export default function HomeScreen({ navigation }) {
             )}
 
             <View style={styles.proximityActionsRow}>
-              <TouchableOpacity
-                style={styles.proximityBtnSecondary}
-                onPress={() => setModalVisible(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="checklist" size={16} color="#006A3B" />
-                <Text style={styles.proximityBtnSecondaryText} numberOfLines={1}>
-                  Prepare Bin
-                </Text>
-              </TouchableOpacity>
-
               {hasSnappedToday ? (
                 <TouchableOpacity
                   style={[
                     styles.proximityBtnPrimary,
-                    { backgroundColor: "#ECFDF5", borderWidth: 1.5, borderColor: "#10B981" },
+                    { backgroundColor: "#ECFDF5", borderWidth: 1.5, borderColor: "#10B981", flex: 1 },
                   ]}
                   onPress={() => {
                     if (todayDisposalPhoto || selectedPhoto) {
@@ -1795,27 +1872,39 @@ export default function HomeScreen({ navigation }) {
                       setPhotoPreviewVisible(true);
                     } else {
                       Alert.alert(
-                        "Daily Limit (1 Snap / Day)",
-                        "You have already snapped and submitted your garbage disposal photo for today.\n\nYour 1 snap resets tomorrow at midnight!"
+                        "Daily Snap Recorded",
+                        "You have already prepared your bin and submitted your photo for today.\n\nResets tomorrow at midnight!"
                       );
                     }
                   }}
                   activeOpacity={0.85}
                 >
-                  <MaterialIcons name="check-circle" size={16} color="#059669" />
+                  <MaterialIcons name="check-circle" size={18} color="#059669" />
                   <Text style={[styles.proximityBtnPrimaryText, { color: "#059669" }]} numberOfLines={1}>
-                    {todayDisposalPhoto || selectedPhoto ? "View Photo ✓" : "Snapped Today ✓"}
+                    {todayDisposalPhoto || selectedPhoto ? "View Prepared Bin Photo ✓" : "Bin Prepared Today ✓"}
                   </Text>
                 </TouchableOpacity>
+              ) : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") ? (
+                <View
+                  style={[
+                    styles.proximityBtnPrimary,
+                    { backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#E5E7EB", flex: 1 },
+                  ]}
+                >
+                  <MaterialIcons name="check-circle" size={18} color="#6B7280" />
+                  <Text style={[styles.proximityBtnPrimaryText, { color: "#6B7280" }]} numberOfLines={1}>
+                    Route Completed ✓
+                  </Text>
+                </View>
               ) : (
                 <TouchableOpacity
-                  style={styles.proximityBtnPrimary}
-                  onPress={() => setProximityModalVisible(true)}
+                  style={[styles.proximityBtnPrimary, { flex: 1 }]}
+                  onPress={handleOpenModal}
                   activeOpacity={0.85}
                 >
-                  <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                  <MaterialIcons name="checklist" size={18} color="#FFFFFF" />
                   <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
-                    Snap Photo (1/day)
+                    Prepare My Bin
                   </Text>
                 </TouchableOpacity>
               )}
@@ -2041,36 +2130,48 @@ export default function HomeScreen({ navigation }) {
               </View>
 
               {(() => {
+                const isCompleted = isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed";
                 const truckActive = onlineTrucks.length > 0;
-                const canPrepare = firstSchedule && truckActive && !binReady;
+                const canPrepare = firstSchedule && truckActive && !binReady && !isCompleted;
                 const btnStyle = binReady
                   ? styles.prepareButtonReady
-                  : (!firstSchedule || !truckActive)
+                  : isCompleted
                     ? styles.prepareButtonLocked
-                    : null;
+                    : (!firstSchedule || !truckActive)
+                      ? styles.prepareButtonLocked
+                      : null;
                 return (
                   <TouchableOpacity
                     style={[styles.prepareButton, btnStyle]}
-                    onPress={firstSchedule ? handleOpenModal : undefined}
+                    onPress={canPrepare ? handleOpenModal : (isCompleted ? () => {
+                      Alert.alert(
+                        "Route Completed",
+                        "The garbage truck has already completed its collection route in your area for today.",
+                        [{ text: "OK" }],
+                      );
+                    } : undefined)}
                     activeOpacity={canPrepare ? 0.8 : 1}
+                    disabled={!canPrepare && !isCompleted}
                   >
                     <View style={styles.prepareButtonInner}>
                       <MaterialIcons
-                        name={binReady ? "check-circle" : firstSchedule && !truckActive ? "lock" : "delete-outline"}
+                        name={binReady ? "check-circle" : isCompleted ? "check-circle" : firstSchedule && !truckActive ? "lock" : "delete-outline"}
                         size={18}
-                        color={binReady ? "#006A3B" : (!firstSchedule || !truckActive) ? "#9CA3AF" : "#006A3B"}
+                        color={binReady ? "#006A3B" : isCompleted ? "#6B7280" : (!firstSchedule || !truckActive) ? "#9CA3AF" : "#006A3B"}
                       />
                       <Text style={[
                         styles.prepareButtonText,
-                        (!firstSchedule || !truckActive) && !binReady && styles.prepareButtonTextLocked,
+                        (isCompleted || (!firstSchedule || !truckActive)) && !binReady && styles.prepareButtonTextLocked,
                       ]}>
                         {binReady
                           ? "Bin Ready ✓"
-                          : !firstSchedule
-                            ? t("no_activity")
-                            : !truckActive
-                              ? "Waiting for truck..."
-                              : t("prepare_bin")}
+                          : isCompleted
+                            ? "Route Completed ✓"
+                            : !firstSchedule
+                              ? t("no_activity")
+                              : !truckActive
+                                ? "Waiting for truck..."
+                                : t("prepare_bin")}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -2307,96 +2408,70 @@ export default function HomeScreen({ navigation }) {
                 {checkedCount} of {checklist.length} items ready
               </Text>
 
-              <TouchableOpacity
-                style={[
-                  styles.confirmBtn,
-                  !allChecked && styles.confirmBtnDisabled,
-                ]}
-                onPress={allChecked ? handleConfirm : undefined}
-                activeOpacity={allChecked ? 0.85 : 1}
-              >
-                <Text style={styles.confirmBtnText}>
-                  {allChecked
-                    ? `Mark ${scheduledWasteType} Bin as Ready`
-                    : "Check all items to confirm"}
-                </Text>
-              </TouchableOpacity>
+              {/* Step 2 / Final Step: Photo Verification */}
+              {!allChecked ? (
+                <View style={styles.snapPromptLockedCard}>
+                  <View style={styles.snapPromptLockedIconWrap}>
+                    <MaterialIcons name="camera-alt" size={20} color="#9CA3AF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.snapPromptLockedTitle}>Step 2: Snap Bin Photo Proof</Text>
+                    <Text style={styles.snapPromptLockedSub}>
+                      Check all {checklist.length} items above to unlock photo capture & verify your bin.
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.snapPromptActiveCard}>
+                  <View style={styles.snapPromptHeaderRow}>
+                    <View style={styles.snapPromptActiveIconWrap}>
+                      <MaterialIcons name="camera-alt" size={22} color="#059669" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.snapPromptActiveTitle}>Final Step: Snap Bin Photo Proof</Text>
+                      <Text style={styles.snapPromptActiveSub}>
+                        All items checked! Take a photo of your sorted bin at the curb to verify preparation, notify the collection crew, and earn +10 Eco Points.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.snapActionRow}>
+                    <TouchableOpacity
+                      style={styles.snapActionBtnPrimary}
+                      onPress={handleTakePhoto}
+                      activeOpacity={0.85}
+                    >
+                      <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
+                      <Text style={styles.snapActionBtnPrimaryText}>Take Bin Photo</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.snapActionBtnSecondary}
+                      onPress={handlePickPhoto}
+                      activeOpacity={0.85}
+                    >
+                      <MaterialIcons name="photo-library" size={18} color="#006A3B" />
+                      <Text style={styles.snapActionBtnSecondaryText}>From Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {!allChecked && (
+                <TouchableOpacity
+                  style={[styles.confirmBtn, styles.confirmBtnDisabled]}
+                  disabled={true}
+                  activeOpacity={1}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <MaterialIcons name="lock" size={16} color="#FFFFFF" />
+                    <Text style={styles.confirmBtnText}>
+                      Check all items to proceed ({checkedCount}/{checklist.length})
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Proximity Choice Modal */}
-      <Modal
-        visible={proximityModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setProximityModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setProximityModalVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalTitleRow}>
-              <View style={[styles.modalIconWrap, { backgroundColor: "#E6F4EA" }]}>
-                <MaterialIcons name="local-shipping" size={22} color="#006A3B" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Garbage Disposal Photo</Text>
-                <Text style={styles.modalSubtitle}>Take a photo to save or share to your stories</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.choiceOptionCard}
-              onPress={() => {
-                setProximityModalVisible(false);
-                setModalVisible(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.choiceIconWrap, { backgroundColor: "#EEF2FF" }]}>
-                <MaterialIcons name="format-list-bulleted" size={22} color="#4F46E5" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.choiceOptionTitle}>Prepare My Bin</Text>
-                <Text style={styles.choiceOptionSub}>5-step bin sorting & placement checklist</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.choiceOptionCard}
-              onPress={handleTakePhoto}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.choiceIconWrap, { backgroundColor: "#ECFDF5" }]}>
-                <MaterialIcons name="photo-camera" size={22} color="#059669" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.choiceOptionTitle}>Take Trash Photo</Text>
-                <Text style={styles.choiceOptionSub}>Snap curb photo with clean story badge</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.choiceOptionCard}
-              onPress={handlePickPhoto}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.choiceIconWrap, { backgroundColor: "#FEF3C7" }]}>
-                <MaterialIcons name="photo-library" size={22} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.choiceOptionTitle}>Select from Gallery</Text>
-                <Text style={styles.choiceOptionSub}>Choose existing photo from device</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -3893,6 +3968,108 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+
+  // Merged Step 2 Snap Photo Verification UI
+  snapPromptLockedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 18,
+    gap: 12,
+  },
+  snapPromptLockedIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  snapPromptLockedTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#4B5563",
+  },
+  snapPromptLockedSub: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  snapPromptActiveCard: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1.5,
+    borderColor: "#A7F3D0",
+    borderRadius: 18,
+    padding: 16,
+    marginTop: 18,
+  },
+  snapPromptHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
+  },
+  snapPromptActiveIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#D1FAE5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  snapPromptActiveTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#065F46",
+  },
+  snapPromptActiveSub: {
+    fontSize: 12,
+    color: "#047857",
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  snapActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  snapActionBtnPrimary: {
+    flex: 1.2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 13,
+    borderRadius: 14,
+    gap: 6,
+  },
+  snapActionBtnPrimaryText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  snapActionBtnSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#006A3B",
+    paddingVertical: 13,
+    borderRadius: 14,
+    gap: 6,
+  },
+  snapActionBtnSecondaryText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#006A3B",
   },
 
   // Modal Choice Option Cards

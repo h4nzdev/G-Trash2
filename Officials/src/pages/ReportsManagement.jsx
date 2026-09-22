@@ -29,6 +29,8 @@ import {
   Calendar,
   ShieldCheck,
   Megaphone,
+  Upload,
+  Image as ImageIcon,
 } from "lucide-react";
 import ReportCard from "../components/reports/ReportCard";
 import ReportFilter from "../components/reports/ReportFilter";
@@ -43,40 +45,29 @@ function slaHoursLeft(deadline) {
 }
 
 function timeAgo(dateStr) {
-  const diff = (Date.now() - new Date(dateStr)) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
-  return `${Math.floor(diff / 86400)} days ago`;
+  if (!dateStr) return "";
+  const sec = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
 }
 
 export default function ReportsManagement() {
-  const { official } = useAuth();
-  const isChd = official?.role === "chd";
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(
-    searchParams.get("tab") === "disposal" ? "disposal" : "incidents",
-  );
+  const [searchParams] = useSearchParams();
+  const { user: official } = useAuth();
+  const isChd = official?.role === "chd_official";
 
-  const [filters, setFilters] = useState({
-    search: "",
-    status: "All",
-    barangay: "All Barangays",
-    sitio: "All Sitios",
-    priority: "All Priorities",
-    sortBy: "Newest",
-    healthOnly: false,
-  });
-  const [selectedReport, setSelectedReport] = useState(null);
   const [reportList, setReportList] = useState([]);
+  const [fleet, setFleet] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fleet, setFleet] = useState([]);
+  const [activeTab, setActiveTab] = useState("all");
+  const [activeView, setActiveView] = useState("reports");
+  const [selectedReport, setSelectedReport] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [healthNoteText, setHealthNoteText] = useState("");
-  const [healthNoteSaving, setHealthNoteSaving] = useState(false);
   const [flagging, setFlagging] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteModal, setDeleteModal] = useState({
@@ -86,6 +77,7 @@ export default function ReportsManagement() {
   });
   const [isDeleting, setIsDeleting] = useState(false);
   const [resolutionProofImage, setResolutionProofImage] = useState("");
+  const [proofSource, setProofSource] = useState("truck"); // "truck" | "official"
   const [resolving, setResolving] = useState(false);
   const [schedulesList, setSchedulesList] = useState([]);
   const [dispatchMode, setDispatchMode] = useState("next_schedule");
@@ -93,6 +85,53 @@ export default function ReportsManagement() {
   const [dispatchingImmediate, setDispatchingImmediate] = useState(false);
   const [applyingSchedule, setApplyingSchedule] = useState(false);
   const [notifyCommunity, setNotifyCommunity] = useState(true);
+
+  // Auto-detect truck-submitted clean-up photo for the selected report
+  const availableTruckProof = useMemo(() => {
+    if (!selectedReport) return null;
+    if (selectedReport.truckPhoto) return selectedReport.truckPhoto;
+    if (selectedReport.truckProofPhoto) return selectedReport.truckProofPhoto;
+    
+    // Check if report was resolved or updated by truck with an image
+    if (
+      selectedReport.resolutionImage &&
+      (selectedReport.resolvedBy?.toLowerCase().includes("truck") ||
+       selectedReport.assignedTruck)
+    ) {
+      return selectedReport.resolutionImage;
+    }
+
+    // Check schedulesList for task completion photo matching this report
+    const repIdStr = (selectedReport._id || selectedReport.id || "").toString();
+    const repSitio = (selectedReport.sitio || selectedReport.location || "").toLowerCase().trim();
+
+    for (const s of schedulesList || []) {
+      if (s.sitioTasks && Array.isArray(s.sitioTasks)) {
+        for (const t of s.sitioTasks) {
+          const matchesId = t.reportId && t.reportId.toString() === repIdStr;
+          const matchesName = repSitio && t.name && (t.name.toLowerCase().includes(repSitio) || repSitio.includes(t.name.toLowerCase()));
+          const photo = t.proofImage || t.afterImage || t.completionPhoto;
+          if ((matchesId || matchesName) && photo) {
+            return photo;
+          }
+        }
+      }
+    }
+
+    if (selectedReport.resolutionImage) {
+      return selectedReport.resolutionImage;
+    }
+
+    return null;
+  }, [selectedReport, schedulesList]);
+
+  // Active resolution proof based on official's chosen source
+  const activeResolutionProof = useMemo(() => {
+    if (proofSource === "official") {
+      return resolutionProofImage || "";
+    }
+    return availableTruckProof || resolutionProofImage || selectedReport?.resolutionImage || "";
+  }, [proofSource, resolutionProofImage, availableTruckProof, selectedReport]);
 
   const upcomingSchedules = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -216,7 +255,13 @@ export default function ReportsManagement() {
     setSelectedReport(r);
     setSelectedTruckId(r.assignedTruck || "");
     setSelectedScheduleId(r.priorityScheduleId || "");
-    setResolutionProofImage(r.resolutionImage || "");
+    setResolutionProofImage("");
+    const hasTruckPhoto = !!(
+      r.truckPhoto ||
+      r.truckProofPhoto ||
+      (r.resolvedBy?.toLowerCase().includes("truck") && r.resolutionImage)
+    );
+    setProofSource(hasTruckPhoto ? "truck" : "official");
     setDispatchMode("next_schedule");
     setSuggestions([]);
     setSuggestionsLoading(true);
@@ -275,13 +320,13 @@ export default function ReportsManagement() {
   };
 
   const handleResolve = async (report) => {
-    const proof = resolutionProofImage || report?.resolutionImage;
+    const proof = activeResolutionProof || resolutionProofImage || report?.resolutionImage;
     if (!proof) {
       if (!selectedReport || selectedReport._id !== report._id) {
         openReport(report);
       }
       alert(
-        "A clean-up proof photo is required before marking this report as resolved. Please attach a photo.",
+        "A clean-up proof photo is required before marking this report as resolved. Please attach a photo or select the truck submission photo.",
       );
       return;
     }
@@ -330,14 +375,15 @@ export default function ReportsManagement() {
 
   const handleAssign = async (report, truckId) => {
     const fleetEntry = fleet.find((f) => f.truckId === truckId);
+    const reportId = report?._id || report?.id;
     try {
-      const { data } = await axios.patch(`${API}/api/reports/${report._id}`, {
+      const { data } = await axios.patch(`${API}/api/reports/${reportId}`, {
         status: "in-progress",
         assignedTruck: truckId || null,
         assignedDriver: fleetEntry?.driverName || null,
       });
       setReportList((prev) =>
-        prev.map((r) => (r._id === report._id ? { ...r, ...data } : r)),
+        prev.map((r) => (r._id === reportId || r.id === reportId ? { ...r, ...data } : r)),
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...data } : prev));
     } catch {
@@ -347,19 +393,20 @@ export default function ReportsManagement() {
 
   const handleApplyNextSchedule = async (report, scheduleId) => {
     setApplyingSchedule(true);
+    const reportId = report?._id || report?.id;
     try {
       const token = localStorage.getItem("gtrash_token");
       const config = token
         ? { headers: { Authorization: `Bearer ${token}` } }
         : {};
       const { data } = await axios.post(
-        `${API}/api/reports/${report._id}/apply-next-schedule`,
+        `${API}/api/reports/${reportId}/apply-next-schedule`,
         { scheduleId: scheduleId || undefined },
         config,
       );
       const updated = data.report || data;
       setReportList((prev) =>
-        prev.map((r) => (r._id === report._id ? { ...r, ...updated } : r)),
+        prev.map((r) => (r._id === reportId || r.id === reportId ? { ...r, ...updated } : r)),
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...updated } : prev));
       fetchSchedulesList();
@@ -384,13 +431,14 @@ export default function ReportsManagement() {
       return;
     }
     setDispatchingImmediate(true);
+    const reportId = report?._id || report?.id;
     try {
       const token = localStorage.getItem("gtrash_token");
       const config = token
         ? { headers: { Authorization: `Bearer ${token}` } }
         : {};
       const { data } = await axios.post(
-        `${API}/api/reports/${report._id}/assign-priority`,
+        `${API}/api/reports/${reportId}/assign-priority`,
         {
           truckId,
           priorityLevel: "High",
@@ -401,7 +449,7 @@ export default function ReportsManagement() {
       if (data.report || data) {
         const updated = data.report || data;
         setReportList((prev) =>
-          prev.map((r) => (r._id === report._id ? { ...r, ...updated } : r)),
+          prev.map((r) => (r._id === reportId || r.id === reportId ? { ...r, ...updated } : r)),
         );
         setSelectedReport((prev) => (prev ? { ...prev, ...updated } : prev));
         alert(
@@ -1091,7 +1139,7 @@ export default function ReportsManagement() {
                 </div>
 
                 {/* Modal Body */}
-                <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                <div className="p-6 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-w-0">
                   {/* Status Badges Row */}
                   <div className="flex items-center gap-2 mb-1">
                       <Badge variant={selectedReport.status} showDot size="xs">
@@ -1646,188 +1694,213 @@ export default function ReportsManagement() {
                   )}
 
                   {/* Collection Dispatch Options: Apply on Next Schedule OR Pick Up Immediately */}
-                  {!isChd && selectedReport.status !== "resolved" && (
-                    <div className="p-4 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                            <Truck className="w-3.5 h-3.5 text-slate-500" />
-                            Collection Dispatch Options
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            Choose whether to queue this report for the next
-                            regular schedule or dispatch a truck immediately.
-                          </p>
+                  {!isChd && selectedReport.status !== "resolved" && (() => {
+                    const isAlreadyDispatched = Boolean(selectedReport.assignedTruck || selectedReport.priorityScheduleId);
+                    return (
+                      <div className="p-4 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3 min-w-0 w-full overflow-hidden">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <Truck className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              Collection Dispatch Options
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                              Choose whether to queue this report for the next regular schedule or dispatch a truck immediately.
+                            </p>
+                          </div>
+                          {selectedReport.assignedTruck && (
+                            <span className="text-[11px] font-medium text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs self-start sm:self-auto flex-shrink-0 max-w-full">
+                              <Truck className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                              <span className="truncate max-w-[200px] sm:max-w-[280px]">
+                                {selectedReport.isPriorityArea ? "Immediate: " : "Assigned: "}
+                                {selectedReport.assignedTruck}
+                                {selectedReport.assignedDriver ? ` — ${selectedReport.assignedDriver}` : ""}
+                              </span>
+                            </span>
+                          )}
                         </div>
-                        {selectedReport.assignedTruck && (
-                          <span className="text-[11px] font-medium text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs">
-                            <Truck className="w-3 h-3 text-slate-500" />
-                            {selectedReport.isPriorityArea
-                              ? "Immediate: "
-                              : "Assigned: "}
-                            {selectedReport.assignedTruck}
-                            {selectedReport.assignedDriver
-                              ? ` — ${selectedReport.assignedDriver}`
-                              : ""}
-                          </span>
+
+                        {/* Lock banner if already dispatched */}
+                        {isAlreadyDispatched && (
+                          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1 leading-relaxed">
+                              <strong>Dispatched & Scheduled:</strong> Assigned to Truck <strong>{selectedReport.assignedTruck}</strong>
+                              {selectedReport.assignedDriver ? ` (${selectedReport.assignedDriver})` : ""}
+                              {selectedReport.priorityScheduleId ? " on scheduled collection route." : " for immediate priority pickup."}
+                              {" "}Further dispatch actions are disabled.
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Mode Selector Tabs */}
+                        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/50 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setDispatchMode("next_schedule")}
+                            className={`flex items-center justify-center gap-2 py-1.5 px-3 rounded-md text-xs font-medium transition-all ${
+                              dispatchMode === "next_schedule"
+                                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60 font-semibold"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="truncate">Apply on Next Schedule</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDispatchMode("immediate")}
+                            className={`flex items-center justify-center gap-2 py-1.5 px-3 rounded-md text-xs font-medium transition-all ${
+                              dispatchMode === "immediate"
+                                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60 font-semibold"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            <Zap className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="truncate">Pick Up Immediately</span>
+                          </button>
+                        </div>
+
+                        {/* Tab 1: Apply on Next Schedule */}
+                        {dispatchMode === "next_schedule" && (
+                          <div className="space-y-2.5 pt-0.5 min-w-0">
+                            <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded-lg p-3 flex items-start gap-2.5 shadow-xs min-w-0">
+                              <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-slate-800">
+                                  Queue for Regular Collection Schedule
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                  Appends this report location (
+                                  {selectedReport.sitio ||
+                                    selectedReport.location ||
+                                    "Report site"}
+                                  ) as a designated stop on the next collection schedule route.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full min-w-0">
+                              <div className="flex-1 min-w-0 w-full overflow-hidden">
+                                <select
+                                  value={selectedScheduleId}
+                                  onChange={(e) =>
+                                    setSelectedScheduleId(e.target.value)
+                                  }
+                                  disabled={isAlreadyDispatched || applyingSchedule}
+                                  className="w-full min-w-0 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                >
+                                  <option value="">
+                                    Next Available Earliest Schedule (Auto-detect)
+                                  </option>
+                                  {upcomingSchedules.map((s) => (
+                                    <option key={s._id} value={s._id}>
+                                      {s.date} • Truck {s.truckId} —{" "}
+                                      {s.routeName ||
+                                        s.barangay ||
+                                        "Scheduled Route"}{" "}
+                                      ({s.startTime || "Regular Shift"})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleApplyNextSchedule(
+                                    selectedReport,
+                                    selectedScheduleId,
+                                  )
+                                }
+                                disabled={isAlreadyDispatched || applyingSchedule}
+                                className="w-full sm:w-auto px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap flex-shrink-0"
+                              >
+                                {applyingSchedule ? (
+                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <Calendar className="w-3.5 h-3.5 text-slate-300" />
+                                )}
+                                <span>
+                                  {isAlreadyDispatched
+                                    ? "Already Scheduled ✓"
+                                    : "Apply to Schedule"}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tab 2: Directly Assign to Truck (Pick Up Immediately) */}
+                        {dispatchMode === "immediate" && (
+                          <div className="space-y-2.5 pt-0.5 min-w-0">
+                            <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded-lg p-3 flex items-start gap-2.5 shadow-xs min-w-0">
+                              <Zap className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-slate-800">
+                                  Direct Immediate Pickup Dispatch
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                  Immediately dispatches an active truck to collect this waste. Sets high priority and sends a real-time push alert directly to the driver's device.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full min-w-0">
+                              <div className="flex-1 min-w-0 w-full overflow-hidden">
+                                <select
+                                  value={selectedTruckId}
+                                  onChange={(e) =>
+                                    setSelectedTruckId(e.target.value)
+                                  }
+                                  disabled={isAlreadyDispatched || dispatchingImmediate}
+                                  className="w-full min-w-0 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                >
+                                  <option value="">
+                                    — Select an active truck / driver —
+                                  </option>
+                                  {fleet.map((f) => (
+                                    <option key={f.truckId} value={f.truckId}>
+                                      {f.truckId} — {f.driverName}{" "}
+                                      {f.status
+                                        ? `[${f.status.toUpperCase()}]`
+                                        : ""}{" "}
+                                      {f.route ? `(${f.route})` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleAssignImmediate(
+                                    selectedReport,
+                                    selectedTruckId,
+                                  )
+                                }
+                                disabled={
+                                  isAlreadyDispatched ||
+                                  !selectedTruckId ||
+                                  dispatchingImmediate
+                                }
+                                className="w-full sm:w-auto px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap flex-shrink-0"
+                              >
+                                {dispatchingImmediate ? (
+                                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <Zap className="w-3.5 h-3.5 text-slate-300" />
+                                )}
+                                <span>
+                                  {isAlreadyDispatched
+                                    ? "Already Dispatched ✓"
+                                    : "Dispatch Immediately"}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
-
-                      {/* Mode Selector Tabs */}
-                      <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/50 rounded-lg">
-                        <button
-                          type="button"
-                          onClick={() => setDispatchMode("next_schedule")}
-                          className={`flex items-center justify-center gap-2 py-1.5 px-3 rounded-md text-xs font-medium transition-all ${
-                            dispatchMode === "next_schedule"
-                              ? "bg-white text-slate-900 shadow-xs border border-slate-200/60 font-semibold"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Apply on Next Schedule</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDispatchMode("immediate")}
-                          className={`flex items-center justify-center gap-2 py-1.5 px-3 rounded-md text-xs font-medium transition-all ${
-                            dispatchMode === "immediate"
-                              ? "bg-white text-slate-900 shadow-xs border border-slate-200/60 font-semibold"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          <Zap className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Pick Up Immediately</span>
-                        </button>
-                      </div>
-
-                      {/* Tab 1: Apply on Next Schedule */}
-                      {dispatchMode === "next_schedule" && (
-                        <div className="space-y-2.5 pt-0.5">
-                          <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded-lg p-3 flex items-start gap-2.5 shadow-xs">
-                            <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-medium text-slate-800">
-                                Queue for Regular Collection Schedule
-                              </p>
-                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                                Appends this report location (
-                                {selectedReport.sitio ||
-                                  selectedReport.location ||
-                                  "Report site"}
-                                ) as a designated stop on the next collection
-                                schedule route.
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <select
-                              value={selectedScheduleId}
-                              onChange={(e) =>
-                                setSelectedScheduleId(e.target.value)
-                              }
-                              className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium"
-                            >
-                              <option value="">
-                                Next Available Earliest Schedule (Auto-detect)
-                              </option>
-                              {upcomingSchedules.map((s) => (
-                                <option key={s._id} value={s._id}>
-                                  {s.date} • Truck {s.truckId} —{" "}
-                                  {s.routeName ||
-                                    s.barangay ||
-                                    "Scheduled Route"}{" "}
-                                  ({s.startTime || "Regular Shift"})
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleApplyNextSchedule(
-                                  selectedReport,
-                                  selectedScheduleId,
-                                )
-                              }
-                              disabled={applyingSchedule}
-                              className="px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 rounded-lg transition-all flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                            >
-                              {applyingSchedule ? (
-                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <Calendar className="w-3.5 h-3.5 text-slate-300" />
-                              )}
-                              <span>Apply to Schedule</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tab 2: Directly Assign to Truck (Pick Up Immediately) */}
-                      {dispatchMode === "immediate" && (
-                        <div className="space-y-2.5 pt-0.5">
-                          <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded-lg p-3 flex items-start gap-2.5 shadow-xs">
-                            <Zap className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-medium text-slate-800">
-                                Direct Immediate Pickup Dispatch
-                              </p>
-                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                                Immediately dispatches an active truck to
-                                collect this waste. Sets high priority and sends
-                                a real-time push alert directly to the driver's
-                                device.
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <select
-                              value={selectedTruckId}
-                              onChange={(e) =>
-                                setSelectedTruckId(e.target.value)
-                              }
-                              className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium"
-                            >
-                              <option value="">
-                                — Select an active truck / driver —
-                              </option>
-                              {fleet.map((f) => (
-                                <option key={f.truckId} value={f.truckId}>
-                                  {f.truckId} — {f.driverName}{" "}
-                                  {f.status
-                                    ? `[${f.status.toUpperCase()}]`
-                                    : ""}{" "}
-                                  {f.route ? `(${f.route})` : ""}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleAssignImmediate(
-                                  selectedReport,
-                                  selectedTruckId,
-                                )
-                              }
-                              disabled={
-                                !selectedTruckId || dispatchingImmediate
-                              }
-                              className="px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 rounded-lg transition-all flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                            >
-                              {dispatchingImmediate ? (
-                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <Zap className="w-3.5 h-3.5 text-slate-300" />
-                              )}
-                              <span>Dispatch Immediately</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Resolution Proof Upload Section */}
                   {!isChd && selectedReport.status !== "resolved" && (
@@ -1837,64 +1910,170 @@ export default function ReportsManagement() {
                           <p className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                             <Camera className="w-3.5 h-3.5 text-slate-500" />
                             Clean-up Proof Photo (Resolution Evidence)
-                            {!resolutionProofImage &&
-                            !selectedReport.resolutionImage ? (
-                              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-200/70 text-slate-600 border border-slate-300/60">
-                                Required to Resolve
+                            {activeResolutionProof ? (
+                              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300/80">
+                                Proof Attached ✓
                               </span>
                             ) : (
-                              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-200/70 text-slate-800 border border-slate-300/60">
-                                Proof Attached ✓
+                              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-200/70 text-slate-600 border border-slate-300/60">
+                                Required to Resolve
                               </span>
                             )}
                           </p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Attach a photo of the cleaned area as verifiable
-                            evidence. Photo proof is strictly required before
-                            marking this report as resolved.
+                            Attach or verify clean-up photo evidence. You can use the truck collection crew's submitted photo or upload your own official photo.
                           </p>
                         </div>
-                        {resolutionProofImage && (
+
+                        {/* Quick switch/clear option */}
+                        {(resolutionProofImage || (proofSource === "truck" && availableTruckProof)) && (
                           <button
-                            onClick={() => setResolutionProofImage("")}
+                            type="button"
+                            onClick={() => {
+                              if (proofSource === "official") {
+                                setResolutionProofImage("");
+                              } else {
+                                setProofSource("official");
+                              }
+                            }}
                             className="text-xs text-slate-500 hover:text-slate-800 hover:underline font-medium"
                           >
-                            Remove photo
+                            {proofSource === "official" && resolutionProofImage ? "Remove upload" : "Switch source"}
                           </button>
                         )}
                       </div>
 
-                      {resolutionProofImage ||
-                      selectedReport.resolutionImage ? (
-                        <div className="relative w-full h-36 rounded-lg overflow-hidden border border-slate-200">
-                          <img
-                            src={
-                              resolutionProofImage ||
-                              selectedReport.resolutionImage
-                            }
-                            alt="Clean-up Proof Preview"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-medium backdrop-blur-sm">
-                            Clean-up Photo Attached ✓
-                          </span>
+                      {/* Source Switcher Tabs */}
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-200/70 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setProofSource("truck")}
+                          className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+                            proofSource === "truck"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200/80"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Truck Submission Photo</span>
+                          {availableTruckProof && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 ml-0.5" title="Truck photo available" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setProofSource("official")}
+                          className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+                            proofSource === "official"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200/80"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Upload Official Photo</span>
+                          {resolutionProofImage && (
+                            <span className="w-2 h-2 rounded-full bg-blue-500 ml-0.5" title="Official photo attached" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Tab 1: Truck Submission Photo */}
+                      {proofSource === "truck" && (
+                        <div>
+                          {availableTruckProof ? (
+                            <div className="space-y-2">
+                              <div className="relative w-full h-44 rounded-lg overflow-hidden border border-slate-200 bg-black/5">
+                                <img
+                                  src={availableTruckProof}
+                                  alt="Truck Clean-up Proof"
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute top-2 left-2 px-2 py-1 bg-emerald-900/85 text-white text-[11px] rounded font-semibold backdrop-blur-sm flex items-center gap-1.5">
+                                  <Truck className="w-3.5 h-3.5 text-emerald-300" />
+                                  <span>Submitted by Collection Unit: {selectedReport.assignedTruck || "Barangay Truck"}</span>
+                                </div>
+                                <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-medium backdrop-blur-sm">
+                                  Truck Evidence Selected ✓
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Clean-up photo proof submitted by collection crew is ready to be verified.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-white rounded-lg border border-dashed border-slate-200 text-center space-y-2">
+                              <div className="w-9 h-9 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                <Truck className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-700">No Truck Submission Photo Yet</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  The collection crew hasn't submitted a completion photo for this area yet.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setProofSource("official")}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                Upload Official Photo Instead
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <label className="flex flex-col items-center justify-center gap-1.5 p-4 bg-white border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50/50 transition-colors">
-                          <div className="flex items-center gap-2 text-slate-700 font-medium text-xs">
-                            <Camera className="w-4 h-4 text-slate-400" />
-                            <span>Upload Clean-up Photo Proof (Required)</span>
-                          </div>
-                          <span className="text-[10.5px] text-slate-400">
-                            PNG, JPG, or WEBP up to 10MB
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={handleResolutionPhotoUpload}
-                          />
-                        </label>
+                      )}
+
+                      {/* Tab 2: Official Photo Upload */}
+                      {proofSource === "official" && (
+                        <div>
+                          {resolutionProofImage ? (
+                            <div className="space-y-2">
+                              <div className="relative w-full h-44 rounded-lg overflow-hidden border border-slate-200 bg-black/5">
+                                <img
+                                  src={resolutionProofImage}
+                                  alt="Official Clean-up Proof"
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute top-2 left-2 px-2 py-1 bg-blue-900/85 text-white text-[11px] rounded font-semibold backdrop-blur-sm flex items-center gap-1.5">
+                                  <Upload className="w-3.5 h-3.5 text-blue-300" />
+                                  <span>Uploaded by Official</span>
+                                </div>
+                                <label className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/85 hover:bg-slate-900 text-white text-[10.5px] rounded font-medium backdrop-blur-sm cursor-pointer transition-colors">
+                                  Change Photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleResolutionPhotoUpload}
+                                  />
+                                </label>
+                              </div>
+                              <p className="text-[11px] text-blue-700 font-medium flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Official photo attached and ready.
+                              </p>
+                            </div>
+                          ) : (
+                            <label className="flex flex-col items-center justify-center gap-1.5 p-4 bg-white border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50/50 transition-colors">
+                              <div className="flex items-center gap-2 text-slate-700 font-medium text-xs">
+                                <Camera className="w-4 h-4 text-slate-400" />
+                                <span>Upload Clean-up Photo Proof (Official)</span>
+                              </div>
+                              <span className="text-[10.5px] text-slate-400">
+                                PNG, JPG, or WEBP up to 10MB
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleResolutionPhotoUpload}
+                              />
+                            </label>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -1953,16 +2132,11 @@ export default function ReportsManagement() {
                     <div className="flex-1 flex flex-col items-stretch">
                       <button
                         onClick={() => handleResolve(selectedReport)}
-                        disabled={
-                          resolving ||
-                          (!resolutionProofImage &&
-                            !selectedReport.resolutionImage)
-                        }
+                        disabled={resolving || !activeResolutionProof}
                         className="w-full py-2.5 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                         title={
-                          !resolutionProofImage &&
-                          !selectedReport.resolutionImage
-                            ? "Please upload a clean-up proof photo first"
+                          !activeResolutionProof
+                            ? "Please select or upload a clean-up proof photo first"
                             : "Mark report as resolved"
                         }
                       >

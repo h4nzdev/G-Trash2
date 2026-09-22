@@ -20,6 +20,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December"
 ];
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const ITEMS_PER_PAGE = 5;
 
 export default function CalendarScreen() {
   const { user } = useAuth();
@@ -28,9 +29,15 @@ export default function CalendarScreen() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const today = new Date();
+
+  // Reset pagination on month, year, or day filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [currentYear, currentMonth, selectedDay]);
 
   const goToPreviousMonth = () => {
     if (currentMonth === 0) {
@@ -40,6 +47,7 @@ export default function CalendarScreen() {
       setCurrentMonth((m) => m - 1);
     }
     setSelectedDay(null);
+    setCurrentPage(1);
   };
 
   const goToNextMonth = () => {
@@ -50,12 +58,14 @@ export default function CalendarScreen() {
       setCurrentMonth((m) => m + 1);
     }
     setSelectedDay(null);
+    setCurrentPage(1);
   };
 
   const goToToday = () => {
     setCurrentYear(today.getFullYear());
     setCurrentMonth(today.getMonth());
     setSelectedDay(today.getDate());
+    setCurrentPage(1);
   };
 
   const fetchSchedules = useCallback(async (year, month) => {
@@ -103,6 +113,32 @@ export default function CalendarScreen() {
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
     return schedules.filter((s) => s.date === dateStr);
   }, [selectedDay, schedules, currentYear, currentMonth]);
+
+  // Current active list based on selection
+  const activeSchedules = useMemo(() => {
+    return selectedDay ? schedulesForDay : schedules;
+  }, [selectedDay, schedulesForDay, schedules]);
+
+  const totalPages = Math.max(1, Math.ceil(activeSchedules.length / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, activeSchedules.length);
+
+  const paginatedSchedules = useMemo(() => {
+    return activeSchedules.slice(startIndex, endIndex);
+  }, [activeSchedules, startIndex, endIndex]);
+
+  const visiblePages = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 3) {
+      return [1, 2, 3, 4, 5];
+    }
+    if (currentPage >= totalPages - 2) {
+      return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [currentPage - 2, currentPage - 1, currentPage, currentPage + 1, currentPage + 2];
+  }, [totalPages, currentPage]);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
@@ -378,7 +414,7 @@ export default function CalendarScreen() {
           ) : selectedDay ? (
             /* Selected Date Schedules */
             schedulesForDay.length > 0 ? (
-              schedulesForDay.map((sched, idx) => (
+              paginatedSchedules.map((sched, idx) => (
                 <View key={sched._id || idx} style={styles.scheduleCard}>
                   <View style={styles.scheduleCardHeader}>
                     <View style={styles.truckIconBadge}>
@@ -471,7 +507,7 @@ export default function CalendarScreen() {
           ) : (
             /* Month Schedules Overview List */
             schedules.length > 0 ? (
-              schedules.map((sched, idx) => {
+              paginatedSchedules.map((sched, idx) => {
                 const dayNum = sched.date?.split("-")[2] || "01";
                 const isPast = isCurrentMonth && parseInt(dayNum, 10) < today.getDate();
                 const isToday = isCurrentMonth && parseInt(dayNum, 10) === today.getDate();
@@ -568,6 +604,69 @@ export default function CalendarScreen() {
                 </Text>
               </View>
             )
+          )}
+
+          {/* Pagination Controls */}
+          {!isLoading && activeSchedules.length > ITEMS_PER_PAGE && (
+            <View style={styles.paginationContainer}>
+              <View style={styles.paginationInfo}>
+                <Text style={styles.paginationInfoText}>
+                  Showing <Text style={styles.paginationInfoBold}>{startIndex + 1}-{endIndex}</Text> of <Text style={styles.paginationInfoBold}>{activeSchedules.length}</Text> schedules
+                </Text>
+              </View>
+
+              <View style={styles.paginationControlsRow}>
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, currentPage === 1 && styles.pageNavBtnDisabled]}
+                  onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons
+                    name="chevron-left"
+                    size={18}
+                    color={currentPage === 1 ? "#94A3B8" : "#006A3B"}
+                  />
+                  <Text style={[styles.pageNavBtnText, currentPage === 1 && styles.pageNavBtnTextDisabled]}>
+                    Prev
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.pageNumbersWrap}>
+                  {visiblePages.map((pageNum) => {
+                    const isActive = pageNum === currentPage;
+                    return (
+                      <TouchableOpacity
+                        key={pageNum}
+                        style={[styles.pageNumBtn, isActive && styles.pageNumBtnActive]}
+                        onPress={() => setCurrentPage(pageNum)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.pageNumText, isActive && styles.pageNumTextActive]}>
+                          {pageNum}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, currentPage === totalPages && styles.pageNavBtnDisabled]}
+                  onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pageNavBtnText, currentPage === totalPages && styles.pageNavBtnTextDisabled]}>
+                    Next
+                  </Text>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={18}
+                    color={currentPage === totalPages ? "#94A3B8" : "#006A3B"}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
         </View>
 
@@ -1202,5 +1301,86 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     lineHeight: 18,
+  },
+
+  // Pagination
+  paginationContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  paginationInfo: {
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  paginationInfoText: {
+    fontSize: 12,
+    color: "#64748B",
+  },
+  paginationInfoBold: {
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  paginationControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pageNavBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 2,
+  },
+  pageNavBtnDisabled: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#E2E8F0",
+  },
+  pageNavBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  pageNavBtnTextDisabled: {
+    color: "#94A3B8",
+  },
+  pageNumbersWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  pageNumBtn: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 6,
+  },
+  pageNumBtnActive: {
+    backgroundColor: "#006A3B",
+  },
+  pageNumText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  pageNumTextActive: {
+    color: "#FFFFFF",
   },
 });

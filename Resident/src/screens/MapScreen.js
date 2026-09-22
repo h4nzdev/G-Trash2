@@ -975,31 +975,45 @@ export default function MapScreen() {
   // Inject sitio markers & route polylines into WebView
   useEffect(() => {
     if (!webViewReady) return;
-    if (sitioList.length === 0) {
+
+    // Collect all unique stops from today's schedules (including report stops) + sitioList
+    const allStopsMap = new Map();
+
+    for (const sched of todaySchedules || []) {
+      if (Array.isArray(sched.sitioTasks)) {
+        for (const t of sched.sitioTasks) {
+          if (t.lat && t.lng) {
+            allStopsMap.set(t.name.toLowerCase(), {
+              name: t.name,
+              lat: t.lat,
+              lng: t.lng,
+              status: t.completed ? "completed" : "in-progress",
+              isPriority: !!t.isPriority,
+              isReport: !!t.isReport,
+            });
+          }
+        }
+      }
+    }
+
+    for (const s of sitioList || []) {
+      const key = (s.name || "").toLowerCase();
+      if (!allStopsMap.has(key)) {
+        allStopsMap.set(key, {
+          name: s.name,
+          lat: s.lat,
+          lng: s.lng,
+          status: "upcoming",
+        });
+      }
+    }
+
+    const markersPayload = Array.from(allStopsMap.values());
+    if (markersPayload.length === 0) {
       webViewRef.current?.injectJavaScript(`window.clearResidentStops(); window.updateTruckRoute('[]'); true;`);
       return;
     }
-    const markersPayload = sitioList.map(s => {
-      let status = "upcoming";
-      for (const sched of todaySchedules || []) {
-        if (sched.sitioTasks && sched.sitioTasks.length > 0) {
-          const task = sched.sitioTasks.find(t => t.name.toLowerCase() === s.name.toLowerCase());
-          if (task) {
-            status = task.completed ? "completed" : "in-progress";
-            break;
-          }
-        } else if (sched.sitio && sched.sitio.toLowerCase() === s.name.toLowerCase()) {
-          status = sched.status === "completed" ? "completed" : "in-progress";
-          break;
-        }
-      }
-      return {
-        lat: s.lat,
-        lng: s.lng,
-        status,
-        name: s.name
-      };
-    });
+
     const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
 
