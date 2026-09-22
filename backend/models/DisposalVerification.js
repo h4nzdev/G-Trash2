@@ -9,6 +9,8 @@ const disposalVerificationSchema = new mongoose.Schema({
   streakCount: { type: Number, default: 1 },
   pointsAwarded: { type: Number, default: 0 },
   truckId: { type: String, default: "" },
+  wasteType: { type: String, default: "" },
+  motivation: { type: String, default: "" },
   status: { type: String, enum: ["active", "deleted"], default: "active" },
   createdAt: { type: Date, default: Date.now },
 });

@@ -15,6 +15,7 @@ router.post("/", authMiddleware, scheduleController.createSchedule);
 router.delete("/:id", authMiddleware, scheduleController.deleteSchedule);
 router.post("/:id/complete", scheduleController.completeSchedule);
 router.post("/:id/complete-task", scheduleController.completeTask);
+router.post("/:id/add-task", authMiddleware, scheduleController.addTaskToSchedule);
 router.post("/clearing-status", scheduleController.getClearingStatus);
 router.post("/truck/:truckId/start-shift", scheduleController.startShift);
 router.patch("/:id/status", authMiddleware, scheduleController.updateScheduleStatus);

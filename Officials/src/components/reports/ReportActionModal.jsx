@@ -87,6 +87,12 @@ export default function ReportActionModal({
     setSubmitting(true);
     setError(null);
 
+    if (actionStatus === "resolved" && !proofImage && !report.resolutionImage) {
+      setError("Clean-up photo evidence is required before marking this report as resolved.");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const token = localStorage.getItem("gtrash_token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -94,7 +100,7 @@ export default function ReportActionModal({
       const payload = {
         status: actionStatus,
         actionNote: actionNotes.trim(),
-        resolutionImage: proofImage || null,
+        resolutionImage: proofImage || report.resolutionImage || null,
         postToCommunity: notifyCommunity,
         notifyCommunity: notifyCommunity,
       };
@@ -413,24 +419,31 @@ export default function ReportActionModal({
           )}
 
           {/* Modal Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 ${
-                actionStatus === "resolved"
-                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 active:bg-emerald-800"
-                  : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 active:bg-blue-800"
-              }`}
-            >
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            {actionStatus === "resolved" && !proofImage && !report.resolutionImage ? (
+              <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                Proof photo required to resolve
+              </span>
+            ) : <span />}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || (actionStatus === "resolved" && !proofImage && !report.resolutionImage)}
+                className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                  actionStatus === "resolved"
+                    ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 active:bg-emerald-800"
+                    : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20 active:bg-blue-800"
+                }`}
+              >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -446,7 +459,8 @@ export default function ReportActionModal({
               )}
             </button>
           </div>
-        </form>
+        </div>
+      </form>
       </div>
 
       {/* Image Zoom Lightbox */}

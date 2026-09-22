@@ -111,48 +111,60 @@ export default function DashboardLayout() {
       return (
         <div
           key={alert.id}
-          className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-start sm:items-center gap-3.5 w-full pointer-events-auto animate-notification-drop"
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-xl border border-slate-200/90 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
         >
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center flex-shrink-0 text-emerald-600">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">Route Cleared</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60">
-                To Waste Processing
-              </span>
-              {alert.barangay && (
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/60">
-                  {alert.barangay}
-                </span>
-              )}
+          {/* Top Row: Icon + Title & Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center flex-shrink-0 text-emerald-600">
+                <CheckCircle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  Route Cleared
+                </h4>
+                {alert.truckId && (
+                  <div className="mt-0.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/80">
+                      Truck {alert.truckId}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Truck <strong className="text-emerald-700 font-semibold">{alert.truckId}</strong> has completed all assigned stops.
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-              <span>📍 {alert.disposalFacility || 'Waste Processing Facility'}</span>
-              {alert.totalWeight && <span>⚖️ {alert.totalWeight} {alert.weightUnit || 'tons'}</span>}
-              <span>👤 {alert.driverName || 'Collector'}</span>
-            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60 flex-shrink-0">
+              Completed
+            </span>
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 self-start sm:self-center">
-            <button
-              onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
-              className="p-1.5 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-xs font-semibold flex items-center gap-1"
-              title="View Monitoring"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">View</span>
-            </button>
-            <button
-              onClick={() => dismissAlert(alert.id)}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+          {/* Middle Row: Context */}
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Truck <strong className="text-emerald-700 font-semibold">{alert.truckId}</strong> has completed all assigned stops and is heading to disposal.
+          </p>
+
+          {/* Bottom Row: Address / Details (Left) + Actions (Right) */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 flex-wrap sm:flex-nowrap">
+            <div className="min-w-0 flex-1 text-[11px] text-slate-500 truncate">
+              <span>📍 {alert.disposalFacility || alert.barangay || 'Waste Facility'}</span>
+              {alert.totalWeight && <span className="ml-2">⚖️ {alert.totalWeight} tons</span>}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 transition-colors text-xs font-semibold flex items-center gap-1"
+                title="View Monitoring"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>View</span>
+              </button>
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -162,43 +174,59 @@ export default function DashboardLayout() {
       return (
         <div
           key={alert.id}
-          className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-rose-200/90 flex items-start sm:items-center gap-3.5 w-full pointer-events-auto animate-notification-drop"
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-xl border border-rose-200/90 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
         >
-          <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center flex-shrink-0 text-rose-600 animate-pulse">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">Truck Off Route!</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200/60">
-                {alert.truckId}
-              </span>
-              {alert.barangay && (
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/60">
-                  {alert.barangay}
-                </span>
-              )}
+          {/* Top Row: Icon + Title & Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center flex-shrink-0 text-rose-600 animate-pulse">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  Truck Off Route!
+                </h4>
+                {alert.truckId && (
+                  <div className="mt-0.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/80">
+                      Truck {alert.truckId}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Truck <strong className="text-slate-900">{alert.truckId}</strong> has deviated from its assigned path.
-            </p>
+            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200/60 flex-shrink-0">
+              🔴 OFF ROUTE
+            </span>
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 self-start sm:self-center">
-            <button
-              onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
-              className="p-1.5 px-2.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-semibold flex items-center gap-1"
-              title="Open Monitoring"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Track</span>
-            </button>
-            <button
-              onClick={() => dismissAlert(alert.id)}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+          {/* Middle Row: Context */}
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Truck <strong className="text-slate-900">{alert.truckId}</strong> has deviated from its assigned route path.
+          </p>
+
+          {/* Bottom Row: Address (Left) + Actions (Right) */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 flex-wrap sm:flex-nowrap">
+            <div className="min-w-0 flex-1 text-[11px] text-slate-500 truncate">
+              {alert.barangay && <span>📍 {alert.barangay}</span>}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { dismissAlert(alert.id); navigate('/routes'); }}
+                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 transition-colors text-xs font-semibold flex items-center gap-1"
+                title="Track Truck"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>Track</span>
+              </button>
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -213,71 +241,91 @@ export default function DashboardLayout() {
         ? {
             title: 'Critical Gas Spike',
             badge: '🔴 CRITICAL',
-            badgeClass: 'bg-rose-50 text-rose-700 border-rose-200/60',
+            badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
             iconBox: 'bg-rose-50 border border-rose-200/80 text-rose-600 animate-pulse',
-            buttonClass: 'bg-rose-50 text-rose-700 hover:bg-rose-100',
+            buttonClass: 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/60',
           }
         : isModerate
         ? {
             title: 'Elevated Air Pollution',
             badge: '🟡 MODERATE',
-            badgeClass: 'bg-amber-50 text-amber-700 border-amber-200/60',
+            badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
             iconBox: 'bg-amber-50 border border-amber-200/80 text-amber-600',
-            buttonClass: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
+            buttonClass: 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60',
           }
         : {
             title: 'Clean Air Verified',
             badge: '🟢 CLEAN',
-            badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+            badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
             iconBox: 'bg-emerald-50 border border-emerald-200/80 text-emerald-600',
-            buttonClass: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+            buttonClass: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60',
           };
 
       return (
         <div
           key={alert.id}
-          className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-start sm:items-center gap-3.5 w-full pointer-events-auto animate-notification-drop"
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-xl border border-slate-200/90 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
         >
-          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${theme.iconBox}`}>
-            <Wind className="w-5 h-5" />
+          {/* Top Row: Icon + Title & Sensor ID + Status Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${theme.iconBox}`}>
+                <Wind className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  {theme.title}
+                </h4>
+                {alert.sensorId && (
+                  <div className="mt-0.5">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/80">
+                      <Radio className="w-2.5 h-2.5" /> {alert.sensorId}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Status Badge (Top Right) */}
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0 ${theme.badgeClass}`}>
+              {theme.badge}
+            </span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">
-                {theme.title}
-              </span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${theme.badgeClass}`}>
-                {theme.badge}
-              </span>
-              {alert.sensorId && (
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/60 flex items-center gap-1">
-                  <Radio className="w-2.5 h-2.5" /> {alert.sensorId}
-                </span>
+
+          {/* Middle Row: Context / Message */}
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {alert.message}
+          </p>
+
+          {/* Bottom Row: Address (Left) + Heatmap & Close (Right) */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 flex-wrap sm:flex-nowrap">
+            <div className="min-w-0 flex-1">
+              {alert.location ? (
+                <p className="text-xs font-medium text-slate-500 truncate flex items-center gap-1">
+                  <span>📍</span> {alert.location}{alert.barangay ? `, ${alert.barangay}` : ''}
+                </p>
+              ) : (
+                <span />
               )}
             </div>
-            <p className="text-xs text-slate-600 mt-0.5">{alert.message}</p>
-            {alert.location && (
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                📍 {alert.location}{alert.barangay ? `, ${alert.barangay}` : ''}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 self-start sm:self-center">
-            <button
-              onClick={() => { dismissAlert(alert.id); navigate('/heatmap'); }}
-              className={`p-1.5 px-2.5 rounded-xl transition-colors text-xs font-semibold flex items-center gap-1 ${theme.buttonClass}`}
-              title="View Heatmap"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Heatmap</span>
-            </button>
-            <button
-              onClick={() => dismissAlert(alert.id)}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { dismissAlert(alert.id); navigate('/heatmap'); }}
+                className={`px-3 py-1.5 rounded-xl transition-colors text-xs font-semibold flex items-center gap-1 ${theme.buttonClass}`}
+                title="View Heatmap"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>Heatmap</span>
+              </button>
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -288,45 +336,62 @@ export default function DashboardLayout() {
       return (
         <div
           key={alert.id}
-          className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-start sm:items-center gap-3.5 w-full pointer-events-auto animate-notification-drop"
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-xl border border-slate-200/90 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
         >
-          <div className={`w-10 h-10 rounded-2xl ${isCrit ? 'bg-rose-50 border border-rose-200/80 text-rose-600 animate-pulse' : 'bg-amber-50 border border-amber-200/80 text-amber-600'} flex items-center justify-center flex-shrink-0`}>
-            <Thermometer className="w-5 h-5" />
+          {/* Top Row: Icon + Title & Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-10 h-10 rounded-2xl ${isCrit ? 'bg-rose-50 border border-rose-200/80 text-rose-600 animate-pulse' : 'bg-amber-50 border border-amber-200/80 text-amber-600'} flex items-center justify-center flex-shrink-0`}>
+                <Thermometer className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  IoT Auto-Report
+                </h4>
+                {alert.barangay && (
+                  <div className="mt-0.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/80">
+                      {alert.barangay}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0 ${isCrit ? 'bg-rose-50 text-rose-700 border-rose-200/60' : 'bg-amber-50 text-amber-700 border-amber-200/60'}`}>
+              {alert.priority || 'High'}
+            </span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">IoT Auto-Report</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${isCrit ? 'bg-rose-50 text-rose-700 border-rose-200/60' : 'bg-amber-50 text-amber-700 border-amber-200/60'}`}>
-                {alert.priority || 'High'}
-              </span>
-              {alert.barangay && (
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/60">
-                  {alert.barangay}
-                </span>
+
+          {/* Middle Row: Context */}
+          <p className="text-xs text-slate-600 leading-relaxed truncate">
+            {alert.title}
+          </p>
+
+          {/* Bottom Row: Address (Left) + Actions (Right) */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 flex-wrap sm:flex-nowrap">
+            <div className="min-w-0 flex-1">
+              {alert.location && (
+                <p className="text-xs font-medium text-slate-500 truncate flex items-center gap-1">
+                  <span>📍</span> {alert.location}{alert.barangay ? `, ${alert.barangay}` : ''}
+                </p>
               )}
             </div>
-            <p className="text-xs text-slate-600 mt-0.5 truncate">{alert.title}</p>
-            {alert.location && (
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                📍 {alert.location}{alert.barangay ? `, ${alert.barangay}` : ''}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 self-start sm:self-center">
-            <button
-              onClick={() => { dismissAlert(alert.id); navigate('/reports'); }}
-              className="p-1.5 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-xs font-semibold flex items-center gap-1"
-              title="View Reports"
-            >
-              <span>Reports</span>
-            </button>
-            <button
-              onClick={() => dismissAlert(alert.id)}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { dismissAlert(alert.id); navigate('/reports'); }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 transition-colors text-xs font-semibold flex items-center gap-1"
+                title="View Reports"
+              >
+                <span>Reports</span>
+              </button>
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -343,28 +408,45 @@ export default function DashboardLayout() {
       return (
         <div
           key={alert.id}
-          className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-start sm:items-center gap-3.5 w-full pointer-events-auto animate-notification-drop"
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-xl border border-slate-200/90 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
         >
-          <div className={`w-10 h-10 rounded-2xl ${c2.iconBg} border ${c2.border} flex items-center justify-center flex-shrink-0 ${c2.iconColor}`}>
-            <Megaphone className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">{alert.title}</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200/80">
-                Announcement
-              </span>
+          {/* Top Row: Icon + Title & Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-10 h-10 rounded-2xl ${c2.iconBg} border ${c2.border} flex items-center justify-center flex-shrink-0 ${c2.iconColor}`}>
+                <Megaphone className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  {alert.title}
+                </h4>
+                <div className="mt-0.5">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/80">
+                    Announcement
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed line-clamp-2">{alert.message}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">From: {alert.createdBy || 'Admin'}</p>
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200/80 flex-shrink-0">
+              From {alert.createdBy || 'Admin'}
+            </span>
           </div>
-          <button
-            onClick={() => dismissAlert(alert.id)}
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors ml-auto self-start sm:self-center"
-            title="Dismiss"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          {/* Middle Row: Context */}
+          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed line-clamp-2">
+            {alert.message}
+          </p>
+
+          {/* Bottom Row: Close Button */}
+          <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+            <button
+              onClick={() => dismissAlert(alert.id)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+              title="Close"
+            >
+              Close
+            </button>
+          </div>
         </div>
       );
     }

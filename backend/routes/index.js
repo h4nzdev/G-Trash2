@@ -5,6 +5,7 @@ const authRoutes = require("./authRoutes");
 const officialRoutes = require("./officialRoutes");
 const scheduleRoutes = require("./scheduleRoutes");
 const fleetRoutes = require("./fleetRoutes");
+const truckRoutes = require("./truckRoutes");
 const routeRoutes = require("./routeRoutes");
 const iotRoutes = require("./iotRoutes");
 const reportRoutes = require("./reportRoutes");
@@ -26,7 +27,7 @@ router.use("/", scheduleRoutes);
 
 // 3. Fleet & Telemetry
 router.use("/fleet", fleetRoutes);
-router.use("/trucks", fleetRoutes);
+router.use("/trucks", truckRoutes);
 
 // 4. Routes & Navigation
 router.use("/routes", routeRoutes);

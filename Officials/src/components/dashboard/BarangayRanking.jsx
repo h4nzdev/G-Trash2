@@ -44,7 +44,7 @@ export default function BarangayRanking({ data }) {
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-indigo-600 rounded-full transition-all"
+                    className="h-full bg-emerald-600 rounded-full transition-all"
                     style={{ width: `${barWidth}%` }}
                   />
                 </div>

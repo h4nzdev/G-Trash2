@@ -228,14 +228,75 @@ exports.addComment = async (req, res, next) => {
   }
 };
 
+function isOverflowingGarbage(report) {
+  const category = (report.category || "").toLowerCase();
+  const title = (report.title || "").toLowerCase();
+  const desc = (report.description || "").toLowerCase();
+  const fullText = `${category} ${title} ${desc}`;
+
+  // 1. Explicit categories indicating large volume or overflowing waste
+  if (
+    category.includes("overflow") ||
+    category.includes("dump") ||
+    category.includes("hazard")
+  ) {
+    return true;
+  }
+
+  // 2. Keywords indicating overflowing, high volume, tons, heavy waste
+  const overflowKeywords = [
+    "overflow",
+    "overflowing",
+    "apaw",
+    "umaapaw",
+    "lapaw",
+    "ton",
+    "tons",
+    "tonelada",
+    "2 ton",
+    "2 tons",
+    "kilo",
+    "kg",
+    "heavy",
+    "huge",
+    "massive",
+    "pile",
+    "piles",
+    "mountain",
+    "bulk",
+    "bulky",
+    "full",
+    "puno",
+    "marami",
+    "daghan",
+    "damak",
+    "severe",
+    "critical",
+    "urgent",
+    "emergency",
+    "scattered everywhere",
+    "spill",
+    "spilling",
+    "spilled",
+  ];
+
+  if (overflowKeywords.some((kw) => fullText.includes(kw))) {
+    return true;
+  }
+
+  // 3. Priority level
+  if (report.priority === "Critical" || report.priority === "High") {
+    return true;
+  }
+
+  return false;
+}
+
 // GET /api/reports/:id/suggestions
 exports.getSuggestions = async (req, res, next) => {
   try {
     const report = await Report.findById(req.params.id).lean();
     if (!report) return res.status(404).json({ error: "Report not found" });
-
-    const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
-    const suggestions = [];
 
     const [routes, trucks, fleet] = await Promise.all([
       Route.find({}).lean(),
@@ -243,148 +304,108 @@ exports.getSuggestions = async (req, res, next) => {
       Fleet.find({}).lean(),
     ]);
 
-    if (report.lat != null && report.lng != null) {
-      let nearestRoute = null;
-      let nearestDist = Infinity;
+    const suggestions = [];
+    const isOverflowing = isOverflowingGarbage(report);
 
-      const barangayRoutes = report.barangay
-        ? routes.filter(
-            (route) => route.barangay && route.barangay.trim().toLowerCase() === report.barangay.trim().toLowerCase()
-          )
-        : routes;
+    if (isOverflowing) {
+      // High volume / overflowing garbage (up to 2-ton truck capacity) -> Direct assign to driver
+      let nearestTruck = null;
+      let nearestTruckDist = Infinity;
 
-      for (const route of barangayRoutes) {
-        for (const wp of route.waypoints || []) {
-          if (wp.lat == null || wp.lng == null) continue;
-          const d = haversineM(report.lat, report.lng, wp.lat, wp.lng);
-          if (d < nearestDist) {
-            nearestDist = d;
-            nearestRoute = route;
+      if (report.lat != null && report.lng != null) {
+        for (const truck of trucks) {
+          if (truck.status !== "online" || truck.lat == null || truck.lng == null) continue;
+          const d = haversineM(report.lat, report.lng, truck.lat, truck.lng);
+          if (d < nearestTruckDist) {
+            nearestTruckDist = d;
+            nearestTruck = truck;
           }
         }
       }
 
-      if (nearestRoute && nearestDist < 5000) {
-        suggestions.push({
-          type: "route",
-          title: `Add stop to "${nearestRoute.name}"`,
-          description: `The nearest route passes ${Math.round(nearestDist)}m from this location. Adding it as a pickup stop will ensure the area is covered.`,
-          action: {
-            routeId: nearestRoute._id,
-            routeName: nearestRoute.name,
-            lat: report.lat,
-            lng: report.lng,
-            stopName: report.location || report.barangay || "Reported Location",
-            distance: nearestDist,
-          },
-        });
+      if (!nearestTruck) {
+        nearestTruck = trucks.find((t) => t.status === "online") || trucks[0];
       }
 
-      let nearestTruck = null;
-      let nearestTruckDist = Infinity;
-      for (const truck of trucks) {
-        if (truck.status !== "online" || truck.lat == null || truck.lng == null) continue;
-        const d = haversineM(report.lat, report.lng, truck.lat, truck.lng);
-        if (d < nearestTruckDist) {
-          nearestTruckDist = d;
-          nearestTruck = truck;
+      const assignedTruckId = nearestTruck?.truckId || fleet[0]?.truckId || "GT-QSO";
+      const fleetEntry = fleet.find((f) => f.truckId === assignedTruckId) || fleet[0];
+      const driverName = fleetEntry?.driverName || "Driver";
+      const distanceLabel =
+        nearestTruckDist < Infinity
+          ? `${Math.round(nearestTruckDist)}m away`
+          : "Available in fleet";
+
+      suggestions.push({
+        type: "truck",
+        title: `Direct Assign to ${assignedTruckId}`,
+        description: `${driverName} · Heavy overflowing waste detected (within 2-ton truck capacity). Nearest active truck (${distanceLabel}) ready for direct dispatch and immediate collection.`,
+        btnLabel: "Direct Assign",
+        action: {
+          truckId: assignedTruckId,
+          driverName: driverName,
+          directAssign: true,
+        },
+      });
+    } else {
+      // Bare minimum / small amount of garbage -> Recommend adding stop to next schedule
+      let nearestRoute = null;
+      let nearestDist = Infinity;
+
+      if (report.lat != null && report.lng != null) {
+        const barangayRoutes = report.barangay
+          ? routes.filter(
+              (route) =>
+                route.barangay &&
+                route.barangay.trim().toLowerCase() === report.barangay.trim().toLowerCase()
+            )
+          : routes;
+
+        const candidateRoutes = barangayRoutes.length > 0 ? barangayRoutes : routes;
+
+        for (const route of candidateRoutes) {
+          for (const wp of route.waypoints || []) {
+            if (wp.lat == null || wp.lng == null) continue;
+            const d = haversineM(report.lat, report.lng, wp.lat, wp.lng);
+            if (d < nearestDist) {
+              nearestDist = d;
+              nearestRoute = route;
+            }
+          }
         }
       }
 
-      if (nearestTruck) {
-        const fleetEntry = fleet.find((f) => f.truckId === nearestTruck.truckId);
-        suggestions.push({
-          type: "truck",
-          title: `Assign ${nearestTruck.truckId}`,
-          description: `${fleetEntry?.driverName ? fleetEntry.driverName + " · " : ""}Nearest online truck, ${Math.round(nearestTruckDist)}m away.`,
-          action: {
-            truckId: nearestTruck.truckId,
-            driverName: fleetEntry?.driverName || "",
-          },
-        });
+      if (!nearestRoute && routes.length > 0) {
+        nearestRoute =
+          routes.find(
+            (r) =>
+              report.barangay &&
+              r.barangay &&
+              r.barangay.trim().toLowerCase() === report.barangay.trim().toLowerCase()
+          ) || routes[0];
       }
-    }
 
-    if (urgencyScore >= 5 && report.priority !== "Critical") {
+      const routeName =
+        nearestRoute?.name || `${report.barangay || "Barangay"} Regular Route`;
+      const routeId = nearestRoute?._id;
+      const distanceDesc =
+        nearestDist < Infinity
+          ? `passes ~${Math.round(nearestDist)}m from this spot`
+          : "covers this collection area";
+
       suggestions.push({
-        type: "priority",
-        title: "Escalate to Critical",
-        description: `Community urgency score is +${urgencyScore}. High resident concern suggests this needs immediate attention.`,
-        action: { priority: "Critical" },
-      });
-    }
-
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    const routeContext = suggestions.find((s) => s.type === "route");
-
-    if (GROQ_API_KEY) {
-      const systemMsg = `You are a smart assistant for G-TRASH, a waste management system in Cebu City, Philippines. Give a 1-2 sentence practical, actionable recommendation for the barangay official.`;
-      const userMsg = `Garbage report details:
-- Category: ${report.category}
-- Location: ${report.location || "Unknown"}, Barangay ${report.barangay}
-- Description: ${report.description}
-- Status: ${report.status}
-- Community Urgency Score: +${urgencyScore}
-${routeContext ? `- Nearest route in same barangay: ${routeContext.action.routeName} (${Math.round(routeContext.action.distance)} meters away)` : ""}
-
-What should the official do first?`;
-
-      const aiText = await new Promise((resolve) => {
-        const body = JSON.stringify({
-          model: "llama-3.1-8b-instant",
-          messages: [
-            { role: "system", content: systemMsg },
-            { role: "user", content: userMsg },
-          ],
-          max_tokens: 120,
-          temperature: 0.4,
-        });
-        const options = {
-          hostname: "api.groq.com",
-          path: "/openai/v1/chat/completions",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${GROQ_API_KEY}`,
-            "Content-Length": Buffer.byteLength(body),
-          },
-        };
-        const groqReq = https.request(options, (r) => {
-          let raw = "";
-          r.on("data", (c) => (raw += c));
-          r.on("end", () => {
-            try {
-              resolve(JSON.parse(raw).choices?.[0]?.message?.content?.trim() || null);
-            } catch {
-              resolve(null);
-            }
-          });
-        });
-        groqReq.on("error", () => resolve(null));
-        groqReq.setTimeout(8000, () => {
-          groqReq.destroy();
-          resolve(null);
-        });
-        groqReq.write(body);
-        groqReq.end();
-      });
-
-      if (aiText) {
-        suggestions.push({ type: "ai", title: "AI Recommendation", description: aiText, action: null });
-      } else {
-        suggestions.push({
-          type: "ai",
-          title: "AI Recommendation (Offline)",
-          description: `Dispatch a barangay personnel to check and verify the report status at ${report.location || "the location"} before dispatching a truck.`,
-          action: null,
-        });
-      }
-    } else {
-      suggestions.push({
-        type: "ai",
-        title: "Recommended Action",
-        description: `Dispatch a barangay personnel to check and verify the report status at ${report.location || "the location"} before assigning a collector.`,
-        action: null,
+        type: "route",
+        title: `Add stop to next schedule ("${routeName}")`,
+        description: `Bare minimum waste volume reported. Recommend adding this location as a pickup stop on the next scheduled route collection (${distanceDesc}).`,
+        btnLabel: "Add Stop",
+        action: {
+          routeId: routeId,
+          routeName: routeName,
+          lat: report.lat,
+          lng: report.lng,
+          stopName:
+            report.location || report.sitio || report.barangay || "Reported Location",
+          distance: nearestDist < Infinity ? nearestDist : 0,
+        },
       });
     }
 
@@ -535,6 +556,59 @@ exports.assignPriority = async (req, res, next) => {
   }
 };
 
+// POST /api/reports/:id/apply-next-schedule
+exports.applyNextSchedule = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { scheduleId } = req.body;
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ error: "Report not found" });
+
+    let schedule = null;
+    if (scheduleId) {
+      schedule = await Schedule.findById(scheduleId);
+    }
+    if (!schedule) {
+      const today = new Date().toISOString().substring(0, 10);
+      schedule = await Schedule.findOne({
+        date: { $gte: today },
+        status: { $ne: "completed" },
+      }).sort({ date: 1, startTime: 1 });
+    }
+
+    const taskName = report.sitio || report.location || report.title || "Report Pickup Stop";
+    if (schedule) {
+      if (!Array.isArray(schedule.sitioTasks)) schedule.sitioTasks = [];
+      if (!schedule.sitioTasks.some((t) => t.name.toLowerCase() === taskName.toLowerCase())) {
+        schedule.sitioTasks.push({
+          name: taskName,
+          lat: report.lat || 10.325,
+          lng: report.lng || 123.893,
+          completed: false,
+        });
+        await schedule.save();
+      }
+      report.priorityScheduleId = schedule._id;
+      report.assignedTruck = schedule.truckId;
+      report.assignedDriver = schedule.driverName;
+    }
+
+    report.status = "in-progress";
+    report.isPriorityArea = false;
+    await report.save();
+
+    const io = getIO();
+    if (io) {
+      io.emit("report:updated", report);
+      if (schedule) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
+    }
+
+    res.json({ report, schedule });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // DELETE /api/reports/iot-bulk
 exports.deleteIoTBulk = async (req, res, next) => {
   if (req.official?.role === "chd") {
@@ -619,11 +693,17 @@ exports.updateReport = async (req, res, next) => {
       }
 
       if (updateData.status === "resolved") {
+        const existing = await Report.findById(req.params.id);
+        const proof = req.body.resolutionImage || updateData.resolutionImage || existing?.resolutionImage;
+        if (!proof) {
+          return res.status(400).json({
+            error: "Clean-up photo evidence is required before marking this report as resolved.",
+          });
+        }
         updateData.resolvedAt = new Date();
         updateData.resolvedBy = officialName;
         updateData.resolutionConfirmed = "pending";
         // Award resident points for resolved report
-        const existing = await Report.findById(req.params.id).select("userId").lean();
         if (existing?.userId) {
           awardResidentPoints(
             existing.userId,

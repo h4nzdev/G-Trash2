@@ -17,16 +17,18 @@ import { useAuth } from '../context/AuthContext';
 import colors, { softShadow } from '../constants/colors';
 
 export default function LoginScreen() {
-  const [truckId, setTruckId] = useState('');
+  const [truckCode, setTruckCode] = useState('');
   const { login, isLoading } = useAuth();
 
   const handleLogin = async () => {
-    if (!truckId.trim()) {
-      Alert.alert('Required', 'Please enter your Truck ID.');
+    const cleanCode = truckCode.trim().replace(/^GT-?/i, '').toUpperCase();
+    if (!cleanCode) {
+      Alert.alert('Required', 'Please enter your Truck Code.');
       return;
     }
+    const fullTruckId = `GT-${cleanCode}`;
     try {
-      await login(truckId);
+      await login(fullTruckId);
     } catch (error) {
       Alert.alert('Access Denied', error.message);
     }
@@ -52,25 +54,29 @@ export default function LoginScreen() {
           {/* Form Section */}
           <View style={styles.form}>
             <Text style={styles.welcomeText}>Collector Login</Text>
-            <Text style={styles.instructionText}>Enter the Truck ID provided by your supervisor</Text>
+            <Text style={styles.instructionText}>Enter the Truck code provided by your supervisor</Text>
 
             <View style={styles.inputContainer}>
               <MaterialIcons name="badge" size={20} color="#6B7280" style={styles.inputIcon} />
+              <Text style={styles.prefixText}>GT-</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. GT-A3F"
+                placeholder="QSO"
                 placeholderTextColor="#9CA3AF"
-                value={truckId}
-                onChangeText={setTruckId}
+                value={truckCode}
+                onChangeText={(val) => {
+                  const cleaned = val.replace(/^GT-?/i, '').toUpperCase();
+                  setTruckCode(cleaned);
+                }}
                 autoCapitalize="characters"
                 autoCorrect={false}
               />
             </View>
 
             <TouchableOpacity
-              style={[styles.loginButton, (isLoading || !truckId.trim()) && styles.loginButtonDisabled]}
+              style={[styles.loginButton, (isLoading || !truckCode.trim()) && styles.loginButtonDisabled]}
               onPress={handleLogin}
-              disabled={isLoading || !truckId.trim()}
+              disabled={isLoading || !truckCode.trim()}
             >
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" />
@@ -146,11 +152,19 @@ const styles = StyleSheet.create({
     height: 56,
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: 10,
+  },
+  prefixText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginRight: 2,
+    letterSpacing: 0.5,
   },
   input: {
     flex: 1,
     fontSize: 16,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   eyeIcon: {

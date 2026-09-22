@@ -15,6 +15,7 @@ router.post("/:id/verify", reportController.verifyReport);
 router.patch("/:id/health-flag", authMiddleware, reportController.updateHealthFlag);
 router.patch("/:id/health-note", authMiddleware, reportController.updateHealthNote);
 router.post("/:id/assign-priority", authMiddleware, reportController.assignPriority);
+router.post("/:id/apply-next-schedule", authMiddleware, reportController.applyNextSchedule);
 router.post("/:id/vote", reportController.voteReport);
 router.post("/:id/comment", reportController.addComment);
 

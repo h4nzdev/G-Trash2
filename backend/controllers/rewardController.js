@@ -360,7 +360,7 @@ exports.claimReward = async (req, res, next) => {
 // POST /api/disposal/submit
 exports.submitDisposal = async (req, res, next) => {
   try {
-    const { residentId, photoUrl, sitio, barangay, truckId, isTruckNearAndScheduled } = req.body;
+    const { residentId, photoUrl, sitio, barangay, truckId, isTruckNearAndScheduled, motivation, wasteType } = req.body;
     if (!residentId || !photoUrl) {
       return res.status(400).json({ error: "residentId and photoUrl are required" });
     }
@@ -425,6 +425,8 @@ exports.submitDisposal = async (req, res, next) => {
       streakCount: newStreak,
       pointsAwarded: awardPoints,
       truckId: truckId || "",
+      wasteType: wasteType || "",
+      motivation: motivation || "",
       status: "active",
     });
 

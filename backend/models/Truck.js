@@ -6,7 +6,8 @@ const truckSchema = new mongoose.Schema({
   lng: { type: Number, required: true },
   heading: { type: Number, default: 0 },
   speed: { type: Number, default: 0 },
-  status: { type: String, default: "online" },
+  status: { type: String, default: "onlsine" },
+  isOffRoute: { type: Boolean, default: false },
   pushToken: { type: String, default: "" },
   updatedAt: { type: Date, default: Date.now },
 });

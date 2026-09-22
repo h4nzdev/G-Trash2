@@ -16,7 +16,13 @@ import {
   TextInput,
   AppState,
   Image,
+  LayoutAnimation,
+  UIManager,
 } from "react-native";
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -716,6 +722,15 @@ function buildLeafletHTML(truckB64, carArrowB64) {
 
 // ── Route deviation helpers ───────────────────────────────
 function toRad(deg) { return deg * Math.PI / 180; }
+function getCoordLat(c) {
+  if (!c) return 0;
+  return c.lat != null ? c.lat : c[0];
+}
+function getCoordLng(c) {
+  if (!c) return 0;
+  return c.lng != null ? c.lng : c[1];
+}
+
 function haversineM(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = toRad(lat2 - lat1);
@@ -724,21 +739,29 @@ function haversineM(lat1, lng1, lat2, lng2) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
 function pointToSegmentM(pLat, pLng, aLat, aLng, bLat, bLng) {
   const dx = bLat - aLat, dy = bLng - aLng;
   if (dx === 0 && dy === 0) return haversineM(pLat, pLng, aLat, aLng);
-  const t = Math.max(0, Math.min(1,
-    ((pLat - aLat) * dx + (pLng - aLng) * dy) / (dx * dx + dy * dy)));
+  const latFactor = Math.cos(toRad((aLat + bLat) / 2));
+  const dyScaled = dy * latFactor;
+  const pDyScaled = (pLng - aLng) * latFactor;
+  const denom = dx * dx + dyScaled * dyScaled;
+  if (denom === 0) return haversineM(pLat, pLng, aLat, aLng);
+  const t = Math.max(0, Math.min(1, ((pLat - aLat) * dx + pDyScaled * dyScaled) / denom));
   return haversineM(pLat, pLng, aLat + t * dx, aLng + t * dy);
 }
+
 function minDistToPolyline(lat, lng, coords) {
   if (!coords || coords.length === 0) return Infinity;
   if (coords.length === 1) {
-    return haversineM(lat, lng, coords[0][0], coords[0][1]);
+    return haversineM(lat, lng, getCoordLat(coords[0]), getCoordLng(coords[0]));
   }
   let min = Infinity;
   for (let i = 0; i < coords.length - 1; i++) {
-    const d = pointToSegmentM(lat, lng, coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1]);
+    const aLat = getCoordLat(coords[i]), aLng = getCoordLng(coords[i]);
+    const bLat = getCoordLat(coords[i + 1]), bLng = getCoordLng(coords[i + 1]);
+    const d = pointToSegmentM(lat, lng, aLat, aLng, bLat, bLng);
     if (d < min) min = d;
   }
   return min;
@@ -746,20 +769,25 @@ function minDistToPolyline(lat, lng, coords) {
 
 function getClosestPointOnPolyline(pLat, pLng, coords) {
   if (!coords || coords.length === 0) return null;
-  if (coords.length === 1) return { lat: coords[0][0], lng: coords[0][1] };
+  if (coords.length === 1) return { lat: getCoordLat(coords[0]), lng: getCoordLng(coords[0]) };
   let min = Infinity;
-  let closestPoint = { lat: coords[0][0], lng: coords[0][1] };
+  let closestPoint = { lat: getCoordLat(coords[0]), lng: getCoordLng(coords[0]) };
 
   for (let i = 0; i < coords.length - 1; i++) {
-    const aLat = coords[i][0], aLng = coords[i][1];
-    const bLat = coords[i + 1][0], bLng = coords[i + 1][1];
+    const aLat = getCoordLat(coords[i]), aLng = getCoordLng(coords[i]);
+    const bLat = getCoordLat(coords[i + 1]), bLng = getCoordLng(coords[i + 1]);
     const dx = bLat - aLat, dy = bLng - aLng;
     let projLat = aLat, projLng = aLng;
     if (dx !== 0 || dy !== 0) {
-      const t = Math.max(0, Math.min(1,
-        ((pLat - aLat) * dx + (pLng - aLng) * dy) / (dx * dx + dy * dy)));
-      projLat = aLat + t * dx;
-      projLng = aLng + t * dy;
+      const latFactor = Math.cos(toRad((aLat + bLat) / 2));
+      const dyScaled = dy * latFactor;
+      const pDyScaled = (pLng - aLng) * latFactor;
+      const denom = dx * dx + dyScaled * dyScaled;
+      if (denom > 0) {
+        const t = Math.max(0, Math.min(1, ((pLat - aLat) * dx + pDyScaled * dyScaled) / denom));
+        projLat = aLat + t * dx;
+        projLng = aLng + t * dy;
+      }
     }
     const dist = haversineM(pLat, pLng, projLat, projLng);
     if (dist < min) {
@@ -802,7 +830,7 @@ async function fetchORSRoute(waypoints) {
 async function fetchRoadRoutePolyline(waypoints) {
   if (!waypoints || waypoints.length < 2) return waypoints || [];
   try {
-    const locStr = waypoints.map(p => `${p[1]},${p[0]}`).join(';');
+    const locStr = waypoints.map(p => `${getCoordLng(p)},${getCoordLat(p)}`).join(';');
     const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`);
     if (res.ok) {
       const data = await res.json();
@@ -814,10 +842,10 @@ async function fetchRoadRoutePolyline(waypoints) {
     console.warn("OSRM routing failed:", e.message);
   }
   try {
-    const orsResult = await fetchORSRoute(waypoints.map(p => [p[1], p[0]]));
+    const orsResult = await fetchORSRoute(waypoints.map(p => [getCoordLng(p), getCoordLat(p)]));
     if (orsResult && orsResult.length > 0) return orsResult;
   } catch (_) {}
-  return waypoints;
+  return waypoints.map(p => [getCoordLat(p), getCoordLng(p)]);
 }
 
 // ── Main Component ──────────────────────────────────────
@@ -858,27 +886,23 @@ export default function CollectorMapScreen({ navigation }) {
           const defaultSched = list.find(s => s.status !== 'completed' && !(s.sitioTasks?.length > 0 && s.sitioTasks.every(t => t.completed))) || list[0];
           setActiveScheduleId(prev => (prev && list.find(s => s._id === prev)) ? prev : (defaultSched?._id || null));
           
-          const isDone = list.length === 0 || list.every(s => 
+          const isDone = list.length > 0 && list.every(s => 
             s.status === 'completed' || 
             (s.sitioTasks && s.sitioTasks.length > 0 && s.sitioTasks.every(t => t.completed))
           );
           if (isDone) {
-            // Unscheduled or completed truck route -> automatically end shift
-            setNavigationActive(false);
-            navigationActiveRef.current = false;
-            AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
-            AsyncStorage.setItem('@truck_shift_active', 'false').catch(() => {});
-            socketRef.current?.emit('truck:offline', { truckId: TRUCK_ID });
+            // All scheduled stops completed for today — only deactivate nav if shift hasn't been started
+            if (!shiftStartRef.current) {
+              setNavigationActive(false);
+              navigationActiveRef.current = false;
+              AsyncStorage.setItem('@truck_nav_active', 'false').catch(() => {});
+            }
           }
         } catch (e) {
           setTodaySchedules([]);
-          setNavigationActive(false);
-          navigationActiveRef.current = false;
         }
       } else {
         setTodaySchedules([]);
-        setNavigationActive(false);
-        navigationActiveRef.current = false;
       }
     };
     xhr.onerror = () => {
@@ -1193,6 +1217,8 @@ export default function CollectorMapScreen({ navigation }) {
   const socketRef = useRef(null);
   const webViewRef = useRef(null);
   const webViewReady = useRef(false);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const offRouteConsecutiveCountRef = useRef(0);
 
   const activeSchedule = todaySchedules?.find(s => s._id === activeScheduleId);
   const assignedRouteBarangay = activeSchedule?.barangay || activeSchedule?.routeName || '';
@@ -1267,30 +1293,6 @@ export default function CollectorMapScreen({ navigation }) {
 
   const currentStop = allStops[currentStopIndex] || allStops[0];
 
-  // Dynamically compute active route coordinates for off-route calculation
-  const activeRouteCoords = useMemo(() => {
-    let coords = [];
-    if (todaySchedules && todaySchedules.length > 0) {
-      for (const sched of todaySchedules) {
-        if (sched.routeCoords && sched.routeCoords.length > 0) {
-          coords = [...coords, ...sched.routeCoords];
-        } else if (sched.sitioTasks && sched.sitioTasks.length > 0) {
-          const valid = sched.sitioTasks.filter(t => t.lat != null && t.lng != null).map(t => [t.lat, t.lng]);
-          coords = [...coords, ...valid];
-        }
-      }
-    }
-    if (coords.length === 0 && allStops && allStops.length > 0) {
-      const valid = allStops.filter(s => s.lat != null && s.lng != null).map(s => [s.lat, s.lng]);
-      if (valid.length > 0) coords = valid;
-    }
-    return coords;
-  }, [todaySchedules, allStops]);
-
-  useEffect(() => {
-    activeRouteCoordsRef.current = activeRouteCoords;
-  }, [activeRouteCoords]);
-
   // Fetch today's bin preparation counts for assigned area/barangay
   useEffect(() => {
     if (!assignedRouteBarangay) return;
@@ -1329,7 +1331,7 @@ export default function CollectorMapScreen({ navigation }) {
 
   // Inject sitio markers & route polylines into WebView
   useEffect(() => {
-    if (!webViewReady.current) return;
+    if (!webViewReady.current && !isMapReady) return;
     if (sitioList.length === 0) {
       webViewRef.current?.injectJavaScript(`window.clearStopMarkers(); window.updateTruckRoute('[]'); true;`);
       return;
@@ -1373,17 +1375,28 @@ export default function CollectorMapScreen({ navigation }) {
     }
 
     if (waypoints.length >= 2) {
-      fetchRoadRoutePolyline(waypoints).then((roadCoords) => {
-        activeRouteCoordsRef.current = roadCoords;
-        const routeCoordsJson = JSON.stringify(roadCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      if (waypoints.length > 20) {
+        // Detailed road polyline already provided from backend
+        activeRouteCoordsRef.current = waypoints;
+        const routeCoordsJson = JSON.stringify(waypoints).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
-      });
+      } else {
+        // Set waypoints as immediate fallback, then resolve full road polyline along streets
+        activeRouteCoordsRef.current = waypoints;
+        fetchRoadRoutePolyline(waypoints).then((roadCoords) => {
+          if (roadCoords && roadCoords.length > 0) {
+            activeRouteCoordsRef.current = roadCoords;
+            const routeCoordsJson = JSON.stringify(roadCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+          }
+        });
+      }
     } else {
       activeRouteCoordsRef.current = waypoints;
       const routeCoordsJson = JSON.stringify(waypoints).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
     }
-  }, [sitioList, todaySchedules, allStops, webViewReady.current]);
+  }, [sitioList, todaySchedules, allStops, isMapReady]);
 
   // Fetch overflowing bin reports
   const fetchReports = useCallback(() => {
@@ -1680,7 +1693,7 @@ export default function CollectorMapScreen({ navigation }) {
 
           if (navigationActiveRef.current) {
             setCurrentSpeed(Math.round((speed || 0) * 3.6));
-            const locPoint = { lat: latitude, lng: longitude, heading: heading || 0, speed: speed || 0, timestamp: Date.now() };
+            const locPoint = { lat: latitude, lng: longitude, heading: heading || 0, speed: speed || 0, isOffRoute, timestamp: Date.now() };
 
             if (socket.connected) {
               socket.emit("truck:location", {
@@ -1705,41 +1718,56 @@ export default function CollectorMapScreen({ navigation }) {
             // ── Off-Route Detection & Warning Validation ──
             const routeCoords = activeRouteCoordsRef.current;
             if (routeCoords && routeCoords.length >= 1) {
-              const distM = minDistToPolyline(latitude, longitude, routeCoords);
-              if (distM > 50) {
-                const roundedDist = Math.round(distM);
-                setIsOffRoute(true);
-                setOffRouteDistance(roundedDist);
+              // Immunity check: if truck is within 70m of ANY collection stop, it is collecting waste, not off route!
+              const isNearAnyStop = allStops && allStops.some(s => {
+                const sLat = s.lat != null ? s.lat : s[0];
+                const sLng = s.lng != null ? s.lng : s[1];
+                return haversineM(latitude, longitude, sLat, sLng) < 70;
+              });
 
-                if (!lastOffRouteAlertRef.current || Date.now() - lastOffRouteAlertRef.current > 10000) {
-                  socket.emit("truck:off-route", {
-                    truckId: TRUCK_ID,
-                    driverName: user?.driverName || user?.name || "Collector",
-                    distanceM: roundedDist,
-                    lat: latitude,
-                    lng: longitude,
-                  });
-                }
+              const distM = isNearAnyStop ? 0 : minDistToPolyline(latitude, longitude, routeCoords);
+              const OFF_ROUTE_THRESHOLD_M = 80;
 
-                if (Date.now() - lastOffRouteAlertRef.current > 15000) {
-                  lastOffRouteAlertRef.current = Date.now();
-                  setShowOffRouteModal(true);
-                }
+              if (distM > OFF_ROUTE_THRESHOLD_M) {
+                offRouteConsecutiveCountRef.current += 1;
 
-                // Compute shortest road return route from current location back to assigned route
-                if (Date.now() - lastRerouteFetchRef.current > 4000) {
-                  lastRerouteFetchRef.current = Date.now();
-                  const closest = getClosestPointOnPolyline(latitude, longitude, routeCoords);
-                  if (closest) {
-                    fetchRoadRoutePolyline([[latitude, longitude], [closest.lat, closest.lng]]).then((rerouteCoords) => {
-                      if (webViewReady.current && rerouteCoords && rerouteCoords.length > 0) {
-                        const json = JSON.stringify(rerouteCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        webViewRef.current?.injectJavaScript(`window.updateReroutePath('${json}'); true;`);
-                      }
+                // Require at least 2 consecutive GPS readings off route (~6s) to eliminate GPS drift / jitter
+                if (offRouteConsecutiveCountRef.current >= 2) {
+                  const roundedDist = Math.round(distM);
+                  setIsOffRoute(true);
+                  setOffRouteDistance(roundedDist);
+
+                  if (!lastOffRouteAlertRef.current || Date.now() - lastOffRouteAlertRef.current > 10000) {
+                    socket.emit("truck:off-route", {
+                      truckId: TRUCK_ID,
+                      driverName: user?.driverName || user?.name || "Collector",
+                      distanceM: roundedDist,
+                      lat: latitude,
+                      lng: longitude,
                     });
+                  }
+
+                  if (Date.now() - lastOffRouteAlertRef.current > 15000) {
+                    lastOffRouteAlertRef.current = Date.now();
+                    setShowOffRouteModal(true);
+                  }
+
+                  // Compute shortest road return route from current location back to assigned route
+                  if (Date.now() - lastRerouteFetchRef.current > 4000) {
+                    lastRerouteFetchRef.current = Date.now();
+                    const closest = getClosestPointOnPolyline(latitude, longitude, routeCoords);
+                    if (closest) {
+                      fetchRoadRoutePolyline([[latitude, longitude], [closest.lat, closest.lng]]).then((rerouteCoords) => {
+                        if (webViewReady.current && rerouteCoords && rerouteCoords.length > 0) {
+                          const json = JSON.stringify(rerouteCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                          webViewRef.current?.injectJavaScript(`window.updateReroutePath('${json}'); true;`);
+                        }
+                      });
+                    }
                   }
                 }
               } else {
+                offRouteConsecutiveCountRef.current = 0;
                 if (isOffRoute) {
                   socket.emit("truck:location:update", {
                     truckId: TRUCK_ID,
@@ -1760,15 +1788,16 @@ export default function CollectorMapScreen({ navigation }) {
     })();
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if ((nextState === 'background' || nextState === 'inactive') && navigationActiveRef.current) {
-        socket.emit('truck:offline', { truckId: TRUCK_ID });
-      }
+      // Keep truck online during active shift even when app is backgrounded
     });
 
     return () => {
       appStateSub.remove();
-      socket.emit("truck:offline", { truckId: TRUCK_ID });
-      socket.disconnect();
+      // Only disconnect / go offline if navigation/shift is NOT active
+      if (!navigationActiveRef.current) {
+        socket.emit("truck:offline", { truckId: TRUCK_ID });
+        socket.disconnect();
+      }
       locationSub?.remove();
     };
   }, [fetchTodaySchedules, networkChangeKey, assignedRouteBarangay]);
@@ -1793,6 +1822,11 @@ export default function CollectorMapScreen({ navigation }) {
     const message = event.nativeEvent.data;
     if (message === 'map_ready') {
       webViewReady.current = true;
+      setIsMapReady(true);
+      if (activeRouteCoordsRef.current && activeRouteCoordsRef.current.length > 0) {
+        const routeCoordsJson = JSON.stringify(activeRouteCoordsRef.current).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+      }
       if (reports.length > 0) {
         const payload = reports.map(r => ({
           id: r._id, lat: r.lat, lng: r.lng,
@@ -1838,41 +1872,41 @@ export default function CollectorMapScreen({ navigation }) {
   };
 
   const expandSheet = useCallback(() => {
-    isExpandedRef.current = true;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIsExpanded(true);
-    Animated.spring(sheetAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [sheetAnim]);
+    isExpandedRef.current = true;
+  }, []);
 
   const collapseSheet = useCallback(() => {
-    isExpandedRef.current = false;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIsExpanded(false);
-    Animated.spring(sheetAnim, {
-      toValue: translateCollapsed,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [sheetAnim, translateCollapsed]);
+    isExpandedRef.current = false;
+  }, []);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.locationY < 60,
-      onMoveShouldSetPanResponder: (evt, gs) =>
-        Math.abs(gs.dy) > Math.abs(gs.dx) &&
-        Math.abs(gs.dy) > 15 &&
-        evt.nativeEvent.locationY < 80,
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dy < -40 && !isExpandedRef.current) expandSheet();
-        else if (gs.dy > 40 && isExpandedRef.current) collapseSheet();
-      },
-      onPanResponderTerminationRequest: () => true,
-    }),
-  ).current;
+  const toggleSheet = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsExpanded(prev => {
+      isExpandedRef.current = !prev;
+      return !prev;
+    });
+  }, []);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gs) =>
+          Math.abs(gs.dy) > 10 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderRelease: (_, gs) => {
+          if (gs.dy > 20 || gs.vy > 0.3) {
+            collapseSheet();
+          } else if (gs.dy < -20 || gs.vy < -0.3) {
+            expandSheet();
+          }
+        },
+      }),
+    [collapseSheet, expandSheet]
+  );
 
   const handleReportIssue = () => {
     setShowReportModal(true);
@@ -1962,11 +1996,16 @@ export default function CollectorMapScreen({ navigation }) {
 
   const handleWebViewLoad = useCallback(() => {
     webViewReady.current = true;
+    setIsMapReady(true);
     if (lastGpsRef.current) {
       const { lat, lng, heading } = lastGpsRef.current;
       webViewRef.current?.injectJavaScript(
         `window.updateDriverPosition(${lat}, ${lng}, ${heading || 0}); true;`,
       );
+    }
+    if (activeRouteCoordsRef.current && activeRouteCoordsRef.current.length > 0) {
+      const routeCoordsJson = JSON.stringify(activeRouteCoordsRef.current).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
     }
   }, []);
 
@@ -2278,18 +2317,26 @@ export default function CollectorMapScreen({ navigation }) {
 
       {/* Bottom Sheet */}
       {!isFocusMode && (
-        <Animated.View
+        <View
           style={[
             styles.bottomSheet,
-            { height: sheetTotalHeight, transform: [{ translateY: sheetAnim }] },
+            { paddingBottom: Math.max(bottomInset, 12) },
           ]}
         >
-          <View {...panResponder.panHandlers}>
-            <View style={styles.handleContainer}>
+          <View {...panResponder.panHandlers} style={{ width: "100%" }}>
+            <TouchableOpacity
+              style={styles.handleContainer}
+              activeOpacity={0.7}
+              onPress={toggleSheet}
+            >
               <View style={styles.handleBar} />
-            </View>
+            </TouchableOpacity>
             <View style={styles.sheetHeader}>
-              <View style={{ flex: 1 }}>
+              <TouchableOpacity
+                style={{ flex: 1, marginRight: 8 }}
+                activeOpacity={0.8}
+                onPress={toggleSheet}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <View style={[
                     styles.statusBadgeDot,
@@ -2317,10 +2364,10 @@ export default function CollectorMapScreen({ navigation }) {
                     : isRouteCompleted
                     ? 'All scheduled collection stops completed for today'
                     : (todaySchedules?.length > 0)
-                    ? `Assigned: ${assignedRouteBarangay || 'Route'}. Tap Start to begin.`
+                    ? `Assigned: ${assignedRouteBarangay || 'Route'}. Tap to view.`
                     : 'No collection schedule assigned today'}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
               {/* Direct Header Start / End Action Pill */}
               <TouchableOpacity
@@ -2336,6 +2383,7 @@ export default function CollectorMapScreen({ navigation }) {
                 ]}
                 onPress={navigationActive ? stopNavigation : isRouteCompleted ? handleOpenCompletionSummary : startNavigation}
                 activeOpacity={0.8}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <MaterialIcons
                   name={navigationActive ? "stop" : isRouteCompleted ? "check-circle" : (todaySchedules?.length > 0) ? "play-arrow" : "hourglass-empty"}
@@ -2349,24 +2397,25 @@ export default function CollectorMapScreen({ navigation }) {
 
               <TouchableOpacity
                 style={styles.expandBtn}
-                onPress={() => isExpandedRef.current ? collapseSheet() : expandSheet()}
+                onPress={toggleSheet}
                 activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <MaterialIcons
                   name={isExpanded ? "expand-more" : "expand-less"}
-                  size={20}
+                  size={22}
                   color="#6F7A70"
                 />
               </TouchableOpacity>
             </View>
           </View>
 
-          <Animated.View style={[styles.stopList, { opacity: listOpacity }]}>
+          {isExpanded && (
             <ScrollView
+              style={{ maxHeight: SCREEN_HEIGHT * 0.52 }}
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled
-              scrollEnabled={isExpanded}
-              contentContainerStyle={{ paddingBottom: bottomInset + 8 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
             >
               <View style={styles.unassignedCard}>
                 <View style={styles.unassignedIconWrap}>
@@ -2423,90 +2472,96 @@ export default function CollectorMapScreen({ navigation }) {
                           const isDone = !!task.completed;
                           const isBusy = clearingSitio === task.name;
                           return (
-                            <View
+                            <TouchableOpacity
                               key={`${sched._id}-${task.name}-${taskIdx}`}
+                              activeOpacity={isDone ? 0.9 : 0.65}
+                              onPress={() => {
+                                if (isDone || isBusy) return;
+                                setBeforeImage("");
+                                setAfterImage("");
+                                setFlowLocation(task.name);
+                                setActiveFlowTask({
+                                  scheduleId: sched._id,
+                                  sitioName: task.name,
+                                  barangay: sched.barangay || assignedRouteBarangay || 'Apas',
+                                  step: 'options',
+                                });
+                              }}
                               style={{
                                 flexDirection: 'row',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                paddingVertical: 10,
-                                paddingHorizontal: 12,
+                                paddingVertical: 12,
+                                paddingHorizontal: 14,
                                 borderRadius: 12,
-                                backgroundColor: isDone ? '#F0FDF4' : '#F8FAFC',
-                                borderWidth: 1,
-                                borderColor: isDone ? '#BBF7D0' : '#E2E8F0',
+                                backgroundColor: isDone ? '#F0FDF4' : '#FFFFFF',
+                                borderWidth: 1.5,
+                                borderColor: isDone ? '#86EFAC' : '#E2E8F0',
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 1 },
+                                shadowOpacity: 0.04,
+                                shadowRadius: 2,
+                                elevation: 1,
                               }}
                             >
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 10 }}>
                                 <View style={{
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius: 12,
-                                  backgroundColor: isDone ? '#059669' : '#E2E8F0',
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 14,
+                                  backgroundColor: isDone ? '#DCFCE7' : '#F1F5F9',
                                   alignItems: 'center',
                                   justifyContent: 'center'
                                 }}>
                                   <MaterialIcons
                                     name={isDone ? "check" : "place"}
-                                    size={14}
-                                    color={isDone ? "#FFFFFF" : "#64748B"}
+                                    size={16}
+                                    color={isDone ? "#16A34A" : "#64748B"}
                                   />
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 13, fontWeight: '700', color: isDone ? '#166534' : '#1E293B' }}>
+                                  <Text style={{
+                                    fontSize: 14,
+                                    fontWeight: '700',
+                                    color: isDone ? '#166534' : '#1E293B',
+                                  }}>
                                     {task.name}
                                   </Text>
-                                  <Text style={{ fontSize: 10, color: isDone ? '#15803D' : '#64748B' }}>
-                                    {isDone ? 'Marked as Clean ✓' : 'Pending Cleanup'}
+                                  <Text style={{ fontSize: 11, color: isDone ? '#15803D' : '#64748B', marginTop: 1 }}>
+                                    {isDone ? 'Marked as Clean ✓' : 'Tap to mark as clean'}
                                   </Text>
                                 </View>
                               </View>
 
-                              {isDone ? (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#DCFCE7', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
-                                  <MaterialIcons name="check-circle" size={14} color="#16A34A" />
-                                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Clean</Text>
-                                </View>
-                              ) : (
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    setBeforeImage("");
-                                    setAfterImage("");
-                                    setFlowLocation(task.name);
-                                    setActiveFlowTask({
-                                      scheduleId: sched._id,
-                                      sitioName: task.name,
-                                      barangay: sched.barangay || assignedRouteBarangay || 'Apas',
-                                      step: 'options',
-                                    });
-                                  }}
-                                  disabled={isBusy}
-                                  style={{
-                                    flexDirection: 'row',
+                              {/* Checkbox */}
+                              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                                {isBusy ? (
+                                  <ActivityIndicator size="small" color="#059669" />
+                                ) : isDone ? (
+                                  <View style={{
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: 7,
+                                    backgroundColor: '#16A34A',
                                     alignItems: 'center',
-                                    gap: 4,
-                                    backgroundColor: '#059669',
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 10,
-                                    borderRadius: 10,
-                                    shadowColor: '#059669',
-                                    shadowOffset: { width: 0, height: 1 },
-                                    shadowOpacity: 0.2,
-                                    shadowRadius: 2,
-                                    elevation: 2,
-                                  }}
-                                >
-                                  {isBusy ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                  ) : (
-                                    <>
-                                      <MaterialIcons name="cleaning-services" size={13} color="#FFFFFF" />
-                                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>Mark as Clean</Text>
-                                    </>
-                                  )}
-                                </TouchableOpacity>
-                              )}
-                            </View>
+                                    justifyContent: 'center',
+                                  }}>
+                                    <MaterialIcons name="check" size={18} color="#FFFFFF" />
+                                  </View>
+                                ) : (
+                                  <View style={{
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: 7,
+                                    backgroundColor: '#F8FAFC',
+                                    borderWidth: 2,
+                                    borderColor: '#CBD5E1',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }} />
+                                )}
+                              </View>
+                            </TouchableOpacity>
                           );
                         });
                       })}
@@ -2587,8 +2642,8 @@ export default function CollectorMapScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             </ScrollView>
-          </Animated.View>
-        </Animated.View>
+          )}
+        </View>
       )}
 
       {/* Overflowing Bin Detail Modal */}
@@ -4243,6 +4298,7 @@ const styles = StyleSheet.create({
     shadowRadius: 40,
     elevation: 15,
     overflow: "hidden",
+    zIndex: 40,
   },
   handleContainer: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 8 },
   handleBar: {

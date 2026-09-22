@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, MapPin, ThumbsUp, Clock, CheckCircle2, ChevronRight, Eye, Loader2 } from 'lucide-react';
-import ReportActionModal from '../reports/ReportActionModal';
+import { FileText, MapPin, ThumbsUp, Clock, CheckCircle2, ChevronRight, Eye } from 'lucide-react';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -29,13 +27,6 @@ function getStatusBadge(status) {
 
 export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
   const navigate = useNavigate();
-  const [actionReport, setActionReport] = useState(null);
-  const [actionType, setActionType] = useState('acknowledged');
-
-  const openActionModal = (report, defaultType = 'acknowledged') => {
-    setActionReport(report);
-    setActionType(defaultType);
-  };
 
   const activeReports = reports.slice(0, 5);
   const pendingCount = reports.filter(r => r.status === 'pending').length;
@@ -80,7 +71,6 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
         <div className="space-y-3">
           {activeReports.map((report) => {
             const upvotesCount = report.upvotes?.length || report.urgency || 0;
-            const isUpdating = updatingId === (report._id || report.id);
             const status = report.status?.toLowerCase() || 'pending';
 
             return (
@@ -130,21 +120,21 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
                 <div className="flex flex-col items-end justify-between self-stretch flex-shrink-0">
                   {status === 'pending' ? (
                     <button
-                      onClick={() => openActionModal(report, 'acknowledged')}
+                      onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
                       className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm transition-colors flex items-center gap-1.5"
                     >
                       Acknowledge
                     </button>
                   ) : status === 'acknowledged' || status === 'in-progress' || status === 'in_progress' ? (
                     <button
-                      onClick={() => openActionModal(report, 'resolved')}
+                      onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
                       className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-sm transition-colors flex items-center gap-1.5"
                     >
                       Mark Resolved
                     </button>
                   ) : (
                     <button
-                      onClick={() => navigate('/reports')}
+                      onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
                       className="text-xs font-semibold px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1"
                     >
                       <Eye className="w-3.5 h-3.5 text-slate-500" /> Details
@@ -155,19 +145,6 @@ export default function RecentReportsWidget({ reports = [], onReportUpdated }) {
             );
           })}
         </div>
-      )}
-
-      {/* Official Action & Response Modal */}
-      {actionReport && (
-        <ReportActionModal
-          report={actionReport}
-          isOpen={!!actionReport}
-          defaultAction={actionType}
-          onClose={() => setActionReport(null)}
-          onSuccess={() => {
-            if (onReportUpdated) onReportUpdated();
-          }}
-        />
       )}
     </div>
   );

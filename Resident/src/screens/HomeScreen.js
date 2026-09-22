@@ -53,6 +53,19 @@ function getDistanceM(lat1, lng1, lat2, lng2) {
 
 const { width } = Dimensions.get("window");
 
+const CEBU_COORDS = {
+  apas: { lat: 10.3533, lng: 123.9065 },
+  lahug: { lat: 10.3385, lng: 123.8967 },
+  mabolo: { lat: 10.3235, lng: 123.9142 },
+  banilad: { lat: 10.3472, lng: 123.9148 },
+  guadalupe: { lat: 10.3275, lng: 123.8842 },
+  kasambagan: { lat: 10.3312, lng: 123.9125 },
+  luz: { lat: 10.3278, lng: 123.9048 },
+  talamban: { lat: 10.3688, lng: 123.9168 },
+  capitol: { lat: 10.3175, lng: 123.8912 },
+  default: { lat: 10.3250, lng: 123.8930 },
+};
+
 // Radar pulse speed (ms) and ring color per proximity tier
 // Tier 0=idle, 1=trucks online, 2=<1050m, 3=<700m, 4=<350m
 const PULSE_DURATIONS = [4200, 2800, 2000, 1300, 800];
@@ -75,13 +88,39 @@ const BAR_COLORS = [
   "#71AA90",
 ];
 
-const CHECKLIST_ITEMS = [
-  { id: 1, label: "Sort general waste into black bag" },
-  { id: 2, label: "Sort recyclables (plastic, paper, cans)" },
-  { id: 3, label: "Rinse food containers before placing" },
-  { id: 4, label: "Tie all bags securely" },
-  { id: 5, label: "Place bin at curb by 7:30 AM" },
+const MOTIVATION_OPTIONS = [
+  { id: "clean_barangay", label: "Clean Neighborhood", icon: "park", color: "#059669", tag: "🌿 Clean Barangay" },
+  { id: "streak_points", label: "Points & Streak", icon: "emoji-events", color: "#D97706", tag: "🏆 Eco Champion" },
+  { id: "truck_on_time", label: "Truck On Time", icon: "local-shipping", color: "#2563EB", tag: "🚛 Timely Disposal" },
+  { id: "flood_health", label: "Flood & Health Safety", icon: "health-and-safety", color: "#DC2626", tag: "🦺 Community Safety" },
+  { id: "segregation_advocacy", label: "Proper Sorting Habit", icon: "recycling", color: "#7C3AED", tag: "♻️ Zero Waste" },
 ];
+
+const MALATA_CHECKLIST_ITEMS = [
+  { id: 1, label: "Collect biodegradable food scraps & yard waste into green bio-bin/bag" },
+  { id: 2, label: "Double check: Ensure ZERO plastics, foil, bottles, or cans are mixed" },
+  { id: 3, label: "Cover bio-bin securely to prevent pests, stray animals, and foul odors" },
+  { id: 4, label: "Keep plastics & dry recyclables stored for Di-Malata collection day" },
+  { id: 5, label: "Place Malata bin outside curb before the collection truck arrives" },
+];
+
+const DI_MALATA_CHECKLIST_ITEMS = [
+  { id: 1, label: "Separate clean dry recyclables (plastic bottles, tin cans, cartons)" },
+  { id: 2, label: "Rinse food and sauce residue from containers before placing" },
+  { id: 3, label: "Flatten cardboard boxes and crush plastic bottles to save space" },
+  { id: 4, label: "Double check: Ensure ZERO wet kitchen or organic waste is mixed" },
+  { id: 5, label: "Tie recyclable bag securely and place at designated curb spot" },
+];
+
+const GENERAL_CHECKLIST_ITEMS = [
+  { id: 1, label: "Sort general waste into designated bags (Malata vs Di-Malata)" },
+  { id: 2, label: "Sort recyclables (clean plastics, paper, and metal cans)" },
+  { id: 3, label: "Rinse food containers before placing in the bin" },
+  { id: 4, label: "Tie all trash bags securely to avoid spills and odors" },
+  { id: 5, label: "Place bin at designated curb pickup spot by scheduled time" },
+];
+
+const CHECKLIST_ITEMS = GENERAL_CHECKLIST_ITEMS;
 
 function getGreeting(t) {
   const h = new Date().getHours();
@@ -210,6 +249,7 @@ export default function HomeScreen({ navigation }) {
   const truckAlertFiredRef = useRef(new Set());
   const toastTimerRef = useRef(null);
   const aqAlertLastFiredRef = useRef(0);
+  const activeNotifDebounceRef = useRef(new Map());
 
   // Radar pulse animation values
   const pulseAnim1 = useRef(new Animated.Value(0)).current;
@@ -268,6 +308,7 @@ export default function HomeScreen({ navigation }) {
   const [proximityModalVisible, setProximityModalVisible] = useState(false);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [todayDisposalPhoto, setTodayDisposalPhoto] = useState(null);
   const [capturedBase64, setCapturedBase64] = useState(null);
   const [hasSnappedToday, setHasSnappedToday] = useState(false);
   const [isSubmittingDisposal, setIsSubmittingDisposal] = useState(false);
@@ -275,6 +316,7 @@ export default function HomeScreen({ navigation }) {
   const [celebrationData, setCelebrationData] = useState(null);
   const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
   const [officialNoticeText, setOfficialNoticeText] = useState("");
+  const [selectedMotivation, setSelectedMotivation] = useState("Clean Neighborhood");
   const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
 
   const handleTakePhoto = async () => {
@@ -377,6 +419,7 @@ export default function HomeScreen({ navigation }) {
 
       // Submit disposal verification record to backend
       const residentId = user?.id || user?._id;
+      let subJson = null;
       if (residentId) {
         const subRes = await fetch(`${API_URL}/api/disposal/submit`, {
           method: "POST",
@@ -388,10 +431,12 @@ export default function HomeScreen({ navigation }) {
             sitio: user?.sitio || "",
             truckId: activeTruckId || "Barangay Unit",
             isTruckNearAndScheduled: !!isTruckNear,
+            motivation: selectedMotivation,
+            wasteType: scheduledWasteType,
           }),
         });
 
-        const subJson = await subRes.json();
+        subJson = await subRes.json();
         if (!subRes.ok && subJson?.alreadySubmittedToday) {
           setHasSnappedToday(true);
           await AsyncStorage.setItem(`@disposal_snapped_${today}`, "true");
@@ -410,27 +455,33 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
-      // Mark locally as snapped today & bin ready
+      // Mark locally as snapped today & bin ready & save photo
       setHasSnappedToday(true);
+      setTodayDisposalPhoto(finalPhotoUrl);
       setBinReady(true);
       await Promise.all([
         AsyncStorage.setItem(`@disposal_snapped_${today}`, "true"),
+        AsyncStorage.setItem(`@disposal_photo_${today}`, finalPhotoUrl),
         AsyncStorage.setItem(`@bin_prepared_${today}`, "true"),
       ]);
 
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
 
-      Alert.alert(
-        "Disposal Report Sent! 📸",
-        "Your disposal photo has been successfully submitted to Barangay Officials.\n\nYou have completed your 1 daily snap for today (resets tomorrow at midnight)!"
-      );
+      const earnedPts = subJson?.pointsAwarded != null ? subJson.pointsAwarded : 10;
+      const streakVal = subJson?.newStreak != null ? subJson.newStreak : ((disposalStreak || 0) + 1);
+      setCelebrationData({
+        message: `Disposal verified! Your ${streakVal}-day streak is active. Thank you for properly sorting your ${scheduledWasteType} waste!`,
+        awardPoints: earnedPts,
+        motivation: selectedMotivation,
+      });
+      setCelebrationVisible(true);
 
       // Open native system share dialog
       try {
         await Share.share({
           title: "Garbage Disposal",
-          message: `My garbage bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 #CleanerCebu #GTrash`,
+          message: `My ${scheduledWasteType} bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 Motivation: ${selectedMotivation} #CleanerCebu #GTrash`,
           url: selectedPhoto,
         });
       } catch (shareErr) {
@@ -440,8 +491,10 @@ export default function HomeScreen({ navigation }) {
       console.log("Disposal submit error:", err);
       // Fallback local save so resident progress is kept
       setHasSnappedToday(true);
+      setTodayDisposalPhoto(selectedPhoto);
       setBinReady(true);
       AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+      AsyncStorage.setItem(`@disposal_photo_${today}`, selectedPhoto).catch(() => {});
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
       Alert.alert(
@@ -488,10 +541,12 @@ export default function HomeScreen({ navigation }) {
         AsyncStorage.getItem(`@bin_prepared_${today}`),
         AsyncStorage.getItem(`@bin_pickedup_${today}`),
         AsyncStorage.getItem(`@disposal_snapped_${today}`),
-      ]).then(([prepared, pickedUp, snapped]) => {
+        AsyncStorage.getItem(`@disposal_photo_${today}`),
+      ]).then(([prepared, pickedUp, snapped, photo]) => {
         if (prepared === 'true') setBinReady(true);
         if (pickedUp === 'true') setTodayPickedUp(true);
         if (snapped === 'true') setHasSnappedToday(true);
+        if (photo) setTodayDisposalPhoto(photo);
       }).catch(() => {});
 
       const residentId = user?.id || user?._id;
@@ -502,9 +557,16 @@ export default function HomeScreen({ navigation }) {
             if (data?.hasSnappedToday) {
               setHasSnappedToday(true);
               AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+              if (data?.submission?.photoUrl) {
+                setTodayDisposalPhoto(data.submission.photoUrl);
+                AsyncStorage.setItem(`@disposal_photo_${today}`, data.submission.photoUrl).catch(() => {});
+              }
             } else {
               AsyncStorage.getItem(`@disposal_snapped_${today}`).then((val) => {
-                if (val !== "true") setHasSnappedToday(false);
+                if (val !== "true") {
+                  setHasSnappedToday(false);
+                  setTodayDisposalPhoto(null);
+                }
               }).catch(() => {});
             }
           })
@@ -519,7 +581,7 @@ export default function HomeScreen({ navigation }) {
     };
   }, [user, navigation]);
 
-  // Check if today's pickup already happened (so banner shows even after app restart)
+  // Check if today's pickup already happened (only flags complete if no truck is actively collecting)
   useEffect(() => {
     const brgy = user?.barangay;
     if (!brgy) return;
@@ -532,10 +594,12 @@ export default function HomeScreen({ navigation }) {
           const ts = run.createdAt || run.completedAt;
           return ts && ts.slice(0, 10) === today;
         });
-        if (done) setTodayPickupDone(true);
+        if (done && (!trucks || !trucks.some((t) => (t.status || "").toLowerCase() === "online"))) {
+          setTodayPickupDone(true);
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [user?.barangay, trucks]);
 
   const aqData = useMemo(() => {
     const order = { critical: 0, moderate: 1, clean: 2 };
@@ -637,8 +701,30 @@ export default function HomeScreen({ navigation }) {
     try {
       const today = getTodayYMD();
       const brgy = user?.barangay || "Apas";
+      const fetchLiveTrucks = async () => {
+        try {
+          const rLoc = await fetch(`${API_URL}/api/trucks/locations`);
+          if (rLoc.ok) {
+            const dLoc = await rLoc.json();
+            if (Array.isArray(dLoc) && dLoc.length > 0) return dLoc;
+          }
+        } catch (_) {}
+        try {
+          const rAct = await fetch(`${API_URL}/api/trucks/active`);
+          if (rAct.ok) {
+            const dAct = await rAct.json();
+            if (Array.isArray(dAct) && dAct.length > 0) return dAct;
+          }
+        } catch (_) {}
+        try {
+          const rGen = await fetch(`${API_URL}/api/trucks`);
+          if (rGen.ok) return await rGen.json();
+        } catch (_) {}
+        return [];
+      };
+
       const [trucksRes, schedulesRes, reportsRes, iotRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/trucks`).then((r) => r.json()),
+        fetchLiveTrucks(),
         fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) =>
           r.json(),
         ),
@@ -648,10 +734,13 @@ export default function HomeScreen({ navigation }) {
 
       if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
         // Sort by most recently updated, online first
-        const sorted = [...trucksRes.value].sort((a, b) => {
+        const sorted = [...trucksRes.value].map(t => ({
+          ...t,
+          status: t.status || t.liveStatus || (t.lat && t.lng && Number(t.lat) !== 0 ? "online" : "offline")
+        })).sort((a, b) => {
           if (a.status === "online" && b.status !== "online") return -1;
           if (b.status === "online" && a.status !== "online") return 1;
-          return new Date(b.updatedAt) - new Date(a.updatedAt);
+          return new Date(b.updatedAt || b.lastSeen || 0) - new Date(a.updatedAt || a.lastSeen || 0);
         });
         setTrucks(sorted);
       }
@@ -691,18 +780,53 @@ export default function HomeScreen({ navigation }) {
     Notifications.requestPermissionsAsync().catch(() => {});
   }, []);
 
-  // Get last known device location for proximity checks (no new permission dialog)
+  // Get device location for proximity checks (request permissions and fallback gracefully)
   useEffect(() => {
-    Location.getLastKnownPositionAsync()
-      .then((pos) => {
-        if (pos) {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setUserLocation(loc);
-          userLocationRef.current = loc;
+    let isMounted = true;
+    const acquireLocation = async () => {
+      try {
+        let { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== "granted") {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
         }
-      })
-      .catch(() => {});
-  }, []);
+        if (status === "granted") {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last && isMounted) {
+            const loc = { lat: last.coords.latitude, lng: last.coords.longitude };
+            setUserLocation(loc);
+            userLocationRef.current = loc;
+          }
+          const curr = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (curr && isMounted) {
+            const loc = { lat: curr.coords.latitude, lng: curr.coords.longitude };
+            setUserLocation(loc);
+            userLocationRef.current = loc;
+          }
+        } else {
+          const bKey = (user?.barangay || "").trim().toLowerCase();
+          const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
+          if (isMounted) {
+            setUserLocation(fallback);
+            userLocationRef.current = fallback;
+          }
+        }
+      } catch (_) {
+        const bKey = (user?.barangay || "").trim().toLowerCase();
+        const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
+        if (isMounted) {
+          setUserLocation(fallback);
+          userLocationRef.current = fallback;
+        }
+      }
+    };
+    acquireLocation();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.barangay]);
 
   // Real-time truck updates via socket
   useEffect(() => {
@@ -763,26 +887,51 @@ export default function HomeScreen({ navigation }) {
         ];
       });
 
-      // Live truck position update (silent map/dashboard telemetry without spamming notifications)
+      // Live truck position update: clear stale pickup-done flag since collection is actively ongoing
+      setTodayPickupDone(false);
     });
 
-    socket.on("truck:status", ({ truckId, status }) => {
+    socket.on("truck:status", async ({ truckId, status }) => {
       setTrucks((prev) =>
         prev.map((t) => (t.truckId === truckId ? { ...t, status } : t)),
       );
-      if (status === "offline") {
+      if (status === "offline" && truckId) {
         truckAlertFiredRef.current.delete(`near-${truckId}`);
         truckAlertFiredRef.current.delete(`approach-${truckId}`);
         clearTimeout(toastTimerRef.current);
         setToastMsg(`Truck ${truckId} is now offline.`);
         toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Truck Offline",
-            body: `Truck ${truckId} is currently offline (app closed or wifi disconnected).`,
-          },
-          trigger: null,
-        }).catch(() => {});
+
+        const notifId = `truck-offline-${truckId}`;
+        const now = Date.now();
+        const lastFired = activeNotifDebounceRef.current.get(notifId) || 0;
+
+        // Debounce duplicate socket emissions arriving within 10 seconds
+        if (now - lastFired < 10000) return;
+        activeNotifDebounceRef.current.set(notifId, now);
+
+        try {
+          // Check if notification with this ID or title is already popping up / presented
+          const presented = await Notifications.getPresentedNotificationsAsync().catch(() => []);
+          const isAlreadyPoppingUp = presented.some(
+            (n) =>
+              n.request?.identifier === notifId ||
+              (n.request?.content?.title === "Truck Offline" &&
+                n.request?.content?.body?.includes(truckId))
+          );
+
+          if (!isAlreadyPoppingUp) {
+            await Notifications.scheduleNotificationAsync({
+              identifier: notifId,
+              content: {
+                title: "Truck Offline",
+                body: `Truck ${truckId} is currently offline (app closed or wifi disconnected).`,
+                sound: true,
+              },
+              trigger: null,
+            });
+          }
+        } catch (_) {}
       }
     });
 
@@ -890,8 +1039,40 @@ export default function HomeScreen({ navigation }) {
     };
   }, [fetchDashboard]);
 
-  const onlineTrucks = trucks.filter((t) => t.status === "online");
-  const nearestTruck = onlineTrucks[0] || null;
+  const isTruckOnline = (t) => {
+    if (!t) return false;
+    const st = (t.status || "").trim().toLowerCase();
+    if (st === "online" || st === "active" || st === "collecting" || st === "en-route" || st === "in-transit") {
+      return true;
+    }
+    if (t.updatedAt) {
+      const diffMs = Date.now() - new Date(t.updatedAt).getTime();
+      if (!isNaN(diffMs) && diffMs < 10 * 60 * 1000) return true;
+    }
+    return false;
+  };
+
+  const onlineTrucks = useMemo(() => {
+    return trucks.filter(isTruckOnline);
+  }, [trucks]);
+
+  const nearestTruck = useMemo(() => {
+    if (!onlineTrucks || onlineTrucks.length === 0) return null;
+    if (!userLocation || userLocation.lat == null) return onlineTrucks[0];
+    let closest = null;
+    let minDist = Infinity;
+    for (const t of onlineTrucks) {
+      if (t.lat != null && t.lng != null) {
+        const d = getDistanceM(userLocation.lat, userLocation.lng, t.lat, t.lng);
+        if (d < minDist) {
+          minDist = d;
+          closest = t;
+        }
+      }
+    }
+    return closest || onlineTrucks[0];
+  }, [onlineTrucks, userLocation]);
+
   const firstSchedule = todaySchedules[0] || null;
 
   const activeTruckId = useMemo(() => {
@@ -907,7 +1088,7 @@ export default function HomeScreen({ navigation }) {
 
   // Distance in meters to the nearest online truck (null if no location or truck)
   const distToTruck = useMemo(() => {
-    if (!nearestTruck?.lat || !userLocation) return null;
+    if (!nearestTruck?.lat || !userLocation?.lat) return null;
     return Math.round(
       getDistanceM(
         userLocation.lat,
@@ -917,6 +1098,29 @@ export default function HomeScreen({ navigation }) {
       ),
     );
   }, [nearestTruck, userLocation]);
+
+  const scheduledWasteType = useMemo(() => {
+    const raw = (firstSchedule?.wasteType || todaySchedules[0]?.wasteType || "").trim();
+    const lower = raw.toLowerCase();
+    if (lower.includes("di") || lower.includes("non") || lower.includes("recycl")) {
+      return "Di-Malata";
+    }
+    if (lower.includes("malata") || lower.includes("bio") || lower.includes("organ")) {
+      return "Malata";
+    }
+    return raw || "Malata";
+  }, [firstSchedule, todaySchedules]);
+
+  // Sync checklist items dynamically to today's active collection stream
+  useEffect(() => {
+    let source = GENERAL_CHECKLIST_ITEMS;
+    if (scheduledWasteType === "Malata") {
+      source = MALATA_CHECKLIST_ITEMS;
+    } else if (scheduledWasteType === "Di-Malata") {
+      source = DI_MALATA_CHECKLIST_ITEMS;
+    }
+    setChecklist(source.map((item) => ({ ...item, checked: false })));
+  }, [scheduledWasteType]);
 
   const toggleCheck = (id) => {
     setChecklist((prev) =>
@@ -1140,13 +1344,14 @@ export default function HomeScreen({ navigation }) {
   const inZone1 = distToTruck !== null && distToTruck < 350;
 
   const isRouteCompleted = useMemo(() => {
+    if (onlineTrucks.length > 0) return false;
     if (todayPickupDone) return true;
     const brgy = user?.barangay?.trim()?.toLowerCase();
     if (brgy && todaySchedules.length > 0) {
       const userScheds = todaySchedules.filter(
         (s) =>
-          s.barangay?.trim()?.toLowerCase() === brgy ||
-          s.routeName?.toLowerCase().includes(brgy)
+          (s.barangay && s.barangay.trim().toLowerCase() === brgy) ||
+          (s.routeName && s.routeName.toLowerCase().includes(brgy))
       );
       if (userScheds.length > 0) {
         return userScheds.every(
@@ -1160,62 +1365,47 @@ export default function HomeScreen({ navigation }) {
       return todaySchedules.every((s) => s.status === "completed");
     }
     return false;
-  }, [todayPickupDone, todaySchedules, user?.barangay]);
+  }, [todayPickupDone, todaySchedules, user?.barangay, onlineTrucks.length]);
 
   const isTruckCollecting = useMemo(() => {
-    if (isRouteCompleted) return false;
     return onlineTrucks.length > 0;
-  }, [isRouteCompleted, onlineTrucks.length]);
+  }, [onlineTrucks.length]);
+
+  const isTruckNear = useMemo(() => {
+    return distToTruck !== null && distToTruck <= 1500;
+  }, [distToTruck]);
 
   const isTruckActiveNearby = isTruckCollecting;
 
   const isTruckNearOrActive = useMemo(() => {
-    // 1. If today's pickup is already done or route is completed, hide
-    if (todayPickupDone || isRouteCompleted) return false;
-
-    // 2. If there are no trucks available or online, hide
+    // 1. Must have at least one online truck
     if (!onlineTrucks || onlineTrucks.length === 0) return false;
 
-    // 3. Must have a schedule for today
-    if (!todaySchedules || todaySchedules.length === 0) return false;
+    // 2. If the truck is physically nearby (within 2.5 km), ALWAYS active & near!
+    if (distToTruck !== null && distToTruck <= 2500) {
+      return true;
+    }
 
-    // 4. Find the schedule for the resident's barangay
+    // 3. If there is a schedule for the resident's barangay and any truck is online
     const brgy = user?.barangay?.trim()?.toLowerCase();
-    const brgySched = brgy
-      ? todaySchedules.find(
-          (s) =>
-            s.barangay?.trim()?.toLowerCase() === brgy ||
-            s.routeName?.toLowerCase().includes(brgy)
-        )
-      : todaySchedules.find((s) => s.status !== "completed") || todaySchedules[0];
-
-    // If no schedule exists for the user's area, hide
-    if (!brgySched) return false;
-
-    // 5. Schedule must still be active and not completed
-    if (brgySched.status === "completed") return false;
-    if (
-      brgySched.sitioTasks?.length > 0 &&
-      brgySched.sitioTasks.every((t) => t.completed)
-    ) {
-      return false;
-    }
-
-    // 6. Truck assigned to this schedule must be available and active (online)
-    if (brgySched.truckId || brgySched.truckPlate) {
-      const isAssignedTruckOnline = onlineTrucks.some(
-        (t) =>
-          (brgySched.truckId && t.truckId === brgySched.truckId) ||
-          (brgySched.truckPlate && t.plateNumber === brgySched.truckPlate)
+    if (brgy && todaySchedules && todaySchedules.length > 0) {
+      const brgySched = todaySchedules.find(
+        (s) =>
+          (s.barangay && s.barangay.trim().toLowerCase() === brgy) ||
+          (s.routeName && s.routeName.toLowerCase().includes(brgy))
       );
-      if (!isAssignedTruckOnline) return false;
-    } else {
-      // If schedule does not specify a truckId, at least one truck must be collecting online
-      if (onlineTrucks.length === 0) return false;
+      if (brgySched) {
+        return true;
+      }
     }
 
-    return true;
-  }, [todayPickupDone, isRouteCompleted, onlineTrucks, user?.barangay, todaySchedules]);
+    // 4. Default: Any online truck in the system means collection is active
+    if (onlineTrucks.length > 0) {
+      return true;
+    }
+
+    return false;
+  }, [onlineTrucks, distToTruck, user?.barangay, todaySchedules]);
 
   // Restart radar rings whenever the proximity tier changes
   useEffect(() => {
@@ -1444,7 +1634,7 @@ export default function HomeScreen({ navigation }) {
         )}
 
         {/* Pickup completion congratulation or Missed Pickup Banner */}
-        {todayPickupDone && binReady && (
+        {todayPickupDone && !isTruckNearOrActive && binReady && (
           <View style={styles.pickupDoneBanner}>
             <MaterialIcons name="check-circle" size={22} color="#006A3B" />
             <View style={{ flex: 1 }}>
@@ -1456,7 +1646,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {todayPickupDone && !binReady && (
+        {todayPickupDone && !isTruckNearOrActive && !binReady && (
           <View style={styles.missedPickupBanner}>
             <View style={styles.missedPickupHeader}>
               <View style={styles.missedPickupIconWrap}>
@@ -1491,7 +1681,7 @@ export default function HomeScreen({ navigation }) {
         )}
 
         {/* DAILY GARBAGE DISPOSAL PHOTO CARD (1 SNAP PER DAY • RESETS IN 1 DAY) */}
-        {!todayPickupDone && isTruckNearOrActive && (
+        {isTruckNearOrActive && (
           <View style={styles.proximityCard}>
             <View style={styles.proximityCardHeader}>
               <View style={[styles.proximityBadgePill, hasSnappedToday && { backgroundColor: "#ECFDF5" }]}>
@@ -1499,9 +1689,11 @@ export default function HomeScreen({ navigation }) {
                 <Text style={[styles.proximityBadgeText, hasSnappedToday && { color: "#047857" }]}>
                   {hasSnappedToday
                     ? "SNAPPED TODAY (1/DAY)"
+                    : isTruckNear
+                    ? (distToTruck != null && distToTruck < 350 ? "TRUCK AT YOUR STREET" : "TRUCK NEARBY")
                     : isTruckCollecting
                     ? "TRUCK ACTIVE IN AREA"
-                    : "TRUCK NEARBY"}
+                    : "TRUCK ONLINE"}
                 </Text>
               </View>
               <View
@@ -1532,6 +1724,53 @@ export default function HomeScreen({ navigation }) {
                 : "Snap a photo of your waste bin or curb disposal area to report to Barangay Officials (1 snap per day • resets tomorrow)."}
             </Text>
 
+            {/* If user snapped a photo today, show the thumbnail preview in the card */}
+            {(todayDisposalPhoto || selectedPhoto) && hasSnappedToday && (
+              <View style={{ marginTop: 12, marginBottom: 8, borderRadius: 12, overflow: 'hidden', height: 160, position: 'relative' }}>
+                <Image
+                  source={{ uri: todayDisposalPhoto || selectedPhoto }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                />
+                <View style={{
+                  position: 'absolute',
+                  top: 10,
+                  left: 10,
+                  backgroundColor: 'rgba(5, 150, 105, 0.9)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 20,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}>
+                  <MaterialIcons name="verified" size={14} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>
+                    Disposal Verified
+                  </Text>
+                </View>
+                <View style={{
+                  position: 'absolute',
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
+                  backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }} numberOfLines={1}>
+                    {user?.barangay || 'Curb'} • {scheduledWasteType} Waste
+                  </Text>
+                  <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>
+                    +10 Pts
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.proximityActionsRow}>
               <TouchableOpacity
                 style={styles.proximityBtnSecondary}
@@ -1551,16 +1790,21 @@ export default function HomeScreen({ navigation }) {
                     { backgroundColor: "#ECFDF5", borderWidth: 1.5, borderColor: "#10B981" },
                   ]}
                   onPress={() => {
-                    Alert.alert(
-                      "Daily Limit (1 Snap / Day)",
-                      "You have already snapped and submitted your garbage disposal photo for today.\n\nYour 1 snap resets tomorrow at midnight!"
-                    );
+                    if (todayDisposalPhoto || selectedPhoto) {
+                      setSelectedPhoto(todayDisposalPhoto || selectedPhoto);
+                      setPhotoPreviewVisible(true);
+                    } else {
+                      Alert.alert(
+                        "Daily Limit (1 Snap / Day)",
+                        "You have already snapped and submitted your garbage disposal photo for today.\n\nYour 1 snap resets tomorrow at midnight!"
+                      );
+                    }
                   }}
                   activeOpacity={0.85}
                 >
                   <MaterialIcons name="check-circle" size={16} color="#059669" />
                   <Text style={[styles.proximityBtnPrimaryText, { color: "#059669" }]} numberOfLines={1}>
-                    Snapped Today ✓
+                    {todayDisposalPhoto || selectedPhoto ? "View Photo ✓" : "Snapped Today ✓"}
                   </Text>
                 </TouchableOpacity>
               ) : (
@@ -1868,7 +2112,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      {/* Bin Prep Modal */}
+      {/* Bin Prep Modal with Dedicated Segregation Teaching */}
       <Modal
         visible={modalVisible}
         transparent
@@ -1883,120 +2127,201 @@ export default function HomeScreen({ navigation }) {
           <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
             <View style={styles.modalHandle} />
 
-            <View style={styles.modalTitleRow}>
-              <View style={styles.modalIconWrap}>
-                <MaterialIcons
-                  name="delete-outline"
-                  size={22}
-                  color="#006A3B"
-                />
-              </View>
-              <View>
-                <Text style={styles.modalTitle}>Prepare Your Bin</Text>
-                <Text style={styles.modalSubtitle}>
-                  {firstSchedule
-                    ? `${firstSchedule.wasteType || "Malata"} Collection Today · ${firstSchedule.routeName || "Scheduled"}`
-                    : "Bin preparation checklist"}
-                </Text>
-              </View>
-            </View>
-
-            {firstSchedule && (
-              <View style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                backgroundColor: firstSchedule.wasteType === "Di-Malata" ? "#EFF6FF" : "#ECFDF5",
-                borderColor: firstSchedule.wasteType === "Di-Malata" ? "#BFDBFE" : "#A7F3D0",
-                borderWidth: 1,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                borderRadius: 14,
-                marginBottom: 14,
-              }}>
-                <MaterialIcons
-                  name={firstSchedule.wasteType === "Di-Malata" ? "recycling" : "eco"}
-                  size={22}
-                  color={firstSchedule.wasteType === "Di-Malata" ? "#1D4ED8" : "#059669"}
-                />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
+              <View style={styles.modalTitleRow}>
+                <View style={[
+                  styles.modalIconWrap,
+                  scheduledWasteType === "Di-Malata" && { backgroundColor: "#EFF6FF" },
+                ]}>
+                  <MaterialIcons
+                    name={scheduledWasteType === "Di-Malata" ? "recycling" : "delete-outline"}
+                    size={22}
+                    color={scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#006A3B"}
+                  />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontSize: 12,
-                    fontWeight: "800",
-                    color: firstSchedule.wasteType === "Di-Malata" ? "#1E40AF" : "#065F46",
-                  }}>
-                    {firstSchedule.wasteType === "Di-Malata" ? "DI-MALATA (Non-Biodegradable)" : "MALATA (Biodegradable / Organic)"}
-                  </Text>
-                  <Text style={{
-                    fontSize: 11,
-                    color: firstSchedule.wasteType === "Di-Malata" ? "#3B82F6" : "#047857",
-                    marginTop: 1,
-                  }}>
-                    {firstSchedule.wasteType === "Di-Malata"
-                      ? "Bring out dry recyclables, plastics, bottles, cardboard, and cans."
-                      : "Bring out kitchen food scraps, vegetable peels, and garden waste."}
+                  <Text style={styles.modalTitle}>Prepare Your Bin</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {scheduledWasteType === "Malata"
+                      ? "Today's Collection: MALATA (Biodegradable Only)"
+                      : scheduledWasteType === "Di-Malata"
+                      ? "Today's Collection: DI-MALATA (Non-Biodegradable Only)"
+                      : "Today's Collection: General / Scheduled Route"}
                   </Text>
                 </View>
               </View>
-            )}
 
-            {checklist.map((item, index) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.checklistItem,
-                  index === checklist.length - 1 && styles.checklistItemLast,
-                ]}
-                onPress={() => toggleCheck(item.id)}
-                activeOpacity={0.7}
-              >
+              {/* Dedicated Sorting Teacher Section */}
+              {scheduledWasteType === "Malata" ? (
+                <View style={styles.sortingTeacherCardMalata}>
+                  <View style={styles.sortingTeacherHeader}>
+                    <MaterialIcons name="eco" size={20} color="#047857" />
+                    <Text style={styles.sortingTeacherTitleMalata}>
+                      🌱 FOCUS ON MALATA TODAY (Biodegradable)
+                    </Text>
+                  </View>
+                  <Text style={styles.sortingTeacherSubtitle}>
+                    The collection truck is accepting organic & kitchen waste only today. Keep all plastics and recyclables stored for Di-Malata day!
+                  </Text>
+
+                  <View style={styles.sortingSplitGrid}>
+                    <View style={styles.sortingAcceptCol}>
+                      <View style={styles.sortingColHeaderRow}>
+                        <MaterialIcons name="check-circle" size={14} color="#059669" />
+                        <Text style={styles.sortingColHeaderAccept}>PUT IN BIN TODAY</Text>
+                      </View>
+                      <Text style={styles.sortingItemBullet}>• Leftover cooked food & rice</Text>
+                      <Text style={styles.sortingItemBullet}>• Fruit & vegetable peelings</Text>
+                      <Text style={styles.sortingItemBullet}>• Fish & meat bones / scraps</Text>
+                      <Text style={styles.sortingItemBullet}>• Eggshells & coffee grounds</Text>
+                      <Text style={styles.sortingItemBullet}>• Fallen leaves & plant cuttings</Text>
+                    </View>
+
+                    <View style={styles.sortingRejectCol}>
+                      <View style={styles.sortingColHeaderRow}>
+                        <MaterialIcons name="cancel" size={14} color="#DC2626" />
+                        <Text style={styles.sortingColHeaderReject}>HOLD FOR DI-MALATA</Text>
+                      </View>
+                      <Text style={styles.sortingItemBulletReject}>• Plastic bags & wrappers</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Bottles, cups & straws</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Tin cans & foil packs</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Cardboard & paper boxes</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Diapers & hazardous waste</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.sortingTipBannerMalata}>
+                    <MaterialIcons name="tips-and-updates" size={16} color="#047857" />
+                    <Text style={styles.sortingTipTextMalata}>
+                      💡 Compost Rule: Clean organic waste is turned into barangay fertilizer! Do not mix plastic bags.
+                    </Text>
+                  </View>
+                </View>
+              ) : scheduledWasteType === "Di-Malata" ? (
+                <View style={styles.sortingTeacherCardDiMalata}>
+                  <View style={styles.sortingTeacherHeader}>
+                    <MaterialIcons name="recycling" size={20} color="#1D4ED8" />
+                    <Text style={styles.sortingTeacherTitleDiMalata}>
+                      ♻️ FOCUS ON DI-MALATA TODAY (Recyclables)
+                    </Text>
+                  </View>
+                  <Text style={styles.sortingTeacherSubtitle}>
+                    The collection truck is accepting dry recyclables & non-biodegradable items. Hold all wet food waste for Malata day!
+                  </Text>
+
+                  <View style={styles.sortingSplitGrid}>
+                    <View style={styles.sortingAcceptColBlue}>
+                      <View style={styles.sortingColHeaderRow}>
+                        <MaterialIcons name="check-circle" size={14} color="#2563EB" />
+                        <Text style={styles.sortingColHeaderAcceptBlue}>PUT IN BIN TODAY</Text>
+                      </View>
+                      <Text style={styles.sortingItemBullet}>• Plastic bottles & beverage cups</Text>
+                      <Text style={styles.sortingItemBullet}>• Tin cans & soda cans</Text>
+                      <Text style={styles.sortingItemBullet}>• Cardboard boxes & cartons</Text>
+                      <Text style={styles.sortingItemBullet}>• Clean dry wrappers & plastic</Text>
+                      <Text style={styles.sortingItemBullet}>• Glass bottles & containers</Text>
+                    </View>
+
+                    <View style={styles.sortingRejectCol}>
+                      <View style={styles.sortingColHeaderRow}>
+                        <MaterialIcons name="cancel" size={14} color="#DC2626" />
+                        <Text style={styles.sortingColHeaderReject}>HOLD FOR MALATA</Text>
+                      </View>
+                      <Text style={styles.sortingItemBulletReject}>• Wet leftover food & rice</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Fruit & vegetable peelings</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Raw meat & fish waste</Text>
+                      <Text style={styles.sortingItemBulletReject}>• Wet yard waste & soil</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.sortingTipBannerDiMalata}>
+                    <MaterialIcons name="tips-and-updates" size={16} color="#1D4ED8" />
+                    <Text style={styles.sortingTipTextDiMalata}>
+                      💡 Recycler Tip: Rinse food containers and flatten boxes to save space in the truck!
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.sortingTeacherCardGeneral}>
+                  <View style={styles.sortingTeacherHeader}>
+                    <MaterialIcons name="alt-route" size={20} color="#006A3B" />
+                    <Text style={styles.sortingTeacherTitleGeneral}>
+                      🗑️ SEPARATE WASTE PROPERLY
+                    </Text>
+                  </View>
+                  <Text style={styles.sortingTeacherSubtitle}>
+                    Separate organic biodegradables (Malata) from dry recyclables (Di-Malata) into distinct bags or bins.
+                  </Text>
+                </View>
+              )}
+
+              {/* Pre-Collection Checklist */}
+              <View style={styles.checklistHeaderWrap}>
+                <Text style={styles.checklistSectionTitle}>Pre-Collection Checklist</Text>
+                <Text style={styles.checklistSectionSub}>Tap items to confirm your bin is properly sorted</Text>
+              </View>
+
+              {checklist.map((item, index) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.checklistItem,
+                    index === checklist.length - 1 && styles.checklistItemLast,
+                  ]}
+                  onPress={() => toggleCheck(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      item.checked && styles.checkboxChecked,
+                    ]}
+                  >
+                    {item.checked && (
+                      <MaterialIcons name="check" size={14} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.checklistLabel,
+                      item.checked && styles.checklistLabelDone,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              <View style={styles.progressBarTrack}>
                 <View
                   style={[
-                    styles.checkbox,
-                    item.checked && styles.checkboxChecked,
+                    styles.progressBarFill,
+                    { width: `${(checkedCount / checklist.length) * 100}%` },
                   ]}
-                >
-                  {item.checked && (
-                    <MaterialIcons name="check" size={14} color="#FFFFFF" />
-                  )}
-                </View>
-                <Text
-                  style={[
-                    styles.checklistLabel,
-                    item.checked && styles.checklistLabelDone,
-                  ]}
-                >
-                  {item.label}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {checkedCount} of {checklist.length} items ready
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.confirmBtn,
+                  !allChecked && styles.confirmBtnDisabled,
+                ]}
+                onPress={allChecked ? handleConfirm : undefined}
+                activeOpacity={allChecked ? 0.85 : 1}
+              >
+                <Text style={styles.confirmBtnText}>
+                  {allChecked
+                    ? `Mark ${scheduledWasteType} Bin as Ready`
+                    : "Check all items to confirm"}
                 </Text>
               </TouchableOpacity>
-            ))}
-
-            <View style={styles.progressBarTrack}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  { width: `${(checkedCount / checklist.length) * 100}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {checkedCount} of {checklist.length} items ready
-            </Text>
-
-            <TouchableOpacity
-              style={[
-                styles.confirmBtn,
-                !allChecked && styles.confirmBtnDisabled,
-              ]}
-              onPress={allChecked ? handleConfirm : undefined}
-              activeOpacity={allChecked ? 0.85 : 1}
-            >
-              <Text style={styles.confirmBtnText}>
-                {allChecked
-                  ? "Mark Bin as Ready"
-                  : "Check all items to confirm"}
-              </Text>
-            </TouchableOpacity>
+            </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -2106,13 +2431,21 @@ export default function HomeScreen({ navigation }) {
                   </View>
                 </View>
 
+                {/* Motivation Live Overlay Badge */}
+                <View style={styles.stravaMotivationBadge}>
+                  <MaterialIcons name="local-fire-department" size={14} color="#F59E0B" />
+                  <Text style={styles.stravaMotivationBadgeText} numberOfLines={1}>
+                    Motivation: {selectedMotivation}
+                  </Text>
+                </View>
+
                 {/* Bottom Glass Badges */}
                 <View style={styles.stravaOverlayBottom}>
                   <View style={styles.streakOverlayBadge}>
                     <Text style={styles.overlayIcon}>🗑️</Text>
                     <View>
-                      <Text style={styles.overlayLabel}>STATUS</Text>
-                      <Text style={styles.overlayValue}>Bin Ready</Text>
+                      <Text style={styles.overlayLabel}>STREAM</Text>
+                      <Text style={styles.overlayValue}>{scheduledWasteType}</Text>
                     </View>
                   </View>
 
@@ -2126,6 +2459,53 @@ export default function HomeScreen({ navigation }) {
                 </View>
               </View>
             )}
+
+            {/* Motivation Feedback Selector */}
+            <View style={styles.motivationSection}>
+              <View style={styles.motivationHeaderRow}>
+                <MaterialIcons name="psychology" size={16} color="#006A3B" />
+                <Text style={styles.motivationSectionTitle}>
+                  What motivated you to dispose your trash today?
+                </Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.motivationChipsScroll}
+              >
+                {MOTIVATION_OPTIONS.map((opt) => {
+                  const isSelected = selectedMotivation === opt.label;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[
+                        styles.motivationChip,
+                        isSelected && styles.motivationChipSelected,
+                      ]}
+                      onPress={() => setSelectedMotivation(opt.label)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialIcons
+                        name={opt.icon}
+                        size={14}
+                        color={isSelected ? "#FFFFFF" : opt.color}
+                      />
+                      <Text
+                        style={[
+                          styles.motivationChipText,
+                          isSelected && styles.motivationChipTextSelected,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                      {isSelected && (
+                        <MaterialIcons name="check-circle" size={13} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
 
             <View style={styles.stravaActionsRow}>
               <TouchableOpacity
@@ -2176,6 +2556,15 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.celebrationMessage}>
               {celebrationData?.message || `Awesome job! Your trash disposal is verified and your ${disposalStreak}-day streak is active!`}
             </Text>
+
+            {celebrationData?.motivation && (
+              <View style={styles.celebrationMotivationPill}>
+                <MaterialIcons name="lightbulb" size={15} color="#059669" />
+                <Text style={styles.celebrationMotivationText}>
+                  Motivation: {celebrationData.motivation}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.rewardSummaryBox}>
               <View style={styles.rewardSummaryItem}>
@@ -2644,6 +3033,173 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
     marginTop: 2,
+  },
+  sortingTeacherCardMalata: {
+    backgroundColor: "#ECFDF5",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#A7F3D0",
+    padding: 14,
+    marginBottom: 16,
+  },
+  sortingTeacherCardDiMalata: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#BFDBFE",
+    padding: 14,
+    marginBottom: 16,
+  },
+  sortingTeacherCardGeneral: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    marginBottom: 16,
+  },
+  sortingTeacherHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  sortingTeacherTitleMalata: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#065F46",
+    letterSpacing: -0.2,
+  },
+  sortingTeacherTitleDiMalata: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1E40AF",
+    letterSpacing: -0.2,
+  },
+  sortingTeacherTitleGeneral: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  sortingTeacherSubtitle: {
+    fontSize: 12,
+    color: "#4B5563",
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  sortingSplitGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  sortingAcceptCol: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  sortingAcceptColBlue: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  sortingRejectCol: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  sortingColHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    paddingBottom: 4,
+  },
+  sortingColHeaderAccept: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#059669",
+    letterSpacing: 0.2,
+  },
+  sortingColHeaderAcceptBlue: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#2563EB",
+    letterSpacing: 0.2,
+  },
+  sortingColHeaderReject: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#DC2626",
+    letterSpacing: 0.2,
+  },
+  sortingItemBullet: {
+    fontSize: 10,
+    color: "#374151",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  sortingItemBulletReject: {
+    fontSize: 10,
+    color: "#6B7280",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  sortingTipBannerMalata: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D1FAE5",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 6,
+  },
+  sortingTipTextMalata: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#065F46",
+    lineHeight: 15,
+  },
+  sortingTipBannerDiMalata: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DBEAFE",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 6,
+  },
+  sortingTipTextDiMalata: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#1E40AF",
+    lineHeight: 15,
+  },
+  checklistHeaderWrap: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  checklistSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  checklistSectionSub: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1,
   },
   checklistItem: {
     flexDirection: "row",
@@ -3483,11 +4039,98 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#FFFFFF",
   },
+  stravaMotivationBadge: {
+    position: "absolute",
+    top: 50,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(17, 24, 39, 0.82)",
+    borderColor: "rgba(245, 158, 11, 0.4)",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 5,
+    maxWidth: "80%",
+  },
+  stravaMotivationBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FDE68A",
+  },
+  motivationSection: {
+    width: "100%",
+    marginTop: 14,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  motivationHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  motivationSectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  motivationChipsScroll: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  motivationChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E5E7EB",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  motivationChipSelected: {
+    backgroundColor: "#006A3B",
+    borderColor: "#006A3B",
+  },
+  motivationChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  motivationChipTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  celebrationMotivationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 10,
+    marginBottom: 4,
+    gap: 6,
+  },
+  celebrationMotivationText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#065F46",
+  },
   stravaActionsRow: {
     flexDirection: "row",
     width: "100%",
     gap: 12,
-    marginTop: 18,
+    marginTop: 14,
   },
   retakeBtn: {
     flex: 1,

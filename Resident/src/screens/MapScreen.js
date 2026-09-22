@@ -19,7 +19,30 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  LayoutAnimation,
+  UIManager,
+  Image,
 } from "react-native";
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const SMOOTH_SPRING_ANIMATION = {
+  duration: 320,
+  create: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+  update: {
+    type: LayoutAnimation.Types.spring,
+    springDamping: 0.84,
+  },
+  delete: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+};
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -88,355 +111,402 @@ function buildLeafletHTML(truckB64) {
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body, #map { height: 100%; width: 100%; overflow: hidden; background: #f0eded; }
-    .leaflet-control-zoom { display: none; }
-    .leaflet-container { background: #f0eded; }
-    img { pointer-events: none; }
-    .user-marker {
-      background: #1A73E8; width: 18px; height: 18px;
-      border-radius: 50%; border: 3px solid white;
-      box-shadow: 0 2px 8px rgba(26,115,232,0.4);
-    }
-    .user-pulse {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: rgba(26,115,232,0.15);
-      border: 2px solid rgba(26,115,232,0.35);
-      position: absolute; left: -2px; top: -2px;
-      animation: pulse 2s ease-out infinite;
-    }
-    @keyframes pulse {
-      0% { transform: scale(0.6); opacity: 1; }
-      100% { transform: scale(1.35); opacity: 0; }
-    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body, #map { height:100%; width:100%; overflow:hidden; background: #e8ede8; }
+    .maplibregl-popup-content { padding: 8px 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .maplibregl-popup-close-button { display: none; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
     (function() {
-      var TB = '${truckB64}';
-
-      var map, userMarker, userPulseCircle, routeLayer;
-      var radiusCircles = [];
-      var routeLayers = {};
+      var TB = '${truckB64 || ''}';
+      var map, currentMarker = null, userMarker = null;
       var truckMarkers = {};
+      var residentStopMarkers = [];
+      var heatmapMarkers = {};
+      var followMode = false;
 
-      var southWest = new L.LatLng(10.275, 123.845);
-      var northEast = new L.LatLng(10.355, 123.925);
-      var cebuBounds = new L.LatLngBounds(southWest, northEast);
+      var CEBU_OUTLINE = [
+        [10.3565,123.8808],[10.3592,123.8842],[10.3610,123.8882],[10.3620,123.8925],
+        [10.3624,123.8972],[10.3618,123.9018],[10.3600,123.9065],[10.3568,123.9112],
+        [10.3525,123.9158],[10.3475,123.9200],[10.3420,123.9235],[10.3362,123.9262],
+        [10.3302,123.9278],[10.3242,123.9284],[10.3182,123.9278],[10.3124,123.9260],
+        [10.3068,123.9234],[10.3015,123.9202],[10.2965,123.9165],[10.2918,123.9124],
+        [10.2874,123.9080],[10.2834,123.9032],[10.2798,123.8982],[10.2766,123.8928],
+        [10.2740,123.8868],[10.2720,123.8805],[10.2708,123.8740],[10.2703,123.8675],
+        [10.2706,123.8612],[10.2718,123.8555],[10.2738,123.8508],[10.2770,123.8472],
+        [10.2806,123.8452],[10.2844,123.8445],[10.2878,123.8452],[10.2908,123.8465],
+        [10.2936,123.8480],[10.2965,123.8488],[10.2995,123.8493],[10.3025,123.8496],
+        [10.3055,123.8500],[10.3085,123.8506],[10.3115,123.8515],[10.3145,123.8528],
+        [10.3172,123.8545],[10.3196,123.8558],[10.3220,123.8568],[10.3246,123.8573],
+        [10.3272,123.8576],[10.3300,123.8580],[10.3328,123.8588],[10.3358,123.8600],
+        [10.3388,123.8616],[10.3415,123.8636],[10.3440,123.8660],[10.3464,123.8686],
+        [10.3487,123.8714],[10.3508,123.8742],[10.3526,123.8770],[10.3544,123.8792],
+        [10.3558,123.8802],[10.3565,123.8808]
+      ];
+      var CEBU_OUTLINE_LNGLAT = CEBU_OUTLINE.map(function(c) { return [c[1], c[0]]; });
 
-      map = new L.Map('map', {
-        zoomControl: false, attributionControl: false, dragging: true,
-        scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true,
-        maxBounds: cebuBounds, maxBoundsViscosity: 0.0, minZoom: 17, maxZoom: 20,
-        inertia: true, inertiaDeceleration: 3000,
-      });
-      map.setView([10.3157, 123.8854], 17);
-
-      var tileLayer, hillshadeLayer, labelsLayer;
-      function setTileLayer(style) {
-        if (tileLayer) map.removeLayer(tileLayer);
-        if (hillshadeLayer) map.removeLayer(hillshadeLayer);
-        if (labelsLayer) map.removeLayer(labelsLayer);
-
-        if (style === 'satellite') {
-          tileLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 20, maxNativeZoom: 18, minZoom: 17, attribution: '' }
-          );
-        } else if (style === 'topographic') {
-          tileLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 20, maxNativeZoom: 18, minZoom: 17, attribution: '' }
-          );
-          hillshadeLayer = L.tileLayer(
-            'https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',
-            { opacity: 0.25, maxZoom: 20, maxNativeZoom: 17, minZoom: 17 }
-          ).addTo(map);
-          labelsLayer = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-            { opacity: 0.7, maxZoom: 20, maxNativeZoom: 18, minZoom: 17 }
-          ).addTo(map);
-        } else {
-          tileLayer = L.tileLayer(
-            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            { opacity: 0.9, maxZoom: 20, maxNativeZoom: 19, minZoom: 17 }
-          );
-        }
-        tileLayer.addTo(map);
-      }
-      setTileLayer('topographic');
-      window.setMapStyle = setTileLayer;
-
-      var CEBU_OUTLINE = [[10.3565,123.8808],[10.3592,123.8842],[10.3610,123.8882],[10.3620,123.8925],[10.3624,123.8972],[10.3618,123.9018],[10.3600,123.9065],[10.3568,123.9112],[10.3525,123.9158],[10.3475,123.9200],[10.3420,123.9235],[10.3362,123.9262],[10.3302,123.9278],[10.3242,123.9284],[10.3182,123.9278],[10.3124,123.9260],[10.3068,123.9234],[10.3015,123.9202],[10.2965,123.9165],[10.2918,123.9124],[10.2874,123.9080],[10.2834,123.9032],[10.2798,123.8982],[10.2766,123.8928],[10.2740,123.8868],[10.2720,123.8805],[10.2708,123.8740],[10.2703,123.8675],[10.2706,123.8612],[10.2718,123.8555],[10.2738,123.8508],[10.2770,123.8472],[10.2806,123.8452],[10.2844,123.8445],[10.2878,123.8452],[10.2908,123.8465],[10.2936,123.8480],[10.2965,123.8488],[10.2995,123.8493],[10.3025,123.8496],[10.3055,123.8500],[10.3085,123.8506],[10.3115,123.8515],[10.3145,123.8528],[10.3172,123.8545],[10.3196,123.8558],[10.3220,123.8568],[10.3246,123.8573],[10.3272,123.8576],[10.3300,123.8580],[10.3328,123.8588],[10.3358,123.8600],[10.3388,123.8616],[10.3415,123.8636],[10.3440,123.8660],[10.3464,123.8686],[10.3487,123.8714],[10.3508,123.8742],[10.3526,123.8770],[10.3544,123.8792],[10.3558,123.8802],[10.3565,123.8808]];
-      var sensorIcon = L.divIcon({
-        html: '<div style="display:flex;align-items:center;justify-content:center;background:#0F172A;width:24px;height:24px;border-radius:50%;border:2px solid #38BDF8;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' +
-              '<span style="font-size:11px;line-height:24px;">📡</span>' +
-              '</div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-        className: ''
+      map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        center: [123.893, 10.325],
+        zoom: 16,
+        pitch: 55,
+        bearing: 0,
+        attributionControl: false
       });
 
-      // IoT air quality & hazard callouts
-      var heatmapCircles = {};
-      window.updateHeatmapArea = function(area) {
-        var id = area._id;
-        var color = area.status === 'critical' ? '#EF4444' : area.status === 'moderate' ? '#F59E0B' : '#10B981';
-        var fillOp = area.status === 'critical' ? 0.35 : area.status === 'moderate' ? 0.25 : 0.18;
-        if (heatmapCircles[id]) { map.removeLayer(heatmapCircles[id]); }
-        
-        var group = L.layerGroup();
-        
-        // 1.5 to 3-meter (5 to 10 feet) radius of a potential gas source or leakage point.
-        var r = 3;
-        var circle = L.circle([area.lat, area.lng], {
-          radius: r, color: color, fillColor: color,
-          fillOpacity: fillOp, weight: 2, opacity: 0.8, interactive: true,
-        });
-        var lvlNum = area.status === 'critical' ? 3 : area.status === 'moderate' ? 2 : 1;
-        var lvlName = area.status === 'critical' ? 'Poor' : area.status === 'moderate' ? 'Moderate' : 'Good';
-        var lvlDesc = area.status === 'critical' ? 'Alert' : area.status === 'moderate' ? 'Caution' : 'Clean Air';
-        var lvlBg = area.status === 'critical' ? '#FEF2F2' : area.status === 'moderate' ? '#FFFBEB' : '#ECFDF5';
-        circle.bindPopup(
-          '<div style="font-family:sans-serif;min-width:145px;padding:4px 0;">' +
-          '<b style="font-size:12px;color:#111827;">' + (area.name || 'Sensor') + '</b><br/>' +
-          '<div style="margin-top:6px;display:inline-block;padding:3px 8px;border-radius:12px;background:' + lvlBg + ';border:1px solid ' + color + ';">' +
-          '<span style="font-size:11px;color:' + color + ';font-weight:700;">Level ' + lvlNum + ' · ' + lvlName + '</span>' +
-          '</div>' +
-          '<div style="margin-top:4px;font-size:10px;color:#6B7280;font-weight:500;">' +
-          'Status: ' + lvlDesc +
-          '</div>' +
-          '<div style="margin-top:4px;font-size:9px;color:#9CA3AF;line-height:1.2;">' +
-          '1.5 to 3-meter (5 to 10 feet) radius of a potential gas source or leakage point.' +
-          '</div></div>'
-        );
-        circle.on('click', function() {
-          try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hazard_click', area: area })); } catch(e) {}
-        });
-        circle.addTo(group);
-
-        group.addTo(map);
-        heatmapCircles[id] = group;
-      };
-      window.clearHeatmapAreas = function() {
-        Object.keys(heatmapCircles).forEach(function(id) {
-          if (heatmapCircles[id]) map.removeLayer(heatmapCircles[id]);
-        });
-        heatmapCircles = {};
-      };
-
-      var cityOutlineLayer = null;
-      window.toggleCityOutline = function(show) {
-        if (show && !cityOutlineLayer) {
-          cityOutlineLayer = L.polyline(CEBU_OUTLINE, { color: '#2563EB', weight: 2, opacity: 0.55, dashArray: '10, 7', interactive: false }).addTo(map);
-        } else if (!show && cityOutlineLayer) {
-          map.removeLayer(cityOutlineLayer);
-          cityOutlineLayer = null;
-        }
-      };
-      window.toggleCityOutline(true);
-
-      function drawUserRadius(lat, lng) {
-        radiusCircles.forEach(function(c) { map.removeLayer(c); });
-        radiusCircles = [];
-        // 3-layer alert radius around resident pinpoint (Outer: 150m, Mid: 80m, Inner: 30m)
-        var layers = [
-          { radius: 150, color: '#10B981', fillColor: '#10B981', fillOpacity: 0.07, weight: 1, dashArray: '4 4' },
-          { radius: 80,  color: '#059669', fillColor: '#059669', fillOpacity: 0.14, weight: 1.2, dashArray: '3 3' },
-          { radius: 30,  color: '#047857', fillColor: '#047857', fillOpacity: 0.24, weight: 1.5, dashArray: null }
-        ];
-        layers.forEach(function(l) {
-          var c = L.circle([lat, lng], {
-            radius: l.radius,
-            color: l.color,
-            fillColor: l.fillColor,
-            fillOpacity: l.fillOpacity,
-            weight: l.weight,
-            dashArray: l.dashArray,
-            opacity: 0.85,
-            interactive: false,
-          }).addTo(map);
-          radiusCircles.push(c);
-        });
-      }
-
-      var lastTruckCoords = {};
-      function makeTruckIcon(truckId, heading) {
-        var rot = typeof heading === 'number' && !isNaN(heading) ? heading : 0;
-        return L.divIcon({
-          html: '<div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;">' +
-                  '<img src="data:image/png;base64,' + TB + '" style="width:26px;height:44px;object-fit:contain;display:block;transform:rotate(' + rot + 'deg);transform-origin:center center;transition:transform 0.4s ease-out;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.35));" alt="Truck" />' +
-                '</div>',
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-          className: '',
-        });
-      }
-
-      function makeIdleIcon(truckId) {
-        return L.divIcon({
-          html: '<div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;opacity:0.65;filter:grayscale(100%);">' +
-                  '<img src="data:image/png;base64,' + TB + '" style="width:26px;height:44px;object-fit:contain;display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,0.25));" alt="Truck" />' +
-                '</div>',
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-          className: '',
-        });
-      }
-
-      window.updateTruckPosition = function(lat, lng, truckId, autoPan, heading) {
-        var id = truckId || 'GT';
-        var last = lastTruckCoords[id];
-        var calcHeading = (typeof heading === 'number' && !isNaN(heading) && heading !== 0) ? heading : null;
-
-        if (calcHeading === null && last && (last.lat !== lat || last.lng !== lng)) {
-          var dLng = ((lng - last.lng) * Math.PI) / 180;
-          var phi1 = (last.lat * Math.PI) / 180;
-          var phi2 = (lat * Math.PI) / 180;
-          var y = Math.sin(dLng) * Math.cos(phi2);
-          var x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
-          calcHeading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
-        } else if (calcHeading === null) {
-          calcHeading = last ? last.heading : 0;
-        }
-
-        lastTruckCoords[id] = { lat: lat, lng: lng, heading: calcHeading };
-        var icon = makeTruckIcon(id, calcHeading);
-        if (!truckMarkers[id]) {
-          truckMarkers[id] = L.marker([lat, lng], { icon: icon }).addTo(map);
-        } else {
-          truckMarkers[id].setLatLng([lat, lng]);
-          truckMarkers[id].setIcon(icon);
-        }
-        if (autoPan) map.panTo([lat, lng]);
-      };
-
-      window.showIdleTruck = function(lat, lng, truckId) {
-        var id = truckId || 'GT';
-        if (truckMarkers[id]) { map.removeLayer(truckMarkers[id]); delete truckMarkers[id]; }
-      };
-
-      window.removeTruckMarker = function(truckId) {
-        var id = truckId || 'GT';
-        if (truckMarkers[id]) { map.removeLayer(truckMarkers[id]); delete truckMarkers[id]; }
-      };
-
-      window.loadAllRoutes = function(routesPayload) {
-        Object.keys(routeLayers).forEach(function(id) {
-          if (routeLayers[id]) { map.removeLayer(routeLayers[id]); }
-        });
-        routeLayers = {};
-        routesPayload.forEach(function(r) {
-          if (!r.coords || r.coords.length < 2) return;
-          var layer = L.polyline(r.coords, {
-            color: r.color || '#006A3B', weight: 4, opacity: 0.85,
-            lineCap: 'round', lineJoin: 'round',
-          });
-          layer.on('click', function() {
-            window.ReactNativeWebView.postMessage('route:' + r.id);
-          });
-          layer.addTo(map);
-          routeLayers[r.id] = layer;
-        });
-      };
-
-      window.highlightRoute = function(routeId) {
-        Object.keys(routeLayers).forEach(function(id) {
-          if (!routeLayers[id]) return;
-          if (id === routeId) {
-            routeLayers[id].setStyle({ weight: 5, opacity: 0.9 });
-            routeLayers[id].bringToFront();
-            try { map.fitBounds(routeLayers[id].getBounds().pad(0.1)); } catch(e) {}
-          } else {
-            routeLayers[id].setStyle({ weight: 2, opacity: 0.3 });
+      map.on('load', function() {
+        map.addSource('cebu-outline', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: CEBU_OUTLINE_LNGLAT }
           }
         });
+        map.addLayer({
+          id: 'cebu-outline-layer',
+          type: 'line',
+          source: 'cebu-outline',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#2563EB',
+            'line-width': 2.5,
+            'line-opacity': 0.65,
+            'line-dasharray': [3, 2]
+          }
+        });
+
+        setTimeout(function() {
+          map.resize();
+          window.ReactNativeWebView.postMessage('map_ready');
+        }, 200);
+      });
+
+      window.setPerspective3D = function(enable3d) {
+        if (!map) return;
+        map.easeTo({
+          pitch: enable3d ? 55 : 0,
+          duration: 600
+        });
       };
 
-      // Resident route stop markers — verified sitios with dark green trash bin icon
-      var residentStopMarkers = [];
+      window.setMapStyle = function(style) {};
+      window.toggleCityOutline = function(show) {
+        if (map && map.getLayer('cebu-outline-layer')) {
+          map.setLayoutProperty('cebu-outline-layer', 'visibility', show ? 'visible' : 'none');
+        }
+      };
+
+      // Stop markers
       window.clearResidentStops = function() {
-        residentStopMarkers.forEach(function(m) { map.removeLayer(m); });
+        residentStopMarkers.forEach(function(m) { m.remove(); });
         residentStopMarkers = [];
       };
+
+      function createResidentStopMarkerEl(status, name) {
+        var isDone = status === 'completed';
+        var bg = isDone ? '#10B981' : status === 'in-progress' ? '#F59E0B' : '#006A3B';
+        var el = document.createElement('div');
+        el.innerHTML = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">' +
+          '<div style="background:' + bg + ';width:26px;height:26px;border-radius:13px;border:2.5px solid white;box-shadow:0 3px 8px rgba(0,106,59,0.35);display:flex;align-items:center;justify-content:center;color:#fff;">' +
+            (isDone
+              ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+              : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>') +
+          '</div>' +
+          '<div style="position:absolute;top:-18px;background:rgba(255,255,255,0.95);color:#1B1C1C;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #CBD5E1;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.12);">' +
+            name + (isDone ? ' ✓' : '') +
+          '</div>' +
+        '</div>';
+        return el;
+      }
+
       window.addResidentStops = function(stopsJson) {
         window.clearResidentStops();
         var arr = JSON.parse(stopsJson);
-        var trashSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
-        var checkSvg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
         arr.forEach(function(s) {
-          var status = s.status || 'upcoming';
-          var isDone = status === 'completed';
-          var bg = isDone ? '#10B981' : status === 'in-progress' ? '#F59E0B' : '#006A3B';
-          var iconContent = isDone ? checkSvg : trashSvg;
-          var icon = L.divIcon({
-            html: '<div style="display:flex;flex-direction:column;align-items:center;position:relative;">' +
-                  '<div style="background:' + bg + ';color:#fff;width:28px;height:28px;border-radius:50%;' +
-                  'display:flex;align-items:center;justify-content:center;' +
-                  'border:2px solid white;box-shadow:0 3px 8px rgba(0,106,59,0.35);">' + iconContent + '</div>' +
-                  '<span style="position:absolute;top:-18px;background:rgba(255,255,255,0.95);color:#1B1C1C;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;border:1px solid #ccc;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + s.name + (isDone ? ' ✓' : '') + '</span>' +
-                  '</div>',
-            iconSize: [28, 28], iconAnchor: [14, 14], className: '',
-          });
-          var m = L.marker([s.lat, s.lng], { icon: icon });
-          m.bindPopup(
-            '<div style="font-family:sans-serif;min-width:100px;">' +
-            '<b style="font-size:11px;">Sitio ' + s.name + '</b><br>' +
-            '<span style="font-size:10px;color:' + (isDone ? '#059669' : '#555') + ';font-weight:700;">Status: ' + (isDone ? 'Collection Completed ✓' : status === 'in-progress' ? 'Scheduled Today' : 'Drop-off Point') + '</span>' +
+          var el = createResidentStopMarkerEl(s.status, s.name);
+          var isDone = s.status === 'completed';
+          var popup = new maplibregl.Popup({ offset: 15 }).setHTML(
+            '<div style="font-family:sans-serif;padding:3px;text-align:center;">' +
+            '<b style="font-size:12px;color:#0F172A;">' + (isDone ? '✨ ' : '📍 ') + s.name + '</b><br>' +
+            '<span style="font-size:11px;font-weight:700;color:' + (isDone ? '#059669' : '#006A3B') + ';">' +
+            (isDone ? 'Collection Completed ✓' : 'Drop-off Stop Point') +
+            '</span>' +
             '</div>'
           );
-          m.addTo(map);
+          var m = new maplibregl.Marker({ element: el })
+            .setLngLat([s.lng, s.lat])
+            .setPopup(popup)
+            .addTo(map);
           residentStopMarkers.push(m);
         });
       };
 
+      // Route layers
       window.updateTruckRoute = function(coordsJson) {
-        if (routeLayer) { map.removeLayer(routeLayer); }
         var coords = JSON.parse(coordsJson);
-        if (coords && coords.length > 0) {
-          routeLayer = L.polyline(coords, {
-            color: '#006A3B',
-            weight: 5,
-            opacity: 0.85,
-            lineCap: 'round',
-            lineJoin: 'round',
-          }).addTo(map);
+        if (!coords || coords.length === 0) return;
+        var geojsonCoords = coords.map(function(c) { return [c[1], c[0]]; });
+
+        if (map.getSource('truck-route')) {
+          map.getSource('truck-route').setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: geojsonCoords }
+          });
+        } else {
+          map.addSource('truck-route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: geojsonCoords }
+            }
+          });
+          map.addLayer({
+            id: 'truck-route-layer',
+            type: 'line',
+            source: 'truck-route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#006A3B',
+              'line-width': 5,
+              'line-opacity': 0.85
+            }
+          }, map.getLayer('3d-car-arrow-model') ? '3d-car-arrow-model' : undefined);
         }
+
+        var bounds = new maplibregl.LngLatBounds();
+        geojsonCoords.forEach(function(c) { bounds.extend(c); });
+        map.fitBounds(bounds, { padding: 40 });
       };
+
+      // User Location & Radius Rings
+      function createCirclePolygon(lat, lng, radiusM) {
+        var coords = [];
+        var km = radiusM / 1000;
+        var distanceX = km / (111.320 * Math.cos(lat * Math.PI / 180));
+        var distanceY = km / 110.574;
+        var points = 48;
+        for (var i = 0; i <= points; i++) {
+          var theta = (i / points) * (2 * Math.PI);
+          var x = distanceX * Math.cos(theta);
+          var y = distanceY * Math.sin(theta);
+          coords.push([lng + x, lat + y]);
+        }
+        return [coords];
+      }
+
+      function drawUserRadiusRings(lat, lng) {
+        var outer = createCirclePolygon(lat, lng, 150);
+        var mid = createCirclePolygon(lat, lng, 80);
+        var inner = createCirclePolygon(lat, lng, 30);
+
+        if (map.getSource('user-rings')) {
+          map.getSource('user-rings').setData({
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', properties: { level: 'outer' }, geometry: { type: 'Polygon', coordinates: outer } },
+              { type: 'Feature', properties: { level: 'mid' }, geometry: { type: 'Polygon', coordinates: mid } },
+              { type: 'Feature', properties: { level: 'inner' }, geometry: { type: 'Polygon', coordinates: inner } }
+            ]
+          });
+        } else {
+          map.addSource('user-rings', {
+            type: 'geojson',
+            data: {
+              type: 'FeatureCollection',
+              features: [
+                { type: 'Feature', properties: { level: 'outer' }, geometry: { type: 'Polygon', coordinates: outer } },
+                { type: 'Feature', properties: { level: 'mid' }, geometry: { type: 'Polygon', coordinates: mid } },
+                { type: 'Feature', properties: { level: 'inner' }, geometry: { type: 'Polygon', coordinates: inner } }
+              ]
+            }
+          });
+          map.addLayer({
+            id: 'user-rings-fill',
+            type: 'fill',
+            source: 'user-rings',
+            paint: {
+              'fill-color': '#10B981',
+              'fill-opacity': [
+                'match',
+                ['get', 'level'],
+                'outer', 0.06,
+                'mid', 0.12,
+                'inner', 0.22,
+                0.08
+              ]
+            }
+          });
+          map.addLayer({
+            id: 'user-rings-line',
+            type: 'line',
+            source: 'user-rings',
+            paint: {
+              'line-color': '#059669',
+              'line-width': 1.2,
+              'line-opacity': 0.7,
+              'line-dasharray': [3, 2]
+            }
+          });
+        }
+      }
 
       window.updateUserLocation = function(lat, lng, autoPan) {
-        if (userMarker) { map.removeLayer(userMarker); }
-        if (userPulseCircle) { map.removeLayer(userPulseCircle); userPulseCircle = null; }
-        userMarker = L.marker([lat, lng], {
-          icon: L.divIcon({
-            html: '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:36px; height:44px;">' +
-                  '<svg viewBox="0 0 36 44" width="36" height="44" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));">' +
-                  '<path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 26 18 26s18-13.5 18-26C36 8.06 27.94 0 18 0z" fill="#006A3B" />' +
-                  '<circle cx="18" cy="16.5" r="10.5" fill="#FFFFFF" />' +
-                  '<circle cx="18" cy="13" r="3.8" fill="#006A3B" />' +
-                  '<path d="M11.8 23c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2v0.8h-12.4V23z" fill="#006A3B" />' +
-                  '</svg>' +
-                  '</div>',
-            iconSize: [36, 44], iconAnchor: [18, 44], className: '',
-          })
-        }).addTo(map);
-        drawUserRadius(lat, lng);
+        if (userMarker) { userMarker.remove(); }
+        var el = document.createElement('div');
+        el.innerHTML =
+          '<div style="position:relative; display:flex; justify-content:center; align-items:center; width:36px; height:44px;">' +
+            '<svg viewBox="0 0 36 44" width="36" height="44" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));">' +
+              '<path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 26 18 26s18-13.5 18-26C36 8.06 27.94 0 18 0z" fill="#006A3B" />' +
+              '<circle cx="18" cy="16.5" r="10.5" fill="#FFFFFF" />' +
+              '<circle cx="18" cy="13" r="3.8" fill="#006A3B" />' +
+              '<path d="M11.8 23c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2v0.8h-12.4V23z" fill="#006A3B" />' +
+            '</svg>' +
+          '</div>';
+
+        userMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([lng, lat])
+          .addTo(map);
+
+        drawUserRadiusRings(lat, lng);
         if (autoPan) {
-          map.setView([lat, lng], 17);
+          map.flyTo({ center: [lng, lat], zoom: 17, duration: 1000 });
         }
       };
 
-      window.gotoLocation = function(lat, lng, zoom) { map.setView([lat, lng], zoom || 17); };
-      setTimeout(function() { map.invalidateSize(); }, 300);
+      // Live Truck Position & Follow
+      var clearingMarker = null;
+      window.setClearingMarker = function(sitioName, lat, lng, isClearing) {
+        if (clearingMarker) { clearingMarker.remove(); clearingMarker = null; }
+        if (!isClearing || !lat || !lng) return;
+        var el = document.createElement('div');
+        el.innerHTML =
+          '<div style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:16px;background:#059669;border:2px solid #ffffff;box-shadow:0 3px 8px rgba(0,0,0,0.25);font-size:16px;z-index:9999;">🧹</div>';
+        clearingMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(map);
+      };
+
+      function createFallbackTruckEl(bearing, truckId, isClearing) {
+        var el = document.createElement('div');
+        var imgHtml = TB
+          ? '<img src="data:image/png;base64,' + TB + '" style="width:48px;height:48px;object-fit:contain;display:block;" />'
+          : '<svg width="42" height="42" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="18" fill="rgba(0,106,59,0.15)" /><path d="M20 5L32 32L20 26L8 32L20 5Z" fill="#006A3B" stroke="white" stroke-width="2.5" stroke-linejoin="round" /></svg>';
+        el.innerHTML =
+          '<div style="position:relative;display:flex;flex-direction:column;align-items:center;z-index:9000;cursor:pointer;">' +
+            (isClearing ? '<div style="position:absolute;top:-4px;width:52px;height:52px;border-radius:26px;background:rgba(16,185,129,0.35);animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>' : '') +
+            '<div style="transform: rotate(' + (bearing || 0) + 'deg); filter: drop-shadow(0 4px 10px rgba(0,106,59,0.35)); transition: transform 0.3s ease;">' +
+              imgHtml +
+            '</div>' +
+            '<div style="background:#006A3B;color:#ffffff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-top:2px;box-shadow:0 2px 4px rgba(0,0,0,0.3);white-space:nowrap;">' +
+              (truckId || 'GT') +
+            '</div>' +
+          '</div>';
+        return el;
+      }
+
+      window.updateTruckPosition = function(lat, lng, truckId, autoPan, heading, isClearing) {
+        if (!lat || !lng) return;
+        var id = truckId || 'GT';
+        if (!truckMarkers[id]) {
+          var el = createFallbackTruckEl(heading || 0, id, isClearing);
+          truckMarkers[id] = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        } else {
+          truckMarkers[id].setLngLat([lng, lat]);
+          var el = createFallbackTruckEl(heading || 0, id, isClearing);
+          truckMarkers[id].getElement().innerHTML = el.innerHTML;
+        }
+
+        if (autoPan) {
+          map.panTo([lng, lat], { duration: 500 });
+        }
+      };
+
+      window.removeTruckMarker = function(truckId) {
+        var id = truckId || 'GT';
+        if (truckMarkers[id]) { truckMarkers[id].remove(); delete truckMarkers[id]; }
+      };
+
+      window.gotoLocation = function(lat, lng, zoom) {
+        map.flyTo({ center: [lng, lat], zoom: zoom || 17, duration: 1000 });
+      };
+
+      // IoT Air Quality Sensors
+      window.updateHeatmapArea = function(area) {
+        var id = area._id || area.id;
+        var color = area.status === 'critical' ? '#EF4444' : area.status === 'moderate' ? '#F59E0B' : '#10B981';
+        if (heatmapMarkers[id]) { heatmapMarkers[id].remove(); }
+
+        var el = document.createElement('div');
+        el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;background:#0F172A;width:26px;height:26px;border-radius:50%;border:2.5px solid ' + color + ';box-shadow:0 3px 8px rgba(0,0,0,0.35);cursor:pointer;">' +
+          '<span style="font-size:12px;line-height:26px;">📡</span>' +
+        '</div>';
+
+        var popup = new maplibregl.Popup({ offset: 15 }).setHTML(
+          '<div style="font-family:sans-serif;min-width:145px;padding:4px 0;">' +
+          '<b style="font-size:12px;color:#111827;">' + (area.name || 'Sensor') + '</b><br/>' +
+          '<div style="margin-top:6px;display:inline-block;padding:3px 8px;border-radius:12px;background:' + (area.status === 'critical' ? '#FEF2F2' : area.status === 'moderate' ? '#FFFBEB' : '#ECFDF5') + ';border:1px solid ' + color + ';">' +
+          '<span style="font-size:11px;color:' + color + ';font-weight:700;">' + (area.status === 'critical' ? 'High Gas Warning' : area.status === 'moderate' ? 'Moderate Risk' : 'Safe Air Quality') + '</span>' +
+          '</div></div>'
+        );
+
+        el.addEventListener('click', function() {
+          try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hazard_click', area: area })); } catch(e) {}
+        });
+
+        var m = new maplibregl.Marker({ element: el })
+          .setLngLat([area.lng, area.lat])
+          .setPopup(popup)
+          .addTo(map);
+
+        heatmapMarkers[id] = m;
+      };
+
+      window.clearHeatmapAreas = function() {
+        Object.keys(heatmapMarkers).forEach(function(id) {
+          if (heatmapMarkers[id]) heatmapMarkers[id].remove();
+        });
+        heatmapMarkers = {};
+      };
+
     })();
   </script>
 </body>
 </html>`;
+}
+
+async function fetchRoadRoutePolyline(waypoints) {
+  if (!waypoints || waypoints.length < 2) return waypoints || [];
+  try {
+    const locStr = waypoints.map((p) => `${p[1]},${p[0]}`).join(";");
+    const res = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${locStr}?overview=full&geometries=geojson`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (
+        data.routes?.[0]?.geometry?.coordinates &&
+        data.routes[0].geometry.coordinates.length > 0
+      ) {
+        return data.routes[0].geometry.coordinates.map((c) => [c[1], c[0]]);
+      }
+    }
+  } catch (e) {
+    console.warn("OSRM routing failed in Resident Map:", e.message);
+  }
+  return waypoints;
+}
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 export default function MapScreen() {
@@ -447,9 +517,6 @@ export default function MapScreen() {
   const { user } = useAuth();
   const userBarangay = user?.barangay || '';
 
-  const sheetTotalHeight = EXPANDED_HEIGHT + bottomInset;
-  const translateCollapsed = sheetTotalHeight - COLLAPSED_HEIGHT;
-
   const [isExpanded, setIsExpanded] = useState(true);
   const [userLocation, setUserLocation] = useState(null);
   const [isLocationLoading, setIsLocationLoading] = useState(true);
@@ -458,6 +525,7 @@ export default function MapScreen() {
   const [dataLoading, setDataLoading] = useState(true);
   const [mapStyle, setMapStyle] = useState("topographic");
   const [isFollowing, setIsFollowing] = useState(!!focusTruck);
+  const [is3D, setIs3D] = useState(true);
   const [isAutoCenterUser, setIsAutoCenterUser] = useState(true);
   const [showCityOutline, setShowCityOutline] = useState(true);
   const [activeFilter, setActiveFilter] = useState('trucks');
@@ -474,8 +542,40 @@ export default function MapScreen() {
   const [sitioList, setSitioList] = useState([]);
   const [todaySchedules, setTodaySchedules] = useState([]);
 
-  const isExpandedRef = useRef(true);
-  const sheetAnim = useRef(new Animated.Value(0)).current;
+  const expandSheet = useCallback(() => {
+    LayoutAnimation.configureNext(SMOOTH_SPRING_ANIMATION);
+    setIsExpanded(true);
+  }, []);
+
+  const collapseSheet = useCallback(() => {
+    LayoutAnimation.configureNext(SMOOTH_SPRING_ANIMATION);
+    setIsExpanded(false);
+  }, []);
+
+  const toggleSheet = useCallback(() => {
+    LayoutAnimation.configureNext(SMOOTH_SPRING_ANIMATION);
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dy) > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dy > 15 || gestureState.vy > 0.25) {
+            // Swiped down -> collapse
+            collapseSheet();
+          } else if (gestureState.dy < -15 || gestureState.vy < -0.25) {
+            // Swiped up -> expand
+            expandSheet();
+          }
+        },
+      }),
+    [collapseSheet, expandSheet]
+  );
+
   const webViewRef = useRef(null);
   const socketRef = useRef(null);
   const liveTruckPos = useRef(null);
@@ -541,7 +641,8 @@ export default function MapScreen() {
         body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
       }).catch(() => {});
     }
-    Alert.alert("Bin Prepared! ✓", "Your garbage bin is marked as prepared for active collection. +2 Points earned!");
+    const wasteType = activeSchedule?.wasteType || "Malata";
+    Alert.alert("Bin Prepared & Sorted! ✓", `Your ${wasteType} bin is marked as prepared for active collection. +2 Points earned!`);
   };
 
   const activeSchedule = useMemo(() => {
@@ -565,16 +666,18 @@ export default function MapScreen() {
   }, [todaySchedules, activeBarangay, userBarangay]);
 
   const isTruckActiveForBarangay = useMemo(() => {
-    return liveTruckOnline && hasScheduleToday;
-  }, [liveTruckOnline, hasScheduleToday]);
+    if (!liveTruckOnline) return false;
+    return true;
+  }, [liveTruckOnline]);
 
   const isRouteCompleted = useMemo(() => {
+    if (liveTruckOnline) return false;
     if (!hasScheduleToday) return false;
     if (activeSchedule?.status === 'completed') return true;
     if (todaySchedules.length > 0 && todaySchedules.every(s => s.status === 'completed')) return true;
     if (cleanedNotif) return true;
     return false;
-  }, [hasScheduleToday, activeSchedule, todaySchedules, cleanedNotif]);
+  }, [liveTruckOnline, hasScheduleToday, activeSchedule, todaySchedules, cleanedNotif]);
 
   const missedBannerData = useMemo(() => {
     if (binReady) {
@@ -669,40 +772,122 @@ export default function MapScreen() {
 
   useEffect(() => { iotAreasRef.current = iotAreas; }, [iotAreas]);
 
-  useEffect(() => {
-    (async () => {
+  const lastTruckFetchRef = useRef(0);
+
+  const fetchTruckStatus = useCallback(async () => {
+    const now = Date.now();
+    // Debounce to prevent duplicate burst requests within 2 seconds
+    if (now - lastTruckFetchRef.current < 2000) return;
+    lastTruckFetchRef.current = now;
+
+    try {
+      let trucksRes = [];
+      // 1. Try /api/trucks/locations (direct live Truck documents with GPS coordinates)
       try {
-        const trucksRes = await fetch(`${TRACKING_SERVER}/api/trucks`).then(r => r.json());
-        if (Array.isArray(trucksRes)) {
-          const online = trucksRes.filter(t => t.status === 'online');
-          initialTrucks.current = online;
-          if (online.length > 0) {
-            const active = online[0];
-            liveTruckPos.current = { lat: active.lat, lng: active.lng, truckId: active.truckId };
-            setTruckPosState({ lat: active.lat, lng: active.lng, truckId: active.truckId });
-            setLiveTruckOnline(true);
-          } else {
-            liveTruckPos.current = null;
-            setTruckPosState(null);
-            setLiveTruckOnline(false);
+        const resLoc = await fetch(`${TRACKING_SERVER}/api/trucks/locations`);
+        if (resLoc.ok) {
+          const data = await resLoc.json();
+          if (Array.isArray(data) && data.length > 0) trucksRes = data;
+        }
+      } catch (_) {}
+
+      // 2. Fallback to /api/trucks/active (Fleet joined with live Truck coordinates)
+      if (!trucksRes || trucksRes.length === 0) {
+        try {
+          const resAct = await fetch(`${TRACKING_SERVER}/api/trucks/active`);
+          if (resAct.ok) {
+            const data = await resAct.json();
+            if (Array.isArray(data) && data.length > 0) trucksRes = data;
           }
-          // Inject markers immediately if WebView is already loaded
-          if (webViewReadyRef.current) {
-            online.forEach((t) => {
-              const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
-              webViewRef.current?.injectJavaScript(
-                `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false); true;`,
-              );
-            });
+        } catch (_) {}
+      }
+
+      // 3. Fallback to /api/trucks
+      if (!trucksRes || trucksRes.length === 0) {
+        try {
+          const resGen = await fetch(`${TRACKING_SERVER}/api/trucks`);
+          if (resGen.ok) {
+            const data = await resGen.json();
+            if (Array.isArray(data)) trucksRes = data;
+          }
+        } catch (_) {}
+      }
+
+      if (!Array.isArray(trucksRes)) return;
+
+      const isOnlineTruck = (t) => {
+        if (!t || t.lat == null || t.lng == null || isNaN(t.lat) || isNaN(t.lng)) return false;
+        if (Number(t.lat) === 0 && Number(t.lng) === 0) return false;
+        const st = (t.status || t.liveStatus || "").trim().toLowerCase();
+        if (st === "online" || st === "active" || st === "collecting" || st === "en-route" || st === "in-transit") return true;
+        const ts = t.updatedAt || t.lastSeen;
+        if (ts) {
+          const diffMs = Date.now() - new Date(ts).getTime();
+          if (!isNaN(diffMs) && diffMs < 15 * 60 * 1000) return true;
+        }
+        return false;
+      };
+
+      const online = trucksRes.filter(isOnlineTruck);
+      initialTrucks.current = online;
+
+      if (online.length > 0) {
+        let active = online[0];
+        if (userLocationRef.current && userLocationRef.current.lat) {
+          let minDist = Infinity;
+          for (const t of online) {
+            const d = getDistanceM(userLocationRef.current.lat, userLocationRef.current.lng, t.lat, t.lng);
+            if (d < minDist) {
+              minDist = d;
+              active = t;
+            }
           }
         }
-      } catch (e) {
-        console.warn('MapScreen fetch error:', e);
-      } finally {
-        setDataLoading(false);
+        liveTruckPos.current = {
+          lat: active.lat,
+          lng: active.lng,
+          truckId: active.truckId,
+          heading: active.heading || 0,
+        };
+        setTruckPosState({ lat: active.lat, lng: active.lng, truckId: active.truckId });
+        setLiveTruckOnline(true);
+
+        if (webViewReadyRef.current) {
+          online.forEach((t) => {
+            const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
+            webViewRef.current?.injectJavaScript(
+              `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false, ${t.heading || 0}, false); true;`,
+            );
+          });
+        }
+      } else {
+        // Do NOT wipe out live truck if we already have an active GPS position from real-time socket
+        if (!liveTruckPos.current) {
+          setTruckPosState(null);
+          setLiveTruckOnline(false);
+        }
       }
-    })();
+    } catch (e) {
+      console.warn('MapScreen fetchTruckStatus error:', e);
+    } finally {
+      setDataLoading(false);
+    }
   }, []);
+
+  // Fetch truck status on mount
+  useEffect(() => {
+    fetchTruckStatus();
+  }, [fetchTruckStatus]);
+
+  // Fetch truck status whenever screen is focused (after resident login or tab switch)
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener ? navigation.addListener("focus", () => {
+      fetchTruckStatus();
+    }) : undefined;
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [navigation, fetchTruckStatus]);
 
   const [selectedBarangay, setSelectedBarangay] = useState(user?.barangay || 'Apas');
   const [showBarangayModal, setShowBarangayModal] = useState(false);
@@ -818,18 +1003,45 @@ export default function MapScreen() {
     const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
 
-    // Draw route polyline connecting selected sequential sitios in order
-    let routeCoords = [];
-    for (const sched of todaySchedules || []) {
-      if (sched.routeCoords && sched.routeCoords.length > 0) {
-        routeCoords = [...routeCoords, ...sched.routeCoords];
-      } else if (sched.sitioTasks && sched.sitioTasks.length > 1) {
-        const coords = sched.sitioTasks.map(t => [t.lat, t.lng]);
-        routeCoords = [...routeCoords, ...coords];
+    // Draw real road route polyline connecting sequential sitios along the street network
+    let isMounted = true;
+    (async () => {
+      let rawWaypoints = [];
+      for (const sched of todaySchedules || []) {
+        if (sched.routeCoords && sched.routeCoords.length > 15) {
+          // Already has rich road geometry from backend
+          if (isMounted) {
+            const routeCoordsJson = JSON.stringify(sched.routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+          }
+          return;
+        } else if (sched.sitioTasks && sched.sitioTasks.length > 1) {
+          rawWaypoints = sched.sitioTasks.map((t) => [t.lat, t.lng]);
+        } else if (sched.routeCoords && sched.routeCoords.length > 1) {
+          rawWaypoints = sched.routeCoords;
+        }
       }
-    }
-    const routeCoordsJson = JSON.stringify(routeCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+
+      if (rawWaypoints.length === 0 && sitioList.length > 1) {
+        rawWaypoints = sitioList.map((s) => [s.lat, s.lng]);
+      }
+
+      if (rawWaypoints.length > 1) {
+        const roadCoords = await fetchRoadRoutePolyline(rawWaypoints);
+        if (isMounted && roadCoords && roadCoords.length > 0) {
+          const routeCoordsJson = JSON.stringify(roadCoords).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          webViewRef.current?.injectJavaScript(`window.updateTruckRoute('${routeCoordsJson}'); true;`);
+        }
+      } else {
+        if (isMounted) {
+          webViewRef.current?.injectJavaScript(`window.updateTruckRoute('[]'); true;`);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [sitioList, todaySchedules, webViewReady]);
 
   useEffect(() => {
@@ -847,8 +1059,9 @@ export default function MapScreen() {
       }
       if (webViewReadyRef.current) {
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
+        const isClearing = !!clearingNotif;
         webViewRef.current?.injectJavaScript(
-          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}); true;`,
+          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}, ${isClearing}); true;`,
         );
       }
     });
@@ -931,13 +1144,54 @@ export default function MapScreen() {
         clearTimeout(toastTimerRef.current);
         setProximityToast(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
         toastTimerRef.current = setTimeout(() => setProximityToast(null), 10000);
+
+        const cLat = data.lat != null ? data.lat : liveTruckPos.current?.lat;
+        const cLng = data.lng != null ? data.lng : liveTruckPos.current?.lng;
+        if (cLat && cLng) {
+          liveTruckPos.current = {
+            lat: cLat,
+            lng: cLng,
+            truckId: data.truckId || liveTruckPos.current?.truckId || "GT",
+            heading: liveTruckPos.current?.heading || 0,
+          };
+          setTruckPosState({ lat: cLat, lng: cLng, truckId: data.truckId || "GT" });
+          setLiveTruckOnline(true);
+          if (webViewReadyRef.current) {
+            const safeId = (data.truckId || "GT").replace(/'/g, "\\'");
+            const safeSitio = (data.sitioName || "").replace(/'/g, "\\'");
+            webViewRef.current?.injectJavaScript(
+              `window.updateTruckPosition(${cLat}, ${cLng}, '${safeId}', ${isFollowingRef.current}, 0, true); ` +
+              `window.setClearingMarker('${safeSitio}', ${cLat}, ${cLng}, true); true;`,
+            );
+          }
+        }
       } else {
         setClearingNotif((prev) => (prev?.sitioName === data.sitioName ? null : prev));
+        if (webViewReadyRef.current) {
+          webViewRef.current?.injectJavaScript(`window.setClearingMarker('', 0, 0, false); true;`);
+          if (liveTruckPos.current) {
+            const { lat, lng, truckId, heading } = liveTruckPos.current;
+            const safeId = (truckId || "GT").replace(/'/g, "\\'");
+            webViewRef.current?.injectJavaScript(
+              `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', false, ${heading || 0}, false); true;`,
+            );
+          }
+        }
       }
     });
 
     socket.on("schedule:task:completed", (data) => {
       setClearingNotif((prev) => (prev?.sitioName === data.sitioName ? null : prev));
+      if (webViewReadyRef.current) {
+        webViewRef.current?.injectJavaScript(`window.setClearingMarker('', 0, 0, false); true;`);
+        if (liveTruckPos.current) {
+          const { lat, lng, truckId, heading } = liveTruckPos.current;
+          const safeId = (truckId || "GT").replace(/'/g, "\\'");
+          webViewRef.current?.injectJavaScript(
+            `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', false, ${heading || 0}, false); true;`,
+          );
+        }
+      }
     });
 
     socket.on("schedule:changed", () => {
@@ -946,6 +1200,9 @@ export default function MapScreen() {
 
     socket.on("route:completed", (data) => {
       setClearingNotif(null);
+      if (webViewReadyRef.current) {
+        webViewRef.current?.injectJavaScript(`window.setClearingMarker('', 0, 0, false); true;`);
+      }
       setCleanedNotif({
         name: `${data.barangay || 'Area'} Collection Route Completed 🎉`,
         barangay: data.barangay,
@@ -967,7 +1224,7 @@ export default function MapScreen() {
     });
 
     return () => socket.disconnect();
-  }, [fetchSitiosAndSchedules]);
+  }, [fetchSitiosAndSchedules, clearingNotif]);
 
   const handleWebViewLoad = useCallback(() => {
     webViewReadyRef.current = true;
@@ -985,16 +1242,23 @@ export default function MapScreen() {
     initialTrucks.current.forEach((t) => {
       const safeId = (t.truckId || "GT").replace(/'/g, "\\'");
       webViewRef.current?.injectJavaScript(
-        `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false); true;`,
+        `window.updateTruckPosition(${t.lat}, ${t.lng}, '${safeId}', false, 0, false); true;`,
       );
     });
-    // Focus if following
-    if (liveTruckPos.current && isFollowingRef.current) {
-      const { lat, lng, truckId } = liveTruckPos.current;
+    // Focus if following or active
+    if (liveTruckPos.current) {
+      const { lat, lng, truckId, heading } = liveTruckPos.current;
       const safeId = (truckId || "GT").replace(/'/g, "\\'");
+      const isClearing = !!clearingNotif;
       webViewRef.current?.injectJavaScript(
-        `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', true); true;`,
+        `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', ${isFollowingRef.current}, ${heading || 0}, ${isClearing}); true;`,
       );
+      if (clearingNotif && clearingNotif.lat && clearingNotif.lng) {
+        const safeSitio = (clearingNotif.sitioName || "").replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(
+          `window.setClearingMarker('${safeSitio}', ${clearingNotif.lat}, ${clearingNotif.lng}, true); true;`,
+        );
+      }
     }
     // Inject barangay IoT heatmap areas
     iotAreasRef.current.forEach((area) => {
@@ -1002,11 +1266,24 @@ export default function MapScreen() {
         `window.updateHeatmapArea(${JSON.stringify(area)}); true;`,
       );
     });
-  }, []);
+    // Fetch and sync latest truck status once map engine is ready
+    fetchTruckStatus();
+  }, [clearingNotif, fetchTruckStatus]);
 
   const handleWebViewMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
-    if (msg.startsWith("route:")) {
+    if (msg === "map_ready") {
+      webViewReadyRef.current = true;
+      setWebViewReady(true);
+      fetchTruckStatus();
+      if (liveTruckPos.current) {
+        const { lat, lng, truckId, heading } = liveTruckPos.current;
+        const safeId = (truckId || "GT").replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(
+          `window.updateTruckPosition(${lat}, ${lng}, '${safeId}', false, ${heading || 0}, false); true;`,
+        );
+      }
+    } else if (msg.startsWith("route:")) {
       setSelectedRouteId(msg.slice(6));
     } else {
       try {
@@ -1017,7 +1294,7 @@ export default function MapScreen() {
         }
       } catch (e) {}
     }
-  }, []);
+  }, [fetchTruckStatus]);
 
   useEffect(() => {
     let subscription = null;
@@ -1074,44 +1351,6 @@ export default function MapScreen() {
     };
   }, []);
 
-  const expandSheet = useCallback(() => {
-    isExpandedRef.current = true;
-    setIsExpanded(true);
-    Animated.spring(sheetAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [sheetAnim]);
-
-  const collapseSheet = useCallback(() => {
-    // Keep sheet fully expanded
-    isExpandedRef.current = true;
-    setIsExpanded(true);
-    Animated.spring(sheetAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 150,
-    }).start();
-  }, [sheetAnim]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: () => false,
-      onPanResponderRelease: () => {},
-      onPanResponderTerminationRequest: () => true,
-    }),
-  ).current;
-
-  const routeDetailsOpacity = sheetAnim.interpolate({
-    inputRange: [translateCollapsed * 0.5, translateCollapsed],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
-
   const leafletHTML = useMemo(() => buildLeafletHTML(TRUCK_B64), []);
 
   return (
@@ -1161,26 +1400,21 @@ export default function MapScreen() {
           <TouchableOpacity
             style={[
               styles.floatingButton,
-              mapStyle !== "voyager" && styles.floatingButtonActive,
+              is3D && styles.floatingButtonActive,
             ]}
             activeOpacity={0.7}
             onPress={() => {
-              setMapStyle((prev) => {
-                let next;
-                if (prev === "topographic") next = "satellite";
-                else if (prev === "satellite") next = "voyager";
-                else next = "topographic";
-                webViewRef.current?.injectJavaScript(
-                  `window.setMapStyle('${next}'); true;`,
-                );
-                return next;
-              });
+              const next3D = !is3D;
+              setIs3D(next3D);
+              webViewRef.current?.injectJavaScript(
+                `window.setPerspective3D(${next3D}); true;`
+              );
             }}
           >
             <MaterialIcons
-              name="layers"
+              name="3d-rotation"
               size={20}
-              color={mapStyle !== "voyager" ? "#006A3B" : "#1B1C1C"}
+              color={is3D ? "#006A3B" : "#1B1C1C"}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -1230,64 +1464,8 @@ export default function MapScreen() {
               />
             )}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.floatingButton, showCityOutline && styles.floatingButtonActive]}
-            onPress={() => {
-              const next = !showCityOutline;
-              setShowCityOutline(next);
-              webViewRef.current?.injectJavaScript(
-                `window.toggleCityOutline(${next}); true;`,
-              );
-            }}
-          >
-            <MaterialIcons name="crop-free" size={20} color={showCityOutline ? "#006A3B" : "#1B1C1C"} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.floatingButton, isExpanded && styles.floatingButtonActive]}
-            onPress={() => {
-              if (isExpanded) {
-                collapseSheet();
-              } else {
-                expandSheet();
-              }
-            }}
-          >
-            <MaterialIcons name="directions-bus" size={20} color={isExpanded ? "#006A3B" : "#1B1C1C"} />
-          </TouchableOpacity>
         </View>
 
-        {/* Floating Air Quality Capsule Banner */}
-        {activeBarangay && (
-          <View style={styles.aqPillWrapper} pointerEvents="none">
-            <View
-              style={[
-                styles.aqPillBanner,
-                aqStatus === 'critical' && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
-                aqStatus === 'moderate' && { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-                aqStatus === 'clean' && { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
-              ]}
-            >
-              <View
-                style={[
-                  styles.aqPillDot,
-                  aqStatus === 'critical' && { backgroundColor: '#EF4444' },
-                  aqStatus === 'moderate' && { backgroundColor: '#F59E0B' },
-                  aqStatus === 'clean' && { backgroundColor: '#10B981' },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.aqPillText,
-                  aqStatus === 'critical' && { color: '#B91C1C' },
-                  aqStatus === 'moderate' && { color: '#D97706' },
-                  aqStatus === 'clean' && { color: '#047857' },
-                ]}
-              >
-                {activeBarangay} · {aqStatus === 'critical' ? 'Poor Air Quality' : aqStatus === 'moderate' ? 'Moderate Air Quality' : 'Clean Air Quality'}
-              </Text>
-            </View>
-          </View>
-        )}
 
         {/* Location Loading Banner Overlay */}
         {isLocationLoading && (
@@ -1347,26 +1525,36 @@ export default function MapScreen() {
       </View>
 
       {user && (
-        <View style={styles.bottomSheet}>
-          <View style={styles.handleBarContainer}>
-            <View style={styles.handleBar} />
-          </View>
+        <View style={[styles.bottomSheet, { paddingBottom: Math.max(bottomInset, 12) }]}>
+          {/* Swipable & clickable header handle to collapse/expand */}
+          <View {...panResponder.panHandlers} style={{ width: "100%" }}>
+            <TouchableOpacity
+              style={styles.handleBarContainer}
+              activeOpacity={0.7}
+              onPress={toggleSheet}
+            >
+              <View style={styles.handleBar} />
+            </TouchableOpacity>
 
-            <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={toggleSheet}
+              style={{ paddingHorizontal: 20, paddingBottom: isExpanded ? 10 : 6 }}
+            >
               {/* Header: Status & Stops Left */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isRouteCompleted ? '#10B981' : isTruckActiveForBarangay ? '#059669' : '#6B7280' }} />
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: isRouteCompleted ? '#059669' : isTruckActiveForBarangay ? '#006A3B' : '#374151' }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isRouteCompleted ? '#10B981' : liveTruckOnline ? '#059669' : '#6B7280' }} />
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: isRouteCompleted ? '#059669' : liveTruckOnline ? '#006A3B' : '#374151' }}>
                       {isRouteCompleted
                         ? 'Route Collection Completed ✓'
-                        : isTruckActiveForBarangay
-                          ? (distToUser != null && distToUser < 50
+                        : liveTruckOnline
+                          ? (distToUser != null && distToUser < 150
                               ? 'Truck Passing Near You!'
-                              : distToUser != null && distToUser < 200
+                              : distToUser != null && distToUser < 800
                                 ? 'Truck Approaching Area'
-                                : 'Driver is Active on Route')
+                                : 'Truck Active on Route')
                           : hasScheduleToday
                             ? 'Scheduled · Collection Standby'
                             : 'No Collection Scheduled Today'}
@@ -1376,60 +1564,155 @@ export default function MapScreen() {
                     Route: {activeSchedule?.routeName || activeSchedule?.barangay || userBarangay || 'Collection Area'}
                   </Text>
                 </View>
-                {/* Remaining stops pill */}
-                {(() => {
-                  if (isRouteCompleted) {
+                {/* Remaining stops pill & arrow indicator */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {(() => {
+                    if (isRouteCompleted) {
+                      return (
+                        <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <MaterialIcons name="check-circle" size={14} color="#059669" />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#059669' }}>
+                            Completed ✓
+                          </Text>
+                        </View>
+                      );
+                    }
+                    if (!hasScheduleToday) {
+                      return (
+                        <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>
+                            No schedule
+                          </Text>
+                        </View>
+                      );
+                    }
+                    const remaining = activeSchedule?.sitioTasks
+                      ? activeSchedule.sitioTasks.filter(t => !t.completed).length
+                      : (sitioList.length || 0);
                     return (
-                      <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <MaterialIcons name="check-circle" size={14} color="#059669" />
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#059669' }}>
-                          Completed ✓
+                      <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#D1FAE5' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>
+                          {remaining} {remaining === 1 ? 'stop' : 'stops'} left
                         </Text>
                       </View>
                     );
-                  }
-                  if (!hasScheduleToday) {
-                    return (
-                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>
-                          No schedule
-                        </Text>
-                      </View>
-                    );
-                  }
-                  const remaining = activeSchedule?.sitioTasks
-                    ? activeSchedule.sitioTasks.filter(t => !t.completed).length
-                    : (sitioList.length || 0);
-                  return (
-                    <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#D1FAE5' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#006A3B' }}>
-                        {remaining} {remaining === 1 ? 'stop' : 'stops'} left
-                      </Text>
-                    </View>
-                  );
-                })()}
+                  })()}
+                  <MaterialIcons
+                    name={isExpanded ? "keyboard-arrow-down" : "keyboard-arrow-up"}
+                    size={22}
+                    color="#9CA3AF"
+                  />
+                </View>
               </View>
 
+              {/* Truck Progress Track with Finish Line */}
+              {hasScheduleToday && (
+                (() => {
+                  const totalStops = activeSchedule?.sitioTasks?.length || sitioList.length || 1;
+                  const completedStops = activeSchedule?.sitioTasks
+                    ? activeSchedule.sitioTasks.filter(t => t.completed).length
+                    : isRouteCompleted ? totalStops : 0;
+                  const progressPct = isRouteCompleted
+                    ? 100
+                    : totalStops > 0
+                      ? Math.min(100, Math.round((completedStops / totalStops) * 100))
+                      : isTruckActiveForBarangay ? 25 : 0;
+                  const truckLeftPct = Math.min(84, Math.max(0, progressPct > 90 ? 82 : progressPct - 5));
+
+                  return (
+                    <View style={{ marginTop: 10, marginBottom: 2 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isRouteCompleted ? '#059669' : '#006A3B' }}>
+                          {isRouteCompleted ? '🏁 Route Complete' : `Collection Progress · ${progressPct}%`}
+                        </Text>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#64748B' }}>
+                          {completedStops}/{totalStops} stops collected
+                        </Text>
+                      </View>
+
+                      {/* Progress Line Track */}
+                      <View style={{ height: 26, justifyContent: 'center', position: 'relative' }}>
+                        {/* Gray background track */}
+                        <View style={{ height: 6, backgroundColor: '#E2E8F0', borderRadius: 3, width: '100%', overflow: 'hidden' }}>
+                          {/* Green filled progress track */}
+                          <View
+                            style={{
+                              width: `${Math.max(4, Math.min(100, progressPct))}%`,
+                              height: '100%',
+                              backgroundColor: isRouteCompleted ? '#10B981' : '#006A3B',
+                              borderRadius: 3,
+                            }}
+                          />
+                        </View>
+
+                        {/* Moving Truck Icon along track */}
+                        <View
+                          style={{
+                            position: 'absolute',
+                            left: `${truckLeftPct}%`,
+                            top: -1,
+                            zIndex: 2,
+                          }}
+                        >
+                          <Image
+                            source={require('../../assets/truck-progress.png')}
+                            style={{ width: 28, height: 28, resizeMode: 'contain' }}
+                          />
+                        </View>
+
+                        {/* Finish Line Checkered Marker */}
+                        <View
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: 1,
+                            zIndex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: isRouteCompleted ? '#ECFDF5' : '#FFFFFF',
+                            borderColor: isRouteCompleted ? '#10B981' : '#CBD5E1',
+                            borderWidth: 1.5,
+                            borderRadius: 6,
+                            paddingHorizontal: 3,
+                            paddingVertical: 1,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, lineHeight: 14 }}>🏁</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Expanded Content: Driver Card & Warnings */}
+          {isExpanded && (
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
               {/* Driver & Truck Info Section */}
               <View style={styles.driverCard}>
                 {/* Truck Avatar Icon */}
                 <View style={styles.driverAvatarBg}>
-                  <MaterialIcons name="local-shipping" size={24} color="#006A3B" />
+                  <Image
+                    source={require('../../assets/truck-progress.png')}
+                    style={{ width: 32, height: 32, resizeMode: 'contain' }}
+                  />
                 </View>
 
                 {/* Driver & Truck Details */}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.truckName}>
-                    {activeSchedule?.truckId || "Truck 2"}
+                    {liveTruckPos.current?.truckId || activeSchedule?.truckId || "Truck"}
                   </Text>
                   <Text style={styles.driverName}>
-                    {activeSchedule?.driverName || "Xherdone James"}
+                    {activeSchedule?.driverName || "Waste Collector"}
                   </Text>
                   <Text style={styles.driverSub}>
                     {isRouteCompleted
                       ? 'Route collection completed for today'
-                      : isTruckActiveForBarangay
-                        ? `Collecting waste in ${activeBarangay || 'Apas'}`
+                      : liveTruckOnline
+                        ? `Collecting waste in ${activeBarangay || userBarangay || 'area'}`
                         : hasScheduleToday
                           ? 'Scheduled for collection'
                           : 'No collection schedule today'}
@@ -1477,6 +1760,7 @@ export default function MapScreen() {
                 </View>
               )}
             </View>
+          )}
         </View>
       )}
 

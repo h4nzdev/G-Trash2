@@ -301,7 +301,9 @@ exports.createSchedule = async (req, res, next) => {
       if (validCoords.length >= 2) {
         try {
           const routeResult = await getRouteDirections(validCoords);
-          if (routeResult?.coordinates?.length) {
+          if (Array.isArray(routeResult) && routeResult.length > 0) {
+            scheduledWaypoints = routeResult;
+          } else if (routeResult?.coordinates?.length) {
             scheduledWaypoints = routeResult.coordinates;
           }
         } catch (_) {}
@@ -318,6 +320,7 @@ exports.createSchedule = async (req, res, next) => {
       sitio: sitios.length === 1 ? sitios[0] : "",
       sitios,
       sitioTasks,
+      routeCoords: scheduledWaypoints,
       scheduledWaypoints,
       startTime: startTime || "",
       endTime: endTime || "",
@@ -536,6 +539,38 @@ exports.deleteSchedule = async (req, res, next) => {
       if (io) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
     }
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/schedules/:id/add-task
+exports.addTaskToSchedule = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, lat, lng } = req.body;
+    const schedule = await Schedule.findById(id);
+    if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+
+    const taskName = name || "Report Location";
+    const newTask = {
+      name: taskName,
+      lat: Number(lat) || 10.325,
+      lng: Number(lng) || 123.893,
+      completed: false,
+    };
+
+    if (!Array.isArray(schedule.sitioTasks)) schedule.sitioTasks = [];
+    schedule.sitioTasks.push(newTask);
+    if (Array.isArray(schedule.sitios) && !schedule.sitios.includes(taskName)) {
+      schedule.sitios.push(taskName);
+    }
+    await schedule.save();
+
+    const io = getIO();
+    if (io) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
+
+    res.json(schedule);
   } catch (err) {
     next(err);
   }

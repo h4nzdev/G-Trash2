@@ -664,6 +664,38 @@ export default function OfficialsDashboard() {
       // Today's total bins cleared volume
       const totalBinsToday = todayCollections.reduce((sum, c) => sum + (c.bins || 1), 0);
 
+      // Today's total waste weight collected
+      const getWeightInKg = (item) => {
+        const w = Number(item.weight ?? item.totalWeight) || 0;
+        if (w <= 0) return 0;
+        const unit = (item.weightUnit || '').toLowerCase();
+        if (unit === 'tons' || (w < 50 && unit !== 'kg')) {
+          return w * 1000;
+        }
+        return w;
+      };
+
+      let totalWeightKg = todayCollections.reduce((sum, c) => sum + getWeightInKg(c), 0);
+
+      // Fallback: if collection logs haven't registered weight individually, check today's schedules
+      if (totalWeightKg === 0 && todaySchedules.length > 0) {
+        todaySchedules.forEach((s) => {
+          if (s.totalWeight) {
+            totalWeightKg += getWeightInKg(s);
+          }
+        });
+      }
+
+      // Secondary fallback: check stats endpoint if provided
+      if (totalWeightKg === 0 && statsRes?.totalWeight) {
+        totalWeightKg = getWeightInKg(statsRes);
+      }
+
+      const totalWeightDisplay =
+        totalWeightKg >= 1000
+          ? `${(totalWeightKg / 1000).toFixed(2)} Tons`
+          : `${Math.round(totalWeightKg).toLocaleString()} kg`;
+
       setStats({
         totalFleet,
         activeTrucks,
@@ -673,6 +705,8 @@ export default function OfficialsDashboard() {
         pendingReports: allReports.filter(r => r.status === 'pending').length,
         acknowledgedReports: allReports.filter(r => r.status === 'acknowledged' || r.status === 'in-progress').length,
         totalBinsToday,
+        totalWeightKg,
+        totalWeightDisplay,
         priorityArea,
         priorityReason,
       });
@@ -757,6 +791,7 @@ export default function OfficialsDashboard() {
     socket.on('truck:status', () => { fetchAll(); });
     socket.on('schedule:changed', () => { fetchAll(); });
     socket.on('collection:new', () => { fetchAll(); });
+    socket.on('truck:shift-completed', () => { fetchAll(); });
 
     return () => socket.disconnect();
   }, [isChd]);
@@ -947,12 +982,12 @@ export default function OfficialsDashboard() {
           color="blue"
         />
 
-        {/* KPI 4: Waste Collected Volume */}
+        {/* KPI 4: Total Waste Weight */}
         <StatCard
           icon={TrendingUp}
-          title="Waste Volume Today"
-          value={`${stats.totalBinsToday || 0} Bins`}
-          subtitle="Recorded pickup throughput"
+          title="Total Weight Today"
+          value={stats.totalWeightDisplay || "0 kg"}
+          subtitle="Recorded collection weight"
           color="purple"
         />
       </div>

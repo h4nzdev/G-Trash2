@@ -71,7 +71,7 @@ async function checkTruckProximity(io, truckId) {
 module.exports = function registerTruckSockets(io, socket) {
   // GarbageTruck app sends live GPS position
   socket.on("truck:location", async (data, ack) => {
-    const { truckId, lat, lng, heading = 0, speed = 0 } = data;
+    const { truckId, lat, lng, heading = 0, speed = 0, isOffRoute = false } = data;
     if (!truckId || lat == null || lng == null) {
       if (typeof ack === "function") ack({ ok: false, error: "Missing fields" });
       return;
@@ -83,7 +83,7 @@ module.exports = function registerTruckSockets(io, socket) {
     try {
       await Truck.findOneAndUpdate(
         { truckId },
-        { lat, lng, heading, speed, status: "online", updatedAt: new Date() },
+        { lat, lng, heading, speed, status: "online", isOffRoute: !!isOffRoute, updatedAt: new Date() },
         { upsert: true, new: true }
       );
       if (typeof ack === "function") ack({ ok: true, truckId, lat, lng });
@@ -94,12 +94,31 @@ module.exports = function registerTruckSockets(io, socket) {
         lng,
         heading,
         speed,
+        isOffRoute: !!isOffRoute,
         timestamp: new Date().toISOString(),
       });
 
       checkTruckProximity(io, truckId).catch(() => {});
     } catch (err) {
       if (typeof ack === "function") ack({ ok: false, error: err.message });
+    }
+  });
+
+  // GarbageTruck app sends explicit location/off-route state update
+  socket.on("truck:location:update", async (data) => {
+    if (data?.truckId) {
+      if (data.isOffRoute !== undefined) {
+        try {
+          await Truck.findOneAndUpdate(
+            { truckId: data.truckId },
+            { isOffRoute: !!data.isOffRoute, updatedAt: new Date() }
+          );
+        } catch (_) {}
+      }
+      socket.broadcast.emit("truck:location:update", {
+        ...data,
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 
@@ -140,6 +159,16 @@ module.exports = function registerTruckSockets(io, socket) {
     }
   });
 
+  // Deduplicated offline broadcast helper
+  function emitTruckOffline(truckId) {
+    if (!truckId) return;
+    const now = Date.now();
+    const last = lastOfflineEmissionMap.get(truckId) || 0;
+    if (now - last < 4000) return; // Prevent duplicate rapid offline emissions
+    lastOfflineEmissionMap.set(truckId, now);
+    io.emit("truck:status", { truckId, status: "offline", reason: "offline" });
+  }
+
   // Truck marks itself offline
   socket.on("truck:offline", async ({ truckId }) => {
     if (!truckId) return;
@@ -149,7 +178,7 @@ module.exports = function registerTruckSockets(io, socket) {
     } catch (err) {
       console.error("DB write error:", err.message);
     }
-    io.emit("truck:status", { truckId, status: "offline", reason: "offline" });
+    emitTruckOffline(truckId);
   });
 
   // Truck reports it is off its assigned route
@@ -186,11 +215,12 @@ module.exports = function registerTruckSockets(io, socket) {
       try {
         await Truck.findOneAndUpdate({ truckId }, { status: "offline" });
       } catch (_) {}
-      io.emit("truck:status", { truckId, status: "offline", reason: "offline" });
+      emitTruckOffline(truckId);
       console.log(`[Socket] Truck ${truckId} auto-offline on disconnect (app closed or off wifi)`);
     }
   });
 };
 
+const lastOfflineEmissionMap = new Map();
 module.exports.socketTruckMap = socketTruckMap;
 module.exports.truckProximityMap = truckProximityMap;

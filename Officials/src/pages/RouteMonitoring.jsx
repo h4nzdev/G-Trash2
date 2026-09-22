@@ -72,15 +72,21 @@ import {
  * - Renders only the clean vehicle icon without box borders or pin envelopes.
  * - Autorotates smoothly according to vehicle heading/direction.
  */
-function makeTruckIcon(status, heading = 0, isOffRoute = false) {
+function makeTruckIcon(status, heading = 0, isOffRoute = false, truckId = "") {
   const rot = typeof heading === "number" && !isNaN(heading) ? heading : 0;
+  const label = truckId ? String(truckId).replace(/^GT-/, "") : "";
 
   return L.divIcon({
     html: `
       <div style="display:flex;align-items:center;justify-content:center;width:44px;height:44px;pointer-events:auto;position:relative;">
         ${
+          label
+            ? `<div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);padding:1.5px 6px;border-radius:10px;background:#0f172a;color:#fff;font-size:9px;font-weight:800;letter-spacing:0.5px;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;z-index:30;border:1.5px solid #38bdf8;">${label}</div>`
+            : ""
+        }
+        ${
           isOffRoute
-            ? `<div style="position:absolute;top:-16px;left:50%;transform:translateX(-50%);padding:1px 5px;border-radius:4px;background:#dc2626;color:#fff;font-size:8px;font-weight:900;letter-spacing:0.5px;text-transform:uppercase;border:1px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;z-index:30;">OFF ROUTE</div>`
+            ? `<div style="position:absolute;top:${label ? "-32px" : "-16px"};left:50%;transform:translateX(-50%);padding:1px 5px;border-radius:4px;background:#dc2626;color:#fff;font-size:8px;font-weight:900;letter-spacing:0.5px;text-transform:uppercase;border:1px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;z-index:31;">OFF ROUTE</div>`
             : ""
         }
         <img 
@@ -103,42 +109,26 @@ function makeTruckIcon(status, heading = 0, isOffRoute = false) {
  */
 function makeBinIcon(score) {
   const isHighUrgency = score >= 5;
-  const bgColor = isHighUrgency ? "#9f1239" : "#e11d48"; // Rose-Red (#e11d48) or Dark Crimson (#9f1239)
+  const bgColor = isHighUrgency ? "#be123c" : "#e11d48"; // Rose-700 or Rose-600
 
   return L.divIcon({
     html: `
-      <div class="relative flex flex-col items-center w-12 h-14 justify-end group">
+      <div class="relative flex flex-col items-center w-8 h-10 justify-end group">
         <!-- Teardrop Pin Container -->
         <div class="relative z-10 flex flex-col items-center filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.25)]">
-          <!-- Pin Head (Crimson Red with Dark Core) -->
-          <div class="w-10 h-10 rounded-[50%_50%_50%_0] -rotate-45 border-[2.5px] border-white shadow-md flex items-center justify-center" style="background:${bgColor};">
-             <!-- Dark Contrast Inner Core -->
-             <div class="w-7 h-7 rounded-full bg-slate-950 flex items-center justify-center">
-               <!-- Rotated back upright SVG Warning Trash Can Icon -->
-               <div class="rotate-45 text-amber-400 flex items-center justify-center">
-                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                   <path d="M3 6h18"/>
-                   <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                   <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                   <line x1="10" y1="11" x2="10" y2="17"/>
-                   <line x1="14" y1="11" x2="14" y2="17"/>
-                 </svg>
-               </div>
-             </div>
+          <!-- Pin Head -->
+          <div class="w-8 h-8 rounded-[50%_50%_50%_0] -rotate-45 border-[2px] border-white shadow-md flex items-center justify-center" style="background:${bgColor};">
+             <!-- Dark Contrast Inner Dot -->
+             <div class="w-2.5 h-2.5 rounded-full bg-slate-900 shadow-inner"></div>
           </div>
           
           <!-- Downward Pointer Tip -->
-          <div class="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[9px] -mt-[2px]" style="border-top-color:${bgColor};"></div>
-        </div>
-
-        <!-- Score / Upvote Badge -->
-        <div class="absolute -top-1 -right-1 min-w-[22px] h-5 px-1 bg-amber-400 text-slate-950 rounded-full text-[10px] font-black flex items-center justify-center border-2 border-white shadow-md z-20">
-          ${score}
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] -mt-[2px]" style="border-top-color:${bgColor};"></div>
         </div>
       </div>
     `,
-    iconSize: [48, 56],
-    iconAnchor: [24, 56],
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
     className: "",
   });
 }
@@ -450,13 +440,24 @@ function AddressPopup({ wp }) {
   }, [wp, loading]);
 
   return (
-    <div className="p-1 min-w-[140px] max-w-[220px] text-center">
+    <div className="p-1.5 min-w-[150px] max-w-[240px] text-center space-y-1.5">
+      <div className="flex items-center justify-center gap-1">
+        {wp.completed ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <Check className="w-3 h-3 stroke-[3]" /> Cleaned
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+            <Clock className="w-3 h-3 text-amber-600" /> Pending Collection
+          </span>
+        )}
+      </div>
       {loading ? (
-        <span className="text-xs text-slate-500 animate-pulse">
+        <span className="text-xs text-slate-500 animate-pulse block">
           Fetching address...
         </span>
       ) : (
-        <span className="text-xs font-semibold text-slate-800 leading-tight block">
+        <span className="text-xs font-bold text-slate-800 leading-tight block">
           {address}
         </span>
       )}
@@ -943,7 +944,17 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                 `${API}/api/schedules/today?date=${localDate}${barangayParam}`,
               ),
             ),
-          axios.get(`${API}/api/trucks`),
+          (async () => {
+            try {
+              const resLoc = await axios.get(`${API}/api/trucks/locations`);
+              if (Array.isArray(resLoc.data) && resLoc.data.length > 0) return resLoc;
+            } catch (_) {}
+            try {
+              const resAct = await axios.get(`${API}/api/trucks/active`);
+              if (Array.isArray(resAct.data) && resAct.data.length > 0) return resAct;
+            } catch (_) {}
+            return axios.get(`${API}/api/trucks`).catch(() => ({ data: [] }));
+          })(),
           axios.get(`${API}/api/fleet`),
           axios.get(`${API}/api/reports?category=Overflowing Bin`),
           axios.get(`${API}/api/collections?period=today`),
@@ -984,6 +995,10 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
             (t) => t.completed,
           ).length;
 
+          const allDone =
+            (sched.sitioTasks || []).length > 0 &&
+            (sched.sitioTasks || []).every((t) => t.completed);
+
           return {
             _id: sched._id,
             name: sched.routeName || sched.barangay || "Collection Duty",
@@ -997,7 +1012,11 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
             routeCoords: coords,
             waypoints: waypoints,
             currentStopIndex: completedCount,
-            status: sched.status,
+            status: allDone
+              ? "completed"
+              : (sched.sitioTasks || []).length > 0
+                ? (sched.status === "completed" ? "in-progress" : (sched.status || "scheduled"))
+                : (sched.status || "scheduled"),
             runNumber: sched.runNumber || 1,
             startTime: sched.startTime || "",
             endTime: sched.endTime || "",
@@ -1034,13 +1053,100 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
           ])
         : null;
 
-      const truckMap = {};
-      trucksRes.data.forEach((t) => {
-        if (!allowedTruckIds || allowedTruckIds.has(t.truckId)) {
-          truckMap[t.truckId] = t;
+      const isOnlineTruck = (t) => {
+        if (!t) return false;
+        const st = (t.status || t.liveStatus || "").trim().toLowerCase();
+        if (["online", "active", "collecting", "en-route", "in-transit"].includes(st)) return true;
+        const ts = t.updatedAt || t.lastSeen;
+        if (ts) {
+          const diffMs = Date.now() - new Date(ts).getTime();
+          if (!isNaN(diffMs) && diffMs < 15 * 60 * 1000) return true;
+        }
+        return false;
+      };
+
+      const newTruckMap = {};
+
+      // 1. Seed with fleet registered vehicles so vehicle details are available
+      (fleetRes.data || []).forEach((f) => {
+        if (!allowedTruckIds || allowedTruckIds.has(f.truckId)) {
+          newTruckMap[f.truckId] = {
+            ...f,
+            status: "offline",
+            lat: null,
+            lng: null,
+            heading: 0,
+          };
         }
       });
-      setTrucks(truckMap);
+
+      // 2. Merge live telemetry coordinates from /api/trucks/locations
+      const liveList = Array.isArray(trucksRes.data) ? trucksRes.data : [];
+      liveList.forEach((t) => {
+        if (!allowedTruckIds || allowedTruckIds.has(t.truckId)) {
+          const existing = newTruckMap[t.truckId] || {};
+          const hasValidCoords =
+            t.lat != null &&
+            t.lng != null &&
+            !isNaN(t.lat) &&
+            !isNaN(t.lng) &&
+            Number(t.lat) !== 0 &&
+            Number(t.lng) !== 0;
+
+          const online = isOnlineTruck(t);
+
+          newTruckMap[t.truckId] = {
+            ...existing,
+            ...t,
+            driverName: t.driverName || existing.driverName || "",
+            plateNumber: t.plateNumber || existing.plateNumber || "",
+            model: t.model || existing.model || "",
+            barangay: t.barangay || existing.barangay || "",
+            status: online ? (t.status || t.liveStatus || "online") : (t.status || existing.status || "offline"),
+            lat: hasValidCoords ? t.lat : (existing.lat ?? null),
+            lng: hasValidCoords ? t.lng : (existing.lng ?? null),
+            heading: (typeof t.heading === "number" && !isNaN(t.heading)) ? t.heading : (existing.heading || 0),
+          };
+        }
+      });
+
+      setTrucks((prev) => {
+        const merged = { ...newTruckMap };
+        // Preserve any live positions or heading received via WebSockets that might not be in REST yet
+        Object.keys(prev).forEach((id) => {
+          if (merged[id]) {
+            const prevHasCoords =
+              prev[id].lat != null &&
+              prev[id].lng != null &&
+              !isNaN(prev[id].lat) &&
+              !isNaN(prev[id].lng) &&
+              Number(prev[id].lat) !== 0 &&
+              Number(prev[id].lng) !== 0;
+            const mergedHasCoords =
+              merged[id].lat != null &&
+              merged[id].lng != null &&
+              !isNaN(merged[id].lat) &&
+              !isNaN(merged[id].lng) &&
+              Number(merged[id].lat) !== 0 &&
+              Number(merged[id].lng) !== 0;
+
+            merged[id] = {
+              ...merged[id],
+              lat: mergedHasCoords ? merged[id].lat : (prevHasCoords ? prev[id].lat : null),
+              lng: mergedHasCoords ? merged[id].lng : (prevHasCoords ? prev[id].lng : null),
+              heading: (typeof merged[id].heading === "number" && merged[id].heading !== 0)
+                ? merged[id].heading
+                : (prev[id].heading || 0),
+              isOffRoute: prev[id].isOffRoute !== undefined ? prev[id].isOffRoute : merged[id].isOffRoute,
+              offRouteDistance: prev[id].offRouteDistance !== undefined ? prev[id].offRouteDistance : merged[id].offRouteDistance,
+              status: prev[id].status === "online" ? "online" : merged[id].status,
+            };
+          } else if (!allowedTruckIds || allowedTruckIds.has(id)) {
+            merged[id] = prev[id];
+          }
+        });
+        return merged;
+      });
       setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
       setCollections(
         (collectionsRes.data || []).filter(
@@ -1078,9 +1184,84 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
     }
   };
 
+  const fetchLiveTruckLocations = async () => {
+    try {
+      let liveTrucks = [];
+      try {
+        const resLoc = await axios.get(`${API}/api/trucks/locations`);
+        if (Array.isArray(resLoc.data) && resLoc.data.length > 0) liveTrucks = resLoc.data;
+      } catch (_) {}
+
+      if (liveTrucks.length === 0) {
+        try {
+          const resAct = await axios.get(`${API}/api/trucks/active`);
+          if (Array.isArray(resAct.data) && resAct.data.length > 0) liveTrucks = resAct.data;
+        } catch (_) {}
+      }
+
+      if (liveTrucks.length === 0) {
+        try {
+          const resGen = await axios.get(`${API}/api/trucks`);
+          if (Array.isArray(resGen.data)) liveTrucks = resGen.data;
+        } catch (_) {}
+      }
+
+      if (!Array.isArray(liveTrucks) || liveTrucks.length === 0) return;
+
+      const isOnlineTruck = (t) => {
+        if (!t) return false;
+        const st = (t.status || t.liveStatus || "").trim().toLowerCase();
+        if (["online", "active", "collecting", "en-route", "in-transit"].includes(st)) return true;
+        const ts = t.updatedAt || t.lastSeen;
+        if (ts) {
+          const diffMs = Date.now() - new Date(ts).getTime();
+          if (!isNaN(diffMs) && diffMs < 15 * 60 * 1000) return true;
+        }
+        return false;
+      };
+
+      setTrucks((prev) => {
+        const next = { ...prev };
+        liveTrucks.forEach((t) => {
+          if (!t.truckId) return;
+          const existing = next[t.truckId] || {};
+          const hasValidCoords =
+            t.lat != null &&
+            t.lng != null &&
+            !isNaN(t.lat) &&
+            !isNaN(t.lng) &&
+            Number(t.lat) !== 0 &&
+            Number(t.lng) !== 0;
+
+          const online = isOnlineTruck(t);
+
+          next[t.truckId] = {
+            ...existing,
+            ...t,
+            driverName: t.driverName || existing.driverName || "",
+            plateNumber: t.plateNumber || existing.plateNumber || "",
+            model: t.model || existing.model || "",
+            barangay: t.barangay || existing.barangay || "",
+            status: online ? (t.status || t.liveStatus || "online") : (t.status || existing.status || "offline"),
+            lat: hasValidCoords ? t.lat : (existing.lat ?? null),
+            lng: hasValidCoords ? t.lng : (existing.lng ?? null),
+            heading: (typeof t.heading === "number" && !isNaN(t.heading) && t.heading !== 0)
+              ? t.heading
+              : (existing.heading || 0),
+            isOffRoute: existing.isOffRoute !== undefined ? existing.isOffRoute : false,
+          };
+        });
+        return next;
+      });
+    } catch (err) {
+      console.warn("fetchLiveTruckLocations error:", err);
+    }
+  };
+
   // ── WebSocket & Socket Listeners ──
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchLiveTruckLocations, 15000);
     const socket = io(API, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
@@ -1109,17 +1290,37 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
           [data.truckId]: {
             ...existing,
             ...data,
+            status: data.status || existing.status || "online",
             heading: heading ?? existing.heading ?? 0,
             isOffRoute: isOff,
+            offRouteDistance: isOff ? (data.offRouteDistance || existing.offRouteDistance || 0) : 0,
             updatedAt: new Date(),
           },
         };
       });
+
+      if (data.isOffRoute === false) {
+        setDeviationAlerts((prev) =>
+          prev.filter((a) => a.truckId !== data.truckId || a.type !== "off-route"),
+        );
+      }
     });
     socket.on("truck:status", (data) => {
       setTrucks((prev) => ({
         ...prev,
         [data.truckId]: { ...prev[data.truckId], status: data.status },
+      }));
+    });
+    socket.on("truck:online", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: { ...prev[data.truckId], status: "online" },
+      }));
+    });
+    socket.on("truck:offline", (data) => {
+      setTrucks((prev) => ({
+        ...prev,
+        [data.truckId]: { ...prev[data.truckId], status: "offline" },
       }));
     });
     socket.on("route:updated", (updated) => {
@@ -1136,6 +1337,30 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
       }
     });
     socket.on("schedule:task:completed", (data) => {
+      // Immediately reflect individual task completion in routes state
+      setRoutes((prev) =>
+        prev.map((r) => {
+          if (r._id === data.scheduleId || (!data.scheduleId && r.truckId === data.truckId)) {
+            const updatedWaypoints = (r.waypoints || []).map((w) =>
+              w.name?.toLowerCase() === data.sitioName?.toLowerCase()
+                ? { ...w, completed: true }
+                : w,
+            );
+            const compCount = updatedWaypoints.filter((w) => w.completed).length;
+            const allDone = updatedWaypoints.length > 0 && updatedWaypoints.every((w) => w.completed);
+            return {
+              ...r,
+              waypoints: updatedWaypoints,
+              currentStopIndex: compCount,
+              status: (allDone || data.allDone) ? "completed" : r.status,
+            };
+          }
+          return r;
+        }),
+      );
+
+      fetchData();
+
       if (data.lat != null && data.lng != null) {
         setCollections((prev) => [
           {
@@ -1252,7 +1477,10 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
         ].slice(0, 5);
       });
     });
-    return () => socket.disconnect();
+    return () => {
+      clearInterval(interval);
+      socket.disconnect();
+    };
   }, []);
 
   // ── Handlers ──
@@ -1266,9 +1494,17 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
 
   // ── Computed Variables ──
   const mappableRoutes = visibleRoutes.filter((r) => r.routeCoords?.length > 0);
-  const onlineCt = Object.values(trucks).filter(
-    (t) => t.status === "online",
-  ).length;
+  const isTruckOnline = (t) => {
+    if (!t) return false;
+    const st = (t.status || t.liveStatus || "").trim().toLowerCase();
+    if (["online", "active", "collecting", "en-route", "in-transit"].includes(st)) return true;
+    if (t.updatedAt) {
+      const diff = Date.now() - new Date(t.updatedAt).getTime();
+      if (!isNaN(diff) && diff < 15 * 60 * 1000) return true;
+    }
+    return false;
+  };
+  const onlineCt = Object.values(trucks).filter(isTruckOnline).length;
   const assignedCt = routes.filter((r) => r.truckId).length;
   const hasScheduleToday = visibleRoutes.length > 0;
 
@@ -1291,12 +1527,17 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
   );
 
   // Determines progress. Defaults to 0 if unassigned.
-  const completedStops = activeRoute?.currentStopIndex || 0;
+  const completedStops =
+    activeRoute?.waypoints?.filter((w) => w.completed)?.length ??
+    (activeRoute?.currentStopIndex || 0);
   const totalStops = activeRoute?.waypoints?.length || 0;
+  const isRouteDone = activeRoute?.status === "completed" || (totalStops > 0 && completedStops === totalStops);
   const progress =
     activeRoute && activeRoute.truckId && totalStops > 0
       ? Math.round((completedStops / totalStops) * 100)
-      : 0;
+      : isRouteDone
+        ? 100
+        : 0;
 
   // ── Inline CSS Animations ──
   const animationStyles = `
@@ -1449,7 +1690,7 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                         const isSelected = activeRoute?._id === r._id;
                         const isDone = r.status === "completed";
                         const runNum = r.runNumber || (idx + 1);
-                        const rCompleted = r.currentStopIndex || (r.waypoints?.filter(w => w.completed)?.length || 0);
+                        const rCompleted = r.waypoints?.filter(w => w.completed)?.length ?? (r.currentStopIndex || 0);
                         const rTotal = r.waypoints?.length || 0;
                         const rProg = rTotal > 0 ? Math.round((rCompleted / rTotal) * 100) : (isDone ? 100 : 0);
 
@@ -1598,9 +1839,10 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                   <div className="space-y-0.5 pb-2">
                     {activeRoute.waypoints.map((wp, i) => {
                       const isAssigned = !!activeRoute.truckId;
-                      const isCompleted = isAssigned && i < completedStops;
-                      const isCurrent = isAssigned && i === completedStops;
-                      const isUpcoming = !isAssigned || i > completedStops;
+                      const firstIncompleteIdx = activeRoute.waypoints.findIndex((w) => !w.completed);
+                      const isCompleted = isAssigned && (activeRoute.status === "completed" || Boolean(wp.completed));
+                      const isCurrent = isAssigned && activeRoute.status !== "completed" && i === firstIncompleteIdx;
+                      const isUpcoming = !isAssigned || (!isCompleted && !isCurrent);
 
                       return (
                         <div
@@ -1860,9 +2102,9 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                             !isNaN(wp.lng),
                         )
                         .map((wp, i) => {
-                          const routeCompletedCt = route.currentStopIndex ?? (route.waypoints?.filter(w => w.completed)?.length || 0);
-                          const isComp = route.status === "completed" || (wp.completed === true) || (i < routeCompletedCt);
-                          const isCurr = route.status !== "completed" && i === routeCompletedCt;
+                          const isComp = route.status === "completed" || Boolean(wp.completed);
+                          const firstIncompleteIdx = route.waypoints.findIndex((w) => !w.completed);
+                          const isCurr = route.status !== "completed" && i === firstIncompleteIdx;
                           return (
                             <Marker
                               key={i}
@@ -1885,6 +2127,47 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                   );
                 })}
 
+                {/* Off-Route Deviation Return Polyline on Map */}
+                {Object.values(trucks)
+                  .filter(
+                    (t) =>
+                      t.isOffRoute &&
+                      t.lat != null &&
+                      t.lng != null &&
+                      !isNaN(t.lat) &&
+                      !isNaN(t.lng) &&
+                      Number(t.lat) !== 0 &&
+                      Number(t.lng) !== 0,
+                  )
+                  .map((truck) => {
+                    const assignedRoute = (visibleRoutes || routes || []).find(
+                      (r) => r.truckId === truck.truckId,
+                    );
+                    if (!assignedRoute?.routeCoords || assignedRoute.routeCoords.length === 0) return null;
+                    let closest = assignedRoute.routeCoords[0];
+                    let minDist = Infinity;
+                    for (const c of assignedRoute.routeCoords) {
+                      const d = Math.hypot(truck.lat - c[0], truck.lng - c[1]);
+                      if (d < minDist) {
+                        minDist = d;
+                        closest = c;
+                      }
+                    }
+                    return (
+                      <Polyline
+                        key={`offroute-line-${truck.truckId}`}
+                        positions={[
+                          [truck.lat, truck.lng],
+                          [closest[0], closest[1]],
+                        ]}
+                        color="#dc2626"
+                        weight={3.5}
+                        dashArray="6, 8"
+                        opacity={0.9}
+                      />
+                    );
+                  })}
+
                 {/* Truck Markers */}
                 {Object.values(trucks)
                   .filter(
@@ -1892,7 +2175,9 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                       t.lat != null &&
                       t.lng != null &&
                       !isNaN(t.lat) &&
-                      !isNaN(t.lng),
+                      !isNaN(t.lng) &&
+                      Number(t.lat) !== 0 &&
+                      Number(t.lng) !== 0,
                   )
                   .map((truck) => {
                     let heading = truck.heading || 0;
@@ -1930,6 +2215,7 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                           truck.status,
                           heading,
                           truck.isOffRoute,
+                          truck.truckId,
                         )}
                       >
                       <Popup className="custom-report-popup" minWidth={240}>

@@ -437,7 +437,7 @@ export default function BarangayPerformance() {
         const myData = sorted[myRankIdx];
         
         return (
-          <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-2xl p-6 text-white shadow-lg border border-blue-400/50 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div className="bg-gradient-to-br from-emerald-600 to-emerald-500 rounded-2xl p-6 text-white shadow-lg border border-emerald-400/50 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
             
             <div className="flex items-center gap-5 relative z-10">
@@ -446,7 +446,7 @@ export default function BarangayPerformance() {
               </div>
               <div>
                 <h3 className="text-2xl font-black tracking-tight">{myData.barangay}</h3>
-                <p className="text-blue-100 font-medium text-sm flex items-center gap-1.5 mt-0.5">
+                <p className="text-emerald-100 font-medium text-sm flex items-center gap-1.5 mt-0.5">
                   Your Barangay's Current Standing
                 </p>
               </div>
@@ -454,15 +454,15 @@ export default function BarangayPerformance() {
             
             <div className="flex items-center gap-8 relative z-10">
               <div className="text-center md:text-right">
-                <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1">Current Rank</p>
+                <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mb-1">Current Rank</p>
                 <div className="flex items-baseline gap-1 justify-center md:justify-end">
                   <span className="text-3xl font-black">#{myRankIdx + 1}</span>
-                  <span className="text-blue-200 font-medium text-sm">of {sorted.length}</span>
+                  <span className="text-emerald-200 font-medium text-sm">of {sorted.length}</span>
                 </div>
               </div>
-              <div className="w-px h-12 bg-blue-400/50 hidden md:block"></div>
+              <div className="w-px h-12 bg-emerald-400/50 hidden md:block"></div>
               <div className="text-center md:text-right">
-                <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1">Total Points</p>
+                <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mb-1">Total Points</p>
                 <span className="text-3xl font-black text-yellow-300 drop-shadow-sm">{myData.points ?? 0}</span>
               </div>
             </div>

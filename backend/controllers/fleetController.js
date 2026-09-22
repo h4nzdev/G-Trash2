@@ -25,6 +25,67 @@ exports.getFleet = async (req, res, next) => {
   }
 };
 
+// GET /api/trucks
+exports.getTrucks = async (req, res, next) => {
+  try {
+    const trucks = await Truck.find().lean();
+    const fleet = await Fleet.find().lean();
+    const fleetMap = new Map(fleet.map((f) => [f.truckId?.toUpperCase(), f]));
+
+    // Return live trucks merged with any fleet info
+    const merged = trucks.map((t) => {
+      const f = fleetMap.get(t.truckId?.toUpperCase()) || {};
+      return {
+        ...f,
+        ...t,
+        status: t.status || "online",
+        lat: t.lat,
+        lng: t.lng,
+        heading: t.heading || 0,
+        speed: t.speed || 0,
+        isOffRoute: !!t.isOffRoute,
+        updatedAt: t.updatedAt,
+      };
+    });
+
+    // Also include any fleet trucks not yet in Truck collection
+    const truckIdSet = new Set(trucks.map((t) => t.truckId?.toUpperCase()));
+    for (const f of fleet) {
+      if (f.truckId && !truckIdSet.has(f.truckId.toUpperCase())) {
+        merged.push({
+          ...f,
+          status: "offline",
+          lat: null,
+          lng: null,
+          heading: 0,
+          speed: 0,
+          isOffRoute: false,
+        });
+      }
+    }
+
+    res.json(merged);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/trucks/:truckId (used by mobile apps)
+exports.getTruckById = async (req, res, next) => {
+  try {
+    const truckId = req.params.truckId.toUpperCase();
+    const liveTruck = await Truck.findOne({ truckId }).lean();
+    const fleet = await Fleet.findOne({ truckId }).lean();
+    if (!liveTruck && !fleet) return res.status(404).json({ error: "Truck not found" });
+    res.json({
+      ...(fleet || {}),
+      ...(liveTruck || {}),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/fleet/:truckId
 exports.getFleetById = async (req, res, next) => {
   try {

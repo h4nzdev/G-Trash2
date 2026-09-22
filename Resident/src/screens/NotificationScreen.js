@@ -286,19 +286,26 @@ export default function NotificationScreen({ navigation }) {
 
     // Strict notification rule: only add notification when a truck goes offline (app closed, wifi off, or disconnected)
     socket.on('truck:status', ({ truckId, status }) => {
-      if (status === 'offline') {
+      if (status === 'offline' && truckId) {
         seenTrucksRef.current.delete(truckId);
-        setTruckNotifs((prev) => [
-          {
-            id: `truck-offline-${truckId}-${Date.now()}`,
-            title: 'Truck Offline',
-            message: `Truck ${truckId} is currently offline (collector app closed, wifi disconnected, or route finished).`,
-            time: 'Just now',
-            type: 'truck',
-            read: false,
-          },
-          ...prev,
-        ]);
+        setTruckNotifs((prev) => {
+          const notifKey = `truck-offline-${truckId}`;
+          if (prev.some((n) => n.id?.startsWith(notifKey))) {
+            return prev;
+          }
+          return [
+            {
+              id: `${notifKey}-${Date.now()}`,
+              truckId,
+              title: 'Truck Offline',
+              message: `Truck ${truckId} is currently offline (collector app closed, wifi disconnected, or route finished).`,
+              time: 'Just now',
+              type: 'truck',
+              read: false,
+            },
+            ...prev,
+          ];
+        });
       }
     });
 
