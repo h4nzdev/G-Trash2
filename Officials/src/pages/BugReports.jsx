@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Bug, Search, RefreshCw, CheckCircle2, Clock, AlertTriangle, XCircle } from 'lucide-react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import API from '../config';
 
 const SEVERITY_STYLES = {
@@ -76,8 +77,10 @@ export default function BugReports() {
     try {
       const { data } = await axios.patch(`${API}/api/bugs/${id}`, { status });
       setBugs((prev) => prev.map((b) => (b._id === id ? data : b)));
+      toast.success(`Bug report status updated to "${status}".`);
     } catch (err) {
       console.error('Failed to update bug status:', err.message);
+      toast.error('Failed to update bug status.');
     } finally {
       setUpdating(null);
     }

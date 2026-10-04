@@ -10,6 +10,9 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -40,83 +43,95 @@ export default function LoginScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}
       >
-        <View style={styles.content}>
-          {/* Logo/Brand Section */}
-          <View style={styles.header}>
-            <Image
-              source={require('../../assets/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* Form Section */}
-          <View style={styles.form}>
-            <Text style={styles.welcomeText}>{t('welcome')}</Text>
-            <Text style={styles.instructionText}>Login to your resident account</Text>
-
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="email" size={20} color="#6B7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder={t('email')}
-                placeholderTextColor="#9CA3AF"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="lock" size={20} color="#6B7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder={t('password')}
-                placeholderTextColor="#9CA3AF"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#6B7280"
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.content}>
+              {/* Logo/Brand Section */}
+              <View style={styles.header}>
+                <Image
+                  source={require('../../assets/logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
                 />
-              </TouchableOpacity>
+              </View>
+
+              {/* Form Section */}
+              <View style={styles.form}>
+                <Text style={styles.welcomeText}>{t('welcome')}</Text>
+                <Text style={styles.instructionText}>Login to your resident account</Text>
+
+                <View style={styles.inputContainer}>
+                  <MaterialIcons name="email" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('email')}
+                    placeholderTextColor="#9CA3AF"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    returnKeyType="next"
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <MaterialIcons name="lock" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t('password')}
+                    placeholderTextColor="#9CA3AF"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    returnKeyType="done"
+                    onSubmitEditing={handleLogin}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeIcon}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={20}
+                      color="#6B7280"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={styles.forgotPassword}>
+                  <Text style={styles.forgotPasswordText}>{t('forgot_password')}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>{t('sign_in')}</Text>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.footer}>
+                  <Text style={styles.footerText}>{t('dont_have_account')} </Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                    <Text style={styles.signupText}>{t('sign_up')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
-
-            <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={styles.forgotPasswordText}>{t('forgot_password')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.loginButtonText}>{t('sign_in')}</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>{t('dont_have_account')} </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.signupText}>{t('sign_up')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -130,38 +145,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
   },
   header: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 24,
   },
   logo: {
-    width: 240,
-    height: 120,
-    marginBottom: 8,
+    width: 220,
+    height: 100,
+    marginBottom: 4,
   },
   form: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 40,
     borderTopRightRadius: 40,
     paddingHorizontal: 32,
-    paddingTop: 40,
-    paddingBottom: 60,
+    paddingTop: 32,
+    paddingBottom: 40,
     flex: 1,
   },
   welcomeText: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     color: '#1B1C1C',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   instructionText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6B7280',
-    marginBottom: 32,
+    marginBottom: 24,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -170,7 +188,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
     paddingHorizontal: 16,
-    height: 56,
+    height: 54,
   },
   inputIcon: {
     marginRight: 12,
@@ -185,7 +203,7 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     alignSelf: 'flex-end',
-    marginBottom: 32,
+    marginBottom: 24,
   },
   forgotPasswordText: {
     color: colors.primaryGreen,
@@ -194,7 +212,7 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     backgroundColor: colors.primaryGreen,
-    height: 56,
+    height: 54,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
@@ -215,7 +233,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 24,
   },
   footerText: {
     color: '#6B7280',

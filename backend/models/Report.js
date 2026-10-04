@@ -48,6 +48,9 @@ const reportSchema = new mongoose.Schema({
   healthNotes: [{ text: String, addedBy: String, createdAt: { type: Date, default: Date.now } }],
   isPriorityArea: { type: Boolean, default: false },
   priorityScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "Schedule", default: null },
+  pointsAwardedToReporter: { type: Boolean, default: false },
+  pointsAwardedToVerifier: { type: Boolean, default: false },
+  upvotersRewarded: [{ type: mongoose.Schema.Types.ObjectId, ref: "Resident" }],
   createdAt: { type: Date, default: Date.now },
 });
 

@@ -12,6 +12,8 @@ const barangayScoreSchema = new mongoose.Schema({
   pickupCount: { type: Number, default: 0 }, // number of confirmed pickup runs
   reportVoteCount: { type: Number, default: 0 }, // total community votes cast
   areaQualityPts: { type: Number, default: 0 }, // cumulative clean-area bonus pts
+  lastCleanAirAwardDate: { type: String, default: null }, // YYYY-MM-DD (limit: once per day)
+  lastModerateAirAwardDate: { type: String, default: null }, // YYYY-MM-DD (limit: once per day)
   updatedAt: { type: Date, default: Date.now },
 });
 

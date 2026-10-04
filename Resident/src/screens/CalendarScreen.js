@@ -13,6 +13,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
+import { CalendarSchedulesSkeleton } from "../components/Skeleton";
 
 const { width } = Dimensions.get("window");
 const MONTH_NAMES = [
@@ -31,7 +32,7 @@ export default function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [schedules, setSchedules] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const today = new Date();
 
   // Reset pagination on month, year, or day filter change
@@ -407,10 +408,7 @@ export default function CalendarScreen() {
           </View>
 
           {isLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#006A3B" />
-              <Text style={styles.loadingText}>Loading schedules...</Text>
-            </View>
+            <CalendarSchedulesSkeleton />
           ) : selectedDay ? (
             /* Selected Date Schedules */
             schedulesForDay.length > 0 ? (

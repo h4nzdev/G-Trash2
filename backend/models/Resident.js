@@ -38,6 +38,10 @@ const residentSchema = new mongoose.Schema({
     resolutionsVerified: { type: Number, default: 0 },
   },
   lastPointsAt: { type: Date, default: null },
+  dailyReportRewards: {
+    date: { type: String, default: "" },
+    count: { type: Number, default: 0 },
+  },
   disposalStreak: { type: Number, default: 0 },
   lastDisposalClaimAt: { type: Date, default: null },
   lastDisposalRunAt: { type: Date, default: null },

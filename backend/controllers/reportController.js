@@ -4,7 +4,7 @@ const { Report, GarbageArea, Fleet, Schedule, Route, Truck, Announcement, Sitio 
 const { getIO } = require("../config/socket");
 const { barangayFilter } = require("../middleware/barangayScope");
 const { haversineDistanceMeters } = require("../utils/geoUtils");
-const { awardResidentPoints, addBarangayScore } = require("../services/gamificationService");
+const { awardResidentPoints, addBarangayScore, canAwardDailyReport } = require("../services/gamificationService");
 const { getRouteDirections } = require("../services/routingService");
 
 function haversineM(lat1, lon1, lat2, lon2) {
@@ -143,6 +143,19 @@ exports.createReport = async (req, res, next) => {
       await addBarangayScore(report.barangay, 2, "reportScore", "reportVoteCount").catch(() => {});
     }
 
+    if (report.userId) {
+      const awarded = await canAwardDailyReport(report.userId);
+      if (awarded) {
+        awardResidentPoints(
+          report.userId,
+          2,
+          "report_submit",
+          `Submitted garbage report: ${report.title}`,
+          report._id
+        ).catch(() => {});
+      }
+    }
+
     res.status(201).json(report);
   } catch (err) {
     next(err);
@@ -170,6 +183,20 @@ exports.voteReport = async (req, res, next) => {
       } else {
         report.upvotes.push(userObjId);
         if (downIdx > -1) report.downvotes.splice(downIdx, 1);
+
+        // Valid community vote: +1 pt, once per report per resident
+        report.upvotersRewarded = report.upvotersRewarded || [];
+        const alreadyRewarded = report.upvotersRewarded.some((id) => id.toString() === userObjId.toString());
+        if (!alreadyRewarded) {
+          report.upvotersRewarded.push(userObjId);
+          awardResidentPoints(
+            userObjId,
+            1,
+            "report_upvote",
+            `Upvoted community report: ${report.title}`,
+            report._id
+          ).catch(() => {});
+        }
       }
     } else {
       if (downIdx > -1) {
@@ -455,8 +482,9 @@ exports.verifyReport = async (req, res, next) => {
       if (report.barangay) {
         await addBarangayScore(report.barangay, 20, "reportScore", null, "Resident confirmed resolution");
       }
-      if (userId) {
-        awardResidentPoints(userId, 10, "verify_resolution", "Verified a reported issue was resolved", report._id).catch(() => {});
+      if (userId && !report.pointsAwardedToVerifier) {
+        setOps.pointsAwardedToVerifier = true;
+        awardResidentPoints(userId, 20, "verify_resolution", "Verified a reported issue was resolved", report._id).catch(() => {});
       }
     }
 
@@ -814,8 +842,10 @@ exports.applyNextSchedule = async (req, res, next) => {
 
 // DELETE /api/reports/iot-bulk
 exports.deleteIoTBulk = async (req, res, next) => {
-  if (req.official?.role === "chd") {
-    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
+  const role = req.user?.role || req.official?.role;
+  const isSystemAdmin = role === "superadmin" || role === "admin" || role === "system_admin";
+  if (!isSystemAdmin) {
+    return res.status(403).json({ error: "Access denied: Only system admin can bulk delete IoT reports" });
   }
   try {
     const result = await Report.deleteMany({ reportedBy: { $regex: /^IoT Sensor/i } });
@@ -829,8 +859,10 @@ exports.deleteIoTBulk = async (req, res, next) => {
 
 // POST /api/reports/batch-delete
 exports.batchDelete = async (req, res, next) => {
-  if (req.official?.role === "chd") {
-    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
+  const role = req.user?.role || req.official?.role;
+  const isSystemAdmin = role === "superadmin" || role === "admin" || role === "system_admin";
+  if (!isSystemAdmin) {
+    return res.status(403).json({ error: "Access denied: Only system admin can batch delete reports" });
   }
   const { reportIds } = req.body;
   if (!Array.isArray(reportIds) || reportIds.length === 0) {
@@ -848,12 +880,20 @@ exports.batchDelete = async (req, res, next) => {
 
 // DELETE /api/reports/:id
 exports.deleteReport = async (req, res, next) => {
-  if (req.official?.role === "chd") {
-    return res.status(403).json({ error: "Access denied: CHD role cannot delete reports" });
-  }
   try {
-    const report = await Report.findByIdAndDelete(req.params.id);
+    const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ error: "Report not found" });
+
+    const currentUserId = (req.user?.id || req.user?._id || req.official?.id || req.official?._id || req.body?.userId || req.query?.userId)?.toString();
+    const role = req.user?.role || req.official?.role;
+    const isSystemAdmin = role === "superadmin" || role === "admin" || role === "system_admin";
+    const isReporter = !!(report.userId && currentUserId && report.userId.toString() === currentUserId);
+
+    if (!isSystemAdmin && !isReporter) {
+      return res.status(403).json({ error: "Access denied: Only system admin or the one who reported it can delete this report" });
+    }
+
+    await Report.findByIdAndDelete(req.params.id);
 
     if (report.lat && report.lng) {
       await GarbageArea.updateOne(
@@ -906,11 +946,12 @@ exports.updateReport = async (req, res, next) => {
         updateData.resolvedAt = new Date();
         updateData.resolvedBy = officialName;
         updateData.resolutionConfirmed = "pending";
-        // Award resident points for resolved report
-        if (existing?.userId) {
+        // Award resident points for resolved report (+20 pts, once per report)
+        if (existing?.userId && !existing.pointsAwardedToReporter) {
+          updateData.pointsAwardedToReporter = true;
           awardResidentPoints(
             existing.userId,
-            15,
+            20,
             "report_resolved",
             "Your garbage report was resolved by the barangay",
             req.params.id

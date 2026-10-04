@@ -20,6 +20,7 @@ import {
   Legend,
 } from 'recharts';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -239,8 +240,10 @@ export default function CollectionHistory() {
         })
       );
       setEditingLogWeight(null);
+      toast.success("Weight log updated successfully!");
     } catch (err) {
       console.error('Failed to save weight:', err.message);
+      toast.error("Failed to save weight log.");
     } finally {
       setIsSavingWeight(false);
     }

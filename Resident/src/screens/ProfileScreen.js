@@ -22,6 +22,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
+import { Skeleton, ProfileReportsSkeleton } from "../components/Skeleton";
 
 function formatDate(dateStr) {
   if (!dateStr) return "";
@@ -162,7 +163,14 @@ export default function ProfileScreen({ navigation }) {
         style: "destructive",
         onPress: async () => {
           try {
-            const res = await fetch(`${API_URL}/api/reports/${reportId}`, { method: "DELETE" });
+            const res = await fetch(`${API_URL}/api/reports/${reportId}`, {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+                ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
+              },
+              body: JSON.stringify({ userId: user?.id || user?._id }),
+            });
             if (res.ok) {
               setMyReports((prev) => prev.filter((r) => r._id !== reportId));
               Alert.alert("Deleted", "Report removed successfully.");
@@ -280,21 +288,21 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.statsRow}>
             <View style={styles.statCell}>
               {reportsLoading
-                ? <ActivityIndicator size="small" color="#006A3B" />
+                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
                 : <Text style={styles.statValue}>{myReports.length}</Text>}
               <Text style={styles.statLabel}>{t("total_reports")}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
               {reportsLoading
-                ? <ActivityIndicator size="small" color="#006A3B" />
+                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
                 : <Text style={[styles.statValue, { color: "#006A3B" }]}>{resolvedCount}</Text>}
               <Text style={styles.statLabel}>Resolved</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
               {reportsLoading
-                ? <ActivityIndicator size="small" color="#006A3B" />
+                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
                 : <Text style={styles.statValue}>{pendingCount}</Text>}
               <Text style={styles.statLabel}>{t("pending")}</Text>
             </View>
@@ -504,9 +512,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
 
             {reportsLoading ? (
-              <View style={styles.emptyCard}>
-                <ActivityIndicator color="#006A3B" />
-              </View>
+              <ProfileReportsSkeleton />
             ) : recentReports.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Ionicons name="document-text-outline" size={36} color="#C4CEC7" />

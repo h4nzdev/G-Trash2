@@ -942,8 +942,6 @@ export default function CollectorHomeScreen() {
             )}
           </View>
         ) : null}
-
-        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Clearance Flow Modal */}
@@ -1907,7 +1905,7 @@ export default function CollectorHomeScreen() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
-  scrollContainer: { paddingHorizontal: 16, paddingBottom: 110, paddingTop: 8 },
+  scrollContainer: { paddingHorizontal: 16, paddingBottom: 40, paddingTop: 8 },
 
   // ── Header ─────────────────────────────────────────────────────────────────
   header: {

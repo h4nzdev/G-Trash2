@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle, Trash2, Zap, Truck } from 'lucide-react';
+import { MapPin, Clock, User, Eye, UserCheck, CheckCircle, ChevronDown, ChevronUp, Heart, AlertTriangle, Trash2, Zap, Truck, ShieldAlert } from 'lucide-react';
 import Badge from '../shared/Badge';
+import { getSlaStatus } from '../../utils/sla';
 
 const priorityDot = { Critical: 'bg-red-500', High: 'bg-red-400', Medium: 'bg-amber-500', Low: 'bg-slate-400' };
 const priorityBadge = { Critical: 'critical', High: 'high', Medium: 'medium', Low: 'low' };
@@ -20,6 +21,7 @@ export default function ReportCard({
   const urgencyScore = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = urgencyScore >= 5;
   const isIot = report.reportedBy?.toLowerCase().startsWith('iot sensor');
+  const sla = getSlaStatus(report);
 
   const handleDelete = async (e) => {
     if (e) e.stopPropagation();
@@ -34,15 +36,17 @@ export default function ReportCard({
       className={`bg-white rounded-2xl shadow-sm border transition-all duration-200 overflow-hidden hover:shadow-md ${
         isSelected
           ? "border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/10"
-          : isHighUrgency
-            ? "border-red-200 bg-red-50/10"
-            : isIot
-              ? "border-blue-100 bg-blue-50/20"
-              : "border-slate-100"
+          : sla.isOverdue
+            ? "border-red-300 ring-1 ring-red-200 bg-red-50/15"
+            : isHighUrgency
+              ? "border-red-200 bg-red-50/10"
+              : isIot
+                ? "border-blue-100 bg-blue-50/20"
+                : "border-slate-100"
       }`}
     >
       {/* Priority stripe */}
-      <div className={`h-1 ${isIot ? 'bg-blue-400' : priorityDot[report.priority]} w-full`} />
+      <div className={`h-1 ${sla.isOverdue ? 'bg-red-600' : isIot ? 'bg-blue-400' : priorityDot[report.priority]} w-full`} />
 
       <div className="p-5">
         {/* Header */}
@@ -60,12 +64,17 @@ export default function ReportCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-slate-900 leading-snug">{report.title}</h3>
+              {sla.isOverdue && (
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-600 rounded text-[10px] font-bold text-white shadow-xs animate-pulse">
+                  <AlertTriangle className="w-2.5 h-2.5" /> 72h Overdue ({sla.elapsedDays > 0 ? `${sla.elapsedDays}d` : `${sla.elapsedHours}h`})
+                </div>
+              )}
               {isIot && (
                 <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 rounded text-[10px] font-bold text-blue-600">
                   <Zap className="w-2.5 h-2.5" /> IoT Auto
                 </div>
               )}
-              {isHighUrgency && (
+              {isHighUrgency && !sla.isOverdue && (
                 <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-100 rounded text-[10px] font-bold text-red-600 animate-pulse">
                   <AlertTriangle className="w-2.5 h-2.5" /> URGENT
                 </div>

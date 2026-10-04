@@ -450,9 +450,11 @@ exports.completeSchedule = async (req, res, next) => {
         if (!t.completedAt) t.completedAt = new Date();
       });
     }
+    if (!schedule.pointsAwarded) {
+      schedule.pointsAwarded = true;
+      await addBarangayScore(schedule.barangay, 10, null, null, `Schedule ${schedule._id} completed`);
+    }
     await schedule.save();
-
-    await addBarangayScore(schedule.barangay, 10, null, null, `Schedule ${schedule._id} completed`);
 
     const io = getIO();
     if (io) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
@@ -501,7 +503,10 @@ exports.completeTask = async (req, res, next) => {
     const allDone = schedule.sitioTasks && schedule.sitioTasks.every((t) => t.completed);
     if (allDone && schedule.status === "accepted") {
       schedule.status = "completed";
-      await addBarangayScore(schedule.barangay, 10, null, null, `Schedule ${schedule._id} auto-completed`);
+      if (!schedule.pointsAwarded) {
+        schedule.pointsAwarded = true;
+        await addBarangayScore(schedule.barangay, 10, null, null, `Schedule ${schedule._id} auto-completed`);
+      }
     }
 
     await schedule.save();
@@ -548,6 +553,18 @@ exports.completeTask = async (req, res, next) => {
             null,
             `Waste report "${rep.title}" resolved & verified by Truck ${schedule.truckId}`
           );
+        }
+
+        if (rep.userId && !rep.pointsAwardedToReporter) {
+          rep.pointsAwardedToReporter = true;
+          await rep.save();
+          awardResidentPoints(
+            rep.userId,
+            20,
+            "report_resolved",
+            "Your garbage report was resolved by the collector",
+            rep._id
+          ).catch(() => {});
         }
 
         const io = getIO();
@@ -672,10 +689,11 @@ exports.updateScheduleStatus = async (req, res, next) => {
       });
     }
 
-    await schedule.save();
-    if (status === "completed") {
+    if (status === "completed" && !schedule.pointsAwarded) {
+      schedule.pointsAwarded = true;
       await addBarangayScore(schedule.barangay, 10, null, null, `Schedule ${schedule._id} completed`);
     }
+    await schedule.save();
 
     const io = getIO();
     if (io) io.emit("schedule:changed", { truckId: schedule.truckId, date: schedule.date });
@@ -1047,6 +1065,18 @@ exports.createCollection = async (req, res, next) => {
             );
           }
 
+          if (rep.userId && !rep.pointsAwardedToReporter) {
+            rep.pointsAwardedToReporter = true;
+            await rep.save();
+            awardResidentPoints(
+              rep.userId,
+              20,
+              "report_resolved",
+              "Your garbage report was resolved by the collector",
+              rep._id
+            ).catch(() => {});
+          }
+
           if (io) {
             io.emit("report:updated", rep);
             io.emit("report:resolved", {
@@ -1141,6 +1171,14 @@ exports.verifyPickup = async (req, res, next) => {
       if (run.barangay) {
         await addBarangayScore(run.barangay, 10, "collectionScore", null, "Resident confirmed pickup");
       }
+      if (userId) {
+        awardResidentPoints(
+          userId,
+          10,
+          "pickup_verified",
+          `Verified scheduled collection pickup for ${run.routeName || "truck " + run.truckId}`
+        ).catch(() => {});
+      }
     } else {
       const missed = await Report.create({
         title: "Missed Pickup",
@@ -1196,13 +1234,18 @@ exports.pickupBin = async (req, res, next) => {
     const { residentId, barangay, truckId } = req.body;
     if (!residentId || !barangay) return res.status(400).json({ error: "residentId and barangay required" });
     const date = new Date().toISOString().slice(0, 10);
+    const existing = await BinStatus.findOne({ residentId, date });
+    const isFirstPickup = !existing || existing.status !== "pickedup";
+
     await BinStatus.findOneAndUpdate(
       { residentId, date },
       { barangay, status: "pickedup", truckId: truckId || "" },
       { upsert: true, new: true }
     );
-    await addBarangayScore(barangay, 1, "collectionScore", "pickupCount", "Pickup logged");
-    awardResidentPoints(residentId, 1, "bin_pickedup", "Marked trash as picked up").catch(() => {});
+    if (isFirstPickup) {
+      await addBarangayScore(barangay, 1, "collectionScore", "pickupCount", "Pickup logged");
+      awardResidentPoints(residentId, 1, "bin_pickedup", "Marked trash as picked up").catch(() => {});
+    }
     const counts = await getBinCounts(barangay, date);
     const io = getIO();
     if (io) io.emit("bin:status:update", { barangay, date, ...counts });

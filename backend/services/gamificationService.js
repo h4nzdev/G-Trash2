@@ -42,9 +42,11 @@ const STAT_MAP = {
   report_upvote: { inc: "stats.reportsUpvoted" },
   report_comment: { inc: "stats.commentsMade" },
   verify_resolution: { inc: "stats.resolutionsVerified" },
+  pickup_verified: {},
   report_resolved: {},
   bin_prepared: {},
   bin_pickedup: {},
+  disposal_verification: {},
 };
 
 async function awardResidentPoints(residentId, points, action, description, reportId = null) {
@@ -88,7 +90,53 @@ async function awardResidentPoints(residentId, points, action, description, repo
   }
 }
 
+// Maximum 3 rewarded reports per day per resident
+async function canAwardDailyReport(residentId) {
+  if (!residentId) return false;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const resident = await Resident.findById(residentId);
+  if (!resident) return false;
+
+  const current = resident.dailyReportRewards;
+  if (current && current.date === todayStr) {
+    if (current.count >= 3) {
+      return false;
+    }
+    resident.dailyReportRewards.count += 1;
+  } else {
+    resident.dailyReportRewards = { date: todayStr, count: 1 };
+  }
+  await resident.save();
+  return true;
+}
+
+// Clean air (+3) and Moderate air (+1) awarded once per day per barangay
+async function canAwardDailyAirQuality(barangay, airQuality) {
+  if (!barangay) return false;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isClean = /^(clean|good)$/i.test(airQuality);
+  const isModerate = /^moderate$/i.test(airQuality);
+
+  if (!isClean && !isModerate) return false;
+
+  const field = isClean ? "lastCleanAirAwardDate" : "lastModerateAirAwardDate";
+  const doc = await BarangayScore.findOne({ barangay });
+
+  if (doc && doc[field] === todayStr) {
+    return false;
+  }
+
+  await BarangayScore.findOneAndUpdate(
+    { barangay },
+    { $set: { [field]: todayStr, updatedAt: new Date() } },
+    { upsert: true, new: true }
+  );
+  return true;
+}
+
 module.exports = {
   addBarangayScore,
   awardResidentPoints,
+  canAwardDailyReport,
+  canAwardDailyAirQuality,
 };

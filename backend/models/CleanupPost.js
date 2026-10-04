@@ -9,6 +9,8 @@ const cleanupPostSchema = new mongoose.Schema({
   photo: { type: String, required: true },
   note: { type: String, default: "" },
   autoDetected: { type: Boolean, default: true },
+  pointsAwarded: { type: Boolean, default: false },
+  status: { type: String, enum: ["pending", "approved", "rejected"], default: "approved" },
   lat: { type: Number, default: null },
   lng: { type: Number, default: null },
   createdAt: { type: Date, default: Date.now },

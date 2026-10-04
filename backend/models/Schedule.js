@@ -34,6 +34,7 @@ const scheduleSchema = new mongoose.Schema({
   disposalFacility: { type: String, default: "" }, // e.g. Binaliw Landfill, Inayawan Transfer Station, Barangay MRF
   disposalPhoto: { type: String, default: "" }, // scale slip / weighbridge ticket / proof photo
   runNumber: { type: Number, default: 1 },
+  pointsAwarded: { type: Boolean, default: false },
   completedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });

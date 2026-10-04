@@ -9,15 +9,17 @@ import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
 
 const ACTION_META = {
-  report_submit:     { icon: 'report-problem',  color: '#3B82F6', label: 'Report Submitted (+10)' },
-  report_resolved:   { icon: 'task-alt',        color: '#059669', label: 'Issue Resolved (+15)' },
-  report_upvote:     { icon: 'thumb-up',        color: '#8B5CF6', label: 'Community Upvote (+1)' },
-  verify_resolution: { icon: 'verified',        color: '#006A3B', label: 'Resolution Verified (+10)' },
-  bin_prepared:      { icon: 'delete-outline',   color: '#0284C7', label: 'Bin Prepared (+2)' },
-  bin_pickedup:      { icon: 'check-circle',    color: '#059669', label: 'Trash Picked Up' },
-  report_comment:    { icon: 'chat-bubble',     color: '#F59E0B', label: 'Comment Added' },
-  correct_scan:      { icon: 'qr-code-scanner', color: '#64748B', label: 'AI Scan' },
-  report_penalty:    { icon: 'report',          color: '#EF4444', label: 'Penalty' },
+  report_submit:         { icon: 'report-problem',  color: '#3B82F6', label: 'Report Submitted (+2)' },
+  report_resolved:       { icon: 'task-alt',        color: '#059669', label: 'Issue Resolved (+20)' },
+  report_upvote:         { icon: 'thumb-up',        color: '#8B5CF6', label: 'Community Upvote (+1)' },
+  verify_resolution:     { icon: 'verified',        color: '#006A3B', label: 'Resolution Verified (+20)' },
+  pickup_verified:       { icon: 'local-shipping',  color: '#0284C7', label: 'Pickup Verified (+10)' },
+  disposal_verification: { icon: 'camera-alt',      color: '#10B981', label: 'Verified Disposal (+10)' },
+  bin_prepared:          { icon: 'delete-outline',  color: '#0284C7', label: 'Bin Prepared (+2)' },
+  bin_pickedup:          { icon: 'check-circle',    color: '#059669', label: 'Trash Picked Up (+1)' },
+  report_comment:        { icon: 'chat-bubble',     color: '#F59E0B', label: 'Comment Added' },
+  correct_scan:          { icon: 'qr-code-scanner', color: '#64748B', label: 'AI Scan' },
+  report_penalty:        { icon: 'report',          color: '#EF4444', label: 'Penalty' },
 };
 
 function timeAgo(dateStr) {

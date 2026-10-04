@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import API from '../config';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 export default function FleetManagement() {
   const navigate = useNavigate();
@@ -199,6 +200,7 @@ export default function FleetManagement() {
 
       const { data } = await axios.post(`${API}/api/fleet`, payload);
       
+      toast.success("Truck registered successfully!");
       setGeneratedEntry(data);
       setFleet((prev) => [data, ...prev]);
       
@@ -211,7 +213,7 @@ export default function FleetManagement() {
       setIsModalOpen(false);
       
     } catch (err) {
-      alert(err?.response?.data?.error || err.message || 'Registration failed');
+      toast.error(err?.response?.data?.error || err.message || 'Registration failed');
     } finally {
       setSubmitting(false);
     }
@@ -229,7 +231,7 @@ export default function FleetManagement() {
   const handleAssignDriver = async (e) => {
     if (e) e.preventDefault();
     if (!assignDriverName.trim()) {
-      alert('Driver name is required');
+      toast.error('Driver name is required');
       return;
     }
     setAssignSubmitting(true);
@@ -242,8 +244,9 @@ export default function FleetManagement() {
       });
       setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
       setIsAssignModalOpen(false);
+      toast.success("Driver assigned successfully!");
     } catch (err) {
-      alert(err?.response?.data?.error || err.message || 'Failed to assign driver');
+      toast.error(err?.response?.data?.error || err.message || 'Failed to assign driver');
     } finally {
       setAssignSubmitting(false);
     }
@@ -288,8 +291,9 @@ export default function FleetManagement() {
 
       setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
       setIsEditModalOpen(false);
+      toast.success("Truck details updated!");
     } catch (err) {
-      alert(err?.response?.data?.error || err.message || 'Failed to update truck');
+      toast.error(err?.response?.data?.error || err.message || 'Failed to update truck');
     } finally {
       setEditSubmitting(false);
     }
@@ -300,7 +304,10 @@ export default function FleetManagement() {
     try {
       await axios.delete(`${API}/api/fleet/${truckId}`);
       setFleet((prev) => prev.filter((t) => t.truckId !== truckId));
-    } catch { /* silent */ }
+      toast.success(`Truck ${truckId} removed from fleet.`);
+    } catch {
+      toast.error("Failed to remove truck.");
+    }
   };
 
   const handleCopy = () => {

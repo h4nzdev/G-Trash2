@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { AlertTriangle, Filter, CheckCircle, Clock, ShieldAlert, AlertCircle, Search, RefreshCw, Trash2 } from 'lucide-react';
 import API from '../config';
 
@@ -33,8 +34,10 @@ export default function AlertsManagement() {
       await axios.patch(`${API}/api/iot/alerts/${id}/acknowledge`);
       // Update local state
       setAlerts(prev => prev.map(a => a._id === id ? { ...a, acknowledged: true } : a));
+      toast.success("Alert acknowledged.");
     } catch (err) {
       console.error('Failed to acknowledge alert', err);
+      toast.error("Failed to acknowledge alert.");
     }
   };
 
@@ -43,8 +46,10 @@ export default function AlertsManagement() {
     try {
       await axios.delete(`${API}/api/iot/alerts/${id}`);
       setAlerts(prev => prev.filter(a => a._id !== id));
+      toast.success("Alert deleted successfully.");
     } catch (err) {
       console.error('Failed to delete alert', err);
+      toast.error("Failed to delete alert.");
     }
   };
 
@@ -53,8 +58,10 @@ export default function AlertsManagement() {
     try {
       await axios.delete(`${API}/api/iot/alerts`);
       setAlerts([]);
+      toast.success("All alerts cleared successfully.");
     } catch (err) {
       console.error('Failed to clear alerts', err);
+      toast.error("Failed to clear alerts.");
     }
   };
 

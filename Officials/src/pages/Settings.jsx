@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle, Users, Plus, X } from 'lucide-react';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -71,9 +72,10 @@ function SignaturePad({ official }) {
       await axios.patch(`${API}/api/officials/signature`, { signatureUrl: uploadData.url });
       setSavedUrl(uploadData.url);
       setSaved(true);
+      toast.success("E-signature saved successfully!");
       setTimeout(() => setSaved(false), 3000);
     } catch {
-      alert('Failed to save signature. Please try again.');
+      toast.error('Failed to save signature. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -191,9 +193,12 @@ function OfficialsManager() {
       await axios.post(`${API}/api/officials`, form);
       setShowForm(false);
       setForm({ name: '', email: '', password: '', barangay: '', role: 'official' });
+      toast.success("Official created successfully!");
       fetchOfficials();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create official');
+      const msg = err.response?.data?.error || 'Failed to create official';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -203,8 +208,9 @@ function OfficialsManager() {
     try {
       await axios.patch(`${API}/api/officials/${id}/role`, { role });
       setOfficials(prev => prev.map(o => o._id === id ? { ...o, role } : o));
+      toast.success(`Role updated to ${role}.`);
     } catch {
-      /* silent */
+      toast.error("Failed to update official's role.");
     }
   };
 

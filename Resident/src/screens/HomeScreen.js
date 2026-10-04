@@ -9,6 +9,7 @@ import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
@@ -29,7 +30,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
-import TarsiAssistant from "../components/TarsiAssistant";
+import { HomeScreenSkeleton } from "../components/Skeleton";
 import { useTranslation } from "react-i18next";
 
 Notifications.setNotificationHandler({
@@ -256,10 +257,14 @@ export default function HomeScreen({ navigation }) {
   const pulseAnim2 = useRef(new Animated.Value(0)).current;
   const pulseAnim3 = useRef(new Animated.Value(0)).current;
   const truckFloatAnim = useRef(new Animated.Value(0)).current;
+  const flameAnim = useRef(new Animated.Value(1)).current;
+  const liveBeaconAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop1 = useRef(null);
   const pulseLoop2 = useRef(null);
   const pulseLoop3 = useRef(null);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeSegregationTab, setActiveSegregationTab] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [binReady, setBinReady] = useState(false);
   const [todayPickedUp, setTodayPickedUp] = useState(false);
@@ -791,6 +796,16 @@ export default function HomeScreen({ navigation }) {
     }
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchDashboard();
+    } catch (_) {
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchDashboard]);
+
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
@@ -1176,10 +1191,10 @@ export default function HomeScreen({ navigation }) {
       );
       return;
     }
-    if (onlineTrucks.length === 0) {
+    if (!hasActiveTruckOrSchedule) {
       Alert.alert(
-        "Truck Not Active",
-        "You can only prepare your bin when a garbage truck is actively collecting in your area. Please wait until a truck starts its route.",
+        "No Active Collection",
+        "There is no active collection truck or schedule for your area at this time. Please check back when collection is scheduled.",
         [{ text: "OK" }],
       );
       return;
@@ -1398,6 +1413,10 @@ export default function HomeScreen({ navigation }) {
     return onlineTrucks.length > 0;
   }, [onlineTrucks.length]);
 
+  const hasActiveTruckOrSchedule = useMemo(() => {
+    return onlineTrucks.length > 0 || !!firstSchedule || todaySchedules.length > 0;
+  }, [onlineTrucks.length, firstSchedule, todaySchedules]);
+
   const isTruckNear = useMemo(() => {
     return distToTruck !== null && distToTruck <= 1500;
   }, [distToTruck]);
@@ -1480,7 +1499,7 @@ export default function HomeScreen({ navigation }) {
     };
   }, [pulseTier]);
 
-  // Truck marker float — runs continuously
+  // Micro-animations: Truck float, flame streak pulse, and live beacon pulse
   useEffect(() => {
     const float = Animated.loop(
       Animated.sequence([
@@ -1497,7 +1516,44 @@ export default function HomeScreen({ navigation }) {
       ]),
     );
     float.start();
-    return () => float.stop();
+
+    const flame = Animated.loop(
+      Animated.sequence([
+        Animated.timing(flameAnim, {
+          toValue: 1.2,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+        Animated.timing(flameAnim, {
+          toValue: 1,
+          duration: 850,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    flame.start();
+
+    const beacon = Animated.loop(
+      Animated.sequence([
+        Animated.timing(liveBeaconAnim, {
+          toValue: 0.3,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(liveBeaconAnim, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    beacon.start();
+
+    return () => {
+      float.stop();
+      flame.stop();
+      beacon.stop();
+    };
   }, []);
 
   useEffect(() => {
@@ -1579,638 +1635,832 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#006A3B"]}
+            tintColor="#006A3B"
+          />
+        }
       >
-        {/* Greeting Section */}
-        <View style={styles.greetingSection}>
-          <Text style={styles.greeting}>
-            {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash!"}
-          </Text>
-          <Text style={styles.subtitle}>
-            {onlineTrucks.length > 0
-              ? t("trucks_active", { count: onlineTrucks.length })
-              : t("no_trucks_active")}
-          </Text>
-        </View>
-
-        {/* 3-Column Resident Status Card (Vector Icons Only) */}
-        <View style={styles.statusThreeColCard}>
-          {/* Col 1: Streak */}
-          <View style={styles.statusColItem}>
-            <View style={[styles.statusColIconWrap, { backgroundColor: "#FFF7ED" }]}>
-              <MaterialIcons name="local-fire-department" size={20} color="#F97316" />
-            </View>
-            <Text style={styles.statusColValue}>
-              {user ? `${disposalStreak} Days` : "0 Days"}
-            </Text>
-            <Text style={styles.statusColLabel}>Disposal Streak</Text>
-          </View>
-
-          <View style={styles.statusColDivider} />
-
-          {/* Col 2: Points */}
-          <View style={styles.statusColItem}>
-            <View style={[styles.statusColIconWrap, { backgroundColor: "#FEF3C7" }]}>
-              <Ionicons name="star" size={19} color="#D97706" />
-            </View>
-            <Text style={styles.statusColValue}>
-              {user ? `${userPoints} Pts` : "0 Pts"}
-            </Text>
-            <Text style={styles.statusColLabel}>Eco Points</Text>
-          </View>
-
-          <View style={styles.statusColDivider} />
-
-          {/* Col 3: Community Posted */}
-          <TouchableOpacity
-            style={styles.statusColItem}
-            onPress={() => navigation.navigate("Community")}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.statusColIconWrap, { backgroundColor: "#EFF6FF" }]}>
-              <MaterialIcons name="campaign" size={20} color="#2563EB" />
-            </View>
-            <Text style={styles.statusColValue}>
-              {communityPostsCount} {communityPostsCount === 1 ? "Post" : "Posts"}
-            </Text>
-            <Text style={styles.statusColLabel}>Community Posted</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Pre-Information Live Pickup Feed Banner */}
-        {latestPickupFeed && (
-          <View style={styles.pickupPreInfoCard}>
-            <View style={styles.pickupPreInfoHeader}>
-              <View style={styles.pickupPreInfoIconWrap}>
-                <MaterialIcons name="check-circle" size={20} color="#006A3B" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.pickupPreInfoTitle}>
-                  Waste Collected — Sitio {latestPickupFeed.sitioName}
-                </Text>
-                <Text style={styles.pickupPreInfoSub}>
-                  Truck {latestPickupFeed.truckId} completed pickup at {latestPickupFeed.time}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setLatestPickupFeed(null)}>
-                <Ionicons name="close" size={18} color="#6F7A70" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Pickup completion congratulation or Missed Pickup Banner */}
-        {todayPickupDone && !isTruckNearOrActive && binReady && (
-          <View style={styles.pickupDoneBanner}>
-            <MaterialIcons name="check-circle" size={22} color="#006A3B" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pickupDoneTitle}>Collection Complete!</Text>
-              <Text style={styles.pickupDoneSubtitle}>
-                Today's pickup for {user?.barangay || 'your barangay'} is done. Good job disposing your trash!
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {todayPickupDone && !isTruckNearOrActive && !binReady && (
-          <View style={styles.missedPickupBanner}>
-            <View style={styles.missedPickupHeader}>
-              <View style={styles.missedPickupIconWrap}>
-                <MaterialIcons name="event-busy" size={22} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.missedPickupTitle}>You Missed Today's Collection Truck</Text>
-                <Text style={styles.missedPickupSub}>
-                  The garbage truck finished collection in {user?.barangay || 'your area'} before your bin was prepared.
-                </Text>
-              </View>
-            </View>
-            <View style={styles.missedPickupActions}>
-              <TouchableOpacity
-                style={styles.missedReportBtn}
-                onPress={() => navigation.navigate("Report")}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="report-problem" size={15} color="#92400E" />
-                <Text style={styles.missedReportBtnText}>Report Missed Pickup</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.missedSchedBtn}
-                onPress={() => setModalVisible(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="event" size={15} color="#374151" />
-                <Text style={styles.missedSchedBtnText}>View Schedule</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* DAILY GARBAGE DISPOSAL & BIN PREPARATION CARD (RESIDENT WORKFLOW) */}
-        {isTruckNearOrActive && (
-          <View style={styles.proximityCard}>
-            <View style={styles.proximityCardHeader}>
-              <View
-                style={[
-                  styles.proximityBadgePill,
-                  hasSnappedToday && { backgroundColor: "#ECFDF5" },
-                  (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
-                    backgroundColor: "#F3F4F6",
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.livePulseDot,
-                    hasSnappedToday && { backgroundColor: "#059669" },
-                    (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
-                      backgroundColor: "#9CA3AF",
-                    },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.proximityBadgeText,
-                    hasSnappedToday && { color: "#047857" },
-                    (!hasSnappedToday && (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")) && {
-                      color: "#4B5563",
-                    },
-                  ]}
-                >
-                  {hasSnappedToday
-                    ? "PREPARED & VERIFIED (1/DAY)"
-                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                    ? "COLLECTION ROUTE COMPLETED"
-                    : isTruckNear
-                    ? (distToTruck != null && distToTruck < 350 ? "TRUCK AT YOUR STREET" : "TRUCK NEARBY")
-                    : isTruckCollecting
-                    ? "TRUCK ACTIVE IN AREA"
-                    : "TRUCK ONLINE"}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.streakTagPill,
-                  hasSnappedToday
-                    ? { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }
-                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                    ? { backgroundColor: "#F9FAFB", borderColor: "#E5E7EB" }
-                    : { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
-                ]}
-              >
-                <MaterialIcons
-                  name={
-                    hasSnappedToday
-                      ? "check-circle"
-                      : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                      ? "task-alt"
-                      : "emoji-events"
-                  }
-                  size={14}
-                  color={
-                    hasSnappedToday
-                      ? "#059669"
-                      : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                      ? "#6B7280"
-                      : "#059669"
-                  }
-                />
-                <Text
-                  style={[
-                    styles.streakTagText,
-                    {
-                      color: hasSnappedToday
-                        ? "#059669"
-                        : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                        ? "#6B7280"
-                        : "#059669",
-                    },
-                  ]}
-                >
-                  {hasSnappedToday
-                    ? "Resets Tomorrow"
-                    : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                    ? "Finished for Today"
-                    : "+10 Eco Pts"}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.proximityCardTitle}>
-              {hasSnappedToday
-                ? "Garbage Disposal Prepared ✓"
-                : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                ? "Collection Route Completed ✓"
-                : "Garbage Disposal Preparation"}
-            </Text>
-            <Text style={styles.proximityCardSub}>
-              {hasSnappedToday
-                ? "You have already completed your segregation checklist and submitted your bin photo for today! Resets tomorrow at midnight."
-                : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed")
-                ? "The collection truck has already completed its route in your area for today. Bin preparation is closed until the next scheduled collection."
-                : "Complete your waste segregation checklist and snap a photo of your prepared bin to earn points and notify the collection crew."}
-            </Text>
-
-            {/* If user snapped a photo today, show the thumbnail preview in the card */}
-            {(todayDisposalPhoto || selectedPhoto) && hasSnappedToday && (
-              <View style={{ marginTop: 12, marginBottom: 8, borderRadius: 12, overflow: 'hidden', height: 160, position: 'relative' }}>
-                <Image
-                  source={{ uri: todayDisposalPhoto || selectedPhoto }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-                <View style={{
-                  position: 'absolute',
-                  top: 10,
-                  left: 10,
-                  backgroundColor: 'rgba(5, 150, 105, 0.9)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: 20,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                }}>
-                  <MaterialIcons name="verified" size={14} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>
-                    Disposal Verified
+        {isLoading ? (
+          <HomeScreenSkeleton />
+        ) : (
+          <>
+            {/* Dynamic Greeting Header with Live Operational Beacon */}
+            <View style={styles.greetingSection}>
+              <View style={styles.greetingHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.greeting}>
+                    {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash!"}
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    {onlineTrucks.length > 0
+                      ? t("trucks_active", { count: onlineTrucks.length })
+                      : t("no_trucks_active")}
                   </Text>
                 </View>
-                <View style={{
-                  position: 'absolute',
-                  bottom: 10,
-                  left: 10,
-                  right: 10,
-                  backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 8,
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '600' }} numberOfLines={1}>
-                    {user?.barangay || 'Curb'} • {scheduledWasteType} Waste
+                <View style={[
+                  styles.liveStatusBeaconPill,
+                  onlineTrucks.length > 0 ? { backgroundColor: "#ECFDF5" }
+                  : isRouteCompleted ? { backgroundColor: "#F3F4F6" }
+                  : { backgroundColor: "#FEF3C7" }
+                ]}>
+                  <Animated.View
+                    style={[
+                      styles.liveStatusBeaconDot,
+                      onlineTrucks.length > 0 ? { backgroundColor: "#10B981", opacity: liveBeaconAnim }
+                      : isRouteCompleted ? { backgroundColor: "#6B7280" }
+                      : { backgroundColor: "#F59E0B" }
+                    ]}
+                  />
+                  <Text style={[
+                    styles.liveStatusBeaconText,
+                    onlineTrucks.length > 0 ? { color: "#065F46" }
+                    : isRouteCompleted ? { color: "#4B5563" }
+                    : { color: "#92400E" }
+                  ]}>
+                    {onlineTrucks.length > 0
+                      ? "LIVE ROUTE"
+                      : isRouteCompleted
+                      ? "COMPLETED"
+                      : "STANDBY"}
                   </Text>
-                  <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700' }}>
-                    +10 Pts
+                </View>
+              </View>
+            </View>
+
+            {/* 3-Column Resident Status Card with Animated Streak Flame */}
+            <View style={styles.statusThreeColCard}>
+              {/* Col 1: Streak with pulsating flame animation */}
+              <View style={styles.statusColItem}>
+                <Animated.View
+                  style={[
+                    styles.statusColIconWrap,
+                    { backgroundColor: "#FFF7ED", transform: [{ scale: flameAnim }] },
+                  ]}
+                >
+                  <MaterialIcons name="local-fire-department" size={20} color="#F97316" />
+                </Animated.View>
+                <Text style={styles.statusColValue}>
+                  {user ? `${disposalStreak} Days` : "0 Days"}
+                </Text>
+                <Text style={styles.statusColLabel}>Disposal Streak</Text>
+              </View>
+
+              <View style={styles.statusColDivider} />
+
+              {/* Col 2: Points */}
+              <TouchableOpacity
+                style={styles.statusColItem}
+                onPress={() => navigation.navigate("Profile")}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.statusColIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <Ionicons name="star" size={19} color="#D97706" />
+                </View>
+                <Text style={styles.statusColValue}>
+                  {user ? `${userPoints} Pts` : "0 Pts"}
+                </Text>
+                <Text style={styles.statusColLabel}>Eco Points</Text>
+              </TouchableOpacity>
+
+              <View style={styles.statusColDivider} />
+
+              {/* Col 3: Community Posted */}
+              <TouchableOpacity
+                style={styles.statusColItem}
+                onPress={() => navigation.navigate("Community")}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.statusColIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                  <MaterialIcons name="campaign" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.statusColValue}>
+                  {communityPostsCount} {communityPostsCount === 1 ? "Post" : "Posts"}
+                </Text>
+                <Text style={styles.statusColLabel}>Community Posted</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Air Quality Card */}
+            {(() => {
+              const isCritical =
+                aqData?.status === "critical" ||
+                aqData?.airQuality === "Unhealthy" ||
+                aqData?.airQuality === "Hazardous" ||
+                aqData?.airQuality === "Critical";
+              const isModerate =
+                aqData?.status === "moderate" ||
+                aqData?.airQuality === "Moderate";
+              const activeLevel = isCritical ? 3 : isModerate ? 2 : 1;
+              const dotColor = isCritical
+                ? "#E53935"
+                : isModerate
+                ? "#F59E0B"
+                : aqData
+                ? "#10B981"
+                : "#9CA3AF";
+              const statusLabel =
+                aqData?.airQuality ||
+                (isCritical
+                  ? "Poor"
+                  : isModerate
+                  ? "Moderate"
+                  : aqData
+                  ? "Good"
+                  : "No data");
+              const statusColor = isCritical
+                ? "#DC2626"
+                : isModerate
+                ? "#92400E"
+                : aqData
+                ? "#065F46"
+                : "#6B7280";
+              return (
+                <View style={styles.airQualityCard}>
+                  <View style={styles.cardHeader}>
+                    <View>
+                      <Text style={styles.cardTitle}>{t("air_quality")}</Text>
+                      <View style={styles.statusRow}>
+                        <View
+                          style={[styles.statusDot, { backgroundColor: dotColor }]}
+                        />
+                        <Text style={[styles.statusText, { color: statusColor }]}>
+                          {`Level ${activeLevel} · ${statusLabel}`}
+                        </Text>
+                      </View>
+                    </View>
+                    <MaterialIcons name="air" size={28} color="#6B7280" />
+                  </View>
+
+                  {/* Mini Chart */}
+                  <View style={styles.chartContainer}>
+                    {chartBars.map((bar, i) => (
+                      <View
+                        key={bar.id || i}
+                        style={[
+                          styles.chartBar,
+                          { height: bar.height, backgroundColor: bar.color },
+                        ]}
+                      />
+                    ))}
+                  </View>
+
+                  {/* 3 Levels of Air Quality */}
+                  <View style={styles.levelsContainer}>
+                    {[
+                      {
+                        level: 1,
+                        label: "Good",
+                        sub: "Clean",
+                        color: "#10B981",
+                        bg: "#ECFDF5",
+                        border: "#10B981",
+                      },
+                      {
+                        level: 2,
+                        label: "Moderate",
+                        sub: "Fair",
+                        color: "#F59E0B",
+                        bg: "#FFFBEB",
+                        border: "#F59E0B",
+                      },
+                      {
+                        level: 3,
+                        label: "Poor",
+                        sub: "Alert",
+                        color: "#EF4444",
+                        bg: "#FEF2F2",
+                        border: "#EF4444",
+                      },
+                    ].map((lvl) => {
+                      const isActive = activeLevel === lvl.level;
+                      return (
+                        <View
+                          key={lvl.level}
+                          style={[
+                            styles.levelCard,
+                            isActive && { borderColor: lvl.color, backgroundColor: lvl.bg },
+                            !isActive && styles.levelCardInactive,
+                          ]}
+                        >
+                          <View style={styles.levelBadgeRow}>
+                            <View
+                              style={[
+                                styles.levelDot,
+                                { backgroundColor: isActive ? lvl.color : "#9CA3AF" },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.levelNumText,
+                                { color: isActive ? lvl.color : "#9CA3AF" },
+                              ]}
+                            >
+                              Level {lvl.level}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.levelTitleText,
+                              {
+                                color: isActive ? "#111827" : "#6B7280",
+                                fontWeight: isActive ? "700" : "500",
+                              },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {lvl.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.levelSubText,
+                              { color: isActive ? lvl.color : "#9CA3AF" },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {lvl.sub}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* Pre-Information Live Pickup Feed Banner */}
+            {latestPickupFeed && (
+              <View style={styles.pickupPreInfoCard}>
+                <View style={styles.pickupPreInfoHeader}>
+                  <View style={styles.pickupPreInfoIconWrap}>
+                    <MaterialIcons name="check-circle" size={20} color="#006A3B" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickupPreInfoTitle}>
+                      Waste Collected — Sitio {latestPickupFeed.sitioName}
+                    </Text>
+                    <Text style={styles.pickupPreInfoSub}>
+                      Truck {latestPickupFeed.truckId} completed pickup at {latestPickupFeed.time}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setLatestPickupFeed(null)}>
+                    <Ionicons name="close" size={18} color="#6F7A70" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Pickup completion congratulation or Missed Pickup Banner */}
+            {todayPickupDone && !isTruckNearOrActive && binReady && (
+              <View style={styles.pickupDoneBanner}>
+                <MaterialIcons name="check-circle" size={22} color="#006A3B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pickupDoneTitle}>Collection Complete!</Text>
+                  <Text style={styles.pickupDoneSubtitle}>
+                    Today's pickup for {user?.barangay || "your barangay"} is done. Good job disposing your trash!
                   </Text>
                 </View>
               </View>
             )}
 
-            <View style={styles.proximityActionsRow}>
-              {hasSnappedToday ? (
-                <TouchableOpacity
-                  style={[
-                    styles.proximityBtnPrimary,
-                    { backgroundColor: "#ECFDF5", borderWidth: 1.5, borderColor: "#10B981", flex: 1 },
-                  ]}
-                  onPress={() => {
-                    if (todayDisposalPhoto || selectedPhoto) {
-                      setSelectedPhoto(todayDisposalPhoto || selectedPhoto);
-                      setPhotoPreviewVisible(true);
-                    } else {
-                      Alert.alert(
-                        "Daily Snap Recorded",
-                        "You have already prepared your bin and submitted your photo for today.\n\nResets tomorrow at midnight!"
-                      );
-                    }
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="check-circle" size={18} color="#059669" />
-                  <Text style={[styles.proximityBtnPrimaryText, { color: "#059669" }]} numberOfLines={1}>
-                    {todayDisposalPhoto || selectedPhoto ? "View Prepared Bin Photo ✓" : "Bin Prepared Today ✓"}
-                  </Text>
-                </TouchableOpacity>
-              ) : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") ? (
-                <View
-                  style={[
-                    styles.proximityBtnPrimary,
-                    { backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#E5E7EB", flex: 1 },
-                  ]}
-                >
-                  <MaterialIcons name="check-circle" size={18} color="#6B7280" />
-                  <Text style={[styles.proximityBtnPrimaryText, { color: "#6B7280" }]} numberOfLines={1}>
-                    Route Completed ✓
-                  </Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.proximityBtnPrimary, { flex: 1 }]}
-                  onPress={handleOpenModal}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="checklist" size={18} color="#FFFFFF" />
-                  <Text style={styles.proximityBtnPrimaryText} numberOfLines={1}>
-                    Prepare My Bin
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Bento Grid Cards */}
-        <View style={styles.cardGrid}>
-          {/* Air Quality Card */}
-          {(() => {
-            const isCritical =
-              aqData?.status === "critical" ||
-              aqData?.airQuality === "Unhealthy" ||
-              aqData?.airQuality === "Hazardous" ||
-              aqData?.airQuality === "Critical";
-            const isModerate =
-              aqData?.status === "moderate" ||
-              aqData?.airQuality === "Moderate";
-            const activeLevel = isCritical ? 3 : isModerate ? 2 : 1;
-            const dotColor = isCritical
-              ? "#E53935"
-              : isModerate
-              ? "#F59E0B"
-              : aqData
-              ? "#10B981"
-              : "#9CA3AF";
-            const statusLabel =
-              aqData?.airQuality ||
-              (isCritical
-                ? "Poor"
-                : isModerate
-                ? "Moderate"
-                : aqData
-                ? "Good"
-                : "No data");
-            const statusColor = isCritical
-              ? "#DC2626"
-              : isModerate
-              ? "#92400E"
-              : aqData
-              ? "#065F46"
-              : "#6B7280";
-            return (
-              <View style={styles.airQualityCard}>
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.cardTitle}>{t("air_quality")}</Text>
-                    <View style={styles.statusRow}>
-                      <View
-                        style={[styles.statusDot, { backgroundColor: dotColor }]}
-                      />
-                      <Text style={[styles.statusText, { color: statusColor }]}>
-                        {`Level ${activeLevel} · ${statusLabel}`}
-                      </Text>
-                    </View>
+            {todayPickupDone && !isTruckNearOrActive && !binReady && (
+              <View style={styles.missedPickupBanner}>
+                <View style={styles.missedPickupHeader}>
+                  <View style={styles.missedPickupIconWrap}>
+                    <MaterialIcons name="event-busy" size={22} color="#D97706" />
                   </View>
-                  <MaterialIcons name="air" size={28} color="#6B7280" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.missedPickupTitle}>You Missed Today's Collection Truck</Text>
+                    <Text style={styles.missedPickupSub}>
+                      The garbage truck finished collection in {user?.barangay || "your area"} before your bin was prepared.
+                    </Text>
+                  </View>
                 </View>
+                <View style={styles.missedPickupActions}>
+                  <TouchableOpacity
+                    style={styles.missedReportBtn}
+                    onPress={() => navigation.navigate("Report")}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="report-problem" size={15} color="#92400E" />
+                    <Text style={styles.missedReportBtnText}>Report Missed Pickup</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.missedSchedBtn}
+                    onPress={() => setModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="event" size={15} color="#374151" />
+                    <Text style={styles.missedSchedBtnText}>View Schedule</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
-                {/* Mini Chart */}
-                <View style={styles.chartContainer}>
-                  {chartBars.map((bar, i) => (
-                    <View
-                      key={bar.id || i}
+            {/* LIVE RADAR & COLLECTION HERO CARD (DYNAMIC & ANIMATED) */}
+            <View style={styles.liveRadarHeroCard}>
+              {/* Header with Live Status Beacon & Points */}
+              <View style={styles.radarCardHeaderRow}>
+                <View style={styles.radarBadgeRow}>
+                  <Animated.View
+                    style={[
+                      styles.radarLiveDot,
+                      {
+                        backgroundColor:
+                          hasSnappedToday || isRouteCompleted
+                            ? "#10B981"
+                            : onlineTrucks.length > 0
+                            ? "#10B981"
+                            : "#F59E0B",
+                        opacity: onlineTrucks.length > 0 ? liveBeaconAnim : 1,
+                      },
+                    ]}
+                  />
+                  <Text style={styles.radarLiveText}>
+                    {hasSnappedToday
+                      ? "BIN PREPARED & VERIFIED"
+                      : isRouteCompleted
+                      ? "ROUTE COMPLETED TODAY"
+                      : isTruckNear
+                      ? "TRUCK APPROACHING YOUR STREET"
+                      : onlineTrucks.length > 0
+                      ? "LIVE GPS TRACKING ACTIVE"
+                      : "COLLECTION STANDBY"}
+                  </Text>
+                </View>
+                <View style={styles.radarPointsPill}>
+                  <MaterialIcons name="emoji-events" size={13} color="#D97706" />
+                  <Text style={styles.radarPointsText}>
+                    {hasSnappedToday ? "Resets Tomorrow" : "+10 Eco Pts"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Animated Radar Center Visual */}
+              <View style={styles.radarVisualContainer}>
+                {/* Expanding Concentric Pulse Waves */}
+                {onlineTrucks.length > 0 && (
+                  <>
+                    <Animated.View
                       style={[
-                        styles.chartBar,
-                        { height: bar.height, backgroundColor: bar.color },
+                        styles.radarPulseWave,
+                        {
+                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
+                          transform: [
+                            {
+                              scale: pulseAnim1.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 2.4],
+                              }),
+                            },
+                          ],
+                          opacity: pulseAnim1.interpolate({
+                            inputRange: [0, 0.7, 1],
+                            outputRange: [0.8, 0.3, 0],
+                          }),
+                        },
                       ]}
                     />
-                  ))}
-                </View>
+                    <Animated.View
+                      style={[
+                        styles.radarPulseWave,
+                        {
+                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
+                          transform: [
+                            {
+                              scale: pulseAnim2.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 2.4],
+                              }),
+                            },
+                          ],
+                          opacity: pulseAnim2.interpolate({
+                            inputRange: [0, 0.7, 1],
+                            outputRange: [0.8, 0.3, 0],
+                          }),
+                        },
+                      ]}
+                    />
+                    <Animated.View
+                      style={[
+                        styles.radarPulseWave,
+                        {
+                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
+                          transform: [
+                            {
+                              scale: pulseAnim3.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 2.4],
+                              }),
+                            },
+                          ],
+                          opacity: pulseAnim3.interpolate({
+                            inputRange: [0, 0.7, 1],
+                            outputRange: [0.8, 0.3, 0],
+                          }),
+                        },
+                      ]}
+                    />
+                  </>
+                )}
 
-                {/* 3 Levels of Air Quality */}
-                <View style={styles.levelsContainer}>
-                  {[
+                {/* Center Floating Truck Badge */}
+                <Animated.View
+                  style={[
+                    styles.radarCenterTruckBadge,
                     {
-                      level: 1,
-                      label: "Good",
-                      sub: "Clean",
-                      color: "#10B981",
-                      bg: "#ECFDF5",
-                      border: "#10B981",
+                      transform: [{ translateY: truckFloatAnim }],
+                      backgroundColor:
+                        onlineTrucks.length > 0 ? "#006A3B" : "#4B5563",
                     },
-                    {
-                      level: 2,
-                      label: "Moderate",
-                      sub: "Fair",
-                      color: "#F59E0B",
-                      bg: "#FFFBEB",
-                      border: "#F59E0B",
-                    },
-                    {
-                      level: 3,
-                      label: "Poor",
-                      sub: "Alert",
-                      color: "#EF4444",
-                      bg: "#FEF2F2",
-                      border: "#EF4444",
-                    },
-                  ].map((lvl) => {
-                    const isActive = activeLevel === lvl.level;
-                    return (
-                      <View
-                        key={lvl.level}
-                        style={[
-                          styles.levelCard,
-                          isActive
-                            ? {
-                                backgroundColor: lvl.bg,
-                                borderColor: lvl.border,
-                                borderWidth: 1.5,
-                              }
-                            : styles.levelCardInactive,
-                        ]}
-                      >
-                        <View style={styles.levelBadgeRow}>
-                          <View
-                            style={[
-                              styles.levelDot,
-                              { backgroundColor: isActive ? lvl.color : "#9CA3AF" },
-                            ]}
+                  ]}
+                >
+                  <MaterialIcons
+                    name="local-shipping"
+                    size={30}
+                    color="#FFFFFF"
+                  />
+                </Animated.View>
+              </View>
+
+              {/* Proximity Distance & Status Text */}
+              <View style={styles.radarInfoSection}>
+                <Text style={styles.radarInfoTitle}>
+                  {distToTruck !== null
+                    ? `${distToTruck}m Away from You`
+                    : onlineTrucks.length > 0
+                    ? `${onlineTrucks.length} Truck${onlineTrucks.length > 1 ? "s" : ""} Online in Cebu`
+                    : "Garbage Truck Standby"}
+                </Text>
+                <Text style={styles.radarInfoSub}>
+                  {distToTruck !== null && distToTruck < 350
+                    ? "Truck is on your street! Prepare to hand over your sorted bin."
+                    : distToTruck !== null && distToTruck < 1000
+                    ? `Estimated arrival: ~${Math.ceil(distToTruck / 200)} mins. Make sure your bin is at the curb!`
+                    : scheduledWasteType === "Di-Malata"
+                    ? "Today's stream: DI-MALATA (Recyclables & Dry Waste)."
+                    : "Today's stream: MALATA (Biodegradable & Kitchen Waste)."}
+                </Text>
+              </View>
+
+              {/* If user snapped a photo today, show the verified thumbnail */}
+              {(todayDisposalPhoto || selectedPhoto) && hasSnappedToday && (
+                <View style={styles.radarPhotoCard}>
+                  <Image
+                    source={{ uri: todayDisposalPhoto || selectedPhoto }}
+                    style={{ width: "100%", height: "100%" }}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.radarPhotoBadge}>
+                    <MaterialIcons name="verified" size={14} color="#FFFFFF" />
+                    <Text style={styles.radarPhotoBadgeText}>Disposal Verified ✓</Text>
+                  </View>
+                  <View style={styles.radarPhotoFooter}>
+                    <Text style={styles.radarPhotoFooterText} numberOfLines={1}>
+                      {user?.barangay || "Curb"} • {scheduledWasteType} Waste
+                    </Text>
+                    <Text style={styles.radarPhotoFooterPoints}>+10 Pts</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Route Stops Timeline Preview */}
+              {routeStopsData && routeStopsData.length > 0 && (
+                <View style={styles.routeTimelineBox}>
+                  <View style={styles.routeTimelineHeaderRow}>
+                    <MaterialIcons name="alt-route" size={15} color="#006A3B" />
+                    <Text style={styles.routeTimelineTitle}>Live Route Progress</Text>
+                  </View>
+                  <View style={styles.routeStopsRow}>
+                    {routeStopsData.slice(0, 4).map((stop, idx) => (
+                      <View key={idx} style={styles.routeStopItem}>
+                        <View
+                          style={[
+                            styles.routeStopDot,
+                            stop.isCompleted && { backgroundColor: "#10B981" },
+                            stop.isActive && { backgroundColor: "#006A3B" },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name={stop.isCompleted ? "check" : stop.isActive ? "local-shipping" : "place"}
+                            size={12}
+                            color={stop.isCompleted || stop.isActive ? "#FFFFFF" : "#9CA3AF"}
                           />
-                          <Text
-                            style={[
-                              styles.levelNumText,
-                              { color: isActive ? lvl.color : "#9CA3AF" },
-                            ]}
-                          >
-                            Level {lvl.level}
-                          </Text>
                         </View>
                         <Text
                           style={[
-                            styles.levelTitleText,
-                            {
-                              color: isActive ? "#111827" : "#6B7280",
-                              fontWeight: isActive ? "700" : "500",
-                            },
+                            styles.routeStopName,
+                            (stop.isCompleted || stop.isActive) && { color: "#111827", fontWeight: "700" },
                           ]}
                           numberOfLines={1}
                         >
-                          {lvl.label}
+                          {stop.name}
                         </Text>
-                        <Text
-                          style={[
-                            styles.levelSubText,
-                            { color: isActive ? lvl.color : "#9CA3AF" },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {lvl.sub}
+                        <Text style={styles.routeStopStatusText}>
+                          {stop.status}
                         </Text>
                       </View>
-                    );
-                  })}
+                    ))}
+                  </View>
                 </View>
-              </View>
-            );
-          })()}
+              )}
 
-          {/* Upcoming Collection Card */}
-          <View style={styles.collectionCard}>
-            <View style={styles.collectionContent}>
-              <View style={styles.collectionHeader}>
-                <View style={styles.truckIconContainer}>
-                  <MaterialIcons
-                    name="local-shipping"
-                    size={24}
-                    color="#FFFFFF"
-                  />
-                </View>
-                <View>
-                  <Text style={styles.collectionLabel}>
-                    {t("upcoming_collection")}
-                  </Text>
-                  {isLoading ? (
-                    <ActivityIndicator
-                      size="small"
-                      color="#FFFFFF"
-                      style={{ marginTop: 4 }}
-                    />
-                  ) : firstSchedule ? (
-                    <Text style={styles.collectionTime}>
-                      Today {firstSchedule.startTime ? `· ${firstSchedule.startTime}` : "· Scheduled"}
+              {/* Primary Call-to-Actions */}
+              <View style={styles.radarActionButtonsRow}>
+                {hasSnappedToday ? (
+                  <TouchableOpacity
+                    style={[styles.radarBtnPrimary, { backgroundColor: "#ECFDF5" }]}
+                    onPress={() => {
+                      if (todayDisposalPhoto || selectedPhoto) {
+                        setSelectedPhoto(todayDisposalPhoto || selectedPhoto);
+                        setPhotoPreviewVisible(true);
+                      } else {
+                        Alert.alert("Daily Snap Recorded", "You have submitted your daily bin photo. Resets tomorrow at midnight!");
+                      }
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons name="check-circle" size={18} color="#059669" />
+                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#059669" }]}>
+                      {todayDisposalPhoto || selectedPhoto ? "View Bin Photo ✓" : "Bin Prepared Today ✓"}
                     </Text>
-                  ) : (
-                    <Text style={styles.collectionTime}>
-                      No collection today
+                  </TouchableOpacity>
+                ) : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") ? (
+                  <View style={[styles.radarBtnPrimary, { backgroundColor: "#F3F4F6" }]}>
+                    <MaterialIcons name="check-circle" size={18} color="#6B7280" />
+                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#6B7280" }]}>
+                      Route Completed ✓
                     </Text>
-                  )}
-                </View>
-              </View>
+                  </View>
+                ) : hasActiveTruckOrSchedule ? (
+                  <TouchableOpacity
+                    style={styles.radarBtnPrimary}
+                    onPress={handleOpenModal}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons name="checklist" size={18} color="#FFFFFF" />
+                    <Text numberOfLines={1} style={styles.radarBtnPrimaryText}>
+                      Prepare My Bin (+10 Pts)
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.radarBtnPrimary, { backgroundColor: "#F3F4F6" }]}
+                    onPress={() => navigation.navigate("Calendar")}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons name="event-note" size={18} color="#4B5563" />
+                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#4B5563" }]}>
+                      View Collection Schedule
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-              <View style={styles.collectionDetails}>
-                <View style={[styles.detailRow, { flexDirection: "column", alignItems: "flex-start", gap: 4 }]}>
-                  <Text style={styles.detailLabel}>Route</Text>
-                  <Text style={[styles.detailValue, { textAlign: "left", width: "100%", marginTop: 2 }]}>
-                    {firstSchedule?.routeName || "—"}
-                  </Text>
-                </View>
-                {firstSchedule && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Waste Category</Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                      <MaterialIcons
-                        name={firstSchedule.wasteType === "Di-Malata" ? "recycling" : "eco"}
-                        size={15}
-                        color={firstSchedule.wasteType === "Di-Malata" ? "#93C5FD" : "#A7F3D0"}
-                      />
-                      <Text style={[styles.detailValue, { color: firstSchedule.wasteType === "Di-Malata" ? "#BFDBFE" : "#D1FAE5", fontWeight: "800" }]}>
-                        {firstSchedule.wasteType === "Di-Malata" ? "DI-MALATA (Non-Bio)" : "MALATA (Biodegradable)"}
+                <TouchableOpacity
+                  style={styles.radarBtnSecondary}
+                  onPress={() => navigation.navigate("Map")}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="navigation" size={17} color="#006A3B" />
+                  <Text numberOfLines={1} style={styles.radarBtnSecondaryText}>Live Map</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Quick Actions Grid */}
+            <View style={styles.quickActionsSection}>
+              <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
+              <View style={styles.quickActionsGrid}>
+                {hasActiveTruckOrSchedule ? (
+                  /* Snap Bin (Only shown when truck or schedule is active) */
+                  <TouchableOpacity
+                    style={styles.quickActionTile}
+                    onPress={handleOpenModal}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.quickActionIconWrap, { backgroundColor: "#ECFDF5" }]}>
+                      <MaterialIcons name="photo-camera" size={22} color="#059669" />
+                    </View>
+                    <Text style={styles.quickActionTileTitle}>Daily Snap</Text>
+                    <Text style={styles.quickActionTileSub}>+10 Pts</Text>
+                  </TouchableOpacity>
+                ) : (
+                  /* Community Feed (Shown when no active route) */
+                  <TouchableOpacity
+                    style={styles.quickActionTile}
+                    onPress={() => navigation.navigate("Community")}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.quickActionIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                      <MaterialIcons name="campaign" size={22} color="#2563EB" />
+                    </View>
+                    <Text style={styles.quickActionTileTitle}>Community</Text>
+                    <Text style={styles.quickActionTileSub}>Updates</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Live GPS */}
+                <TouchableOpacity
+                  style={styles.quickActionTile}
+                  onPress={() => navigation.navigate("Map")}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                    <MaterialIcons name="map" size={22} color="#2563EB" />
+                  </View>
+                  <Text style={styles.quickActionTileTitle}>Live GPS</Text>
+                  <Text style={styles.quickActionTileSub}>Track Truck</Text>
+                </TouchableOpacity>
+
+                {/* Schedules */}
+                <TouchableOpacity
+                  style={styles.quickActionTile}
+                  onPress={() => navigation.navigate("Calendar")}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                    <MaterialIcons name="event-note" size={22} color="#D97706" />
+                  </View>
+                  <Text style={styles.quickActionTileTitle}>Schedule</Text>
+                  <Text style={styles.quickActionTileSub}>View Routes</Text>
+                </TouchableOpacity>
+
+                {/* Report Issue */}
+                <TouchableOpacity
+                  style={styles.quickActionTile}
+                  onPress={() => navigation.navigate("Report")}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#FEE2E2" }]}>
+                    <MaterialIcons name="report-problem" size={22} color="#DC2626" />
+                  </View>
+                  <Text style={styles.quickActionTileTitle}>Report</Text>
+                  <Text style={styles.quickActionTileSub}>File Issue</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* INTERACTIVE WASTE SEGREGATION GUIDE CARD */}
+            {(() => {
+              const currentTab = activeSegregationTab || (scheduledWasteType === "Di-Malata" ? "di_malata" : "malata");
+              const isMalata = currentTab === "malata";
+
+              return (
+                <View style={styles.segregationGuideCard}>
+                  <View style={styles.segregationGuideHeader}>
+                    <View>
+                      <Text style={styles.segregationGuideTitle}>Waste Segregation Guide</Text>
+                      <Text style={styles.segregationGuideSub}>
+                        Tap to learn proper sorting rules for Cebu
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.todayFocusPill,
+                        scheduledWasteType === "Di-Malata"
+                          ? { backgroundColor: "#EFF6FF" }
+                          : { backgroundColor: "#ECFDF5" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.todayFocusText,
+                          scheduledWasteType === "Di-Malata" ? { color: "#1D4ED8" } : { color: "#065F46" },
+                        ]}
+                      >
+                        Today: {scheduledWasteType}
                       </Text>
                     </View>
                   </View>
-                )}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Driver</Text>
-                  <Text style={styles.detailValue}>
-                    {firstSchedule?.driverName || "—"}
-                  </Text>
-                </View>
-              </View>
 
-              {(() => {
-                const isCompleted = isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed";
-                const truckActive = onlineTrucks.length > 0;
-                const canPrepare = firstSchedule && truckActive && !binReady && !isCompleted;
-                const btnStyle = binReady
-                  ? styles.prepareButtonReady
-                  : isCompleted
-                    ? styles.prepareButtonLocked
-                    : (!firstSchedule || !truckActive)
-                      ? styles.prepareButtonLocked
-                      : null;
-                return (
-                  <TouchableOpacity
-                    style={[styles.prepareButton, btnStyle]}
-                    onPress={canPrepare ? handleOpenModal : (isCompleted ? () => {
-                      Alert.alert(
-                        "Route Completed",
-                        "The garbage truck has already completed its collection route in your area for today.",
-                        [{ text: "OK" }],
-                      );
-                    } : undefined)}
-                    activeOpacity={canPrepare ? 0.8 : 1}
-                    disabled={!canPrepare && !isCompleted}
-                  >
-                    <View style={styles.prepareButtonInner}>
+                  {/* Interactive Category Switcher Tabs */}
+                  <View style={styles.segregationTabsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.segregationTabBtn,
+                        isMalata && styles.segregationTabBtnActiveMalata,
+                      ]}
+                      onPress={() => setActiveSegregationTab("malata")}
+                      activeOpacity={0.8}
+                    >
                       <MaterialIcons
-                        name={binReady ? "check-circle" : isCompleted ? "check-circle" : firstSchedule && !truckActive ? "lock" : "delete-outline"}
-                        size={18}
-                        color={binReady ? "#006A3B" : isCompleted ? "#6B7280" : (!firstSchedule || !truckActive) ? "#9CA3AF" : "#006A3B"}
+                        name="eco"
+                        size={17}
+                        color={isMalata ? "#047857" : "#6B7280"}
                       />
-                      <Text style={[
-                        styles.prepareButtonText,
-                        (isCompleted || (!firstSchedule || !truckActive)) && !binReady && styles.prepareButtonTextLocked,
-                      ]}>
-                        {binReady
-                          ? "Bin Ready ✓"
-                          : isCompleted
-                            ? "Route Completed ✓"
-                            : !firstSchedule
-                              ? t("no_activity")
-                              : !truckActive
-                                ? "Waiting for truck..."
-                                : t("prepare_bin")}
+                      <Text
+                        style={[
+                          styles.segregationTabBtnText,
+                          isMalata && styles.segregationTabBtnTextActiveMalata,
+                        ]}
+                      >
+                        Malata (Bio)
                       </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.segregationTabBtn,
+                        !isMalata && styles.segregationTabBtnActiveDiMalata,
+                      ]}
+                      onPress={() => setActiveSegregationTab("di_malata")}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name="recycling"
+                        size={17}
+                        color={!isMalata ? "#1D4ED8" : "#6B7280"}
+                      />
+                      <Text
+                        style={[
+                          styles.segregationTabBtnText,
+                          !isMalata && styles.segregationTabBtnTextActiveDiMalata,
+                        ]}
+                      >
+                        Di-Malata (Non-Bio)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Tab Body Content */}
+                  {isMalata ? (
+                    <View style={styles.segregationTabBody}>
+                      <View style={styles.segregationGrid}>
+                        <View style={styles.segregationColAccept}>
+                          <View style={styles.segregationColHeader}>
+                            <MaterialIcons name="check-circle" size={14} color="#059669" />
+                            <Text style={styles.segregationColAcceptTitle}>PUT IN GREEN BIN</Text>
+                          </View>
+                          <Text style={styles.segregationItemText}>• Food leftovers & rice</Text>
+                          <Text style={styles.segregationItemText}>• Fruit & veggie peels</Text>
+                          <Text style={styles.segregationItemText}>• Fish & chicken bones</Text>
+                          <Text style={styles.segregationItemText}>• Leaves & garden twigs</Text>
+                        </View>
+
+                        <View style={styles.segregationColReject}>
+                          <View style={styles.segregationColHeader}>
+                            <MaterialIcons name="cancel" size={14} color="#DC2626" />
+                            <Text style={styles.segregationColRejectTitle}>HOLD / DO NOT MIX</Text>
+                          </View>
+                          <Text style={styles.segregationItemTextReject}>• Plastic bags & wrap</Text>
+                          <Text style={styles.segregationItemTextReject}>• Bottles & soda cans</Text>
+                          <Text style={styles.segregationItemTextReject}>• Foil packs & styro</Text>
+                          <Text style={styles.segregationItemTextReject}>• Diapers & batteries</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.segregationTipBanner}>
+                        <MaterialIcons name="tips-and-updates" size={16} color="#047857" />
+                        <Text style={styles.segregationTipText}>
+                          Clean biodegradable waste produces compost fertilizer for barangay urban gardens!
+                        </Text>
+                      </View>
                     </View>
-                  </TouchableOpacity>
-                );
-              })()}
-            </View>
+                  ) : (
+                    <View style={styles.segregationTabBody}>
+                      <View style={styles.segregationGrid}>
+                        <View style={styles.segregationColAcceptBlue}>
+                          <View style={styles.segregationColHeader}>
+                            <MaterialIcons name="check-circle" size={14} color="#2563EB" />
+                            <Text style={styles.segregationColAcceptTitleBlue}>PUT IN BLUE/DRY BIN</Text>
+                          </View>
+                          <Text style={styles.segregationItemText}>• Clean plastic bottles</Text>
+                          <Text style={styles.segregationItemText}>• Tin & aluminum cans</Text>
+                          <Text style={styles.segregationItemText}>• Flattened cartons</Text>
+                          <Text style={styles.segregationItemText}>• Dry paper & wrappers</Text>
+                        </View>
 
-            <View style={styles.decorativeIcon}>
-              <MaterialIcons name="recycling" size={80} color="#1D6B39" />
-            </View>
-          </View>
-        </View>
+                        <View style={styles.segregationColReject}>
+                          <View style={styles.segregationColHeader}>
+                            <MaterialIcons name="cancel" size={14} color="#DC2626" />
+                            <Text style={styles.segregationColRejectTitle}>HOLD / DO NOT MIX</Text>
+                          </View>
+                          <Text style={styles.segregationItemTextReject}>• Wet leftover food</Text>
+                          <Text style={styles.segregationItemTextReject}>• Oily & greasy scraps</Text>
+                          <Text style={styles.segregationItemTextReject}>• Wet soil & garden dirt</Text>
+                          <Text style={styles.segregationItemTextReject}>• Bio / food wastes</Text>
+                        </View>
+                      </View>
 
-        {/* Quick Report Section */}
-        <View style={styles.quickReportSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Report an Issue</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Report")}>
-              <Text style={styles.viewAllText}>New Report</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.quickReportCard}>
-            <View style={styles.quickReportInfo}>
-              <Text style={styles.quickReportTitle}>See a trash problem?</Text>
-              <Text style={styles.quickReportSubtitle}>
-                Report it now to help keep the community clean.
-              </Text>
-              <TouchableOpacity
-                style={styles.reportNowBtn}
-                onPress={() => navigation.navigate("Report")}
-              >
-                <Text style={styles.reportNowBtnText}>Report Now</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.quickReportIcon}>
-              <MaterialIcons name="add-a-photo" size={48} color="#BA1A1A" />
-            </View>
-          </View>
-        </View>
+                      <View style={[styles.segregationTipBanner, { backgroundColor: "#EFF6FF" }]}>
+                        <MaterialIcons name="tips-and-updates" size={16} color="#1D4ED8" />
+                        <Text style={[styles.segregationTipText, { color: "#1E40AF" }]}>
+                          Rinse plastic bottles and flatten cardboard boxes to maximize collection efficiency!
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+          </>
+        )}
       </ScrollView>
 
       {/* Bin Prep Modal with Dedicated Segregation Teaching */}
@@ -2739,7 +2989,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#FBF9F8",
+    backgroundColor: "#F8FAFC",
   },
   fixedHeader: {
     flexDirection: "row",
@@ -2749,7 +2999,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#E2E8F0",
   },
   headerLeft: {
     flexDirection: "row",
@@ -2785,8 +3035,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#006A3B",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
     shadowColor: "#006A3B",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -2824,27 +3072,27 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   greeting: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: "#1B1C1C",
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0F172A",
     letterSpacing: -0.4,
-    lineHeight: 41,
+    lineHeight: 32,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    marginTop: 4,
-    lineHeight: 20,
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 18,
   },
   cardGrid: {
-    gap: 12,
-    marginBottom: 32,
+    gap: 16,
+    marginBottom: 28,
   },
   pickupDoneBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#F0FFF4",
+    backgroundColor: "#F0FDF4",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#BBF7D0",
@@ -2864,13 +3112,14 @@ const styles = StyleSheet.create({
   },
   airQualityCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: "row",
@@ -2880,8 +3129,8 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
+    fontWeight: "800",
+    color: "#0F172A",
     marginBottom: 4,
   },
   statusRow: {
@@ -2919,18 +3168,18 @@ const styles = StyleSheet.create({
   },
   levelCard: {
     flex: 1,
+    minWidth: 0,
     paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 4,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
   },
   levelCardInactive: {
-    backgroundColor: "#F9FAFB",
-    borderColor: "#E5E7EB",
     opacity: 0.65,
+    borderColor: "#F1F5F9",
   },
   levelBadgeRow: {
     flexDirection: "row",
@@ -2980,15 +3229,15 @@ const styles = StyleSheet.create({
     color: "#1B1C1C",
   },
   collectionCard: {
-    backgroundColor: "#006A3B",
-    borderRadius: 24,
-    padding: 16,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 30,
-    elevation: 5,
-    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   collectionContent: {
     zIndex: 1,
@@ -2997,56 +3246,63 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   truckIconContainer: {
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: "#338862",
+    backgroundColor: "#ECFDF5",
     justifyContent: "center",
     alignItems: "center",
   },
   collectionLabel: {
-    fontSize: 17,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#CCE1D8",
+    color: "#64748B",
   },
   collectionTime: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
   },
   collectionDetails: {
-    gap: 12,
+    gap: 4,
   },
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: "#19784E",
+    borderTopColor: "#F8FAFC",
   },
   detailLabel: {
     fontSize: 13,
-    color: "#B3D2C4",
+    color: "#64748B",
   },
   detailValue: {
     fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontWeight: "700",
+    color: "#0F172A",
   },
   prepareButton: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 24,
+    backgroundColor: "#006A3B",
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginTop: 16,
     alignItems: "center",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   prepareButtonReady: {
-    backgroundColor: "#D9E9E2",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
   },
   prepareButtonLocked: {
     backgroundColor: "#F3F4F6",
@@ -3060,9 +3316,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   prepareButtonText: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#006A3B",
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   modalOverlay: {
     flex: 1,
@@ -3112,24 +3368,18 @@ const styles = StyleSheet.create({
   sortingTeacherCardMalata: {
     backgroundColor: "#ECFDF5",
     borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: "#A7F3D0",
     padding: 14,
     marginBottom: 16,
   },
   sortingTeacherCardDiMalata: {
     backgroundColor: "#EFF6FF",
     borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: "#BFDBFE",
     padding: 14,
     marginBottom: 16,
   },
   sortingTeacherCardGeneral: {
     backgroundColor: "#F8FAFC",
     borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
     padding: 14,
     marginBottom: 16,
   },
@@ -3169,35 +3419,30 @@ const styles = StyleSheet.create({
   },
   sortingAcceptCol: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 10,
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
   },
   sortingAcceptColBlue: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 10,
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
   },
   sortingRejectCol: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 10,
-    borderWidth: 1,
-    borderColor: "#FECACA",
   },
   sortingColHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     marginBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
     paddingBottom: 4,
   },
   sortingColHeaderAccept: {
@@ -3345,10 +3590,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   decorativeIcon: {
-    position: "absolute",
-    right: -16,
-    bottom: -16,
-    opacity: 0.15,
+    display: "none",
   },
   truckStatusSection: {
     marginBottom: 24,
@@ -3489,8 +3731,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: "#D4EDDA",
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#AAD3BA",
     position: "relative",
     marginBottom: 40,
     justifyContent: "center",
@@ -3603,38 +3843,41 @@ const styles = StyleSheet.create({
   quickReportCard: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 30,
-    elevation: 3,
+    borderRadius: 22,
+    padding: 18,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#F0EDED",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   quickReportInfo: {
     flex: 1,
   },
   quickReportTitle: {
     fontSize: 17,
-    fontWeight: "700",
-    color: "#1B1C1C",
+    fontWeight: "800",
+    color: "#0F172A",
     marginBottom: 4,
   },
   quickReportSubtitle: {
     fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 16,
+    color: "#64748B",
+    marginBottom: 14,
     lineHeight: 18,
   },
   reportNowBtn: {
     backgroundColor: "#BA1A1A",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: 12,
     alignSelf: "flex-start",
+    shadowColor: "#BA1A1A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   reportNowBtnText: {
     color: "#FFFFFF",
@@ -3745,39 +3988,37 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.2,
   },
-  // 3-Column Status Card Styles
   statusThreeColCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    marginBottom: 18,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.04,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
+    shadowRadius: 10,
+    elevation: 2,
   },
   statusColItem: {
     flex: 1,
+    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   statusColIconWrap: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   statusColValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
   },
@@ -3795,12 +4036,12 @@ const styles = StyleSheet.create({
   },
   // Missed Pickup Banner Styles
   missedPickupBanner: {
-    backgroundColor: "#FEF3C7",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#FDE68A",
+    padding: 14,
+    marginBottom: 16,
   },
   missedPickupHeader: {
     flexDirection: "row",
@@ -3856,8 +4097,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     paddingVertical: 10,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
   },
   missedSchedBtnText: {
     fontSize: 12,
@@ -3867,17 +4106,9 @@ const styles = StyleSheet.create({
 
   // Proximity Card Styles
   proximityCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 20,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#E6F4EA",
   },
   proximityCardHeader: {
     flexDirection: "row",
@@ -3975,8 +4206,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderRadius: 16,
     padding: 14,
     marginTop: 18,
@@ -4003,8 +4232,6 @@ const styles = StyleSheet.create({
   },
   snapPromptActiveCard: {
     backgroundColor: "#ECFDF5",
-    borderWidth: 1.5,
-    borderColor: "#A7F3D0",
     borderRadius: 18,
     padding: 16,
     marginTop: 18,
@@ -4059,9 +4286,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#006A3B",
+    backgroundColor: "#E6F4EA",
     paddingVertical: 13,
     borderRadius: 14,
     gap: 6,
@@ -4081,8 +4306,6 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     gap: 12,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   choiceIconWrap: {
     width: 42,
@@ -4223,8 +4446,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(17, 24, 39, 0.82)",
-    borderColor: "rgba(245, 158, 11, 0.4)",
-    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -4242,8 +4463,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     borderRadius: 16,
     padding: 12,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   motivationHeaderRow: {
     flexDirection: "row",
@@ -4264,9 +4483,7 @@ const styles = StyleSheet.create({
   motivationChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E5E7EB",
-    borderWidth: 1,
+    backgroundColor: "#F3F4F6",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
@@ -4274,7 +4491,6 @@ const styles = StyleSheet.create({
   },
   motivationChipSelected: {
     backgroundColor: "#006A3B",
-    borderColor: "#006A3B",
   },
   motivationChipText: {
     fontSize: 11,
@@ -4289,8 +4505,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ECFDF5",
-    borderColor: "#A7F3D0",
-    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -4380,8 +4594,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: "center",
     justifyContent: "space-around",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   rewardSummaryItem: {
     alignItems: "center",
@@ -4465,18 +4677,9 @@ const styles = StyleSheet.create({
   streaksHeroCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 20,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   streaksHeroItem: {
     flexDirection: "row",
@@ -4524,17 +4727,9 @@ const styles = StyleSheet.create({
 
   // Status and Analysis Card Styles
   statusAnalysisCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 20,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#E6F4EA",
   },
   statusAnalysisHeader: {
     flexDirection: "row",
@@ -4566,7 +4761,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    borderWidth: 1,
     gap: 5,
   },
   liveDot: {
@@ -4584,8 +4778,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0FFF4",
     padding: 12,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
     gap: 10,
     marginBottom: 14,
   },
@@ -4601,8 +4793,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     borderRadius: 16,
     padding: 12,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
   },
   analysisStatItem: {
     flex: 1,
@@ -4624,12 +4814,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   pickupPreInfoCard: {
-    backgroundColor: "#EBF3EE",
+    backgroundColor: "#F0FDF4",
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
     padding: 14,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#C8DDD4",
   },
   pickupPreInfoHeader: {
     flexDirection: "row",
@@ -4653,5 +4843,489 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#404943",
     marginTop: 2,
+  },
+
+  // Dynamic Greeting Header & Live Beacon
+  greetingHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  liveStatusBeaconPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 6,
+  },
+  liveStatusBeaconDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  liveStatusBeaconText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+
+  // Live Radar & Collection Hero Card
+  liveRadarHeroCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  radarCardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  radarBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  radarLiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  radarLiveText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#065F46",
+    letterSpacing: 0.4,
+    flexShrink: 1,
+  },
+  radarPointsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  radarPointsText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#D97706",
+  },
+  radarVisualContainer: {
+    height: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    marginVertical: 6,
+  },
+  radarPulseWave: {
+    position: "absolute",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
+  },
+  radarCenterTruckBadge: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  radarInfoSection: {
+    alignItems: "center",
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  radarInfoTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  radarInfoSub: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 19,
+    paddingHorizontal: 12,
+  },
+  radarPhotoCard: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderRadius: 14,
+    overflow: "hidden",
+    height: 160,
+    position: "relative",
+  },
+  radarPhotoBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "rgba(5, 150, 105, 0.9)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  radarPhotoBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  radarPhotoFooter: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.68)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  radarPhotoFooterText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  radarPhotoFooterPoints: {
+    color: "#FCD34D",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  // Route Stops Timeline Preview
+  routeTimelineBox: {
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    marginBottom: 14,
+  },
+  routeTimelineHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  routeTimelineTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  routeStopsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  routeStopItem: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 2,
+  },
+  routeStopDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  routeStopName: {
+    fontSize: 10,
+    color: "#6B7280",
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  routeStopStatusText: {
+    fontSize: 8,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 1,
+    fontWeight: "600",
+  },
+
+  // Radar Action Buttons
+  radarActionButtonsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 10,
+    marginTop: 4,
+  },
+  radarBtnPrimary: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    gap: 6,
+    shadowColor: "#006A3B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  radarBtnPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
+  radarBtnSecondary: {
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1.5,
+    borderColor: "#006A3B",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 6,
+  },
+  radarBtnSecondaryText: {
+    color: "#006A3B",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Quick Actions Section
+  quickActionsSection: {
+    marginBottom: 20,
+  },
+  sectionHeaderTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 12,
+    letterSpacing: -0.2,
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  quickActionTile: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  quickActionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  quickActionTileTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  quickActionTileSub: {
+    fontSize: 10,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 1,
+    fontWeight: "500",
+  },
+
+  // Interactive Waste Segregation Guide
+  segregationGuideCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  segregationGuideHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 14,
+  },
+  segregationGuideTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  segregationGuideSub: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  todayFocusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  todayFocusText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  segregationTabsRow: {
+    flexDirection: "row",
+    marginBottom: 12,
+    gap: 8,
+  },
+  segregationTabBtn: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#F3F4F6",
+    gap: 5,
+  },
+  segregationTabBtnActiveMalata: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  segregationTabBtnActiveDiMalata: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  segregationTabBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  segregationTabBtnTextActiveMalata: {
+    color: "#047857",
+    fontWeight: "700",
+  },
+  segregationTabBtnTextActiveDiMalata: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+  },
+  segregationTabBody: {
+    gap: 10,
+  },
+  segregationGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  segregationColAccept: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    padding: 10,
+  },
+  segregationColAcceptBlue: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    padding: 10,
+  },
+  segregationColReject: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    padding: 10,
+  },
+  segregationColHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+  },
+  segregationColAcceptTitle: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#059669",
+  },
+  segregationColAcceptTitleBlue: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#2563EB",
+  },
+  segregationColRejectTitle: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#DC2626",
+  },
+  segregationItemText: {
+    fontSize: 11,
+    color: "#374151",
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  segregationItemTextReject: {
+    fontSize: 11,
+    color: "#4B5563",
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  segregationTipBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    padding: 10,
+    gap: 8,
+  },
+  segregationTipText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#065F46",
+    lineHeight: 15,
   },
 });

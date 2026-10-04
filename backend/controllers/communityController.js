@@ -53,8 +53,10 @@ exports.createCleanupPost = async (req, res, next) => {
       });
     }
 
-    if (barangay) {
-      await addBarangayScore(barangay, 5, "collectionScore", "pickupCount", "Pickup logged from device").catch(() => {});
+    if (barangay && !post.pointsAwarded) {
+      post.pointsAwarded = true;
+      await post.save();
+      await addBarangayScore(barangay, 5, "collectionScore", "pickupCount", "Cleanup photo approved & verified (+5 pts)").catch(() => {});
     }
 
     const io = getIO();

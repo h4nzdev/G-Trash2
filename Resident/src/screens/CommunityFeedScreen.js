@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
+  ScrollView,
   FlatList,
   TouchableOpacity,
   Image,
@@ -27,6 +28,7 @@ import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import colors from "../constants/colors";
+import { CommunityFeedSkeleton } from "../components/Skeleton";
 
 const { width } = Dimensions.get("window");
 
@@ -435,6 +437,11 @@ export default function CommunityFeedScreen() {
             try {
               const res = await fetch(`${API_URL}/api/reports/${reportId}`, {
                 method: "DELETE",
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
+                },
+                body: JSON.stringify({ userId: user?.id || user?._id }),
               });
               if (!res.ok) throw new Error();
               setReports((prev) => prev.filter((r) => r._id !== reportId));
@@ -846,15 +853,6 @@ export default function CommunityFeedScreen() {
     );
   };
 
-  if (isLoading && !isRefreshing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primaryGreen} />
-        <Text style={styles.loadingText}>Loading Community Feed...</Text>
-      </View>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -903,7 +901,11 @@ export default function CommunityFeedScreen() {
         </View>
       </View>
 
-      {activeTab === 'feed' ? (
+      {isLoading && !isRefreshing ? (
+        <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+          <CommunityFeedSkeleton />
+        </ScrollView>
+      ) : activeTab === 'feed' ? (
         <FlatList
           data={feedItems}
           renderItem={renderFeedItem}

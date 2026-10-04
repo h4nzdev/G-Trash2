@@ -16,6 +16,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { toast } from "sonner";
 import API from "../config";
 
 const CATEGORIES = [
@@ -145,6 +146,7 @@ function RewardModal({ reward, onClose, onSaved, official }) {
             ? { action: "publish", issuedByName: official?.name }
             : {}),
         });
+        toast.success(publish ? "Reward published successfully!" : "Reward updated successfully!");
         onSaved(data);
       } else {
         const { data } = await axios.post(`${API}/api/rewards`, {
@@ -152,10 +154,13 @@ function RewardModal({ reward, onClose, onSaved, official }) {
           publish,
           issuedByName: official?.name,
         });
+        toast.success(publish ? "Reward created and published!" : "Reward saved as draft!");
         onSaved(data);
       }
     } catch (e) {
-      setError(e.response?.data?.error || "Failed to save reward.");
+      const errMsg = e.response?.data?.error || "Failed to save reward.";
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setSaving(false);
     }
@@ -497,6 +502,7 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
       );
       setCurrentSig(up.url);
       setSigSaved(true);
+      toast.success("Signature saved successfully!");
       setTimeout(() => {
         setSigSaved(false);
         setShowSigPad(false);
@@ -504,6 +510,7 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
       onUpdated(updated);
     } catch {
       setError("Failed to save signature.");
+      toast.error("Failed to save signature.");
     } finally {
       setSigSaving(false);
     }
@@ -517,13 +524,17 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
         action,
         issuedByName: official?.name,
       });
+      toast.success(`Reward ${action}ed successfully!`);
       onUpdated(data);
     } catch (e) {
       if (e.response?.data?.revoked) {
+        toast.info("Reward revoked.");
         onUpdated(null);
         return;
       }
-      setError(e.response?.data?.error || "Action failed.");
+      const errMsg = e.response?.data?.error || "Action failed.";
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -535,9 +546,12 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
       await axios.patch(`${API}/api/rewards/${reward._id}`, {
         action: "revoke",
       });
+      toast.success("Reward revoked successfully.");
       onUpdated(null);
     } catch (e) {
-      setError(e.response?.data?.error || "Revoke failed.");
+      const errMsg = e.response?.data?.error || "Revoke failed.";
+      setError(errMsg);
+      toast.error(errMsg);
       setLoading(false);
     }
   };

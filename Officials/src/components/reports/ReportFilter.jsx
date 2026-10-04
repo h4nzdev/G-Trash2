@@ -1,11 +1,10 @@
 import { Search, Filter } from 'lucide-react';
 
 const statuses = ['All', 'Pending', 'In Progress', 'Resolved'];
-const barangays = ['All Barangays', 'IT Park', 'Lahug', 'Ayala', 'Banilad', 'Talamban', 'Mabolo', 'Carbon Market', 'Ermita', 'Sto. Niño'];
 const priorities = ['All Priorities', 'Critical', 'High', 'Medium', 'Low'];
 const sortOptions = ['Newest', 'Oldest', 'Highest Urgency'];
 
-export default function ReportFilter({ filters, onChange, sitios = [], official }) {
+export default function ReportFilter({ filters, onChange, sitios = [] }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -49,27 +48,6 @@ export default function ReportFilter({ filters, onChange, sitios = [], official 
             {sortOptions.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-
-        {/* Barangay */}
-        {(() => {
-          const isRestricted = official?.barangay && official.barangay !== 'All';
-          return (
-            <select
-              value={filters.barangay}
-              onChange={(e) => onChange({ ...filters, barangay: e.target.value })}
-              disabled={isRestricted}
-              className={`px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 ${
-                isRestricted ? 'opacity-70 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
-              }`}
-            >
-              {isRestricted ? (
-                <option value={official.barangay}>{official.barangay}</option>
-              ) : (
-                barangays.map((b) => <option key={b}>{b}</option>)
-              )}
-            </select>
-          );
-        })()}
 
         {/* Sitio */}
         {sitios.length > 0 && (

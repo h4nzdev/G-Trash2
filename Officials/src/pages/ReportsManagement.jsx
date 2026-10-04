@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { toast } from "sonner";
 import {
   X,
   MapPin,
@@ -17,7 +18,6 @@ import {
   ThumbsDown,
   Truck,
   Route,
-  Sparkles,
   Zap,
   ChevronRight,
   Heart,
@@ -38,11 +38,7 @@ import ResidentDisposalTable from "../components/reports/ResidentDisposalTable";
 import Badge from "../components/shared/Badge";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
-
-function slaHoursLeft(deadline) {
-  if (!deadline) return null;
-  return Math.ceil((new Date(deadline) - Date.now()) / 3600000);
-}
+import { getSlaStatus } from "../utils/sla";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -54,20 +50,35 @@ function timeAgo(dateStr) {
 }
 
 export default function ReportsManagement() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user: official } = useAuth();
-  const isChd = official?.role === "chd_official";
+  const isChd = official?.role === "chd_official" || official?.role === "chd";
+  const isSystemAdmin = official?.role === "superadmin" || official?.role === "admin" || official?.role === "system_admin";
+  const canDeleteReport = (report) =>
+    isSystemAdmin ||
+    !!(report?.userId && String(report.userId) === String(official?.id || official?._id));
+
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "All",
+    priority: "All Priorities",
+    barangay:
+      official?.barangay && official.barangay !== "All"
+        ? official.barangay
+        : "All Barangays",
+    sitio: "All Sitios",
+    sortBy: "Newest",
+    healthOnly: false,
+  });
 
   const [reportList, setReportList] = useState([]);
   const [fleet, setFleet] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "incidents");
   const [activeView, setActiveView] = useState("reports");
   const [selectedReport, setSelectedReport] = useState(null);
   const [selectedTruckId, setSelectedTruckId] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [flagging, setFlagging] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteModal, setDeleteModal] = useState({
@@ -85,6 +96,7 @@ export default function ReportsManagement() {
   const [dispatchingImmediate, setDispatchingImmediate] = useState(false);
   const [applyingSchedule, setApplyingSchedule] = useState(false);
   const [notifyCommunity, setNotifyCommunity] = useState(true);
+  const [allowRedispatch, setAllowRedispatch] = useState(false);
 
   // Auto-detect truck-submitted clean-up photo for the selected report
   const availableTruckProof = useMemo(() => {
@@ -263,60 +275,7 @@ export default function ReportsManagement() {
     );
     setProofSource(hasTruckPhoto ? "truck" : "official");
     setDispatchMode("next_schedule");
-    setSuggestions([]);
-    setSuggestionsLoading(true);
-    axios
-      .get(`${API}/api/reports/${r._id}/suggestions`)
-      .then(({ data }) => setSuggestions(data))
-      .catch(() => {})
-      .finally(() => setSuggestionsLoading(false));
-  };
-
-  const handleSuggestionAction = async (suggestion) => {
-    if (suggestion.type === "route") {
-      const { routeId, lat, lng, stopName } = suggestion.action;
-      try {
-        await axios.patch(`${API}/api/routes/${routeId}`, {
-          $push: { waypoints: { lat, lng, name: stopName } },
-          $inc: { totalStops: 1 },
-        });
-        setSuggestions((prev) =>
-          prev.map((s) => (s === suggestion ? { ...s, done: true } : s)),
-        );
-      } catch {
-        /* silent */
-      }
-    } else if (suggestion.type === "truck") {
-      setSelectedTruckId(suggestion.action.truckId);
-      if (suggestion.action.directAssign) {
-        await handleAssignImmediate(selectedReport, suggestion.action.truckId);
-        setSuggestions((prev) =>
-          prev.map((s) => (s === suggestion ? { ...s, done: true } : s)),
-        );
-      }
-    } else if (suggestion.type === "priority") {
-      try {
-        const { data } = await axios.patch(
-          `${API}/api/reports/${selectedReport._id}`,
-          {
-            priority: suggestion.action.priority,
-          },
-        );
-        setSelectedReport((prev) => ({ ...prev, ...data }));
-        setReportList((prev) =>
-          prev.map((r) =>
-            r._id === selectedReport._id
-              ? { ...r, priority: data.priority }
-              : r,
-          ),
-        );
-        setSuggestions((prev) =>
-          prev.map((s) => (s === suggestion ? { ...s, done: true } : s)),
-        );
-      } catch {
-        /* silent */
-      }
-    }
+    setAllowRedispatch(false);
   };
 
   const handleResolve = async (report) => {
@@ -325,8 +284,8 @@ export default function ReportsManagement() {
       if (!selectedReport || selectedReport._id !== report._id) {
         openReport(report);
       }
-      alert(
-        "A clean-up proof photo is required before marking this report as resolved. Please attach a photo or select the truck submission photo.",
+      toast.error(
+        "A clean-up proof photo is required before marking this report as resolved."
       );
       return;
     }
@@ -353,10 +312,11 @@ export default function ReportsManagement() {
       );
       setSelectedReport(null);
       setResolutionProofImage("");
+      toast.success("Report marked as resolved successfully!");
     } catch (err) {
-      alert(
+      toast.error(
         "Failed to resolve report: " +
-          (err.response?.data?.error || err.message),
+          (err.response?.data?.error || err.message)
       );
     } finally {
       setResolving(false);
@@ -369,6 +329,7 @@ export default function ReportsManagement() {
     const reader = new FileReader();
     reader.onload = () => {
       setResolutionProofImage(reader.result);
+      toast.success("Resolution proof photo attached!");
     };
     reader.readAsDataURL(file);
   };
@@ -386,8 +347,9 @@ export default function ReportsManagement() {
         prev.map((r) => (r._id === reportId || r.id === reportId ? { ...r, ...data } : r)),
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...data } : prev));
-    } catch {
-      /* silent */
+      toast.success(`Assigned to Truck ${truckId || "N/A"}`);
+    } catch (err) {
+      toast.error("Failed to assign truck: " + (err.response?.data?.error || err.message));
     }
   };
 
@@ -410,15 +372,15 @@ export default function ReportsManagement() {
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...updated } : prev));
       fetchSchedulesList();
-      alert(
+      toast.success(
         data.schedule
-          ? `✅ Report location added to collection schedule for ${data.schedule.date} (Truck ${data.schedule.truckId})!`
-          : `✅ Report queued for next collection schedule!`,
+          ? `Report location added to schedule for ${data.schedule.date} (Truck ${data.schedule.truckId})!`
+          : "Report queued for next collection schedule!"
       );
     } catch (err) {
-      alert(
+      toast.error(
         "Failed to apply to schedule: " +
-          (err.response?.data?.error || err.message),
+          (err.response?.data?.error || err.message)
       );
     } finally {
       setApplyingSchedule(false);
@@ -427,7 +389,7 @@ export default function ReportsManagement() {
 
   const handleAssignImmediate = async (report, truckId) => {
     if (!truckId) {
-      alert("Please select an active truck to dispatch.");
+      toast.error("Please select an active truck to dispatch.");
       return;
     }
     setDispatchingImmediate(true);
@@ -452,14 +414,14 @@ export default function ReportsManagement() {
           prev.map((r) => (r._id === reportId || r.id === reportId ? { ...r, ...updated } : r)),
         );
         setSelectedReport((prev) => (prev ? { ...prev, ...updated } : prev));
-        alert(
-          `🚨 Truck ${truckId} dispatched immediately! Notification pushed to driver.`,
+        toast.success(
+          `Truck ${truckId} dispatched immediately! Notification pushed to driver.`
         );
       }
     } catch (err) {
-      alert(
+      toast.error(
         "Failed to dispatch truck immediately: " +
-          (err.response?.data?.error || err.message),
+          (err.response?.data?.error || err.message)
       );
     } finally {
       setDispatchingImmediate(false);
@@ -478,8 +440,9 @@ export default function ReportsManagement() {
         prev.map((r) => (r._id === report._id ? { ...r, ...data } : r)),
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...data } : prev));
-    } catch {
-      /* silent */
+      toast.success("Health concern flag updated!");
+    } catch (err) {
+      toast.error("Failed to update health flag: " + (err.response?.data?.error || err.message));
     } finally {
       setFlagging(false);
     }
@@ -498,8 +461,9 @@ export default function ReportsManagement() {
       );
       setSelectedReport((prev) => (prev ? { ...prev, ...data } : prev));
       setHealthNoteText("");
-    } catch {
-      /* silent */
+      toast.success("Health note saved!");
+    } catch (err) {
+      toast.error("Failed to save health note: " + (err.response?.data?.error || err.message));
     } finally {
       setHealthNoteSaving(false);
     }
@@ -513,8 +477,9 @@ export default function ReportsManagement() {
       await axios.delete(`${API}/api/reports/${id}`);
       setReportList((prev) => prev.filter((r) => r._id !== id));
       if (selectedReport?._id === id) setSelectedReport(null);
-    } catch {
-      /* silent */
+      toast.success("IoT report removed.");
+    } catch (err) {
+      toast.error("Failed to remove IoT report: " + (err.response?.data?.error || err.message));
     }
   };
 
@@ -568,6 +533,7 @@ export default function ReportsManagement() {
         if (selectedReport?._id === reportId) {
           setSelectedReport(null);
         }
+        toast.success("Report deleted successfully!");
       } else if (deleteModal.type === "batch") {
         const ids = deleteModal.target;
         await axios.post(
@@ -585,12 +551,13 @@ export default function ReportsManagement() {
         if (selectedReport && idSet.has(selectedReport._id)) {
           setSelectedReport(null);
         }
+        toast.success(`${ids.length} reports deleted successfully!`);
       }
       setDeleteModal({ isOpen: false, type: null, target: null });
     } catch (err) {
-      alert(
+      toast.error(
         "Failed to delete report(s): " +
-          (err.response?.data?.error || err.message),
+          (err.response?.data?.error || err.message)
       );
     } finally {
       setIsDeleting(false);
@@ -617,8 +584,9 @@ export default function ReportsManagement() {
       setReportList((prev) => prev.filter((r) => !isIotReport(r)));
       if (selectedReport && isIotReport(selectedReport))
         setSelectedReport(null);
-    } catch {
-      /* silent */
+      toast.success("All IoT reports cleared successfully!");
+    } catch (err) {
+      toast.error("Failed to clear IoT reports: " + (err.response?.data?.error || err.message));
     }
     setClearingIot(false);
   };
@@ -684,7 +652,7 @@ export default function ReportsManagement() {
     pending: reportList.filter((r) => r.status === "pending").length,
     inProgress: reportList.filter((r) => r.status === "in-progress").length,
     resolved: reportList.filter((r) => r.status === "resolved").length,
-    escalated: reportList.filter((r) => r.escalated).length,
+    escalated: reportList.filter((r) => getSlaStatus(r).isOverdue).length,
   };
 
   const uniqueSitios = useMemo(() => {
@@ -781,7 +749,7 @@ export default function ReportsManagement() {
                   {filters.healthOnly ? "All Reports" : "Health Flagged"}
                 </button>
               )}
-              {iotCount > 0 && !isChd && (
+              {iotCount > 0 && isSystemAdmin && (
                 <button
                   onClick={handleClearAllIot}
                   disabled={clearingIot}
@@ -862,7 +830,7 @@ export default function ReportsManagement() {
                 bg: "bg-emerald-50 border-emerald-200",
               },
               {
-                label: "Escalated",
+                label: "Overdue (72h SLA)",
                 value: counts.escalated,
                 color: "text-red-700",
                 bg:
@@ -974,6 +942,7 @@ export default function ReportsManagement() {
                     "text-slate-500 bg-slate-50 border-slate-200";
 
                   const isRowSelected = selectedIds.has(report._id);
+                  const rSla = getSlaStatus(report);
 
                   return (
                     <div
@@ -999,15 +968,21 @@ export default function ReportsManagement() {
                       </div>
 
                       {/* Status */}
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         <span
                           className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`}
                         />
                         <span className="text-xs font-medium text-slate-600 truncate">
                           {statusLabel}
                         </span>
-                        {report.escalated && (
-                          <ShieldAlert className="w-3 h-3 text-red-500 flex-shrink-0" />
+                        {rSla.isOverdue && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded text-[10px] font-bold whitespace-nowrap"
+                            title={`SLA Breached: Open for ${rSla.elapsedDays}d (${rSla.overdueDays}d overdue)`}
+                          >
+                            <ShieldAlert className="w-2.5 h-2.5 text-red-600" />
+                            Overdue
+                          </span>
                         )}
                       </div>
 
@@ -1057,7 +1032,7 @@ export default function ReportsManagement() {
                         className="flex items-center justify-end gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {!isChd && (
+                        {canDeleteReport(report) && (
                           <button
                             onClick={(e) => confirmDeleteSingle(report, e)}
                             title="Delete report"
@@ -1082,7 +1057,7 @@ export default function ReportsManagement() {
                 <p className="text-xs text-slate-400">
                   {filtered.length} report{filtered.length !== 1 ? "s" : ""}
                 </p>
-                {!isChd && selectedIds.size > 0 && (
+                {isSystemAdmin && selectedIds.size > 0 && (
                   <p className="text-xs font-semibold text-emerald-700">
                     {selectedIds.size} selected
                   </p>
@@ -1098,9 +1073,9 @@ export default function ReportsManagement() {
                   onView={openReport}
                   onAssign={isChd ? null : (r) => openReport(r)}
                   onResolve={isChd ? null : (r) => openReport(r)}
-                  onDelete={!isChd ? (r) => confirmDeleteSingle(r) : null}
+                  onDelete={canDeleteReport(report) ? (r) => confirmDeleteSingle(r) : null}
                   isSelected={selectedIds.has(report._id)}
-                  onToggleSelect={!isChd ? toggleSelect : null}
+                  onToggleSelect={isSystemAdmin ? toggleSelect : null}
                   isChd={isChd}
                 />
               ))}
@@ -1108,67 +1083,136 @@ export default function ReportsManagement() {
           )}
 
           {/* Report Detail Modal */}
-          {selectedReport && (
-            <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-8 animate-notification-drop flex flex-col max-h-[90vh]">
-                {/* Modal Header */}
-                <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 flex-shrink-0">
-                      <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-bold text-slate-900 leading-tight">
-                        Official Incident Response
-                      </h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Manage dispatch, attach photo proof, and notify the resident community.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSelectedReport(null);
-                      setSuggestions([]);
-                      setResolutionProofImage("");
-                    }}
-                    className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors flex-shrink-0"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Modal Body */}
-                <div className="p-6 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-w-0">
-                  {/* Status Badges Row */}
-                  <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={selectedReport.status} showDot size="xs">
-                        {selectedReport.status === "in-progress"
-                          ? "In Progress"
-                          : selectedReport.status.charAt(0).toUpperCase() +
-                            selectedReport.status.slice(1)}
-                      </Badge>
-                      <Badge
-                        variant={selectedReport.priority.toLowerCase()}
-                        size="xs"
-                      >
-                        {selectedReport.priority}
-                      </Badge>
-                      <div
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${selectedReport.urgency > 0 ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}
-                      >
-                        {selectedReport.urgency} Urgency Score
+          {selectedReport && (() => {
+            const sla = getSlaStatus(selectedReport);
+            return (
+              <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-8 animate-notification-drop flex flex-col max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 flex-shrink-0">
+                        <ShieldCheck className="w-5 h-5" />
                       </div>
-                      {selectedReport.healthConcern && (
-                        <div className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-[10px] font-bold text-white">
-                          <Heart className="w-2.5 h-2.5" /> Health Concern
-                        </div>
-                      )}
+                      <div>
+                        <h2 className="text-base font-bold text-slate-900 leading-tight">
+                          Official Incident Response
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Manage dispatch, attach photo proof, and notify the resident community.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedReport(null);
+                        setResolutionProofImage("");
+                      }}
+                      className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors flex-shrink-0"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
-                  <h2 className="text-base font-bold text-slate-900 leading-snug mb-4">
-                    {selectedReport.title}
-                  </h2>
-                  {/* Photo Evidence & Image Validation Audit */}
+
+                  {/* Modal Body */}
+                  <div className="p-6 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-w-0">
+                    {/* Status Badges Row */}
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <Badge variant={selectedReport.status} showDot size="xs">
+                          {selectedReport.status === "in-progress"
+                            ? "In Progress"
+                            : selectedReport.status.charAt(0).toUpperCase() +
+                              selectedReport.status.slice(1)}
+                        </Badge>
+                        <Badge
+                          variant={selectedReport.priority.toLowerCase()}
+                          size="xs"
+                        >
+                          {selectedReport.priority}
+                        </Badge>
+                        <div
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${selectedReport.urgency > 0 ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}
+                        >
+                          {selectedReport.urgency} Urgency Score
+                        </div>
+                        {selectedReport.healthConcern && (
+                          <div className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-[10px] font-bold text-white">
+                            <Heart className="w-2.5 h-2.5" /> Health Concern
+                          </div>
+                        )}
+                        {sla.isOverdue && (
+                          <div className="flex items-center gap-1 px-2.5 py-0.5 bg-red-600 text-white rounded text-[10px] font-bold shadow-xs animate-pulse">
+                            <AlertTriangle className="w-2.5 h-2.5" /> 72h Overdue ({sla.elapsedDays > 0 ? `${sla.elapsedDays}d` : `${sla.elapsedHours}h`})
+                          </div>
+                        )}
+                    </div>
+                    <h2 className="text-base font-bold text-slate-900 leading-snug">
+                      {selectedReport.title}
+                    </h2>
+
+                    {/* Barangay 72-Hour Response SLA Overdue / Warning Alert Banner */}
+                    {sla.isOverdue && (
+                      <div className="rounded-2xl border-2 border-red-300 bg-red-50/95 p-4 space-y-3 shadow-xs">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-red-100 border border-red-200 text-red-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <ShieldAlert className="w-5 h-5 text-red-600 animate-pulse" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded shadow-xs">
+                                ⚠️ 72h SLA Breached • Overdue
+                              </span>
+                              <span className="text-xs font-bold text-red-800">
+                                Open for {sla.elapsedDays > 0 ? `${sla.elapsedDays} days` : `${sla.elapsedHours} hours`}
+                              </span>
+                              <span className="text-xs text-red-600 font-medium">
+                                ({sla.overdueDays > 0 ? `${sla.overdueDays} days past 72h target` : `${sla.overdueHours}h overdue`})
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-red-950 mt-1">
+                              Barangay Action Required: Report Lingering Beyond 72 Hours
+                            </h4>
+                            <p className="text-xs text-red-800 mt-1 leading-relaxed">
+                              Under barangay service standards, all waste incident reports must be actioned and cleared within <strong>72 hours</strong>. This report was submitted <strong>{selectedReport.time}</strong> and has remained unresolved for <strong>{sla.elapsedDays > 0 ? `${sla.elapsedDays} days` : `${sla.elapsedHours} hours`}</strong>.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="bg-white/90 border border-red-200 rounded-xl p-3 text-xs space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-slate-800 font-semibold">
+                              Current Status: <span className="font-bold text-blue-700">{selectedReport.status === "in-progress" ? "In Progress" : "Pending Dispatch"}</span>
+                              {selectedReport.assignedTruck && (
+                                <span className="text-slate-600 ml-1.5 font-normal">
+                                  • Assigned to <strong className="text-slate-800">{selectedReport.assignedTruck}</strong> {selectedReport.assignedDriver ? `(${selectedReport.assignedDriver})` : ""}
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[11px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-200">
+                              -10 Pts SLA Penalty Risk
+                            </span>
+                          </div>
+                          <p className="text-red-700 text-[11.5px] leading-relaxed">
+                            <strong>Immediate Action:</strong> {selectedReport.assignedTruck ? "A collection truck has already been assigned to this location. Please coordinate with the driver or conduct clean-up verification, then attach a clean-up proof photo below to mark this report as resolved." : "Please dispatch an immediate collection route or queue this stop, then upload clean-up proof to resolve this incident."}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!sla.isOverdue && sla.hoursLeft > 0 && selectedReport.status !== "resolved" && (
+                      <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border ${
+                        sla.hoursLeft < 12
+                          ? "bg-amber-50/80 border-amber-300 text-amber-800"
+                          : "bg-slate-50 border-slate-200 text-slate-700"
+                      }`}>
+                        <Clock className={`w-4 h-4 flex-shrink-0 ${sla.hoursLeft < 12 ? "text-amber-600" : "text-slate-400"}`} />
+                        <p className="text-xs font-medium">
+                          <strong className="font-bold">{sla.hoursLeft} hours remaining</strong> of the 72-hour barangay SLA response window.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Photo Evidence & Image Validation Audit */}
                   <div className="space-y-2">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       Photo Evidence & Verification Audit
@@ -1320,8 +1364,8 @@ export default function ReportsManagement() {
                     </p>
                   </div>
 
-                  {/* SLA / Escalation / Dispute indicator */}
-                  {selectedReport.resolutionConfirmed === "disputed" ? (
+                  {/* Resident Dispute indicator */}
+                  {selectedReport.resolutionConfirmed === "disputed" && (
                     <div className="flex items-start gap-2.5 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl">
                       <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                       <div>
@@ -1335,37 +1379,7 @@ export default function ReportsManagement() {
                         </p>
                       </div>
                     </div>
-                  ) : selectedReport.escalated ? (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
-                      <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
-                      <p className="text-xs font-bold text-red-700">
-                        OVERDUE SLA — Exceeded 72h response limit. Barangay
-                        penalised -10 pts.
-                      </p>
-                    </div>
-                  ) : selectedReport.status === "pending" &&
-                    selectedReport.deadline ? (
-                    (() => {
-                      const h = slaHoursLeft(selectedReport.deadline);
-                      return h !== null && h > 0 ? (
-                        <div
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${
-                            h < 12
-                              ? "bg-red-50/70 border-red-200 text-red-700"
-                              : "bg-slate-50 border-slate-200 text-slate-600"
-                          }`}
-                        >
-                          <Clock
-                            className={`w-4 h-4 flex-shrink-0 ${h < 12 ? "text-red-500" : "text-slate-400"}`}
-                          />
-                          <p className="text-xs font-medium">
-                            {h}h left to respond — failure deducts 10 points
-                            from {selectedReport.barangay}
-                          </p>
-                        </div>
-                      ) : null;
-                    })()
-                  ) : null}
+                  )}
 
                   {/* Resident Verification Status */}
                   {selectedReport.resolutionConfirmed && (
@@ -1401,103 +1415,6 @@ export default function ReportsManagement() {
                             Awaiting resident confirmation of resolution
                           </p>
                         </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Smart Suggestions — hidden for CHD */}
-                  {!isChd && (suggestionsLoading || suggestions.length > 0) && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2.5">
-                        <Sparkles className="w-3.5 h-3.5 text-slate-400" />
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Smart Suggestions
-                        </p>
-                      </div>
-
-                      {suggestionsLoading ? (
-                        <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
-                          <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                          Analyzing report and nearby resources…
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {suggestions.map((s, i) => {
-                            const meta =
-                              {
-                                route: {
-                                  icon: Route,
-                                  bg: "bg-slate-50 border-slate-200",
-                                  iconColor: "text-slate-600",
-                                  btnStyle:
-                                    "bg-slate-900 hover:bg-slate-800 text-white",
-                                  btnLabel: s.done
-                                    ? "Added ✓"
-                                    : s.btnLabel || "Add Stop",
-                                },
-                                truck: {
-                                  icon: Truck,
-                                  bg: "bg-slate-50 border-slate-200",
-                                  iconColor: "text-slate-600",
-                                  btnStyle:
-                                    "bg-slate-900 hover:bg-slate-800 text-white",
-                                  btnLabel: s.done
-                                    ? "Assigned ✓"
-                                    : s.btnLabel || "Direct Assign",
-                                },
-                                priority: {
-                                  icon: Zap,
-                                  bg: "bg-slate-50 border-slate-200",
-                                  iconColor: "text-slate-600",
-                                  btnStyle:
-                                    "bg-slate-900 hover:bg-slate-800 text-white",
-                                  btnLabel: s.done ? "Escalated ✓" : "Escalate",
-                                },
-                                ai: {
-                                  icon: Sparkles,
-                                  bg: "bg-slate-50 border-slate-200",
-                                  iconColor: "text-slate-400",
-                                  btnStyle: null,
-                                  btnLabel: null,
-                                },
-                              }[s.type] || {};
-                            const Icon = meta.icon;
-                            return (
-                              <div
-                                key={i}
-                                className={`flex items-start gap-3 px-3 py-3 rounded-xl border ${meta.bg}`}
-                              >
-                                <div
-                                  className={`flex-shrink-0 mt-0.5 ${meta.iconColor}`}
-                                >
-                                  <Icon className="w-4 h-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold text-slate-800 mb-0.5">
-                                    {s.title}
-                                  </p>
-                                  <p className="text-xs text-slate-500 leading-relaxed">
-                                    {s.description}
-                                  </p>
-                                </div>
-                                {meta.btnLabel && (
-                                  <button
-                                    onClick={() =>
-                                      !s.done && handleSuggestionAction(s)
-                                    }
-                                    disabled={s.done}
-                                    className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-60 ${meta.btnStyle}`}
-                                  >
-                                    {!s.done && (
-                                      <ChevronRight className="w-3 h-3" />
-                                    )}
-                                    {meta.btnLabel}
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
                       )}
                     </div>
                   )}
@@ -1696,6 +1613,7 @@ export default function ReportsManagement() {
                   {/* Collection Dispatch Options: Apply on Next Schedule OR Pick Up Immediately */}
                   {!isChd && selectedReport.status !== "resolved" && (() => {
                     const isAlreadyDispatched = Boolean(selectedReport.assignedTruck || selectedReport.priorityScheduleId);
+                    const isDispatchLocked = isAlreadyDispatched && !allowRedispatch;
                     return (
                       <div className="p-4 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3 min-w-0 w-full overflow-hidden">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
@@ -1720,16 +1638,39 @@ export default function ReportsManagement() {
                           )}
                         </div>
 
-                        {/* Lock banner if already dispatched */}
+                        {/* Lock / Overdue Dispatch notice banner */}
                         {isAlreadyDispatched && (
-                          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                            <div className="min-w-0 flex-1 leading-relaxed">
-                              <strong>Dispatched & Scheduled:</strong> Assigned to Truck <strong>{selectedReport.assignedTruck}</strong>
-                              {selectedReport.assignedDriver ? ` (${selectedReport.assignedDriver})` : ""}
-                              {selectedReport.priorityScheduleId ? " on scheduled collection route." : " for immediate priority pickup."}
-                              {" "}Further dispatch actions are disabled.
+                          <div className={`p-3 rounded-xl text-xs flex items-start justify-between gap-3 border ${
+                            sla.isOverdue
+                              ? "bg-amber-50 border-amber-300 text-amber-900"
+                              : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                          }`}>
+                            <div className="flex items-start gap-2 min-w-0 flex-1">
+                              {sla.isOverdue ? (
+                                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                              ) : (
+                                <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                              )}
+                              <div className="min-w-0 flex-1 leading-relaxed">
+                                <strong>Dispatched & Scheduled:</strong> Assigned to Truck <strong>{selectedReport.assignedTruck}</strong>
+                                {selectedReport.assignedDriver ? ` (${selectedReport.assignedDriver})` : ""}
+                                {selectedReport.priorityScheduleId ? " on scheduled collection route." : " for immediate priority pickup."}
+                                {sla.isOverdue ? (
+                                  <span className="block mt-1 font-semibold text-amber-800">
+                                    ⚠️ Dispatched {selectedReport.time}, but still pending uncollected after {sla.elapsedDays > 0 ? `${sla.elapsedDays} days` : `${sla.elapsedHours} hours`} (72h SLA breached). Click 'Change / Reassign' to assign a different truck or schedule.
+                                  </span>
+                                ) : (
+                                  <span> Further dispatch actions are currently locked.</span>
+                                )}
+                              </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => setAllowRedispatch((prev) => !prev)}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 transition-colors shadow-2xs whitespace-nowrap self-start"
+                            >
+                              {allowRedispatch ? "Lock Dispatch" : "Change / Reassign"}
+                            </button>
                           </div>
                         )}
 
@@ -1787,7 +1728,7 @@ export default function ReportsManagement() {
                                   onChange={(e) =>
                                     setSelectedScheduleId(e.target.value)
                                   }
-                                  disabled={isAlreadyDispatched || applyingSchedule}
+                                  disabled={isDispatchLocked || applyingSchedule}
                                   className="w-full min-w-0 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                                 >
                                   <option value="">
@@ -1812,7 +1753,7 @@ export default function ReportsManagement() {
                                     selectedScheduleId,
                                   )
                                 }
-                                disabled={isAlreadyDispatched || applyingSchedule}
+                                disabled={isDispatchLocked || applyingSchedule}
                                 className="w-full sm:w-auto px-4 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap flex-shrink-0"
                               >
                                 {applyingSchedule ? (
@@ -1821,7 +1762,7 @@ export default function ReportsManagement() {
                                   <Calendar className="w-3.5 h-3.5 text-slate-300" />
                                 )}
                                 <span>
-                                  {isAlreadyDispatched
+                                  {isDispatchLocked
                                     ? "Already Scheduled ✓"
                                     : "Apply to Schedule"}
                                 </span>
@@ -1852,7 +1793,7 @@ export default function ReportsManagement() {
                                   onChange={(e) =>
                                     setSelectedTruckId(e.target.value)
                                   }
-                                  disabled={isAlreadyDispatched || dispatchingImmediate}
+                                  disabled={isDispatchLocked || dispatchingImmediate}
                                   className="w-full min-w-0 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-700 font-medium truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                                 >
                                   <option value="">
@@ -1878,7 +1819,7 @@ export default function ReportsManagement() {
                                   )
                                 }
                                 disabled={
-                                  isAlreadyDispatched ||
+                                  isDispatchLocked ||
                                   !selectedTruckId ||
                                   dispatchingImmediate
                                 }
@@ -1890,7 +1831,7 @@ export default function ReportsManagement() {
                                   <Zap className="w-3.5 h-3.5 text-slate-300" />
                                 )}
                                 <span>
-                                  {isAlreadyDispatched
+                                  {isDispatchLocked
                                     ? "Already Dispatched ✓"
                                     : "Dispatch Immediately"}
                                 </span>
@@ -2108,7 +2049,7 @@ export default function ReportsManagement() {
 
                 {/* Modal Footer */}
                 <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center gap-3 flex-shrink-0">
-                  {!isChd && (
+                  {canDeleteReport(selectedReport) && (
                     <button
                       onClick={() => confirmDeleteSingle(selectedReport)}
                       className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
@@ -2121,7 +2062,6 @@ export default function ReportsManagement() {
                   <button
                     onClick={() => {
                       setSelectedReport(null);
-                      setSuggestions([]);
                       setResolutionProofImage("");
                     }}
                     className="flex-1 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
@@ -2157,10 +2097,11 @@ export default function ReportsManagement() {
                 </div>
               </div>
             </div>
-          )}
+          );
+        })()}
 
           {/* Floating Batch Action Bar */}
-          {!isChd && selectedIds.size > 0 && (
+          {isSystemAdmin && selectedIds.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-700">
               <div className="flex items-center gap-2">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-slate-900 font-bold text-xs">
@@ -2184,6 +2125,7 @@ export default function ReportsManagement() {
                 onClick={clearSelection}
                 className="text-xs font-medium text-slate-400 hover:text-white transition-colors"
               >
+                
                 Deselect All
               </button>
             </div>

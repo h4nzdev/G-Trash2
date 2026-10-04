@@ -2,6 +2,7 @@
 // === 1. IMPORTS & DEPENDENCIES ==============================
 // ============================================================
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MapContainer,
   TileLayer,
@@ -46,7 +47,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import API from "../config";
-import ReportActionModal from "../components/reports/ReportActionModal";
 import MapTileControl, {
   GOOGLE_MAP_TILES,
 } from "../components/route/MapTileControl";
@@ -475,7 +475,8 @@ function timeAgo(dateStr) {
 }
 
 // ── Inline Report Leaflet Popup Content ──
-function ReportPopupContent({ report, onOpenAction }) {
+function ReportPopupContent({ report }) {
+  const navigate = useNavigate();
   const score = (report.upvotes?.length || 0) - (report.downvotes?.length || 0);
   const isHighUrgency = score >= 5;
   const status = report.status?.toLowerCase() || "pending";
@@ -566,11 +567,11 @@ function ReportPopupContent({ report, onOpenAction }) {
           )}
         </div>
 
-        {/* Quick Action Button */}
+        {/* Quick Action Button - Redirects to Report Modal in Reports Management */}
         {status === "pending" ? (
           <button
-            onClick={() => onOpenAction && onOpenAction(report, "acknowledged")}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+            onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
+            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <CheckCircle className="w-3.5 h-3.5" />
             Acknowledge
@@ -579,13 +580,21 @@ function ReportPopupContent({ report, onOpenAction }) {
           status === "in_progress" ||
           status === "in-progress" ? (
           <button
-            onClick={() => onOpenAction && onOpenAction(report, "resolved")}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+            onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Check className="w-3.5 h-3.5" />
             Mark Resolved
           </button>
-        ) : null}
+        ) : (
+          <button
+            onClick={() => navigate(`/reports?openReportId=${report._id || report.id}`)}
+            className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-500" />
+            Details
+          </button>
+        )}
       </div>
 
       <div className="mt-2 text-[10px] text-slate-400 text-right font-medium">
@@ -781,8 +790,6 @@ export default function RouteMonitoring() {
   const [trucks, setTrucks] = useState({});
   const [fleet, setFleet] = useState([]);
   const [reports, setReports] = useState([]);
-  const [actionReport, setActionReport] = useState(null);
-  const [actionType, setActionType] = useState("acknowledged");
   const [collections, setCollections] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
@@ -799,7 +806,6 @@ export default function RouteMonitoring() {
   const [barangayList, setBarangayList] = useState([]);
   const [clearingSites, setClearingSites] = useState({});
   const [completedRouteAlert, setCompletedRouteAlert] = useState(null);
-  const [dismissedNoSchedule, setDismissedNoSchedule] = useState(false);
   const socketRef = useRef(null);
 
   function FitBoundsToRoutes({ routes }) {
@@ -2308,13 +2314,7 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                           minWidth={310}
                           maxWidth={340}
                         >
-                          <ReportPopupContent
-                            report={r}
-                            onOpenAction={(rep, type) => {
-                              setActionReport(rep);
-                              setActionType(type || "acknowledged");
-                            }}
-                          />
+                          <ReportPopupContent report={r} />
                         </Popup>
                         <Tooltip direction="top" offset={[0, -20]}>
                           <span className="font-bold text-sm">
@@ -2460,38 +2460,6 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
               </div>
             )}
 
-            {/* No Schedule for Today Floating Banner Overlay */}
-            {!hasScheduleToday && !loading && !dismissedNoSchedule && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto animate-pop-in">
-                <div className="bg-white/95 backdrop-blur-md px-5 py-3.5 rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 flex-shrink-0">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900">
-                        No Schedule for Today
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200/80">
-                        {selectedBarangay && selectedBarangay !== "All"
-                          ? selectedBarangay
-                          : "All Barangays"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      There are no waste collection truck routes scheduled for today.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setDismissedNoSchedule(true)}
-                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors ml-2"
-                    title="Dismiss alert"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Top-Left Floating Map Control Bar (Matching Reference UI) */}
             <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-xl border border-slate-200/90">
@@ -2636,29 +2604,6 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
           fleet={fleet}
           onClose={() => setAssignTarget(null)}
           onSave={handleAssignSave}
-        />
-      )}
-
-      {actionReport && (
-        <ReportActionModal
-          report={actionReport}
-          isOpen={!!actionReport}
-          defaultAction={actionType}
-          onClose={() => setActionReport(null)}
-          onSuccess={(updatedReport) => {
-            if (updatedReport.status === "resolved") {
-              setReports((prev) =>
-                prev.filter((r) => r._id !== updatedReport._id),
-              );
-            } else {
-              setReports((prev) =>
-                prev.map((r) =>
-                  r._id === updatedReport._id ? { ...r, ...updatedReport } : r,
-                ),
-              );
-            }
-            setActionReport(null);
-          }}
         />
       )}
     </div>

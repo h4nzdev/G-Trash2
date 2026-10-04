@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check, Leaf, Recycle } from 'lucide-react';
+import { toast } from 'sonner';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check, Leaf, Recycle, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -42,6 +43,9 @@ export default function ScheduleRoute() {
   const [statusModalSchedule, setStatusModalSchedule] = useState(null);
   const [selectedNewStatus, setSelectedNewStatus] = useState('pending');
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Feedback pop-up notification state
+  const [feedbackSchedule, setFeedbackSchedule] = useState(null);
 
   // Modal form state
   const [modalStep, setModalStep] = useState(1);
@@ -266,7 +270,9 @@ export default function ScheduleRoute() {
             console.warn('Auto-sync truck coverage failed:', patchErr);
           }
         }
-      }      await axios.post(`${API}/api/schedules`, {
+      }
+
+      await axios.post(`${API}/api/schedules`, {
         date: selectedDate,
         truckId: selTruck,
         driverName: truck?.driverName || '',
@@ -281,6 +287,22 @@ export default function ScheduleRoute() {
         wasteType,
       });
 
+      const feedbackData = {
+        date: selectedDate,
+        truckId: selTruck,
+        driverName: truck?.driverName || 'Driver not assigned',
+        driverPhone: truck?.driverPhone || '',
+        barangay: selectedBarangay,
+        sitios: [...selectedSitios],
+        startTime: startTime || '',
+        endTime: endTime || '',
+        notes: notes || '',
+        isPriority: Boolean(isPriority),
+        priorityLevel: priorityLevel || 'High',
+        priorityReason: priorityReason || '',
+        wasteType: wasteType || 'Malata',
+      };
+
       setShowModal(false);
       setSelTruck('');
       setWasteType('Malata');
@@ -291,9 +313,13 @@ export default function ScheduleRoute() {
       setPriorityLevel('High');
       setPriorityReason('');
       setSelectedSitios([]);
+      setFeedbackSchedule(feedbackData);
+      toast.success("Collection schedule dispatched successfully!");
       await fetchAll();
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to save schedules. One of the sitios may already be scheduled.');
+      const errMsg = e?.response?.data?.error || 'Failed to save schedules. One of the sitios may already be scheduled.';
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -304,16 +330,21 @@ export default function ScheduleRoute() {
     try {
       await axios.delete(`${API}/api/schedules/${id}`);
       setSchedules(prev => prev.filter(s => s._id !== id));
-    } catch { /* silent */ }
+      toast.success("Schedule removed successfully.");
+    } catch {
+      toast.error("Failed to remove schedule.");
+    }
   };
 
   const handleUpdateStatus = async (id, status) => {
     try {
       const { data } = await axios.patch(`${API}/api/schedules/${id}/status`, { status });
       setSchedules(prev => prev.map(s => s._id === id ? { ...s, status: data.status } : s));
+      toast.success(`Schedule status updated to ${status}!`);
       return data;
     } catch (err) {
       console.error('Failed to update schedule status:', err);
+      toast.error("Failed to update schedule status.");
       throw err;
     }
   };
@@ -396,8 +427,11 @@ export default function ScheduleRoute() {
       setShowAddSitioForm(false);
       setSearchQuery('');
       setSearchError('');
+      toast.success(`Sitio ${newSitioName.trim()} created!`);
     } catch (err) {
-      setSitioError(err?.response?.data?.error || 'Failed to save sitio');
+      const errMsg = err?.response?.data?.error || 'Failed to save sitio';
+      setSitioError(errMsg);
+      toast.error(errMsg);
     } finally {
       setAddingSitio(false);
     }
@@ -878,7 +912,7 @@ export default function ScheduleRoute() {
 
       {/* ── Add Schedule Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-240 p-7 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -1445,7 +1479,7 @@ export default function ScheduleRoute() {
 
       {/* ── Update Status Modal ── */}
       {statusModalSchedule && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 animate-in zoom-in-95 duration-200">
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
@@ -1618,6 +1652,208 @@ export default function ScheduleRoute() {
                   <Check className="w-4 h-4" />
                 )}
                 Save Status
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Collection Scheduled Feedback Pop-up Modal ── */}
+      {feedbackSchedule && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-7 animate-in zoom-in-95 duration-200 border border-slate-100">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm shadow-emerald-600/20">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-extrabold text-slate-900 leading-tight">
+                      Collection Scheduled!
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Dispatched ✓
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Summary of the collection route you just created:
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackSchedule(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* What Was Done - Summary Box */}
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 space-y-3 mb-5">
+              {/* Date & Waste Stream Row */}
+              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-200/60">
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                    Collection Date
+                  </span>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Calendar className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-xs font-bold text-slate-800 leading-snug">
+                      {formatDisplayDate(feedbackSchedule.date)}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                    Waste Category
+                  </span>
+                  <div className="mt-1">
+                    <span
+                      className={`inline-flex items-center gap-1 font-bold px-2.5 py-1 rounded-lg text-xs ${
+                        feedbackSchedule.wasteType === "Di-Malata"
+                          ? "bg-blue-100 text-blue-800 border border-blue-200"
+                          : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      }`}
+                    >
+                      {feedbackSchedule.wasteType === "Di-Malata" ? (
+                        <>
+                          <Recycle className="w-3.5 h-3.5 text-blue-700" />
+                          Di-Malata (Non-Bio)
+                        </>
+                      ) : (
+                        <>
+                          <Leaf className="w-3.5 h-3.5 text-emerald-700" />
+                          Malata (Bio)
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Truck & Driver Row */}
+              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-200/60">
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                    Assigned Truck
+                  </span>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Truck className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                    <span className="text-xs font-bold text-slate-800">
+                      Truck {feedbackSchedule.truckId}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+                    Driver Assigned
+                  </span>
+                  <div className="mt-1">
+                    <span className="text-xs font-bold text-slate-800 block truncate">
+                      {feedbackSchedule.driverName}
+                    </span>
+                    {feedbackSchedule.driverPhone && (
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        📞 {feedbackSchedule.driverPhone}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Barangay & Sitios Covered */}
+              <div className="pb-3 border-b border-slate-200/60">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Barangay & Stops ({feedbackSchedule.sitios.length})
+                  </span>
+                  <span className="text-xs font-bold text-emerald-700">
+                    📍 {feedbackSchedule.barangay}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-green-scrollbar pt-1">
+                  {feedbackSchedule.sitios.map((sitio, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 shadow-2xs"
+                    >
+                      Sitio {sitio}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Time Window */}
+              {(feedbackSchedule.startTime || feedbackSchedule.endTime) && (
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-slate-400 font-medium flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" /> Shift Time Window:
+                  </span>
+                  <span className="font-bold text-slate-800">
+                    {feedbackSchedule.startTime || "Standard"} — {feedbackSchedule.endTime || "End of Route"}
+                  </span>
+                </div>
+              )}
+
+              {/* Notes */}
+              {feedbackSchedule.notes && (
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-xs text-slate-600 mt-2">
+                  <span className="font-bold text-slate-700 block mb-0.5">Official Notes:</span>
+                  {feedbackSchedule.notes}
+                </div>
+              )}
+
+              {/* Priority Banner if Set */}
+              {feedbackSchedule.isPriority && (
+                <div className="bg-red-50 text-red-800 p-2.5 rounded-xl border border-red-200 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">
+                      Priority Dispatch ({feedbackSchedule.priorityLevel}):
+                    </span>{" "}
+                    {feedbackSchedule.priorityReason || "Marked as high priority collection area."}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Live Sync Notice */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-[11px] font-medium border border-emerald-200/80 mb-5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
+              <span>
+                Dispatched to Collector truck and synced with Resident schedule calendar.
+              </span>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedbackSchedule(null);
+                  openNewScheduleModal();
+                }}
+                className="flex-1 py-2.5 px-4 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Add Another
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate(feedbackSchedule.date);
+                  setFeedbackSchedule(null);
+                }}
+                className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                View on Calendar
               </button>
             </div>
           </div>

@@ -22,7 +22,7 @@ router.post("/:id/comment", reportController.addComment);
 // Main CRUD
 router.get("/:id", optionalAuth, reportController.getReportById);
 router.patch("/:id", authMiddleware, reportController.updateReport);
-router.delete("/:id", authMiddleware, reportController.deleteReport);
+router.delete("/:id", optionalAuth, reportController.deleteReport);
 router.get("/", optionalAuth, reportController.getReports);
 router.post("/", reportController.createReport);
 

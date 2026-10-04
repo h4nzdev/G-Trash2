@@ -2,7 +2,7 @@ const { SensorReading, IoTAlert, GarbageArea, Report } = require("../models");
 const { getIO } = require("../config/socket");
 const { barangayFilter } = require("../middleware/barangayScope");
 const { classifyAirQuality, generateIoTAlerts, IOT_THRESHOLDS } = require("../services/iotService");
-const { addBarangayScore } = require("../services/gamificationService");
+const { addBarangayScore, canAwardDailyAirQuality } = require("../services/gamificationService");
 
 // Memory caches for alert throttling
 const sensorAlertCooldowns = new Map();
@@ -178,20 +178,32 @@ exports.ingestSensorData = async (req, res, next) => {
     }
 
     if (updatedArea.barangay) {
-      const qualityPts =
-        airQuality === "CLEAN" || airQuality === "Clean" || airQuality === "Good"
-          ? 3
-          : airQuality === "MODERATE" || airQuality === "Moderate"
-          ? 1
-          : airQuality === "CRITICAL" || airQuality === "Critical"
-          ? -5
-          : 0;
-      if (qualityPts !== 0) {
+      const isClean = airQuality === "CLEAN" || airQuality === "Clean" || airQuality === "Good";
+      const isModerate = airQuality === "MODERATE" || airQuality === "Moderate";
+      const isCritical = airQuality === "CRITICAL" || airQuality === "Critical";
+
+      if (isClean || isModerate) {
+        canAwardDailyAirQuality(updatedArea.barangay, isClean ? "clean" : "moderate")
+          .then((canAward) => {
+            if (canAward) {
+              const qualityPts = isClean ? 3 : 1;
+              addBarangayScore(
+                updatedArea.barangay,
+                qualityPts,
+                "iotScore",
+                "areaQualityPts",
+                `Daily ${isClean ? "Clean" : "Moderate"} air quality verified (+${qualityPts} pts)`
+              ).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      } else if (isCritical) {
         addBarangayScore(
           updatedArea.barangay,
-          qualityPts,
+          -5,
           "iotScore",
-          qualityPts > 0 ? "areaQualityPts" : undefined
+          undefined,
+          "Critical air quality detected (-5 pts)"
         ).catch(() => {});
       }
     }

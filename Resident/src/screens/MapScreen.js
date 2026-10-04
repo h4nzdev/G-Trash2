@@ -58,6 +58,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import API_URL from "../config";
 import { useAuth } from "../context/AuthContext";
 import TRUCK_B64 from "../constants/truckBase64";
+import { MapSheetSkeleton, CalendarSchedulesSkeleton } from "../components/Skeleton";
 
 const TRACKING_SERVER = API_URL;
 
@@ -1550,12 +1551,15 @@ export default function MapScreen() {
               <View style={styles.handleBar} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={toggleSheet}
-              style={{ paddingHorizontal: 20, paddingBottom: isExpanded ? 10 : 6 }}
-            >
-              {/* Header: Status & Stops Left */}
+            {dataLoading ? (
+              <MapSheetSkeleton />
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={toggleSheet}
+                style={{ paddingHorizontal: 20, paddingBottom: isExpanded ? 10 : 6 }}
+              >
+                {/* Header: Status & Stops Left */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1699,84 +1703,85 @@ export default function MapScreen() {
                 })()
               )}
             </TouchableOpacity>
-          </View>
-
-          {/* Expanded Content: Driver Card & Warnings */}
-          {isExpanded && (
-            <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
-              {/* Driver & Truck Info Section */}
-              <View style={styles.driverCard}>
-                {/* Truck Avatar Icon */}
-                <View style={styles.driverAvatarBg}>
-                  <Image
-                    source={require('../../assets/truck-progress.png')}
-                    style={{ width: 32, height: 32, resizeMode: 'contain' }}
-                  />
-                </View>
-
-                {/* Driver & Truck Details */}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.truckName}>
-                    {liveTruckPos.current?.truckId || activeSchedule?.truckId || "Truck"}
-                  </Text>
-                  <Text style={styles.driverName}>
-                    {activeSchedule?.driverName || "Waste Collector"}
-                  </Text>
-                  <Text style={styles.driverSub}>
-                    {isRouteCompleted
-                      ? 'Route collection completed for today'
-                      : liveTruckOnline
-                        ? `Collecting waste in ${activeBarangay || userBarangay || 'area'}`
-                        : hasScheduleToday
-                          ? 'Scheduled for collection'
-                          : 'No collection schedule today'}
-                  </Text>
-                </View>
-
-                {/* Truck Badge */}
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.truckPlate}>
-                    {activeSchedule?.truckPlate || activeSchedule?.truckId || 'GT-QSO'}
-                  </Text>
-                  <View style={styles.liveBadgeRow}>
-                    <View style={[styles.liveDot, isRouteCompleted ? { backgroundColor: '#10B981' } : isTruckActiveForBarangay ? { backgroundColor: '#059669' } : { backgroundColor: '#9CA3AF' }]} />
-                    <Text style={[styles.liveBadgeText, isRouteCompleted ? { color: '#059669' } : isTruckActiveForBarangay ? { color: '#059669' } : { color: '#6B7280' }]}>
-                      {isRouteCompleted ? 'COMPLETED ✓' : isTruckActiveForBarangay ? 'LIVE TRACKING' : 'STANDBY'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Missed / Unprepared Waste Collection Warning Banner */}
-              {missedBannerData && (
-                <View style={{
-                  backgroundColor: missedBannerData.bgColor,
-                  borderColor: missedBannerData.borderColor,
-                  borderWidth: 1.5,
-                  borderRadius: 14,
-                  padding: 12,
-                  marginVertical: 4,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 10,
-                }}>
-                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-                    <MaterialIcons name={missedBannerData.icon} size={22} color={missedBannerData.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: missedBannerData.titleColor || '#92400E' }}>
-                      {missedBannerData.title}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: missedBannerData.messageColor || '#B45309', marginTop: 2, lineHeight: 15, fontWeight: '500' }}>
-                      {missedBannerData.message}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
           )}
         </View>
-      )}
+
+        {/* Expanded Content: Driver Card & Warnings */}
+        {!dataLoading && isExpanded && (
+          <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+            {/* Driver & Truck Info Section */}
+            <View style={styles.driverCard}>
+              {/* Truck Avatar Icon */}
+              <View style={styles.driverAvatarBg}>
+                <Image
+                  source={require('../../assets/truck-progress.png')}
+                  style={{ width: 32, height: 32, resizeMode: 'contain' }}
+                />
+              </View>
+
+              {/* Driver & Truck Details */}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.truckName}>
+                  {liveTruckPos.current?.truckId || activeSchedule?.truckId || "Truck"}
+                </Text>
+                <Text style={styles.driverName}>
+                  {activeSchedule?.driverName || "Waste Collector"}
+                </Text>
+                <Text style={styles.driverSub}>
+                  {isRouteCompleted
+                    ? 'Route collection completed for today'
+                    : liveTruckOnline
+                      ? `Collecting waste in ${activeBarangay || userBarangay || 'area'}`
+                      : hasScheduleToday
+                        ? 'Scheduled for collection'
+                        : 'No collection schedule today'}
+                </Text>
+              </View>
+
+              {/* Truck Badge */}
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.truckPlate}>
+                  {activeSchedule?.truckPlate || activeSchedule?.truckId || 'GT-QSO'}
+                </Text>
+                <View style={styles.liveBadgeRow}>
+                  <View style={[styles.liveDot, isRouteCompleted ? { backgroundColor: '#10B981' } : isTruckActiveForBarangay ? { backgroundColor: '#059669' } : { backgroundColor: '#9CA3AF' }]} />
+                  <Text style={[styles.liveBadgeText, isRouteCompleted ? { color: '#059669' } : isTruckActiveForBarangay ? { color: '#059669' } : { color: '#6B7280' }]}>
+                    {isRouteCompleted ? 'COMPLETED ✓' : isTruckActiveForBarangay ? 'LIVE TRACKING' : 'STANDBY'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Missed / Unprepared Waste Collection Warning Banner */}
+            {missedBannerData && (
+              <View style={{
+                backgroundColor: missedBannerData.bgColor,
+                borderColor: missedBannerData.borderColor,
+                borderWidth: 1.5,
+                borderRadius: 14,
+                padding: 12,
+                marginVertical: 4,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                  <MaterialIcons name={missedBannerData.icon} size={22} color={missedBannerData.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: missedBannerData.titleColor || '#92400E' }}>
+                    {missedBannerData.title}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: missedBannerData.messageColor || '#B45309', marginTop: 2, lineHeight: 15, fontWeight: '500' }}>
+                    {missedBannerData.message}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    )}
 
       {/* Guest Mode: Bottom Banner with Sign In */}
       {!user && (
