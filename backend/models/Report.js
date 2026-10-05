@@ -32,6 +32,7 @@ const reportSchema = new mongoose.Schema({
     },
   ],
   escalated: { type: Boolean, default: false },
+  slaPenalized: { type: Boolean, default: false },
   resolutionConfirmed: {
     type: String,
     enum: ["pending", "confirmed", "disputed"],

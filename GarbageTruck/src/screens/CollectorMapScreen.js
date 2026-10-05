@@ -1670,20 +1670,40 @@ export default function CollectorMapScreen({ navigation }) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") return;
 
+      // 1. Immediately apply last-known hardware location (0ms lag)
       try {
-        const initial = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        const { latitude, longitude, heading } = initial.coords;
-        lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
-        setCurrentLocation({ lat: latitude, lng: longitude });
-        setIsLocationLoading(false);
-        if (webViewReady.current) {
-          webViewRef.current?.injectJavaScript(
-            `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
-          );
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (lastKnown && lastKnown.coords) {
+          const { latitude, longitude, heading } = lastKnown.coords;
+          lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
+          setCurrentLocation({ lat: latitude, lng: longitude });
+          setIsLocationLoading(false);
+          if (webViewReady.current) {
+            webViewRef.current?.injectJavaScript(
+              `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
+            );
+          }
         }
       } catch (_) {}
+
+      // 2. Fetch fresh high-accuracy position in background
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      })
+        .then((initial) => {
+          if (!initial?.coords) return;
+          const { latitude, longitude, heading } = initial.coords;
+          lastGpsRef.current = { lat: latitude, lng: longitude, heading: heading || 0 };
+          setCurrentLocation({ lat: latitude, lng: longitude });
+          setIsLocationLoading(false);
+          if (webViewReady.current) {
+            webViewRef.current?.injectJavaScript(
+              `window.updateDriverPosition(${latitude}, ${longitude}, ${heading || 0}); true;`,
+            );
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLocationLoading(false));
 
       locationSub = await Location.watchPositionAsync(
         {

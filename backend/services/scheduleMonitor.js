@@ -73,54 +73,100 @@ async function startScheduleMonitor() {
   setInterval(updateOverdueSchedules, 5 * 60 * 1000);
 }
 
-async function startSLAChecker() {
-  const check = async () => {
-    try {
-      const overdue = await Report.find({
-        status: "pending",
-        escalated: { $ne: true },
-        deadline: { $lt: new Date() },
-        reportedBy: { $not: /^IoT Sensor/ },
-      });
-      const io = getIO();
-      for (const r of overdue) {
-        await Report.findByIdAndUpdate(r._id, {
-          $set: { escalated: true },
-          $push: {
-            statusHistory: {
-              status: "escalated",
-              changedBy: "System",
-              changedAt: new Date(),
-            },
+async function syncOverdueSLAPenalties() {
+  try {
+    const now = new Date();
+    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+    // Find all unresolved reports that have exceeded the 72h SLA or deadline
+    const overdue = await Report.find({
+      status: { $nin: ["resolved", "rejected", "closed", "completed"] },
+      $or: [
+        { deadline: { $lte: now } },
+        { createdAt: { $lte: seventyTwoHoursAgo } },
+        { escalated: true },
+      ],
+      slaPenalized: { $ne: true },
+    });
+
+    const io = getIO();
+    for (const r of overdue) {
+      const repBy = (r.reportedBy || "").toLowerCase();
+      if (repBy.startsWith("iot sensor")) continue;
+
+      const createdMs = r.createdAt ? new Date(r.createdAt).getTime() : Date.now();
+      const elapsedHours = Math.floor((now.getTime() - createdMs) / (1000 * 60 * 60));
+      const elapsedDays = Math.floor(elapsedHours / 24);
+      const timeStr = elapsedDays > 0 ? `${elapsedDays}d` : `${elapsedHours}h`;
+
+      // Mark report as escalated and penalized in DB
+      await Report.findByIdAndUpdate(r._id, {
+        $set: {
+          escalated: true,
+          slaPenalized: true,
+          deadline: r.deadline || new Date(createdMs + 72 * 60 * 60 * 1000),
+        },
+        $push: {
+          statusHistory: {
+            status: "escalated",
+            changedBy: "System SLA Monitor",
+            changedAt: new Date(),
           },
+        },
+      });
+
+      if (r.barangay) {
+        const reportTitle = r.title || "Waste Report";
+        // Check if there is already a penalty for this report in point history
+        const existingPenalty = await BarangayPointHistory.findOne({
+          barangay: r.barangay,
+          category: "reportScore",
+          points: -10,
+          description: { $regex: reportTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" },
         });
-        if (r.barangay) await addBarangayScore(r.barangay, -10, "reportScore", null, "SLA escalated (report unresolved over 72h)");
-        if (io) {
-          const payload = {
-            reportId: r._id,
-            barangay: r.barangay,
-            title: r.title,
-            category: r.category,
-            location: r.location,
-            priority: r.priority || "High",
-            deadline: r.deadline,
-            escalatedAt: new Date(),
-          };
-          io.emit("report:updated", { ...r.toObject(), escalated: true });
-          io.emit("report:escalated", payload);
-          io.emit("report:overdue", payload);
+
+        if (!existingPenalty) {
+          await addBarangayScore(
+            r.barangay,
+            -10,
+            "reportScore",
+            null,
+            `SLA Escalation Penalty: "${reportTitle}" unresolved over 72h (${timeStr} overdue)`
+          );
         }
       }
-      if (overdue.length > 0) {
-        console.log(`[SLA] Auto-escalated ${overdue.length} overdue reports, notified officials in realtime`);
+
+      if (io) {
+        const payload = {
+          reportId: r._id,
+          barangay: r.barangay,
+          title: r.title,
+          category: r.category,
+          location: r.location,
+          priority: r.priority || "High",
+          deadline: r.deadline,
+          escalatedAt: new Date(),
+        };
+        io.emit("report:updated", { ...r.toObject(), escalated: true });
+        io.emit("report:escalated", payload);
+        io.emit("report:overdue", payload);
       }
-    } catch (err) {
-      console.error("[SLA] Error:", err.message);
     }
-  };
-  await check();
+
+    if (overdue.length > 0) {
+      console.log(`[SLA] Auto-escalated and penalized ${overdue.length} overdue reports`);
+    }
+    return overdue.length;
+  } catch (err) {
+    console.error("[SLA] Error:", err.message);
+    return 0;
+  }
+}
+
+async function startSLAChecker() {
+  await syncOverdueSLAPenalties();
   // Check every 1 minute for near real-time overdue SLA detection
-  setInterval(check, 60 * 1000);
+  setInterval(syncOverdueSLAPenalties, 60 * 1000);
 }
 
 async function startRewardExpirer() {
@@ -176,6 +222,7 @@ module.exports = {
   updateOverdueSchedules,
   startScheduleMonitor,
   startSLAChecker,
+  syncOverdueSLAPenalties,
   startRewardExpirer,
   startMonthlyReset,
 };

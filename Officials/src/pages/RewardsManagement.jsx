@@ -14,6 +14,13 @@ import {
   PenLine,
   Trash2,
   CheckCircle,
+  History,
+  TrendingUp,
+  TrendingDown,
+  Truck,
+  Wind,
+  ShieldAlert,
+  Award,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -167,7 +174,7 @@ function RewardModal({ reward, onClose, onSaved, official }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[5000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 flex-shrink-0">
@@ -562,7 +569,7 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
     reward.category;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-[5000] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         {/* Status bar */}
         <div
@@ -820,6 +827,398 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
   );
 }
 
+// ── Rewards & Points Log Drawer ──────────────────────────────
+function RewardsLogModal({ onClose, official }) {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedFilter, setSelectedFilter] = useState("all");
+  const [barangayFilter, setBarangayFilter] = useState(
+    official?.barangay && official.barangay !== "All" ? official.barangay : ""
+  );
+
+  const loadLogData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const bParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}` : "";
+      const rewParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}` : "";
+
+      const [pointsRes, rewardsRes] = await Promise.allSettled([
+        axios.get(`${API}/api/barangay-points-history${bParam}`),
+        axios.get(`${API}/api/rewards${rewParam}`),
+      ]);
+
+      const pointsEntries =
+        pointsRes.status === "fulfilled" && Array.isArray(pointsRes.value.data)
+          ? pointsRes.value.data.map((item) => ({
+              ...item,
+              logType: "point",
+            }))
+          : [];
+
+      const rewardEntries =
+        rewardsRes.status === "fulfilled" && Array.isArray(rewardsRes.value.data)
+          ? rewardsRes.value.data
+              .filter((r) => r.status === "claimed" || r.status === "published")
+              .map((r) => ({
+                _id: r._id,
+                logType: "reward",
+                status: r.status,
+                title: r.title,
+                rewardValue: r.rewardValue,
+                rewardType: r.rewardType,
+                recipientName: r.recipientName,
+                barangay: r.barangay,
+                claimCode: r.claimCode,
+                points: 0,
+                category: "reward_event",
+                description:
+                  r.status === "claimed"
+                    ? `Reward Claimed: "${r.title}" (${r.rewardValue || r.rewardType?.replace("_", " ")}) awarded to ${r.recipientName || "Resident"}`
+                    : `Reward Issued: "${r.title}" granted to ${r.recipientName || "Resident"}`,
+                createdAt: r.claimedDate || r.issuedDate || r.createdAt,
+              }))
+          : [];
+
+      const combined = [...pointsEntries, ...rewardEntries].sort((a, b) => {
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      });
+
+      setHistory(combined);
+    } catch {
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [barangayFilter]);
+
+  useEffect(() => {
+    loadLogData();
+  }, [loadLogData]);
+
+  const totalGains = history
+    .filter((h) => h.logType === "point" && h.points > 0)
+    .reduce((sum, h) => sum + h.points, 0);
+
+  const totalPenalties = Math.abs(
+    history
+      .filter((h) => h.logType === "point" && h.points < 0)
+      .reduce((sum, h) => sum + h.points, 0)
+  );
+
+  const totalClaimedRewards = history.filter(
+    (h) => h.logType === "reward" && h.status === "claimed"
+  ).length;
+
+  const filteredHistory = history.filter((h) => {
+    if (selectedFilter === "all") return true;
+    if (selectedFilter === "rewards") return h.logType === "reward";
+    if (selectedFilter === "positive") return h.logType === "point" && h.points > 0;
+    if (selectedFilter === "penalties") return h.logType === "point" && h.points < 0;
+    if (selectedFilter === "reports") {
+      return (
+        h.category === "reportScore" ||
+        h.description?.toLowerCase().includes("incident") ||
+        h.description?.toLowerCase().includes("report")
+      );
+    }
+    if (selectedFilter === "collections") {
+      return (
+        h.category === "collectionScore" ||
+        h.description?.toLowerCase().includes("collection") ||
+        h.description?.toLowerCase().includes("pickup")
+      );
+    }
+    return true;
+  });
+
+  const getCategoryMeta = (h) => {
+    if (h.logType === "reward") {
+      return {
+        icon: Gift,
+        label: h.status === "claimed" ? "Reward Claimed" : "Reward Issued",
+        badgeColor: "text-purple-700 bg-purple-50 border-purple-200",
+      };
+    }
+    if (h.points < 0) {
+      return {
+        icon: ShieldAlert,
+        label: "Penalty / Deduction",
+        badgeColor: "text-red-700 bg-red-50 border-red-200",
+      };
+    }
+    if (
+      h.category === "reportScore" ||
+      h.description?.toLowerCase().includes("report") ||
+      h.description?.toLowerCase().includes("incident")
+    ) {
+      return {
+        icon: CheckCircle,
+        label: "Incident Resolution",
+        badgeColor: "text-blue-700 bg-blue-50 border-blue-200",
+      };
+    }
+    if (
+      h.category === "collectionScore" ||
+      h.description?.toLowerCase().includes("collection") ||
+      h.description?.toLowerCase().includes("pickup")
+    ) {
+      return {
+        icon: Truck,
+        label: "Waste Collection",
+        badgeColor: "text-emerald-700 bg-emerald-50 border-emerald-200",
+      };
+    }
+    if (
+      h.category === "iotScore" ||
+      h.description?.toLowerCase().includes("air")
+    ) {
+      return {
+        icon: Wind,
+        label: "Sensor Audit",
+        badgeColor: "text-teal-700 bg-teal-50 border-teal-200",
+      };
+    }
+    return {
+      icon: Award,
+      label: "Performance Score",
+      badgeColor: "text-amber-700 bg-amber-50 border-amber-200",
+    };
+  };
+
+  const timeAgoFormat = (dateStr) => {
+    if (!dateStr) return "";
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[5000] flex justify-end bg-black/40 backdrop-blur-xs animate-overlay-fade"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full max-w-lg h-full shadow-2xl flex flex-col overflow-hidden animate-slide-x"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center flex-shrink-0">
+              <History className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                Rewards & Points Log
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Official redemptions, resident prizes & points ledger
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadLogData}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+              title="Refresh log"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Score & Rewards Summary Banner - Emerald Branding */}
+        <div className="p-5 bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white flex-shrink-0 relative overflow-hidden shadow-sm">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute -right-8 -top-8 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -left-8 -bottom-8 w-28 h-28 bg-emerald-400/20 rounded-full blur-xl pointer-events-none" />
+
+          <div className="flex items-center justify-between relative z-10">
+            <div>
+              <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
+                Total Log Entries
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-3xl font-black text-white tracking-tight">
+                  {history.length}
+                </span>
+                <span className="text-xs font-bold text-yellow-300">
+                  Activities
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="bg-white/15 border border-white/20 px-3 py-1.5 rounded-xl text-right backdrop-blur-xs">
+                <div className="flex items-center gap-1 text-[11px] text-yellow-300 font-bold">
+                  <Gift className="w-3.5 h-3.5" />
+                  <span>{totalClaimedRewards}</span>
+                </div>
+                <span className="text-[10px] text-emerald-100">Claimed</span>
+              </div>
+              <div className="bg-white/15 border border-white/20 px-3 py-1.5 rounded-xl text-right backdrop-blur-xs">
+                <div className="flex items-center gap-1 text-[11px] text-emerald-200 font-bold">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>+{totalGains}</span>
+                </div>
+                <span className="text-[10px] text-emerald-100">Gains</span>
+              </div>
+              {totalPenalties > 0 && (
+                <div className="bg-red-500/25 border border-red-300/30 px-3 py-1.5 rounded-xl text-right backdrop-blur-xs">
+                  <div className="flex items-center gap-1 text-[11px] text-red-200 font-bold">
+                    <TrendingDown className="w-3.5 h-3.5" />
+                    <span>-{totalPenalties}</span>
+                  </div>
+                  <span className="text-[10px] text-red-100">Penalties</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Chips Bar */}
+        <div className="px-5 py-3 border-b border-slate-100 bg-white flex items-center gap-1.5 overflow-x-auto flex-shrink-0">
+          {[
+            { id: "all", label: `All (${history.length})` },
+            { id: "rewards", label: `Rewards (${history.filter((h) => h.logType === "reward").length})` },
+            { id: "positive", label: `Gains (+)` },
+            { id: "penalties", label: `Penalties (-)` },
+            { id: "reports", label: "Resolutions" },
+            { id: "collections", label: "Collections" },
+          ].map((chip) => (
+            <button
+              key={chip.id}
+              onClick={() => setSelectedFilter(chip.id)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                selectedFilter === chip.id
+                  ? "bg-emerald-600 text-white shadow-xs font-bold"
+                  : "bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Log List */}
+        <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-3">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+              <p className="text-xs font-medium">Loading rewards & points log...</p>
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center my-6 shadow-2xs space-y-3">
+              <div className="w-14 h-14 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto">
+                <History className="w-7 h-7 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">
+                  No Rewards Activity Found
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                  Claimed rewards, incident resolution points, and collection credits will appear in this log ledger.
+                </p>
+              </div>
+            </div>
+          ) : (
+            filteredHistory.map((h, i) => {
+              const meta = getCategoryMeta(h);
+              const Icon = meta.icon;
+              const isReward = h.logType === "reward";
+              const isPositive = h.points >= 0;
+
+              return (
+                <div
+                  key={h._id || i}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs hover:border-slate-200 transition-all flex items-start gap-3.5"
+                >
+                  {/* Delta or Reward Icon Pill */}
+                  <div
+                    className={`shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm border shadow-2xs ${
+                      isReward
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : isPositive
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                        : "bg-red-50 text-red-700 border-red-200/80"
+                    }`}
+                  >
+                    {isReward ? (
+                      <Gift className="w-5 h-5 text-purple-600" />
+                    ) : isPositive ? (
+                      `+${h.points}`
+                    ) : (
+                      h.points
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-800 leading-snug">
+                      {h.description}
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold border ${meta.badgeColor}`}
+                      >
+                        <Icon className="w-3 h-3" />
+                        <span>{meta.label}</span>
+                      </span>
+
+                      {h.barangay && (
+                        <span className="text-[10.5px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                          Brgy. {h.barangay}
+                        </span>
+                      )}
+
+                      {h.claimCode && (
+                        <span className="text-[10px] font-mono font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
+                          Code: {h.claimCode}
+                        </span>
+                      )}
+
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {timeAgoFormat(h.createdAt)}
+                      </span>
+
+                      <span className="text-[10px] text-slate-400">
+                        {h.createdAt
+                          ? new Date(h.createdAt).toLocaleDateString("en-PH", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────
 export default function RewardsManagement() {
   const { official } = useAuth();
@@ -830,6 +1229,7 @@ export default function RewardsManagement() {
   const [filterCategory, setFilterCategory] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [detailReward, setDetailReward] = useState(null);
+  const [showRewardsLog, setShowRewardsLog] = useState(false);
 
   const fetchRewards = useCallback(async () => {
     setLoading(true);
@@ -908,12 +1308,20 @@ export default function RewardsManagement() {
             Grant and track resident rewards
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Create Reward
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowRewardsLog(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-2xs"
+          >
+            <History className="w-4 h-4 text-emerald-600" /> Rewards Log
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" /> Create Reward
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -1114,6 +1522,12 @@ export default function RewardsManagement() {
           reward={detailReward}
           onClose={() => setDetailReward(null)}
           onUpdated={onUpdated}
+          official={official}
+        />
+      )}
+      {showRewardsLog && (
+        <RewardsLogModal
+          onClose={() => setShowRewardsLog(false)}
           official={official}
         />
       )}

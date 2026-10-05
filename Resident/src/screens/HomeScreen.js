@@ -819,30 +819,52 @@ export default function HomeScreen({ navigation }) {
     let isMounted = true;
     const acquireLocation = async () => {
       try {
+        // 1. Immediately check AsyncStorage cached location for zero-latency load
+        try {
+          const cachedRaw = await AsyncStorage.getItem("@gtrash_last_user_location");
+          if (cachedRaw && isMounted) {
+            const parsed = JSON.parse(cachedRaw);
+            if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+              setUserLocation(parsed);
+              userLocationRef.current = parsed;
+            }
+          }
+        } catch (_) {}
+
         let { status } = await Location.getForegroundPermissionsAsync();
         if (status !== "granted") {
           const req = await Location.requestForegroundPermissionsAsync();
           status = req.status;
         }
         if (status === "granted") {
+          // 2. Fast OS hardware last known position (instant fix)
           const last = await Location.getLastKnownPositionAsync();
-          if (last && isMounted) {
+          if (last && isMounted && last.coords) {
             const loc = { lat: last.coords.latitude, lng: last.coords.longitude };
             setUserLocation(loc);
             userLocationRef.current = loc;
+            AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(loc)).catch(() => {});
           }
-          const curr = await Location.getCurrentPositionAsync({
+
+          // 3. Refine with accurate GPS position in the background (non-blocking)
+          Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
-          });
-          if (curr && isMounted) {
-            const loc = { lat: curr.coords.latitude, lng: curr.coords.longitude };
-            setUserLocation(loc);
-            userLocationRef.current = loc;
-          }
+          })
+            .then((curr) => {
+              if (curr && isMounted && curr.coords) {
+                const loc = { lat: curr.coords.latitude, lng: curr.coords.longitude };
+                setUserLocation(loc);
+                userLocationRef.current = loc;
+                AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(loc)).catch(() => {});
+              }
+            })
+            .catch((err) => {
+              console.warn("HomeScreen background location refine error:", err);
+            });
         } else {
           const bKey = (user?.barangay || "").trim().toLowerCase();
           const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
-          if (isMounted) {
+          if (isMounted && !userLocationRef.current) {
             setUserLocation(fallback);
             userLocationRef.current = fallback;
           }
@@ -850,7 +872,7 @@ export default function HomeScreen({ navigation }) {
       } catch (_) {
         const bKey = (user?.barangay || "").trim().toLowerCase();
         const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
-        if (isMounted) {
+        if (isMounted && !userLocationRef.current) {
           setUserLocation(fallback);
           userLocationRef.current = fallback;
         }

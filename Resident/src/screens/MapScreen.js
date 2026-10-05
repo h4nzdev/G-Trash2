@@ -1291,6 +1291,13 @@ export default function MapScreen() {
       webViewReadyRef.current = true;
       setWebViewReady(true);
       fetchTruckStatus();
+      if (userLocationRef.current) {
+        const { lat, lng } = userLocationRef.current;
+        const autoPan = isAutoCenterUserRef.current && !isFollowingRef.current;
+        webViewRef.current?.injectJavaScript(
+          `window.updateUserLocation(${lat}, ${lng}, ${autoPan}); true;`,
+        );
+      }
       if (liveTruckPos.current) {
         const { lat, lng, truckId, heading } = liveTruckPos.current;
         const safeId = (truckId || "GT").replace(/'/g, "\\'");
@@ -1313,26 +1320,77 @@ export default function MapScreen() {
 
   useEffect(() => {
     let subscription = null;
+    let isMounted = true;
     (async () => {
       try {
-        setIsLocationLoading(true);
+        // 1. Instantly check AsyncStorage cached location for zero-latency load
+        try {
+          const cachedRaw = await AsyncStorage.getItem("@gtrash_last_user_location");
+          if (cachedRaw && isMounted) {
+            const parsed = JSON.parse(cachedRaw);
+            if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+              setUserLocation(parsed);
+              userLocationRef.current = parsed;
+              setIsLocationLoading(false);
+              if (webViewReadyRef.current) {
+                webViewRef.current?.injectJavaScript(
+                  `window.updateUserLocation(${parsed.lat}, ${parsed.lng}, true); true;`,
+                );
+              }
+            }
+          }
+        } catch (_) {}
+
+        // 2. Request / verify permissions
         const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted) return;
         setLocationPermission(status);
         if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({
+          // 3. Fast OS hardware last known position (instant fix)
+          try {
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown && lastKnown.coords && isMounted) {
+              const { latitude, longitude } = lastKnown.coords;
+              const pos = { lat: latitude, lng: longitude };
+              setUserLocation(pos);
+              userLocationRef.current = pos;
+              setIsLocationLoading(false);
+              AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(pos)).catch(() => {});
+
+              if (webViewReadyRef.current) {
+                webViewRef.current?.injectJavaScript(
+                  `window.updateUserLocation(${latitude}, ${longitude}, true); true;`,
+                );
+              }
+            }
+          } catch (_) {}
+
+          // 4. Refine with accurate GPS position in the background (non-blocking)
+          Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
-          });
-          const { latitude, longitude } = loc.coords;
-          const pos = { lat: latitude, lng: longitude };
-          setUserLocation(pos);
-          userLocationRef.current = pos;
+          })
+            .then((loc) => {
+              if (!isMounted || !loc?.coords) return;
+              const { latitude, longitude } = loc.coords;
+              const pos = { lat: latitude, lng: longitude };
+              setUserLocation(pos);
+              userLocationRef.current = pos;
+              setIsLocationLoading(false);
+              AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(pos)).catch(() => {});
 
-          setTimeout(() => {
-            webViewRef.current?.injectJavaScript(
-              `window.updateUserLocation(${latitude}, ${longitude}, true); true;`,
-            );
-          }, 600);
+              const shouldPan = isAutoCenterUserRef.current && !isFollowingRef.current;
+              webViewRef.current?.injectJavaScript(
+                `window.updateUserLocation(${latitude}, ${longitude}, ${shouldPan}); true;`,
+              );
+            })
+            .catch((err) => {
+              console.warn("Background accurate location error:", err);
+            })
+            .finally(() => {
+              if (isMounted) setIsLocationLoading(false);
+            });
 
+          // 5. Watch position for active updates
           subscription = await Location.watchPositionAsync(
             {
               accuracy: Location.Accuracy.Balanced,
@@ -1340,10 +1398,12 @@ export default function MapScreen() {
               distanceInterval: 5,
             },
             (newLoc) => {
+              if (!isMounted || !newLoc?.coords) return;
               const { latitude: nLat, longitude: nLng } = newLoc.coords;
               const newPos = { lat: nLat, lng: nLng };
               setUserLocation(newPos);
               userLocationRef.current = newPos;
+              AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(newPos)).catch(() => {});
 
               const shouldPan = isAutoCenterUserRef.current && !isFollowingRef.current;
               webViewRef.current?.injectJavaScript(
@@ -1351,15 +1411,17 @@ export default function MapScreen() {
               );
             }
           );
+        } else {
+          setIsLocationLoading(false);
         }
       } catch (e) {
         console.warn("Location error:", e);
-      } finally {
-        setIsLocationLoading(false);
+        if (isMounted) setIsLocationLoading(false);
       }
     })();
 
     return () => {
+      isMounted = false;
       if (subscription) {
         subscription.remove();
       }
@@ -1437,7 +1499,7 @@ export default function MapScreen() {
               styles.floatingButton,
               isAutoCenterUser && styles.floatingButtonActive,
             ]}
-            onPress={() => {
+            onPress={async () => {
               const nextAutoCenter = !isAutoCenterUser;
               setIsAutoCenterUser(nextAutoCenter);
               isAutoCenterUserRef.current = nextAutoCenter;
@@ -1446,27 +1508,41 @@ export default function MapScreen() {
                 isFollowingRef.current = false;
               }
 
-              setIsLocationLoading(true);
+              // 1. Pan immediately if user location is already available
               if (userLocationRef.current) {
                 const { lat, lng } = userLocationRef.current;
                 webViewRef.current?.injectJavaScript(
                   `window.gotoLocation(${lat}, ${lng}, 17); true;`,
                 );
-                setTimeout(() => setIsLocationLoading(false), 400);
               } else {
-                Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-                  .then((loc) => {
-                    const { latitude, longitude } = loc.coords;
-                    const pos = { lat: latitude, lng: longitude };
+                // Check cached last known position first (instant)
+                try {
+                  const last = await Location.getLastKnownPositionAsync();
+                  if (last?.coords) {
+                    const pos = { lat: last.coords.latitude, lng: last.coords.longitude };
                     setUserLocation(pos);
                     userLocationRef.current = pos;
                     webViewRef.current?.injectJavaScript(
-                      `window.updateUserLocation(${latitude}, ${longitude}, true); true;`,
+                      `window.updateUserLocation(${pos.lat}, ${pos.lng}, true); true;`,
                     );
-                  })
-                  .catch((err) => console.warn("Recenter error:", err))
-                  .finally(() => setIsLocationLoading(false));
+                  }
+                } catch (_) {}
               }
+
+              // 2. Fetch fresh high-accuracy position in the background
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+                .then((loc) => {
+                  if (!loc?.coords) return;
+                  const { latitude, longitude } = loc.coords;
+                  const pos = { lat: latitude, lng: longitude };
+                  setUserLocation(pos);
+                  userLocationRef.current = pos;
+                  AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(pos)).catch(() => {});
+                  webViewRef.current?.injectJavaScript(
+                    `window.updateUserLocation(${latitude}, ${longitude}, ${isAutoCenterUserRef.current}); true;`,
+                  );
+                })
+                .catch((err) => console.warn("Recenter accurate location error:", err));
             }}
           >
             {isLocationLoading ? (

@@ -8,14 +8,22 @@ async function addBarangayScore(barangay, points, scoreCategory, countField, des
   if (scoreCategory) incOps[scoreCategory] = points;
   if (countField && points > 0) incOps[countField] = 1;
 
-  if (description) {
-    await BarangayPointHistory.create({
-      barangay,
-      points,
-      category: scoreCategory || "points",
-      description,
-    });
-  }
+  const desc = description || (
+    scoreCategory === "collectionScore"
+      ? (points >= 0 ? "Waste collection completed" : "Collection disputed / penalized")
+      : scoreCategory === "reportScore"
+      ? (points >= 0 ? "Incident resolution verified" : "Report disputed / SLA penalty")
+      : scoreCategory === "iotScore"
+      ? "Clean air quality award"
+      : points >= 0 ? "Barangay activity bonus" : "Barangay score deduction"
+  );
+
+  await BarangayPointHistory.create({
+    barangay,
+    points,
+    category: scoreCategory || "points",
+    description: desc,
+  }).catch(() => {});
 
   const updated = await BarangayScore.findOneAndUpdate(
     { barangay },

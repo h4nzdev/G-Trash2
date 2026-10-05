@@ -74,6 +74,33 @@ body {
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Horizontal X-Axis Slide Animation for Drawers & Modals */
+@keyframes slideInX {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-x {
+  animation: slideInX 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes overlayFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-overlay-fade {
+  animation: overlayFade 0.25s ease-out forwards;
+}
+
 @keyframes notificationSlideDown {
   0% {
     transform: translateY(-24px) scale(0.94);

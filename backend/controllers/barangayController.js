@@ -1,10 +1,12 @@
 const axios = require("axios");
-const { BarangayScore, Report, CollectionLog, GarbageArea } = require("../models");
+const { BarangayScore, BarangayPointHistory, Report, CollectionLog, GarbageArea } = require("../models");
 const { addBarangayScore } = require("../services/gamificationService");
+const { syncOverdueSLAPenalties } = require("../services/scheduleMonitor");
 
 // GET /api/leaderboard
 exports.getLeaderboard = async (req, res, next) => {
   try {
+    await syncOverdueSLAPenalties().catch((e) => console.warn("SLA sync warning:", e.message));
     const scores = await BarangayScore.find().sort({ points: -1 }).lean();
     res.json(scores);
   } catch (err) {
@@ -308,6 +310,134 @@ exports.getSitioAnalytics = async (req, res, next) => {
     });
 
     res.json(Object.values(sitioMap));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/barangay-points-history
+exports.getBarangayPointsHistory = async (req, res, next) => {
+  const { barangay } = req.query;
+  try {
+    // Process overdue SLA penalties so they are always current and logged
+    await syncOverdueSLAPenalties().catch((e) =>
+      console.warn("SLA penalty sync error:", e.message)
+    );
+
+    const filter = barangay && barangay !== "All" ? { barangay } : {};
+    let history = await BarangayPointHistory.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    // Ensure overdue reports for this barangay have their SLA penalties recorded
+    if (barangay && barangay !== "All") {
+      const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+      const overdueReports = await Report.find({
+        barangay,
+        status: { $nin: ["resolved", "rejected", "closed", "completed"] },
+        $or: [
+          { deadline: { $lte: new Date() } },
+          { createdAt: { $lte: seventyTwoHoursAgo } },
+          { escalated: true },
+        ],
+      }).lean();
+
+      for (const rep of overdueReports) {
+        const repTitle = rep.title || "Waste Report";
+        const hasPenalty = history.some(
+          (h) =>
+            h.points < 0 &&
+            (h.description?.includes(repTitle) ||
+              h.description?.toLowerCase().includes("overdue") ||
+              h.description?.toLowerCase().includes("sla"))
+        );
+
+        if (!hasPenalty) {
+          const createdMs = rep.createdAt ? new Date(rep.createdAt).getTime() : Date.now();
+          const elapsedHours = Math.floor((Date.now() - createdMs) / (1000 * 60 * 60));
+          const elapsedDays = Math.floor(elapsedHours / 24);
+          const timeStr = elapsedDays > 0 ? `${elapsedDays}d` : `${elapsedHours}h`;
+
+          const penaltyEntry = await BarangayPointHistory.create({
+            barangay,
+            points: -10,
+            category: "reportScore",
+            description: `SLA Escalation Penalty: "${repTitle}" unresolved over 72h (${timeStr} overdue)`,
+            createdAt: rep.deadline || rep.createdAt || new Date(),
+          }).catch(() => null);
+
+          if (penaltyEntry) {
+            history.unshift(penaltyEntry.toObject ? penaltyEntry.toObject() : penaltyEntry);
+          }
+        }
+      }
+    }
+
+    // If history is empty but barangay has scores/points, backfill meaningful history
+    if (history.length === 0 && barangay && barangay !== "All") {
+      const bScore = await BarangayScore.findOne({ barangay }).lean();
+      const entriesToCreate = [];
+
+      // Check resolved reports in this barangay
+      const resolvedReports = await Report.find({ barangay, status: "resolved" })
+        .sort({ updatedAt: -1 })
+        .limit(10)
+        .lean();
+
+      if (resolvedReports.length > 0) {
+        for (const rep of resolvedReports) {
+          entriesToCreate.push({
+            barangay,
+            points: 20,
+            category: "reportScore",
+            description: `Incident Resolved & Verified: ${rep.title || "Waste Report"}`,
+            createdAt: rep.updatedAt || rep.createdAt || new Date(),
+          });
+        }
+      }
+
+      // Check collection score from score document
+      if (bScore) {
+        if (bScore.collectionScore > 0 && entriesToCreate.length === 0) {
+          entriesToCreate.push({
+            barangay,
+            points: bScore.collectionScore,
+            category: "collectionScore",
+            description: "Completed Waste Collection Runs",
+            createdAt: bScore.updatedAt || new Date(),
+          });
+        }
+        if (bScore.iotScore > 0) {
+          entriesToCreate.push({
+            barangay,
+            points: bScore.iotScore,
+            category: "iotScore",
+            description: "Clean Air Quality Environmental Award",
+            createdAt: bScore.updatedAt || new Date(),
+          });
+        }
+        if (entriesToCreate.length === 0 && bScore.points > 0) {
+          entriesToCreate.push({
+            barangay,
+            points: bScore.points,
+            category: "points",
+            description: "Performance Score Activity Baseline",
+            createdAt: bScore.updatedAt || new Date(),
+          });
+        }
+      }
+
+      if (entriesToCreate.length > 0) {
+        await BarangayPointHistory.insertMany(entriesToCreate);
+        history = await BarangayPointHistory.find(filter)
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .lean();
+      }
+    }
+
+    res.json(history);
   } catch (err) {
     next(err);
   }

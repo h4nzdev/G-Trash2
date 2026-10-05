@@ -3,8 +3,9 @@ const router = express.Router();
 const barangayController = require("../controllers/barangayController");
 const { optionalAuth } = require("../middleware/auth");
 
-// Leaderboard
+// Leaderboard & Points History
 router.get("/leaderboard", barangayController.getLeaderboard);
+router.get("/barangay-points-history", barangayController.getBarangayPointsHistory);
 router.post("/leaderboard/add-score", barangayController.addLeaderboardScore);
 router.post("/leaderboard/seed", barangayController.seedLeaderboard);
 

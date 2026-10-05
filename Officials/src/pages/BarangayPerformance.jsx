@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight, Lock, Activity, History } from 'lucide-react';
+import { Trophy, Medal, ChevronUp, ChevronDown, Award, RefreshCw, Trash2, ThumbsUp, Leaf, Clock, Wifi, Users, Star, ScanLine, FileText, CheckCircle, X, ChevronRight, Lock, Activity, History, ShieldAlert, Truck, Wind, TrendingUp, TrendingDown, Filter, AlertCircle } from 'lucide-react';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import ProgressBar from '../components/shared/ProgressBar';
 import API from '../config';
@@ -86,8 +86,8 @@ function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
   const sortField = period === 'month' ? 'monthlyPoints' : 'totalPoints';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="h-full w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-8" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[5000] flex items-center justify-end bg-black/30 backdrop-blur-sm animate-overlay-fade" onClick={onClose}>
+      <div className="h-full w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-x" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
@@ -229,60 +229,339 @@ function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
   );
 }
 
-const PointsHistoryModal = ({ barangay, onClose }) => {
-    const [history, setHistory] = useState([]);
-    const [loadingHistory, setLoadingHistory] = useState(true);
+const PointsHistoryModal = ({ barangay, onClose, currentScore }) => {
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [selectedFilter, setSelectedFilter] = useState("all");
 
-    useEffect(() => {
-      fetch(`${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}`)
-        .then(r => r.json())
-        .then(d => { setHistory(d); setLoadingHistory(false); })
-        .catch(() => setLoadingHistory(false));
-    }, [barangay]);
+  const loadHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(
+        `${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}`
+      );
+      const data = await res.json();
+      setHistory(Array.isArray(data) ? data : []);
+    } catch {
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [barangay]);
 
-    return (
-      <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
-        <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right-8" onClick={e => e.stopPropagation()}>
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const totalPoints =
+    currentScore?.points ??
+    history.reduce((acc, h) => acc + (h.points || 0), 0);
+  const totalEarned = history
+    .filter((h) => h.points > 0)
+    .reduce((sum, h) => sum + h.points, 0);
+  const totalDeductions = Math.abs(
+    history
+      .filter((h) => h.points < 0)
+      .reduce((sum, h) => sum + h.points, 0)
+  );
+
+  const filteredHistory = history.filter((h) => {
+    if (selectedFilter === "all") return true;
+    if (selectedFilter === "positive") return h.points > 0;
+    if (selectedFilter === "penalties") return h.points < 0;
+    if (selectedFilter === "reports") {
+      return (
+        h.category === "reportScore" ||
+        h.description?.toLowerCase().includes("incident") ||
+        h.description?.toLowerCase().includes("report")
+      );
+    }
+    if (selectedFilter === "collections") {
+      return (
+        h.category === "collectionScore" ||
+        h.description?.toLowerCase().includes("collection") ||
+        h.description?.toLowerCase().includes("pickup")
+      );
+    }
+    if (selectedFilter === "iot") {
+      return (
+        h.category === "iotScore" ||
+        h.description?.toLowerCase().includes("air")
+      );
+    }
+    return true;
+  });
+
+  const getCategoryMeta = (h) => {
+    if (h.points < 0) {
+      return {
+        icon: ShieldAlert,
+        label: "Penalty / Deduction",
+        badgeColor: "text-red-700 bg-red-50 border-red-200",
+        pillBg: "bg-red-50 text-red-700 border-red-200",
+      };
+    }
+    if (
+      h.category === "reportScore" ||
+      h.description?.toLowerCase().includes("report") ||
+      h.description?.toLowerCase().includes("incident")
+    ) {
+      return {
+        icon: CheckCircle,
+        label: "Incident Resolution",
+        badgeColor: "text-blue-700 bg-blue-50 border-blue-200",
+        pillBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    }
+    if (
+      h.category === "collectionScore" ||
+      h.description?.toLowerCase().includes("collection") ||
+      h.description?.toLowerCase().includes("pickup")
+    ) {
+      return {
+        icon: Truck,
+        label: "Waste Collection",
+        badgeColor: "text-emerald-700 bg-emerald-50 border-emerald-200",
+        pillBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    }
+    if (
+      h.category === "iotScore" ||
+      h.description?.toLowerCase().includes("air")
+    ) {
+      return {
+        icon: Wind,
+        label: "Environmental Sensor",
+        badgeColor: "text-teal-700 bg-teal-50 border-teal-200",
+        pillBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    }
+    return {
+      icon: Award,
+      label: "Performance Score",
+      badgeColor: "text-amber-700 bg-amber-50 border-amber-200",
+      pillBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    };
+  };
+
+  const timeAgoFormat = (dateStr) => {
+    if (!dateStr) return "";
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[5000] flex justify-end bg-black/40 backdrop-blur-xs animate-overlay-fade"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full max-w-lg h-full shadow-2xl flex flex-col overflow-hidden animate-slide-x"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center flex-shrink-0">
+              <History className="w-5 h-5" />
+            </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <History className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 {barangay} Points History
               </h2>
-              <p className="text-xs text-slate-500 mt-1">Recent point activities and score updates</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Official point ledger, penalties & collection activities
+              </p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl text-slate-400">
-              <X className="w-5 h-5" />
-            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-            {loadingHistory ? (
-              <p className="text-sm text-slate-500 text-center py-10">Loading history...</p>
-            ) : history.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-10">No recent points history.</p>
-            ) : (
-              <div className="space-y-4">
-                {history.map((h, i) => (
-                  <div key={i} className="flex items-start gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                    <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${h.points > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                      {h.points > 0 ? '+' : ''}{h.points}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{h.description}</p>
-                      <p className="text-xs text-slate-400 mt-1 flex justify-between items-center w-full gap-4">
-                        <span className="uppercase tracking-wider font-bold">{h.category}</span>
-                        <span>{new Date(h.createdAt).toLocaleString()}</span>
-                      </p>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Score Summary Banner - Matching Emerald Theme */}
+        <div className="p-5 bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white flex-shrink-0 relative overflow-hidden shadow-sm">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute -right-8 -top-8 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -left-8 -bottom-8 w-28 h-28 bg-emerald-400/20 rounded-full blur-xl pointer-events-none" />
+
+          <div className="flex items-center justify-between relative z-10">
+            <div>
+              <span className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">
+                Current Total Score
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-3xl font-black text-white tracking-tight">
+                  {totalPoints}
+                </span>
+                <span className="text-xs font-bold text-yellow-300">
+                  Points
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="bg-white/15 border border-white/20 px-3 py-1.5 rounded-xl text-right backdrop-blur-xs">
+                <div className="flex items-center gap-1 text-[11px] text-yellow-300 font-bold">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>+{totalEarned}</span>
+                </div>
+                <span className="text-[10px] text-emerald-100">Total Gains</span>
+              </div>
+              {totalDeductions > 0 && (
+                <div className="bg-red-500/25 border border-red-300/30 px-3 py-1.5 rounded-xl text-right backdrop-blur-xs">
+                  <div className="flex items-center gap-1 text-[11px] text-red-200 font-bold">
+                    <TrendingDown className="w-3.5 h-3.5" />
+                    <span>-{totalDeductions}</span>
+                  </div>
+                  <span className="text-[10px] text-red-100">Penalties</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Category breakdown pills */}
+          {currentScore && (
+            <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/15 text-center relative z-10">
+              <div className="bg-white/10 rounded-xl p-2 border border-white/10 backdrop-blur-xs">
+                <p className="text-[10px] text-emerald-100 font-medium">Reports</p>
+                <p className="text-xs font-bold text-white">
+                  {currentScore.reportScore ?? 0} pts
+                </p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2 border border-white/10 backdrop-blur-xs">
+                <p className="text-[10px] text-emerald-100 font-medium">Collections</p>
+                <p className="text-xs font-bold text-white">
+                  {currentScore.collectionScore ?? 0} pts
+                </p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2 border border-white/10 backdrop-blur-xs">
+                <p className="text-[10px] text-emerald-100 font-medium">Air Quality</p>
+                <p className="text-xs font-bold text-white">
+                  {currentScore.iotScore ?? 0} pts
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Filter Chips Bar */}
+        <div className="px-5 py-3 border-b border-slate-100 bg-white flex items-center gap-1.5 overflow-x-auto flex-shrink-0">
+          {[
+            { id: "all", label: `All (${history.length})` },
+            { id: "positive", label: `Gains (+)` },
+            { id: "penalties", label: `Penalties (-)` },
+            { id: "reports", label: "Resolutions" },
+            { id: "collections", label: "Collections" },
+          ].map((chip) => (
+            <button
+              key={chip.id}
+              onClick={() => setSelectedFilter(chip.id)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                selectedFilter === chip.id
+                  ? "bg-emerald-600 text-white shadow-xs font-bold"
+                  : "bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+
+        {/* List Content */}
+        <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-3">
+          {loadingHistory ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+              <p className="text-xs font-medium">Loading points history...</p>
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center my-6 shadow-2xs space-y-3">
+              <div className="w-14 h-14 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto">
+                <History className="w-7 h-7 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">
+                  No Points Activity Recorded Yet
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                  Point entries earned from verified incident resolutions, completed waste collection routes, and sensor environmental audits will appear here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            filteredHistory.map((h, i) => {
+              const meta = getCategoryMeta(h);
+              const Icon = meta.icon;
+              const isPositive = h.points >= 0;
+
+              return (
+                <div
+                  key={h._id || i}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs hover:border-slate-200 transition-all flex items-start gap-3.5"
+                >
+                  {/* Points delta pill */}
+                  <div
+                    className={`shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm border shadow-2xs ${
+                      isPositive
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                        : "bg-red-50 text-red-700 border-red-200/80"
+                    }`}
+                  >
+                    {isPositive ? `+${h.points}` : h.points}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-800 leading-snug">
+                      {h.description}
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold border ${meta.badgeColor}`}
+                      >
+                        <Icon className="w-3 h-3" />
+                        <span>{meta.label}</span>
+                      </span>
+
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {timeAgoFormat(h.createdAt)}
+                      </span>
+
+                      <span className="text-[10px] text-slate-400">
+                        {h.createdAt
+                          ? new Date(h.createdAt).toLocaleDateString("en-PH", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : ""}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
 export default function BarangayPerformance() {
   const { official } = useAuth();
@@ -625,7 +904,7 @@ export default function BarangayPerformance() {
 
       {/* Restricted access modal */}
       {restrictedAlert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setRestrictedAlert(null)}>
+        <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setRestrictedAlert(null)}>
           <div className="bg-white rounded-2xl shadow-2xl p-7 max-w-sm w-full mx-4 flex flex-col items-center gap-4" onClick={e => e.stopPropagation()}>
             <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center">
               <Lock className="w-7 h-7 text-red-500" />
@@ -650,7 +929,11 @@ export default function BarangayPerformance() {
       )}
 
       {historyModal && (
-        <PointsHistoryModal barangay={historyModal} onClose={() => setHistoryModal(null)} />
+        <PointsHistoryModal
+          barangay={historyModal}
+          currentScore={rankings.find((r) => r.barangay === historyModal)}
+          onClose={() => setHistoryModal(null)}
+        />
       )}
     </div>
   );
