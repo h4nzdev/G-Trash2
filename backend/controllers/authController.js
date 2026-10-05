@@ -1,8 +1,9 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { Resident, Official } = require("../models");
+const { Resident, Official, AdminContactRequest, IoTAlert } = require("../models");
 const { JWT_SECRET } = require("../middleware/auth");
 const { generateHouseholdId } = require("../utils/addressUtils");
+const { getIO } = require("../config/socket");
 
 const CHD_ALLOWED_PAGES = ["dashboard", "heatmap", "reports", "history"];
 function getAllowedPages(role) {
@@ -313,3 +314,95 @@ exports.searchResidents = async (req, res, next) => {
     next(err);
   }
 };
+
+// Contact Administrator / Request Official Access
+exports.contactAdmin = async (req, res, next) => {
+  const { name, email, phone, barangay, requestType, message } = req.body;
+  if (!name || !email) {
+    return res.status(400).json({ error: "Name and email are required" });
+  }
+
+  try {
+    const contactReq = await AdminContactRequest.create({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone ? phone.trim() : "",
+      barangay: barangay || "All",
+      requestType: requestType || "Request Official Account",
+      message: message ? message.trim() : "Requesting official account credentials and access.",
+    });
+
+    // Create a persistent IoT/System alert so it immediately appears in AlertsManagement and TopBar
+    try {
+      await IoTAlert.create({
+        sensorId: `REQ-${contactReq._id.toString().slice(-4).toUpperCase()}`,
+        location: barangay || "City Admin",
+        barangay: barangay || "All",
+        severity: "warning",
+        message: `Official Access Request from ${name} (${email}) for ${barangay || "LGU"}: "${message || 'Requesting credentials.'}"`,
+        gasType: "access_request",
+        value: 1,
+        threshold: 1,
+        acknowledged: false,
+      });
+    } catch (e) {
+      console.error("Failed to create IoTAlert for contact admin request:", e);
+    }
+
+    // Broadcast in real-time via Socket.IO
+    const io = getIO();
+    if (io) {
+      // 1. Dedicated contact-request event for Dashboard layout
+      io.emit("admin:contact-request", {
+        _id: contactReq._id,
+        name: contactReq.name,
+        email: contactReq.email,
+        phone: contactReq.phone,
+        barangay: contactReq.barangay,
+        requestType: contactReq.requestType,
+        message: contactReq.message,
+        createdAt: contactReq.createdAt,
+      });
+
+      // 2. Alert event so TopBar & AlertsManagement show it
+      io.emit("iot:alert", {
+        _id: contactReq._id,
+        sensorId: `REQ-${contactReq._id.toString().slice(-4).toUpperCase()}`,
+        location: barangay || "City Admin",
+        barangay: contactReq.barangay,
+        severity: "warning",
+        message: `Official Access Request: ${name} (${email})`,
+        gasType: "access_request",
+        createdAt: contactReq.createdAt,
+      });
+
+      // 3. System banner announcement
+      io.emit("announcement:new", {
+        _id: contactReq._id,
+        title: `Official Access Request: ${name}`,
+        message: `${name} (${email}) has requested official access for ${barangay || "All"}. Message: ${message || 'Requesting credentials.'}`,
+        type: "warning",
+        createdBy: "Official Portal",
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Admin has been notified successfully. An official supervisor will contact you shortly.",
+      data: contactReq,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/auth/contact-requests (Admin view)
+exports.getContactRequests = async (req, res, next) => {
+  try {
+    const requests = await AdminContactRequest.find().sort({ createdAt: -1 }).limit(100);
+    res.json(requests);
+  } catch (err) {
+    next(err);
+  }
+};
+

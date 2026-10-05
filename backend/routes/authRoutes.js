@@ -10,6 +10,8 @@ router.post("/resident/register", authController.registerResident);
 router.post("/login", authController.login);
 router.post("/resident/login", authController.loginResident);
 router.get("/me", authMiddleware, authController.getMe);
+router.post("/contact-admin", authController.contactAdmin);
+router.get("/contact-requests", authMiddleware, authController.getContactRequests);
 
 // Residents lookup
 router.get("/residents/search", authMiddleware, authController.searchResidents);

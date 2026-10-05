@@ -25,4 +25,5 @@ module.exports = {
   CleanupPost: require("./CleanupPost.js"),
   SurveyResponse: require("./SurveyResponse.js"),
   QuickSetupSurvey: require("./QuickSetupSurvey.js"),
+  AdminContactRequest: require("./AdminContactRequest.js"),
 };

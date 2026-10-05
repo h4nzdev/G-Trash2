@@ -138,6 +138,24 @@ export default function TopBar() {
       });
     });
 
+    socket.on('admin:contact-request', (data) => {
+      const notifId = `contact_${data._id || Date.now()}`;
+      setNotifications(prev => {
+        if (prev.some(n => n.id === notifId)) return prev;
+        const notif = {
+          id: notifId,
+          msg: `🔔 Official Access Request: ${data.name} (${data.email}) for ${data.barangay || 'All'}: "${data.message}"`,
+          time: data.createdAt || new Date().toISOString(),
+          severity: 'warning',
+          barangay: data.barangay,
+          acknowledged: false,
+          type: 'contact-request',
+        };
+        setUnreadCount(c => c + 1);
+        return [notif, ...prev].slice(0, 50);
+      });
+    });
+
     socket.on('report:escalated', (report) => {
       if (isScoped && userBrgy && report.barangay && report.barangay.toLowerCase().trim() !== userBrgy) {
         return;

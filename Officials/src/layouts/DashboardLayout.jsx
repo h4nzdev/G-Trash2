@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone, CheckCircle } from 'lucide-react';
+import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone, CheckCircle, Mail, User } from 'lucide-react';
 import Sidebar from '../components/sidebar/Sidebar';
 import TopBar from '../components/shared/TopBar';
 import { useAuth } from '../context/AuthContext';
@@ -97,6 +97,15 @@ export default function DashboardLayout() {
       setTimeout(() => {
         setAlerts(prev => prev.filter(a => a.id !== alertId));
       }, 20000);
+    });
+
+    // Contact Admin / Official Access Requests
+    socket.on('admin:contact-request', (data) => {
+      const alertId = `contact_req_${data._id || Date.now()}`;
+      setAlerts(prev => [{ ...data, id: alertId, type: 'contact-request', ts: Date.now() }, ...prev].slice(0, 5));
+      setTimeout(() => {
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
+      }, 25000);
     });
 
     return () => socket.disconnect();
@@ -446,6 +455,63 @@ export default function DashboardLayout() {
             >
               Close
             </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (alert.type === 'contact-request') {
+      return (
+        <div
+          key={alert.id}
+          className="bg-white/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-2xl border border-emerald-300 w-full pointer-events-auto animate-notification-drop flex flex-col gap-2.5"
+        >
+          {/* Top Row: Icon + Title & Badge */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center flex-shrink-0 text-emerald-700">
+                <User className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                  Official Access Request
+                </h4>
+                <div className="mt-0.5">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-200/70">
+                    {alert.name} ({alert.email})
+                  </span>
+                </div>
+              </div>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200/60 flex-shrink-0">
+              {alert.barangay || 'All'}
+            </span>
+          </div>
+
+          {/* Middle Row: Message */}
+          <p className="text-xs text-slate-700 leading-relaxed font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+            "{alert.message}"
+          </p>
+
+          {/* Bottom Row: Actions */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
+            <span className="text-[11px] text-slate-500 font-medium">
+              {alert.phone ? `📞 ${alert.phone}` : 'No phone provided'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { dismissAlert(alert.id); navigate('/settings'); }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 transition-colors text-xs font-semibold"
+              >
+                Manage Officials
+              </button>
+              <button
+                onClick={() => dismissAlert(alert.id)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80 transition-colors text-xs font-semibold"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         </div>
       );
