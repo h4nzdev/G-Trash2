@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { 
   Truck, Users, ShieldAlert, Award, 
   TrendingUp, Activity, BarChart3, 
   Clock, MapPin, CheckCircle2, AlertCircle,
-  PieChart as PieIcon, LineChart as LineIcon
+  PieChart as PieIcon, LineChart as LineIcon,
+  Bell, ClipboardList, RefreshCw, Target,
+  ShieldCheck, Smartphone, Layers
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, 
@@ -13,254 +15,607 @@ import {
 } from 'recharts';
 import API from '../../config';
 
+const PURPOSE_LABELS = {
+  household: { label: 'Household Waste', color: '#006A3B' },
+  reporting: { label: 'Community Reports', color: '#0284C7' },
+  rewards: { label: 'Eco Rewards', color: '#D97706' },
+  commercial: { label: 'Commercial Ops', color: '#7C3AED' },
+};
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [surveyData, setSurveyData] = useState(null);
   const [recentReports, setRecentReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, reportsRes] = await Promise.all([
-          axios.get(`${API}/api/admin/stats`),
-          axios.get(`${API}/api/reports?limit=5`)
-        ]);
-        setStats(statsRes.data);
-        setRecentReports(reportsRes.data.slice(0, 5));
-      } catch (err) {
-        console.error('Failed to fetch dashboard data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+  const fetchData = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const [statsRes, reportsRes, surveyRes] = await Promise.all([
+        axios.get(`${API}/api/admin/stats`).catch(() => ({ data: null })),
+        axios.get(`${API}/api/reports?limit=10`).catch(() => ({ data: [] })),
+        axios.get(`${API}/api/survey/quick-setup/results`).catch(() => ({ data: null })),
+      ]);
 
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+      if (statsRes.data) setStats(statsRes.data);
+      if (Array.isArray(reportsRes.data)) setRecentReports(reportsRes.data);
+      if (surveyRes.data) setSurveyData(surveyRes.data);
+    } catch (err) {
+      console.error('Failed to fetch dashboard data:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  if (loading && !stats) return (
-    <div className="flex items-center justify-center h-96">
-      <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // Purpose distribution chart data
+  const purposeChartData = useMemo(() => {
+    if (!surveyData?.byPurpose?.length) return [];
+    return surveyData.byPurpose.map((p) => {
+      const meta = PURPOSE_LABELS[p.purpose] || { label: p.purpose, color: '#006A3B' };
+      return {
+        name: meta.label,
+        count: p.count,
+        percentage: p.percentage,
+        color: meta.color,
+      };
+    });
+  }, [surveyData]);
+
+  // Push notifications donut data
+  const notifChartData = useMemo(() => {
+    const total = surveyData?.total || 0;
+    if (total === 0) return [];
+    const notifs = surveyData?.notifications || { enabled: 0, skipped: 0 };
+    return [
+      { name: 'Opted In', value: notifs.enabled, color: '#006A3B' },
+      { name: 'Skipped', value: notifs.skipped, color: '#CBD5E1' },
+    ];
+  }, [surveyData]);
+
+  // Reporting trends chart data
+  const trendsChartData = useMemo(() => {
+    if (!stats?.trends?.length) return [];
+    return stats.trends.map((t) => ({
+      date: new Date(t._id).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      count: t.count,
+    }));
+  }, [stats]);
+
+  if (loading && !stats) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   const cards = [
-    { title: 'Fleet Size', value: stats?.summary?.trucks || 0, icon: Truck, color: 'emerald' },
-    { title: 'Active Reports', value: stats?.summary?.reports || 0, icon: ShieldAlert, color: 'amber' },
-    { title: 'Registered Citizens', value: stats?.summary?.residents || 0, icon: Users, color: 'blue' },
-    { title: 'Officials', value: stats?.summary?.officials || 0, icon: Award, color: 'purple' },
+    {
+      title: 'Fleet Size',
+      value: stats?.summary?.trucks || 0,
+      sub: 'Assigned trucks',
+      icon: Truck,
+      color: 'emerald',
+    },
+    {
+      title: 'Active Reports',
+      value: stats?.summary?.reports || 0,
+      sub: `${stats?.summary?.resolutionRate || 0}% resolved`,
+      icon: ShieldAlert,
+      color: 'amber',
+    },
+    {
+      title: 'Citizens Registered',
+      value: stats?.summary?.residents || 0,
+      sub: 'Verified residents',
+      icon: Users,
+      color: 'blue',
+    },
+    {
+      title: 'Official Personnel',
+      value: stats?.summary?.officials || 0,
+      sub: 'Barangay officers',
+      icon: Award,
+      color: 'purple',
+    },
+    {
+      title: 'Quick Setup Surveys',
+      value: surveyData?.total || 0,
+      sub: `${surveyData?.completionRate || 0}% resident rate`,
+      icon: ClipboardList,
+      color: 'teal',
+    },
+    {
+      title: 'Push Notifications',
+      value: `${surveyData?.notifications?.optInRate || 0}%`,
+      sub: `${surveyData?.notifications?.enabled || 0} residents opted in`,
+      icon: Bell,
+      color: 'indigo',
+    },
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-5 animate-in fade-in duration-300">
+      {/* Compact Top Header */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">City Intelligence</h2>
-          <p className="text-sm text-slate-500 font-medium">Monitoring Cebu City waste operations and community engagement</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+              Developer &amp; Admin City Intelligence
+            </h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+              Live Operations
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Real-time telemetry from Cebu City waste management, fleet routing, and resident onboarding
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 shadow-sm">
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-xs font-semibold">
             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest">System Online</span>
+            <span>System Online</span>
           </div>
-          <div className="px-4 py-2 bg-slate-900 text-white rounded-2xl shadow-lg shadow-slate-900/10">
-            <span className="text-[10px] font-black uppercase tracking-widest">Resolution: {stats?.summary?.resolutionRate || 0}%</span>
+          <div className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold">
+            Resolution: {stats?.summary?.resolutionRate || 0}%
           </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={refreshing}
+            className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
+            title="Refresh dashboard"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* 6 Compact Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {cards.map((card, i) => {
           const Icon = card.icon;
           const colors = {
-            emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-            blue: 'bg-blue-50 text-blue-600 border-blue-100',
-            purple: 'bg-purple-50 text-purple-600 border-purple-100',
-            amber: 'bg-amber-50 text-amber-600 border-amber-100',
+            emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+            amber: 'bg-amber-50 text-amber-700 border-amber-100',
+            blue: 'bg-blue-50 text-blue-700 border-blue-100',
+            purple: 'bg-purple-50 text-purple-700 border-purple-100',
+            teal: 'bg-teal-50 text-teal-700 border-teal-100',
+            indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
           };
           return (
-            <div key={i} className="bg-white border border-slate-100 p-6 rounded-[32px] shadow-sm hover:shadow-xl transition-all group">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3.5 rounded-2xl ${colors[card.color]} border group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon className="w-6 h-6" />
+            <div
+              key={i}
+              className="bg-white border border-slate-200/80 p-3.5 rounded-2xl shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className={`p-2 rounded-xl ${colors[card.color]} border`}>
+                  <Icon className="w-4 h-4" />
                 </div>
-                <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-emerald-50 transition-colors">
-                  <TrendingUp className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500" />
-                </div>
+                <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
               </div>
               <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{card.title}</p>
-                <h3 className="text-3xl font-black text-slate-900 mt-1 tracking-tight">{card.value.toLocaleString()}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                  {card.title}
+                </p>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">
+                  {card.sub}
+                </p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          {/* Main Trend Analytics */}
-          <div className="bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h3 className="text-lg font-black text-slate-900 tracking-tight">Reporting Trends</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Daily community submissions (Last 7 Days)</p>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-2xl">
-                <LineIcon className="w-5 h-5 text-slate-400" />
-              </div>
+      {/* 4 Interactive Compact Graphs Grid (2x2) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Graph 1: Community Incident Reports Trend */}
+        <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <LineIcon className="w-4 h-4 text-emerald-700" />
+                Incident Reports Timeline
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">Daily citizen submissions (Actual data)</p>
             </div>
-            
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={stats?.trends || []}>
-                  <defs>
-                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F8FAFC" />
-                  <XAxis 
-                    dataKey="_id" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: '#94A3B8', fontSize: 10, fontWeight: 700}} 
-                    dy={10} 
-                    tickFormatter={(val) => new Date(val).toLocaleDateString('en-US', { weekday: 'short' })}
-                  />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94A3B8', fontSize: 10, fontWeight: 700}} />
-                  <Tooltip 
-                    contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 800, fontSize: 12}}
-                    itemStyle={{color: '#10B981'}}
-                  />
-                  <Area type="monotone" dataKey="count" stroke="#10B981" strokeWidth={4} fillOpacity={1} fill="url(#colorCount)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <span className="text-[10px] font-semibold text-slate-400">Past 7 Days</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Barangay Performance */}
-            <div className="bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Top Performers</h3>
-                <BarChart3 className="w-4 h-4 text-slate-400" />
+          <div className="h-48 w-full">
+            {trendsChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendsChartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="adminColorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#006A3B" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#006A3B" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="date" tick={{ fill: '#64748B', fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: '#64748B', fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: 11, fontWeight: 700 }}
+                  />
+                  <Area type="monotone" dataKey="count" stroke="#006A3B" strokeWidth={2.5} fillOpacity={1} fill="url(#adminColorCount)" name="Reports" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                <AlertCircle className="w-6 h-6 mb-1 opacity-40" />
+                <span>No report trend activity recorded in this period</span>
               </div>
-              <div className="space-y-4">
-                {(stats?.leaderboard || []).map((b, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-black text-slate-300 w-4">#{i+1}</span>
-                      <span className="text-sm font-bold text-slate-700">{b._id}</span>
-                    </div>
-                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{b.count} pts</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Waste Composition */}
-            <div className="bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Composition</h3>
-                <PieIcon className="w-4 h-4 text-slate-400" />
-              </div>
-              <div className="h-40 w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats?.composition || []}
-                      innerRadius={50}
-                      outerRadius={70}
-                      paddingAngle={5}
-                      dataKey="count"
-                    >
-                      {(stats?.composition || []).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={['#10B981', '#3B82F6', '#F59E0B', '#EF4444'][index % 4]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-xl font-black text-slate-900 leading-none">
-                    {stats?.composition?.[0]?.count || 0}
-                  </span>
-                  <span className="text-[8px] font-black text-slate-400 uppercase">Top Cat</span>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
-                {(stats?.composition?.slice(0,3) || []).map((c, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full" style={{backgroundColor: ['#10B981', '#3B82F6', '#F59E0B'][i % 3]}} />
-                    <span className="text-[10px] font-bold text-slate-500 truncate max-w-[80px]">{c._id}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Sidebar Analytics */}
-        <div className="space-y-8">
-          {/* Winner Card */}
-          <div className="bg-slate-900 rounded-[48px] p-8 text-white relative overflow-hidden shadow-2xl">
-            <Activity className="absolute top-[-20px] right-[-20px] w-64 h-64 text-white/5 rotate-12" />
-            
-            <div className="relative z-10">
-              <div className="bg-emerald-500 w-fit p-4 rounded-2xl shadow-xl shadow-emerald-500/30 mb-8">
-                <Award className="w-8 h-8 text-white" />
-              </div>
-              
-              <p className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.3em] mb-2">City Champion</p>
-              <h3 className="text-4xl font-black mb-4 tracking-tighter leading-tight">
-                {stats?.leaderboard?.[0]?._id || 'Fetching...'}
+        {/* Graph 2: Quick Setup Purpose Distribution */}
+        <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <BarChart3 className="w-4 h-4 text-blue-600" />
+                Quick Setup Purpose Distribution
               </h3>
-              
-              <div className="space-y-6 mt-10">
-                <div className="p-5 bg-white/5 border border-white/10 rounded-[32px] backdrop-blur-md">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resolution Efficiency</p>
-                    <span className="text-xs font-black text-emerald-400">{stats?.summary?.resolutionRate || 0}%</span>
-                  </div>
-                  <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full transition-all duration-1000" style={{width: `${stats?.summary?.resolutionRate || 0}%`}} />
-                  </div>
-                </div>
-              </div>
+              <p className="text-[11px] text-slate-400 font-medium">Resident purpose selection during onboarding</p>
             </div>
+            <span className="text-[10px] font-semibold text-slate-400">Total: {surveyData?.total || 0}</span>
           </div>
 
-          {/* Recent Feed */}
-          <div className="bg-white border border-slate-100 p-8 rounded-[48px] shadow-sm">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Live Activity</h3>
-              <Clock className="w-4 h-4 text-slate-400" />
-            </div>
+          <div className="h-48 w-full">
+            {purposeChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={purposeChartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="name" tick={{ fill: '#64748B', fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: '#64748B', fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const item = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-md">
+                          <p className="font-bold">{item.name}</p>
+                          <p>{item.count} residents ({item.percentage}%)</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="count" radius={[5, 5, 0, 0]}>
+                    {purposeChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                <Target className="w-6 h-6 mb-1 opacity-40" />
+                <span>No mobile quick setup submissions recorded yet</span>
+              </div>
+            )}
+          </div>
+        </div>
 
-            <div className="space-y-6">
-              {recentReports.length > 0 ? recentReports.map((report) => (
-                <div key={report._id} className="flex gap-4 group">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110 ${
-                    report.status === 'resolved' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                  }`}>
-                    {report.status === 'resolved' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-black text-slate-900 truncate leading-tight group-hover:text-emerald-700 transition-colors">{report.title}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Brgy. {report.barangay}</p>
-                  </div>
-                </div>
-              )) : (
-                <div className="text-center py-6">
-                  <p className="text-xs text-slate-400 font-bold uppercase">Waiting for data...</p>
-                </div>
-              )}
+        {/* Graph 3: Waste Incident Composition */}
+        <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <PieIcon className="w-4 h-4 text-purple-600" />
+                Incident Report Categories
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">Breakdown of reported community issues</p>
             </div>
+            <span className="text-[10px] font-semibold text-slate-400">{stats?.composition?.length || 0} categories</span>
+          </div>
+
+          <div className="h-48 w-full flex items-center justify-center">
+            {stats?.composition?.length > 0 ? (
+              <div className="w-full h-full flex items-center">
+                <div className="w-1/2 h-full relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={stats.composition}
+                        innerRadius={45}
+                        outerRadius={65}
+                        paddingAngle={4}
+                        dataKey="count"
+                        nameKey="_id"
+                      >
+                        {stats.composition.map((entry, index) => (
+                          <Cell
+                            key={`cat-${index}`}
+                            fill={['#006A3B', '#0284C7', '#D97706', '#9333EA', '#EF4444'][index % 5]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-base font-black text-slate-800 leading-none">
+                      {stats.composition.reduce((acc, c) => acc + c.count, 0)}
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Total</span>
+                  </div>
+                </div>
+
+                <div className="w-1/2 space-y-1.5 pl-3">
+                  {stats.composition.slice(0, 4).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <div
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: ['#006A3B', '#0284C7', '#D97706', '#9333EA', '#EF4444'][i % 5] }}
+                        />
+                        <span className="text-slate-600 font-medium truncate">{c._id}</span>
+                      </div>
+                      <span className="font-bold text-slate-800 ml-2">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-slate-400 text-xs">
+                <AlertCircle className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                <span>No category records available</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Graph 4: Push Notification Opt-In Donut */}
+        <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Bell className="w-4 h-4 text-emerald-700" />
+                Notification Opt-In Telemetry
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">Resident mobile notification permissions</p>
+            </div>
+            <span className="text-[10px] font-semibold text-slate-400">Opt-In: {surveyData?.notifications?.optInRate || 0}%</span>
+          </div>
+
+          <div className="h-48 w-full flex items-center justify-center">
+            {surveyData?.total > 0 ? (
+              <div className="w-full h-full flex items-center">
+                <div className="w-1/2 h-full relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={notifChartData}
+                        innerRadius={45}
+                        outerRadius={65}
+                        paddingAngle={4}
+                        dataKey="value"
+                        nameKey="name"
+                      >
+                        {notifChartData.map((entry, index) => (
+                          <Cell key={`notif-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-base font-black text-slate-800 leading-none">
+                      {surveyData.notifications?.optInRate}%
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Enabled</span>
+                  </div>
+                </div>
+
+                <div className="w-1/2 space-y-2.5 pl-3 text-xs">
+                  <div>
+                    <div className="flex items-center justify-between text-slate-600 mb-0.5">
+                      <span className="font-semibold text-emerald-700">● Enabled</span>
+                      <span className="font-bold">{surveyData.notifications?.enabled || 0}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 rounded-full"
+                        style={{ width: `${surveyData.notifications?.optInRate || 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-slate-500 mb-0.5">
+                      <span>● Skipped</span>
+                      <span className="font-bold">{surveyData.notifications?.skipped || 0}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-slate-300 rounded-full"
+                        style={{ width: `${100 - (surveyData.notifications?.optInRate || 0)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-slate-400 text-xs">
+                <Bell className="w-6 h-6 mx-auto mb-1 opacity-40" />
+                <span>No notification records recorded yet</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Section: Dual Telemetry Feeds (Rankings + Recent Onboardings & Reports) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left Column: Barangay Rankings & Onboarding Adoption (5 cols) */}
+        <div className="lg:col-span-5 bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Award className="w-4 h-4 text-emerald-700" />
+              Barangay Performance Leaderboard
+            </h3>
+            <span className="text-[10px] text-slate-400">Actual Points</span>
+          </div>
+
+          <div className="space-y-2.5">
+            {stats?.leaderboard?.length > 0 ? (
+              stats.leaderboard.map((b, i) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-[10px] font-black text-slate-400 w-4">#{i + 1}</span>
+                    <span className="font-semibold text-slate-700 truncate">{b._id}</span>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
+                    {b.count} pts
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-slate-400 text-center py-4">No leaderboard data recorded yet</p>
+            )}
+          </div>
+
+          {/* Barangay Onboarding Breakdown if any */}
+          {surveyData?.byBarangay?.length > 0 && (
+            <div className="pt-3 border-t border-slate-100">
+              <h4 className="text-[11px] font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                Mobile Onboarding by Barangay
+              </h4>
+              <div className="space-y-2">
+                {surveyData.byBarangay.slice(0, 4).map((b, idx) => (
+                  <div key={idx} className="text-xs">
+                    <div className="flex items-center justify-between text-slate-600 mb-1">
+                      <span className="truncate">{b.barangay}</span>
+                      <span className="font-bold text-slate-800">{b.count} ({b.percentage}%)</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 rounded-full"
+                        style={{ width: `${Math.max(4, b.percentage)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Recent Mobile Setup & Citizen Reports (7 cols) */}
+        <div className="lg:col-span-7 bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Smartphone className="w-4 h-4 text-emerald-700" />
+              Recent Mobile Onboardings &amp; Telemetry
+            </h3>
+            <span className="text-[10px] text-slate-400">Latest Live Submissions</span>
+          </div>
+
+          {/* Quick Setup Recent Submissions */}
+          {surveyData?.recent?.length > 0 ? (
+            <div className="divide-y divide-slate-100 text-xs">
+              {surveyData.recent.slice(0, 4).map((item) => (
+                <div key={item._id} className="py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 truncate">
+                      {item.barangay || 'All Areas'}
+                    </p>
+                    <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                      {item.purposes?.map((p) => (
+                        <span
+                          key={p}
+                          className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-medium"
+                        >
+                          {PURPOSE_LABELS[p]?.label || p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        item.notificationsEnabled
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      Push: {item.notificationsEnabled ? 'ON' : 'OFF'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {timeAgo(item.submittedAt)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-xs text-slate-400">
+              No recent onboarding events recorded yet.
+            </div>
+          )}
+
+          {/* Live Incident Reports Preview */}
+          <div className="pt-2 border-t border-slate-100">
+            <h4 className="text-[11px] font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+              Latest Citizen Incident Reports
+            </h4>
+
+            {recentReports.length > 0 ? (
+              <div className="space-y-2">
+                {recentReports.slice(0, 3).map((report) => (
+                  <div key={report._id} className="flex items-center justify-between text-xs py-1">
+                    <div className="flex items-center gap-2 truncate">
+                      <div
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          report.status === 'resolved' ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                      />
+                      <span className="font-semibold text-slate-800 truncate">{report.title}</span>
+                      <span className="text-[10px] text-slate-400">({report.barangay})</span>
+                    </div>
+                    <span
+                      className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                        report.status === 'resolved'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {report.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 text-center py-2">No citizen reports recorded yet</p>
+            )}
           </div>
         </div>
       </div>

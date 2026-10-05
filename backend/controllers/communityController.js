@@ -1,4 +1,4 @@
-const { CleanupPost, GarbageArea, SurveyResponse, QuickSetupSurvey } = require("../models");
+const { CleanupPost, GarbageArea, SurveyResponse, QuickSetupSurvey, Resident } = require("../models");
 const cloudinary = require("../config/cloudinary");
 const { getIO } = require("../config/socket");
 const { addBarangayScore } = require("../services/gamificationService");
@@ -189,6 +189,28 @@ exports.getQuickSetupSurveyResults = async (req, res, next) => {
     });
     const notifsSkippedCount = Math.max(0, total - notifsEnabledCount);
 
+    // Timeline trends (actual daily submissions)
+    const trendDays = period === "week" ? 7 : period === "month" ? 30 : 14;
+    const sinceDate = new Date(Date.now() - trendDays * 24 * 60 * 60 * 1000);
+    const timelineRaw = await QuickSetupSurvey.aggregate([
+      { $match: { ...filter, submittedAt: { $gte: sinceDate } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%b %d", date: "$submittedAt" } },
+          total: { $sum: 1 },
+          notifications: {
+            $sum: { $cond: ["$notificationsEnabled", 1, 0] },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Total registered residents for comparison
+    const residentFilter = {};
+    if (barangay && barangay !== "All") residentFilter.barangay = barangay;
+    const totalResidents = await Resident.countDocuments(residentFilter);
+
     // Recent submissions (limit: 10)
     const recent = await QuickSetupSurvey.find(filter)
       .sort({ submittedAt: -1 })
@@ -197,6 +219,8 @@ exports.getQuickSetupSurveyResults = async (req, res, next) => {
 
     res.json({
       total,
+      totalResidents,
+      completionRate: totalResidents > 0 ? Math.round((total / totalResidents) * 100) : (total > 0 ? 100 : 0),
       notifications: {
         enabled: notifsEnabledCount,
         skipped: notifsSkippedCount,
@@ -211,6 +235,11 @@ exports.getQuickSetupSurveyResults = async (req, res, next) => {
         purpose: p._id,
         count: p.count,
         percentage: total > 0 ? Math.round((p.count / total) * 100) : 0,
+      })),
+      timeline: timelineRaw.map((t) => ({
+        date: t._id,
+        total: t.total,
+        notifications: t.notifications,
       })),
       recent,
     });

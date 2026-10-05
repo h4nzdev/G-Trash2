@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
   ClipboardList,
@@ -14,33 +14,50 @@ import {
   Trophy,
   Building2,
   Calendar,
+  TrendingUp,
+  BarChart3,
+  PieChart as PieIcon,
+  Activity,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+} from 'recharts';
 import API from '../../config';
 
 const PURPOSE_META = {
   household: {
-    label: 'Household Waste Tracking',
+    label: 'Household Waste',
     icon: Home,
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    barColor: 'bg-emerald-600',
+    color: '#006A3B',
+    bg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   },
   reporting: {
-    label: 'Community Issue Reporting',
+    label: 'Community Reports',
     icon: Megaphone,
-    color: 'bg-blue-50 text-blue-700 border-blue-200',
-    barColor: 'bg-blue-600',
+    color: '#0284C7',
+    bg: 'bg-sky-50 text-sky-800 border-sky-200',
   },
   rewards: {
-    label: 'Eco Rewards & Segregation',
+    label: 'Eco Rewards',
     icon: Trophy,
-    color: 'bg-amber-50 text-amber-700 border-amber-200',
-    barColor: 'bg-amber-600',
+    color: '#D97706',
+    bg: 'bg-amber-50 text-amber-800 border-amber-200',
   },
   commercial: {
-    label: 'Commercial & Property',
+    label: 'Commercial Ops',
     icon: Building2,
-    color: 'bg-purple-50 text-purple-700 border-purple-200',
-    barColor: 'bg-purple-600',
+    color: '#7C3AED',
+    bg: 'bg-purple-50 text-purple-800 border-purple-200',
   },
 };
 
@@ -82,47 +99,89 @@ export default function QuickSetupSurveyCard({ defaultBarangay = '' }) {
   }, [fetchResults]);
 
   const total = data?.total ?? 0;
+  const totalResidents = data?.totalResidents ?? 0;
+  const completionRate = data?.completionRate ?? 0;
   const notifications = data?.notifications ?? { enabled: 0, skipped: 0, optInRate: 0 };
   const byPurpose = data?.byPurpose ?? [];
   const byBarangay = data?.byBarangay ?? [];
+  const timeline = data?.timeline ?? [];
   const recent = data?.recent ?? [];
 
+  // Chart 1: Purpose Distribution Data
+  const purposeChartData = useMemo(() => {
+    return byPurpose.map((p) => {
+      const meta = PURPOSE_META[p.purpose] || { label: p.purpose, color: '#006A3B' };
+      return {
+        name: meta.label,
+        count: p.count,
+        percentage: p.percentage,
+        color: meta.color,
+      };
+    });
+  }, [byPurpose]);
+
+  // Chart 2: Notification Opt-in Donut Data
+  const notifChartData = useMemo(() => {
+    if (total === 0) return [];
+    return [
+      { name: 'Enabled', value: notifications.enabled, color: '#006A3B' },
+      { name: 'Skipped', value: notifications.skipped, color: '#CBD5E1' },
+    ];
+  }, [total, notifications]);
+
+  // Chart 3: Barangay Distribution Data (Top 5)
+  const barangayChartData = useMemo(() => {
+    return byBarangay.slice(0, 5).map((b) => ({
+      name: b.barangay.replace('Barangay ', ''),
+      fullName: b.barangay,
+      count: b.count,
+      percentage: b.percentage,
+    }));
+  }, [byBarangay]);
+
+  const topPurpose = byPurpose[0];
+  const topPurposeMeta = topPurpose ? (PURPOSE_META[topPurpose.purpose] || { label: topPurpose.purpose }) : null;
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700">
-            <ClipboardList className="w-5 h-5" />
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-5 space-y-4">
+      {/* Top Header & Filters (Compact) */}
+      <div className="flex items-center justify-between flex-wrap gap-2.5 pb-2 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+            <ClipboardList className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                Developer & Admin Survey
+              <h2 className="text-sm font-bold text-slate-900 leading-snug">
+                Onboarding &amp; Quick Setup Analytics
+              </h2>
+              <span className="text-[9px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">
+                Live Data
               </span>
-              <span className="text-xs text-slate-400 font-medium">New User Quick Setup</span>
             </div>
-            <h2 className="text-base font-bold text-slate-900 mt-0.5">
-              G-Trash Onboarding & Area Purpose Results
-            </h2>
+            <p className="text-[11px] text-slate-500">
+              Telemetry from resident mobile setup (Area, Purpose, Notifications &amp; Privacy)
+            </p>
           </div>
         </div>
 
-        {/* Filter & Refresh Controls */}
+        {/* Filter Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+          {/* Period selector */}
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50/70 p-0.5 text-xs font-semibold">
             {[
-              { key: 'all', label: 'All Time' },
-              { key: 'month', label: 'This Month' },
-              { key: 'week', label: 'This Week' },
+              { id: 'all', label: 'All' },
+              { id: 'month', label: '30D' },
+              { id: 'week', label: '7D' },
             ].map((p) => (
               <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
-                  period === p.key
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900'
+                key={p.id}
+                type="button"
+                onClick={() => setPeriod(p.id)}
+                className={`px-2.5 py-1 rounded-md transition-all text-xs cursor-pointer ${
+                  period === p.id
+                    ? 'bg-white text-emerald-800 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {p.label}
@@ -130,206 +189,374 @@ export default function QuickSetupSurveyCard({ defaultBarangay = '' }) {
             ))}
           </div>
 
+          {/* Barangay filter */}
+          <select
+            value={barangay}
+            onChange={(e) => setBarangay(e.target.value)}
+            className="text-xs font-medium border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+          >
+            <option value="All">All Barangays</option>
+            <option value="Basak San Nicolas">Basak San Nicolas</option>
+            <option value="Guadalupe">Guadalupe</option>
+            <option value="Lahug">Lahug</option>
+            <option value="Mabolo">Mabolo</option>
+            <option value="Banilad">Banilad</option>
+            <option value="Talamban">Talamban</option>
+            <option value="Labangon">Labangon</option>
+          </select>
+
+          {/* Refresh */}
           <button
+            type="button"
             onClick={fetchResults}
             disabled={loading}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-            title="Refresh survey results"
+            title="Refresh analytics"
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-colors disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* KPI Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">Completed Setups</span>
-            <Users className="w-4 h-4 text-emerald-600" />
+      {/* 4 Compact Metric Cards (Single-line grid) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+          <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1">
+            <span className="font-semibold">Survey Submissions</span>
+            <Users className="w-3.5 h-3.5 text-slate-400" />
           </div>
-          <p className="text-2xl font-extrabold text-slate-900">{total.toLocaleString()}</p>
-          <span className="text-[11px] text-slate-400">Total residents onboarded</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-black text-slate-900">{total}</span>
+            <span className="text-[10px] text-slate-400">
+              / {totalResidents} registered
+            </span>
+          </div>
+          <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+            {completionRate}% resident onboard rate
+          </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">Notif Opt-in</span>
-            <Bell className="w-4 h-4 text-emerald-600" />
+        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+          <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1">
+            <span className="font-semibold">Notification Opt-In</span>
+            <Bell className="w-3.5 h-3.5 text-slate-400" />
           </div>
-          <p className="text-2xl font-extrabold text-emerald-700">{notifications.optInRate}%</p>
-          <span className="text-[11px] text-slate-400">
-            {notifications.enabled} granted / {notifications.skipped} skipped
-          </span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-black text-slate-900">
+              {notifications.optInRate}%
+            </span>
+            <span className="text-[10px] text-slate-400">
+              ({notifications.enabled} enabled)
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            {notifications.skipped} skipped during setup
+          </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">Top Barangay</span>
-            <MapPin className="w-4 h-4 text-blue-600" />
+        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+          <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1">
+            <span className="font-semibold">Privacy Policy Agreed</span>
+            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <p className="text-lg font-extrabold text-slate-900 truncate">
-            {byBarangay[0]?.barangay || '—'}
-          </p>
-          <span className="text-[11px] text-slate-400">
-            {byBarangay[0] ? `${byBarangay[0].count} users (${byBarangay[0].percentage}%)` : 'No data yet'}
-          </span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-black text-emerald-700">100%</span>
+            <span className="text-[10px] text-slate-400">
+              ({total} accepted)
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            R.A. 10173 full compliance
+          </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider">Top Purpose</span>
-            <Target className="w-4 h-4 text-amber-600" />
+        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+          <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1">
+            <span className="font-semibold">Top Purpose Selected</span>
+            <Target className="w-3.5 h-3.5 text-amber-500" />
           </div>
-          <p className="text-sm font-extrabold text-slate-900 truncate">
-            {PURPOSE_META[byPurpose[0]?.purpose]?.label || byPurpose[0]?.purpose || '—'}
-          </p>
-          <span className="text-[11px] text-slate-400">
-            {byPurpose[0] ? `${byPurpose[0].count} selections (${byPurpose[0].percentage}%)` : 'No data yet'}
-          </span>
+          <div className="flex items-baseline gap-1.5 truncate">
+            <span className="text-sm font-extrabold text-slate-800 truncate">
+              {topPurposeMeta?.label || 'None yet'}
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            {topPurpose ? `${topPurpose.count} selections (${topPurpose.percentage}%)` : 'Awaiting responses'}
+          </div>
         </div>
       </div>
 
-      {total === 0 ? (
-        <div className="py-12 text-center text-slate-400">
-          <ClipboardList className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-          <p className="text-sm font-medium">No quick setup survey responses recorded yet</p>
-          <p className="text-xs mt-1">Data will populate automatically as new residents complete the welcome tour.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Purpose Breakdown */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-emerald-600" /> App Usage Purpose Distribution
+      {/* Visual Graphs Section (Compact 3-column charts) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* Graph 1: Purpose Distribution Bar Chart */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-3 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-700" />
+              <h3 className="text-xs font-bold text-slate-800">
+                Purpose Distribution
               </h3>
-              <span className="text-xs text-slate-400 font-medium">Multi-selection allowed</span>
             </div>
-
-            <div className="space-y-3">
-              {['household', 'reporting', 'rewards', 'commercial'].map((pId) => {
-                const meta = PURPOSE_META[pId];
-                const found = byPurpose.find((p) => p.purpose === pId);
-                const count = found?.count ?? 0;
-                const pct = found?.percentage ?? 0;
-                const Icon = meta.icon;
-
-                return (
-                  <div key={pId} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className={`p-1.5 rounded-lg border ${meta.color}`}>
-                          <Icon className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="font-bold text-slate-800">{meta.label}</span>
-                      </div>
-                      <span className="font-extrabold text-slate-900">
-                        {count} <span className="text-slate-400 font-normal">({pct}%)</span>
-                      </span>
-                    </div>
-
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${meta.barColor}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <span className="text-[10px] text-slate-400">Actual counts</span>
           </div>
 
-          {/* Top Barangays List */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-blue-600" /> Top Registered Areas / Barangays
-              </h3>
-              <span className="text-xs text-slate-400 font-medium">Top zones onboarding</span>
-            </div>
+          <div className="h-44 w-full flex items-center justify-center">
+            {purposeChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={purposeChartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} interval={0} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const item = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-md">
+                          <p className="font-bold">{item.name}</p>
+                          <p>{item.count} residents ({item.percentage}%)</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="count" radius={[5, 5, 0, 0]}>
+                    {purposeChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-slate-400 text-xs py-8">
+                <Target className="w-6 h-6 mx-auto mb-1.5 opacity-40" />
+                <span>No survey purpose data recorded yet</span>
+              </div>
+            )}
+          </div>
+        </div>
 
-            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-              {byBarangay.map((b, idx) => (
-                <div
-                  key={b.barangay}
-                  className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 transition-colors text-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center text-[10px]">
-                      {idx + 1}
+        {/* Graph 2: Push Notifications Donut Chart */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-3 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <PieIcon className="w-3.5 h-3.5 text-blue-600" />
+              <h3 className="text-xs font-bold text-slate-800">
+                Notification Opt-in
+              </h3>
+            </div>
+            <span className="text-[10px] text-slate-400">Enabled vs Skipped</span>
+          </div>
+
+          <div className="h-44 w-full relative flex items-center justify-center">
+            {total > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={notifChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={42}
+                      outerRadius={65}
+                      paddingAngle={3}
+                    >
+                      {notifChartData.map((entry, i) => (
+                        <Cell key={`notif-${i}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const item = payload[0];
+                        return (
+                          <div className="bg-slate-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-md">
+                            <span className="font-bold">{item.name}: </span>
+                            <span>{item.value} ({total > 0 ? Math.round((item.value / total) * 100) : 0}%)</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Center metric */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-base font-extrabold text-slate-800 leading-none">
+                    {notifications.optInRate}%
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-medium">Opt-in</span>
+                </div>
+              </>
+            ) : (
+              <div className="text-center text-slate-400 text-xs py-8">
+                <Bell className="w-6 h-6 mx-auto mb-1.5 opacity-40" />
+                <span>No notification records yet</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Graph 3: Submissions Timeline Trend */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-3 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-emerald-700" />
+              <h3 className="text-xs font-bold text-slate-800">
+                Onboarding Activity Trend
+              </h3>
+            </div>
+            <span className="text-[10px] text-slate-400">Daily submissions</span>
+          </div>
+
+          <div className="h-44 w-full flex items-center justify-center">
+            {timeline.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timeline} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const item = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 text-white text-[11px] px-2.5 py-1.5 rounded-lg shadow-md">
+                          <p className="font-bold">{item.date}</p>
+                          <p>Total: {item.total} responses</p>
+                          <p className="text-emerald-300">Push Opt-in: {item.notifications}</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#006A3B"
+                    strokeWidth={2}
+                    fill="#DCFCE7"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-slate-400 text-xs py-8">
+                <TrendingUp className="w-6 h-6 mx-auto mb-1.5 opacity-40" />
+                <span>No daily timeline data recorded yet</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Section: Top Barangays & Recent Submissions (Compact Grid) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1">
+        {/* Top Barangays List (5 cols) */}
+        <div className="lg:col-span-5 bg-slate-50/60 rounded-xl p-3 border border-slate-200/70">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-emerald-700" />
+              Barangay Distribution
+            </h3>
+            <span className="text-[10px] text-slate-400">
+              {byBarangay.length} active barangays
+            </span>
+          </div>
+
+          {byBarangay.length > 0 ? (
+            <div className="space-y-2">
+              {byBarangay.slice(0, 5).map((b, idx) => (
+                <div key={b.barangay} className="text-xs">
+                  <div className="flex items-center justify-between text-slate-700 font-medium mb-1">
+                    <span className="truncate pr-2">
+                      <span className="text-slate-400 text-[10px] mr-1.5">#{idx + 1}</span>
+                      {b.barangay}
                     </span>
-                    <span className="font-semibold text-slate-800">Barangay {b.barangay}</span>
+                    <span className="text-slate-900 font-bold flex-shrink-0">
+                      {b.count} <span className="text-[10px] font-normal text-slate-400">({b.percentage}%)</span>
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-slate-500 font-medium">{b.count} users</span>
-                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md text-[11px]">
-                      {b.percentage}%
-                    </span>
+                  <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(4, b.percentage)}%` }}
+                    />
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          ) : (
+            <div className="text-center text-slate-400 text-xs py-6">
+              No barangay onboarding records yet.
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Recent Onboarding Submissions Table */}
-      {recent.length > 0 && (
-        <div className="pt-4 border-t border-slate-100 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Smartphone className="w-3.5 h-3.5 text-slate-500" /> Recent Setup Submissions (Latest 10)
+        {/* Recent Submissions Feed (7 cols) */}
+        <div className="lg:col-span-7 bg-slate-50/60 rounded-xl p-3 border border-slate-200/70 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Smartphone className="w-3.5 h-3.5 text-slate-600" />
+              Recent Mobile Onboardings (Latest 10)
             </h3>
-            <span className="text-[11px] text-slate-400">Real-time sync from resident mobile app</span>
+            <span className="text-[10px] text-slate-400">Actual telemetry</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400 font-semibold">
-                  <th className="pb-2">Time</th>
-                  <th className="pb-2">Barangay</th>
-                  <th className="pb-2">Purposes Selected</th>
-                  <th className="pb-2">Notifications</th>
-                  <th className="pb-2">Platform</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {recent.map((item) => (
-                  <tr key={item._id} className="hover:bg-slate-50/50">
-                    <td className="py-2.5 text-slate-500">{timeAgo(item.submittedAt)}</td>
-                    <td className="py-2.5 font-bold text-slate-800">Barangay {item.barangay}</td>
-                    <td className="py-2.5">
-                      <div className="flex flex-wrap gap-1">
-                        {item.purposes?.map((p) => (
-                          <span
-                            key={p}
-                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 capitalize"
-                          >
-                            {p}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-2.5">
-                      {item.notificationsEnabled ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                          <CheckCircle className="w-3 h-3" /> Enabled
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-medium text-slate-400">Skipped</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 text-slate-400 capitalize">{item.platform || 'mobile'}</td>
+          {recent.length > 0 ? (
+            <div className="divide-y divide-slate-200/60 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-[10px] text-slate-400 uppercase tracking-wider">
+                    <th className="pb-1.5 font-semibold">Barangay</th>
+                    <th className="pb-1.5 font-semibold">Purposes</th>
+                    <th className="pb-1.5 font-semibold text-center">Push</th>
+                    <th className="pb-1.5 font-semibold text-right">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recent.slice(0, 5).map((row) => (
+                    <tr key={row._id} className="hover:bg-white/80 transition-colors">
+                      <td className="py-1.5 font-semibold text-slate-800 max-w-[130px] truncate">
+                        {row.barangay || '—'}
+                      </td>
+                      <td className="py-1.5">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {row.purposes?.map((p) => {
+                            const meta = PURPOSE_META[p];
+                            return (
+                              <span
+                                key={p}
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-medium border ${
+                                  meta?.bg || 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}
+                              >
+                                {meta?.label || p}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-1.5 text-center">
+                        {row.notificationsEnabled ? (
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                            ON
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-medium text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">
+                            OFF
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 text-right text-[11px] text-slate-400 whitespace-nowrap">
+                        {timeAgo(row.submittedAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center text-slate-400 text-xs py-6">
+              No recent onboarding events recorded.
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
