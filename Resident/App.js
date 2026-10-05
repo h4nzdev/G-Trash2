@@ -188,6 +188,10 @@ function AppNavigator() {
     return <CustomSplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
+  if (!hasSeenTour) {
+    return <OnboardingScreen onFinish={() => setHasSeenTour(true)} />;
+  }
+
   return (
     <>
       <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
@@ -199,6 +203,7 @@ function AppNavigator() {
         <Stack.Screen name="BugReport" component={BugReportScreen} />
         <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
         <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       </Stack.Navigator>
 
       {/* Truck proximity banner — floats over every screen */}

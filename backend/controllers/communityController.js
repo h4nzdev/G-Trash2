@@ -1,4 +1,4 @@
-const { CleanupPost, GarbageArea, SurveyResponse } = require("../models");
+const { CleanupPost, GarbageArea, SurveyResponse, QuickSetupSurvey } = require("../models");
 const cloudinary = require("../config/cloudinary");
 const { getIO } = require("../config/socket");
 const { addBarangayScore } = require("../services/gamificationService");
@@ -129,6 +129,91 @@ exports.getSurveyResults = async (req, res, next) => {
     }
 
     res.json({ totalResponses: total, results, byContext });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/survey/quick-setup
+exports.submitQuickSetupSurvey = async (req, res, next) => {
+  try {
+    const { residentId, barangay, purposes, notificationsEnabled, termsAccepted, platform } = req.body;
+    if (!barangay) return res.status(400).json({ error: "Barangay is required" });
+
+    const record = await QuickSetupSurvey.create({
+      residentId: residentId || null,
+      barangay,
+      purposes: Array.isArray(purposes) ? purposes : (purposes ? [purposes] : []),
+      notificationsEnabled: Boolean(notificationsEnabled),
+      termsAccepted: termsAccepted !== false,
+      platform: platform || "mobile",
+    });
+
+    res.json({ success: true, id: record._id, message: "Quick setup survey recorded successfully!" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/survey/quick-setup/results
+exports.getQuickSetupSurveyResults = async (req, res, next) => {
+  try {
+    const { period, barangay } = req.query;
+    const filter = {};
+    if (barangay && barangay !== "All") filter.barangay = barangay;
+    if (period === "week") filter.submittedAt = { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
+    else if (period === "month") filter.submittedAt = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+
+    const total = await QuickSetupSurvey.countDocuments(filter);
+
+    // Top barangays breakdown
+    const byBarangay = await QuickSetupSurvey.aggregate([
+      { $match: filter },
+      { $group: { _id: "$barangay", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // Purposes breakdown (unwind purposes array)
+    const byPurpose = await QuickSetupSurvey.aggregate([
+      { $match: filter },
+      { $unwind: "$purposes" },
+      { $group: { _id: "$purposes", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Notifications breakdown
+    const notifsEnabledCount = await QuickSetupSurvey.countDocuments({
+      ...filter,
+      notificationsEnabled: true,
+    });
+    const notifsSkippedCount = Math.max(0, total - notifsEnabledCount);
+
+    // Recent submissions (limit: 10)
+    const recent = await QuickSetupSurvey.find(filter)
+      .sort({ submittedAt: -1 })
+      .limit(10)
+      .lean();
+
+    res.json({
+      total,
+      notifications: {
+        enabled: notifsEnabledCount,
+        skipped: notifsSkippedCount,
+        optInRate: total > 0 ? Math.round((notifsEnabledCount / total) * 100) : 0,
+      },
+      byBarangay: byBarangay.map((b) => ({
+        barangay: b._id,
+        count: b.count,
+        percentage: total > 0 ? Math.round((b.count / total) * 100) : 0,
+      })),
+      byPurpose: byPurpose.map((p) => ({
+        purpose: p._id,
+        count: p.count,
+        percentage: total > 0 ? Math.round((p.count / total) * 100) : 0,
+      })),
+      recent,
+    });
   } catch (err) {
     next(err);
   }

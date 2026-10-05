@@ -238,7 +238,7 @@ const PointsHistoryModal = ({ barangay, onClose, currentScore }) => {
     setLoadingHistory(true);
     try {
       const res = await fetch(
-        `${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}`
+        `${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}&limit=10`
       );
       const data = await res.json();
       setHistory(Array.isArray(data) ? data : []);

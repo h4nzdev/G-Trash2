@@ -1,17 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle, Users, Plus, X } from 'lucide-react';
+import { User, Bell, Globe, Lock, Sliders, Camera, Edit2, Save, ChevronRight, PenLine, Trash2, CheckCircle, Users, Plus, X, ShieldCheck, ClipboardList } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
+import { PRIVACY_POLICY_SECTIONS } from '../components/PrivacyPolicyModal';
+import QuickSetupSurveyCard from '../components/dashboard/QuickSetupSurveyCard';
 
 const sections = [
   { id: 'profile', icon: User, label: 'Profile' },
+  { id: 'quickSetup', icon: ClipboardList, label: 'Quick Setup Survey' },
   { id: 'notifications', icon: Bell, label: 'Notifications' },
   { id: 'language', icon: Globe, label: 'Language & Region' },
   { id: 'security', icon: Lock, label: 'Security' },
   { id: 'system', icon: Sliders, label: 'System Preferences' },
   { id: 'signature', icon: PenLine, label: 'E-Signature' },
+  { id: 'privacy', icon: ShieldCheck, label: 'Privacy Policy' },
 ];
 
 function SignaturePad({ official }) {
@@ -516,6 +520,11 @@ export default function Settings() {
             </div>
           )}
 
+          {/* Quick Setup Survey Results — Developer / Admin View */}
+          {activeSection === 'quickSetup' && (
+            <QuickSetupSurveyCard defaultBarangay={official?.barangay || ''} />
+          )}
+
           {/* E-Signature */}
           {activeSection === 'signature' && <SignaturePad official={official} />}
 
@@ -550,6 +559,57 @@ export default function Settings() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Privacy Policy */}
+          {activeSection === 'privacy' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      R.A. 10173 • Data Privacy Act
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">Officials & Residents Policy</span>
+                  </div>
+                  <h2 className="text-lg font-extrabold text-slate-900">G-TRASH Privacy Policy</h2>
+                  <p className="text-xs text-slate-500 mt-1">Geo-Tracked Responsible and Smart Handling</p>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-xl text-emerald-700">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
+                <strong className="text-slate-800 font-semibold block mb-1">System Scope</strong>
+                G-TRASH respects the privacy of its users and is committed to protecting the personal information collected through the system. This Privacy Policy explains how G-TRASH collects, uses, stores, protects, and manages information from <strong>residents, barangay/city officials, and authorized system personnel</strong>.
+              </div>
+
+              <div className="space-y-6">
+                {PRIVACY_POLICY_SECTIONS.map((sec, i) => (
+                  <div key={i} className="pb-5 border-b border-slate-100 last:border-0">
+                    <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      {sec.title}
+                    </h3>
+                    <p className="text-xs text-slate-600 whitespace-pre-line pl-4 leading-relaxed">
+                      {sec.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div>
+                  <p className="font-bold text-emerald-900">Contact & Privacy Inquiries</p>
+                  <p className="text-emerald-700">Authorized G-TRASH System Administration</p>
+                </div>
+                <div className="space-y-1 text-emerald-900 font-medium">
+                  <div>✉️ hanzhmagbal@gmail.com</div>
+                  <div>📞 09927870100</div>
+                </div>
+              </div>
             </div>
           )}
         </div>

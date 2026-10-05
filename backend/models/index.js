@@ -24,4 +24,5 @@ module.exports = {
   BinStatus: require("./BinStatus.js"),
   CleanupPost: require("./CleanupPost.js"),
   SurveyResponse: require("./SurveyResponse.js"),
+  QuickSetupSurvey: require("./QuickSetupSurvey.js"),
 };

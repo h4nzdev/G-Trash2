@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import { Skeleton, ProfileReportsSkeleton } from "../components/Skeleton";
+import PrivacyPolicyModal from "../components/PrivacyPolicyModal";
 
 function formatDate(dateStr) {
   if (!dateStr) return "";
@@ -42,6 +43,7 @@ export default function ProfileScreen({ navigation }) {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [showBarangayModal, setShowBarangayModal] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [barangaySearch, setBarangaySearch] = useState("");
   const [editForm, setEditForm] = useState({
     firstName: "",
@@ -491,6 +493,38 @@ export default function ProfileScreen({ navigation }) {
 
               <View style={styles.separator} />
 
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={() => navigation.navigate('Onboarding')}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#DCFCE7" }]}>
+                    <Ionicons name="sparkles-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Welcome Guide & Terms</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
+              <TouchableOpacity
+                style={styles.menuRow}
+                activeOpacity={0.5}
+                onPress={() => setShowPrivacyModal(true)}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: "#ECFDF5" }]}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color="#006A3B" />
+                  </View>
+                  <Text style={styles.menuText}>Privacy Policy</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+              </TouchableOpacity>
+
+              <View style={styles.separator} />
+
               <TouchableOpacity style={styles.menuRow} activeOpacity={0.5} onPress={handleLogout}>
                 <View style={styles.menuLeft}>
                   <View style={[styles.iconBox, { backgroundColor: "#FEE2E2" }]}>
@@ -765,6 +799,11 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      <PrivacyPolicyModal
+        visible={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </SafeAreaView>
   );
 }

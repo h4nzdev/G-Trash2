@@ -317,7 +317,8 @@ exports.getSitioAnalytics = async (req, res, next) => {
 
 // GET /api/barangay-points-history
 exports.getBarangayPointsHistory = async (req, res, next) => {
-  const { barangay } = req.query;
+  const { barangay, limit } = req.query;
+  const maxLimit = limit === "all" ? 0 : (parseInt(limit, 10) || 10);
   try {
     // Process overdue SLA penalties so they are always current and logged
     await syncOverdueSLAPenalties().catch((e) =>
@@ -325,10 +326,11 @@ exports.getBarangayPointsHistory = async (req, res, next) => {
     );
 
     const filter = barangay && barangay !== "All" ? { barangay } : {};
-    let history = await BarangayPointHistory.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
+    let query = BarangayPointHistory.find(filter).sort({ createdAt: -1 });
+    if (maxLimit > 0) {
+      query = query.limit(maxLimit);
+    }
+    let history = await query.lean();
 
     // Ensure overdue reports for this barangay have their SLA penalties recorded
     if (barangay && barangay !== "All") {
@@ -432,12 +434,12 @@ exports.getBarangayPointsHistory = async (req, res, next) => {
         await BarangayPointHistory.insertMany(entriesToCreate);
         history = await BarangayPointHistory.find(filter)
           .sort({ createdAt: -1 })
-          .limit(100)
+          .limit(maxLimit > 0 ? maxLimit : 10)
           .lean();
       }
     }
 
-    res.json(history);
+    res.json(maxLimit > 0 ? history.slice(0, maxLimit) : history);
   } catch (err) {
     next(err);
   }

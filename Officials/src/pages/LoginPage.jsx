@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Leaf, Mail, Lock, AlertCircle, Eye } from "lucide-react";
+import { Leaf, Mail, Lock, AlertCircle, Eye, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import logo from "../assets/logo.png";
+import PrivacyPolicyModal from "../components/PrivacyPolicyModal";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -109,10 +111,25 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-400 mt-5">
-          No account? Contact your system administrator for access.
-        </p>
+        <div className="mt-5 flex flex-col items-center gap-2">
+          <p className="text-center text-xs text-slate-400">
+            No account? Contact your system administrator for access.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowPrivacyModal(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline transition-colors"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            G-TRASH Privacy Policy
+          </button>
+        </div>
       </div>
+
+      <PrivacyPolicyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </div>
   );
 }

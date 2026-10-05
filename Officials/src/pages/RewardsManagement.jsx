@@ -839,8 +839,8 @@ function RewardsLogModal({ onClose, official }) {
   const loadLogData = useCallback(async () => {
     setLoading(true);
     try {
-      const bParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}` : "";
-      const rewParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}` : "";
+      const bParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}&limit=10` : "?limit=10";
+      const rewParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}&limit=10` : "?limit=10";
 
       const [pointsRes, rewardsRes] = await Promise.allSettled([
         axios.get(`${API}/api/barangay-points-history${bParam}`),
@@ -883,7 +883,7 @@ function RewardsLogModal({ onClose, official }) {
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
 
-      setHistory(combined);
+      setHistory(combined.slice(0, 10));
     } catch {
       setHistory([]);
     } finally {

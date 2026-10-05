@@ -13,6 +13,7 @@ import BarangayRanking from '../components/dashboard/BarangayRanking';
 import RecentReportsWidget from '../components/dashboard/RecentReportsWidget';
 import SensorStatusWidget from '../components/dashboard/SensorStatusWidget';
 import ProgressBar from '../components/shared/ProgressBar';
+import QuickSetupSurveyCard from '../components/dashboard/QuickSetupSurveyCard';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
@@ -1184,6 +1185,9 @@ export default function OfficialsDashboard() {
               <BarangayRanking data={rankings} />
             </div>
           </div>
+
+          {/* Quick Setup Onboarding Survey Results */}
+          <QuickSetupSurveyCard defaultBarangay={official?.barangay || ''} />
 
           {/* Gamification Survey Results */}
           <SurveyResultsCard

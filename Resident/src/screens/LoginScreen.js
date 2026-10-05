@@ -19,12 +19,14 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import colors from '../constants/colors';
+import PrivacyPolicyModal from '../components/PrivacyPolicyModal';
 
 export default function LoginScreen({ navigation }) {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const { login, isLoading } = useAuth();
 
   const handleLogin = async () => {
@@ -128,11 +130,25 @@ export default function LoginScreen({ navigation }) {
                     <Text style={styles.signupText}>{t('sign_up')}</Text>
                   </TouchableOpacity>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.privacyLink}
+                  onPress={() => setShowPrivacyModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={14} color="#6B7280" />
+                  <Text style={styles.privacyLinkText}>G-TRASH Privacy Policy</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </TouchableWithoutFeedback>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <PrivacyPolicyModal
+        visible={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -243,5 +259,19 @@ const styles = StyleSheet.create({
     color: colors.primaryGreen,
     fontSize: 15,
     fontWeight: '700',
+  },
+  privacyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 20,
+    paddingVertical: 6,
+  },
+  privacyLinkText: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

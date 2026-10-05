@@ -136,12 +136,17 @@ exports.getResidentRewards = async (req, res, next) => {
 // GET /api/rewards
 exports.getRewards = async (req, res, next) => {
   try {
-    const { barangay, status, category } = req.query;
+    const { barangay, status, category, limit } = req.query;
     const filter = {};
     if (barangay && barangay !== "All") filter.barangay = barangay;
     if (status) filter.status = status;
     if (category) filter.category = category;
-    const rewards = await Reward.find(filter).sort({ createdAt: -1 });
+    let query = Reward.find(filter).sort({ createdAt: -1 });
+    const maxLimit = limit ? parseInt(limit, 10) : 0;
+    if (maxLimit > 0) {
+      query = query.limit(maxLimit);
+    }
+    const rewards = await query;
     res.json(rewards);
   } catch (err) {
     next(err);

@@ -23,7 +23,7 @@ function haversineM(lat1, lon1, lat2, lon2) {
 // GET /api/reports
 exports.getReports = async (req, res, next) => {
   try {
-    const { barangay, sitio, userId } = req.query;
+    const { barangay, sitio, userId, limit } = req.query;
     const filter = barangayFilter(req.official || req);
     if (barangay && barangay !== "All") filter.barangay = barangay;
     if (sitio) filter.sitio = sitio;
@@ -31,8 +31,14 @@ exports.getReports = async (req, res, next) => {
       filter.userId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
     }
 
-    const reports = await Report.find(filter)
-      .sort({ createdAt: -1 })
+    const maxLimit = limit === "all" ? 0 : (parseInt(limit, 10) || 10);
+
+    let query = Report.find(filter).sort({ createdAt: -1 });
+    if (maxLimit > 0) {
+      query = query.limit(maxLimit);
+    }
+
+    const reports = await query
       .populate("userId", "firstName lastName profilePicture")
       .populate("comments.userId", "firstName lastName profilePicture");
     res.json(reports);
