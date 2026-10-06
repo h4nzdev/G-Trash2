@@ -21,6 +21,7 @@ import {
   Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import * as Location from "expo-location";
@@ -43,8 +44,8 @@ Notifications.setNotificationHandler({
 
 function getDistanceM(lat1, lng1, lat2, lng2) {
   const R = 6371000;
-  const φ1 = (lat1 * Math.PI) / 180,
-    φ2 = (lat2 * Math.PI) / 180;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lng2 - lng1) * Math.PI) / 180;
   const a =
@@ -67,61 +68,37 @@ const CEBU_COORDS = {
   default: { lat: 10.3250, lng: 123.8930 },
 };
 
-// Radar pulse speed (ms) and ring color per proximity tier
-// Tier 0=idle, 1=trucks online, 2=<1050m, 3=<700m, 4=<350m
-const PULSE_DURATIONS = [4200, 2800, 2000, 1300, 800];
-const PULSE_RING_COLORS = [
-  "#7BA08A",
-  "#006A3B",
-  "#10B981",
-  "#10B981",
-  "#F59E0B",
-];
-
-// Pre-blended hex equivalents of rgba(0,106,59,α) on #FBF9F8 for chart bar heights [40,55,45,70,60,85,75]
-const BAR_COLORS = [
-  "#A6C8B8",
-  "#8FBCA6",
-  "#9EC4B2",
-  "#79AF96",
-  "#88B7A1",
-  "#62A285",
-  "#71AA90",
-];
-
 const MOTIVATION_OPTIONS = [
-  { id: "clean_barangay", label: "Clean Neighborhood", icon: "park", color: "#059669", tag: "🌿 Clean Barangay" },
-  { id: "streak_points", label: "Points & Streak", icon: "emoji-events", color: "#D97706", tag: "🏆 Eco Champion" },
-  { id: "truck_on_time", label: "Truck On Time", icon: "local-shipping", color: "#2563EB", tag: "🚛 Timely Disposal" },
-  { id: "flood_health", label: "Flood & Health Safety", icon: "health-and-safety", color: "#DC2626", tag: "🦺 Community Safety" },
-  { id: "segregation_advocacy", label: "Proper Sorting Habit", icon: "recycling", color: "#7C3AED", tag: "♻️ Zero Waste" },
+  { id: "clean_barangay", label: "Clean Neighborhood", icon: "park", color: "#059669" },
+  { id: "streak_points", label: "Points & Streak", icon: "emoji-events", color: "#D97706" },
+  { id: "truck_on_time", label: "Truck On Time", icon: "local-shipping", color: "#2563EB" },
+  { id: "flood_health", label: "Flood & Health Safety", icon: "health-and-safety", color: "#DC2626" },
+  { id: "segregation_advocacy", label: "Proper Sorting Habit", icon: "recycling", color: "#7C3AED" },
 ];
 
 const MALATA_CHECKLIST_ITEMS = [
-  { id: 1, label: "Collect biodegradable food scraps & yard waste into green bio-bin/bag" },
-  { id: 2, label: "Double check: Ensure ZERO plastics, foil, bottles, or cans are mixed" },
-  { id: 3, label: "Cover bio-bin securely to prevent pests, stray animals, and foul odors" },
-  { id: 4, label: "Keep plastics & dry recyclables stored for Di-Malata collection day" },
-  { id: 5, label: "Place Malata bin outside curb before the collection truck arrives" },
+  { id: 1, label: "Collect food scraps & organic waste into green bio-bin/bag" },
+  { id: 2, label: "Ensure ZERO plastics, foil, bottles, or cans are mixed" },
+  { id: 3, label: "Cover bio-bin securely to prevent pests and foul odors" },
+  { id: 4, label: "Store plastics & dry recyclables for Di-Malata collection day" },
+  { id: 5, label: "Place Malata bin outside at designated curb spot" },
 ];
 
 const DI_MALATA_CHECKLIST_ITEMS = [
-  { id: 1, label: "Separate clean dry recyclables (plastic bottles, tin cans, cartons)" },
+  { id: 1, label: "Separate clean dry recyclables (bottles, cans, cartons)" },
   { id: 2, label: "Rinse food and sauce residue from containers before placing" },
-  { id: 3, label: "Flatten cardboard boxes and crush plastic bottles to save space" },
-  { id: 4, label: "Double check: Ensure ZERO wet kitchen or organic waste is mixed" },
-  { id: 5, label: "Tie recyclable bag securely and place at designated curb spot" },
+  { id: 3, label: "Flatten cardboard boxes and crush plastic bottles" },
+  { id: 4, label: "Ensure ZERO wet kitchen or organic waste is mixed" },
+  { id: 5, label: "Tie recyclable bag securely and place at curb spot" },
 ];
 
 const GENERAL_CHECKLIST_ITEMS = [
-  { id: 1, label: "Sort general waste into designated bags (Malata vs Di-Malata)" },
-  { id: 2, label: "Sort recyclables (clean plastics, paper, and metal cans)" },
+  { id: 1, label: "Sort waste into designated bags (Malata vs Di-Malata)" },
+  { id: 2, label: "Separate clean recyclables (plastics, paper, metal cans)" },
   { id: 3, label: "Rinse food containers before placing in the bin" },
   { id: 4, label: "Tie all trash bags securely to avoid spills and odors" },
-  { id: 5, label: "Place bin at designated curb pickup spot by scheduled time" },
+  { id: 5, label: "Place bin at designated curb pickup spot on time" },
 ];
-
-const CHECKLIST_ITEMS = GENERAL_CHECKLIST_ITEMS;
 
 function getGreeting(t) {
   const h = new Date().getHours();
@@ -140,7 +117,7 @@ function getTodayYMD() {
 
 function ConfettiExplosion({ visible }) {
   const confettiAnims = useRef(
-    Array.from({ length: 24 }).map(() => ({
+    Array.from({ length: 20 }).map(() => ({
       x: new Animated.Value(0),
       y: new Animated.Value(0),
       scale: new Animated.Value(0),
@@ -156,37 +133,37 @@ function ConfettiExplosion({ visible }) {
         anim.scale.setValue(0.2);
         anim.opacity.setValue(1);
 
-        const targetX = (Math.random() - 0.5) * 260;
-        const targetY = (Math.random() - 0.7) * 300;
+        const targetX = (Math.random() - 0.5) * 240;
+        const targetY = (Math.random() - 0.7) * 260;
 
         Animated.parallel([
           Animated.timing(anim.x, {
             toValue: targetX,
-            duration: 1100 + Math.random() * 500,
+            duration: 1000 + Math.random() * 400,
             useNativeDriver: true,
           }),
           Animated.sequence([
             Animated.timing(anim.y, {
               toValue: targetY,
-              duration: 600 + Math.random() * 300,
+              duration: 500 + Math.random() * 200,
               useNativeDriver: true,
             }),
             Animated.timing(anim.y, {
-              toValue: targetY + 120,
-              duration: 800,
+              toValue: targetY + 100,
+              duration: 700,
               useNativeDriver: true,
             }),
           ]),
           Animated.timing(anim.scale, {
-            toValue: 0.8 + Math.random() * 0.5,
-            duration: 500,
+            toValue: 0.8 + Math.random() * 0.4,
+            duration: 400,
             useNativeDriver: true,
           }),
           Animated.sequence([
-            Animated.delay(900),
+            Animated.delay(800),
             Animated.timing(anim.opacity, {
               toValue: 0,
-              duration: 500,
+              duration: 400,
               useNativeDriver: true,
             }),
           ]),
@@ -203,7 +180,7 @@ function ConfettiExplosion({ visible }) {
     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
       {confettiAnims.map((anim, i) => {
         const color = COLORS[i % COLORS.length];
-        const size = 10 + (i % 3) * 4;
+        const size = 8 + (i % 3) * 3;
         const isCircle = i % 2 === 0;
 
         return (
@@ -216,7 +193,7 @@ function ConfettiExplosion({ visible }) {
                 left: "48%",
                 width: size,
                 height: size,
-                borderRadius: isCircle ? size / 2 : 3,
+                borderRadius: isCircle ? size / 2 : 2,
                 backgroundColor: color,
                 transform: [
                   { translateX: anim.x },
@@ -249,19 +226,11 @@ export default function HomeScreen({ navigation }) {
   const userLocationRef = useRef(null);
   const truckAlertFiredRef = useRef(new Set());
   const toastTimerRef = useRef(null);
-  const aqAlertLastFiredRef = useRef(0);
   const activeNotifDebounceRef = useRef(new Map());
 
-  // Radar pulse animation values
-  const pulseAnim1 = useRef(new Animated.Value(0)).current;
-  const pulseAnim2 = useRef(new Animated.Value(0)).current;
-  const pulseAnim3 = useRef(new Animated.Value(0)).current;
-  const truckFloatAnim = useRef(new Animated.Value(0)).current;
+  // Animations
   const flameAnim = useRef(new Animated.Value(1)).current;
   const liveBeaconAnim = useRef(new Animated.Value(1)).current;
-  const pulseLoop1 = useRef(null);
-  const pulseLoop2 = useRef(null);
-  const pulseLoop3 = useRef(null);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeSegregationTab, setActiveSegregationTab] = useState(null);
@@ -269,7 +238,7 @@ export default function HomeScreen({ navigation }) {
   const [binReady, setBinReady] = useState(false);
   const [todayPickedUp, setTodayPickedUp] = useState(false);
   const [checklist, setChecklist] = useState(
-    CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
+    GENERAL_CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false }))
   );
   const [iotAreas, setIotAreas] = useState([]);
   const [latestIotReading, setLatestIotReading] = useState(null);
@@ -310,7 +279,7 @@ export default function HomeScreen({ navigation }) {
       })
       .catch(() => {});
   }, [user]);
-  const [proximityModalVisible, setProximityModalVisible] = useState(false);
+
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [todayDisposalPhoto, setTodayDisposalPhoto] = useState(null);
@@ -322,13 +291,12 @@ export default function HomeScreen({ navigation }) {
   const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
   const [officialNoticeText, setOfficialNoticeText] = useState("");
   const [selectedMotivation, setSelectedMotivation] = useState("Clean Neighborhood");
-  const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
 
   const handleTakePhoto = async () => {
     if (hasSnappedToday) {
       Alert.alert(
         "Daily Limit Reached",
-        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today and resets tomorrow at midnight."
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today."
       );
       return;
     }
@@ -348,7 +316,6 @@ export default function HomeScreen({ navigation }) {
         setSelectedPhoto(result.assets[0].uri);
         setCapturedBase64(result.assets[0].base64 || null);
         setModalVisible(false);
-        setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
     } catch (err) {
@@ -360,7 +327,7 @@ export default function HomeScreen({ navigation }) {
     if (hasSnappedToday) {
       Alert.alert(
         "Daily Limit Reached",
-        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today and resets tomorrow at midnight."
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today."
       );
       return;
     }
@@ -380,7 +347,6 @@ export default function HomeScreen({ navigation }) {
         setSelectedPhoto(result.assets[0].uri);
         setCapturedBase64(result.assets[0].base64 || null);
         setModalVisible(false);
-        setProximityModalVisible(false);
         setPhotoPreviewVisible(true);
       }
     } catch (err) {
@@ -391,10 +357,7 @@ export default function HomeScreen({ navigation }) {
   const handleShareOrSavePhoto = async () => {
     if (!selectedPhoto) return;
     if (hasSnappedToday) {
-      Alert.alert(
-        "Daily Snap Completed",
-        "You have already submitted your daily disposal photo today. Resets tomorrow at midnight!"
-      );
+      Alert.alert("Daily Snap Completed", "You have already submitted your disposal photo for today.");
       setPhotoPreviewVisible(false);
       return;
     }
@@ -405,7 +368,6 @@ export default function HomeScreen({ navigation }) {
     try {
       let finalPhotoUrl = selectedPhoto;
 
-      // Upload image to backend / Cloudinary if base64 data exists
       if (capturedBase64) {
         try {
           const uploadRes = await fetch(`${API_URL}/api/upload`, {
@@ -420,11 +382,10 @@ export default function HomeScreen({ navigation }) {
             }
           }
         } catch (upErr) {
-          console.log("Image upload fallback to direct uri:", upErr);
+          console.log("Image upload fallback:", upErr);
         }
       }
 
-      // Submit disposal verification record to backend
       const residentId = user?.id || user?._id;
       let subJson = null;
       if (residentId) {
@@ -449,10 +410,7 @@ export default function HomeScreen({ navigation }) {
           await AsyncStorage.setItem(`@disposal_snapped_${today}`, "true");
           setPhotoPreviewVisible(false);
           setIsSubmittingDisposal(false);
-          Alert.alert(
-            "Daily Snap Recorded",
-            "You have already submitted your disposal photo for today. Your daily snap resets tomorrow at midnight!"
-          );
+          Alert.alert("Daily Snap Recorded", "Your daily disposal photo is already recorded for today.");
           return;
         }
 
@@ -462,7 +420,6 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
-      // Notify bin preparation endpoint
       if (user?.id && user?.barangay) {
         fetch(`${API_URL}/api/bin/prepare`, {
           method: "POST",
@@ -471,7 +428,6 @@ export default function HomeScreen({ navigation }) {
         }).catch(() => {});
       }
 
-      // Mark locally as snapped today & bin ready & save photo
       setHasSnappedToday(true);
       setTodayDisposalPhoto(finalPhotoUrl);
       setBinReady(true);
@@ -487,25 +443,20 @@ export default function HomeScreen({ navigation }) {
       const earnedPts = subJson?.pointsAwarded != null ? subJson.pointsAwarded : 10;
       const streakVal = subJson?.newStreak != null ? subJson.newStreak : ((disposalStreak || 0) + 1);
       setCelebrationData({
-        message: `Disposal verified! Your ${streakVal}-day streak is active. Thank you for properly sorting your ${scheduledWasteType} waste!`,
+        message: `Disposal verified! Your ${streakVal}-day streak is active. Thank you for sorting ${scheduledWasteType} waste!`,
         awardPoints: earnedPts,
         motivation: selectedMotivation,
       });
       setCelebrationVisible(true);
 
-      // Open native system share dialog
       try {
         await Share.share({
           title: "Garbage Disposal",
-          message: `My ${scheduledWasteType} bin is prepared for collection in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 Motivation: ${selectedMotivation} #CleanerCebu #GTrash`,
+          message: `My ${scheduledWasteType} bin is prepared in Barangay ${user?.barangay || "Apas"}! 🗑️🚛 #CleanerCebu #GTrash`,
           url: selectedPhoto,
         });
-      } catch (shareErr) {
-        /* share dismissed */
-      }
+      } catch (_) {}
     } catch (err) {
-      console.log("Disposal submit error:", err);
-      // Fallback local save so resident progress is kept
       setHasSnappedToday(true);
       setTodayDisposalPhoto(selectedPhoto);
       setBinReady(true);
@@ -521,14 +472,10 @@ export default function HomeScreen({ navigation }) {
       AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
-      Alert.alert(
-        "Disposal Photo Saved",
-        "Your disposal photo has been saved for today (resets tomorrow)."
-      );
     }
   };
 
-  // Fetch barangay IoT areas & real sensor readings on mount
+  // Fetch IoT data
   useEffect(() => {
     const brgy = user?.barangay || "Apas";
     fetch(`${API_URL}/api/garbage-areas?barangay=${encodeURIComponent(brgy)}`)
@@ -542,22 +489,12 @@ export default function HomeScreen({ navigation }) {
         if (Array.isArray(data) && data.length > 0) {
           setLatestIotReading(data[0]);
           setIotReadingsHistory(data);
-        } else {
-          fetch(`${API_URL}/api/iot/readings?limit=7`)
-            .then((r) => r.json())
-            .then((all) => {
-              if (Array.isArray(all) && all.length > 0) {
-                setLatestIotReading(all[0]);
-                setIotReadingsHistory(all);
-              }
-            })
-            .catch(() => {});
         }
       })
       .catch(() => {});
   }, [user?.barangay]);
 
-  // Restore bin-ready, picked-up, and daily snapped state from AsyncStorage (keyed by date — auto-resets next day)
+  // Sync daily local storage state
   useEffect(() => {
     const syncDailyState = () => {
       const today = getTodayYMD();
@@ -585,13 +522,6 @@ export default function HomeScreen({ navigation }) {
                 setTodayDisposalPhoto(data.submission.photoUrl);
                 AsyncStorage.setItem(`@disposal_photo_${today}`, data.submission.photoUrl).catch(() => {});
               }
-            } else {
-              AsyncStorage.getItem(`@disposal_snapped_${today}`).then((val) => {
-                if (val !== "true") {
-                  setHasSnappedToday(false);
-                  setTodayDisposalPhoto(null);
-                }
-              }).catch(() => {});
             }
           })
           .catch(() => {});
@@ -605,28 +535,7 @@ export default function HomeScreen({ navigation }) {
     };
   }, [user, navigation]);
 
-  // Check if today's pickup already happened (only flags complete if no truck is actively collecting)
-  useEffect(() => {
-    const brgy = user?.barangay;
-    if (!brgy) return;
-    fetch(`${API_URL}/api/pickup?barangay=${encodeURIComponent(brgy)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!Array.isArray(data)) return;
-        const today = getTodayYMD();
-        const done = data.some((run) => {
-          const ts = run.createdAt || run.completedAt;
-          return ts && ts.slice(0, 10) === today;
-        });
-        if (done && (!trucks || !trucks.some((t) => (t.status || "").toLowerCase() === "online"))) {
-          setTodayPickupDone(true);
-        }
-      })
-      .catch(() => {});
-  }, [user?.barangay, trucks]);
-
   const aqData = useMemo(() => {
-    const order = { critical: 0, moderate: 1, clean: 2 };
     const aqMap = {
       Hazardous: 'critical',
       Unhealthy: 'critical',
@@ -640,24 +549,18 @@ export default function HomeScreen({ navigation }) {
         status: aqMap[latestIotReading.airQuality] || 'clean',
         airQuality: latestIotReading.airQuality || 'Good',
         ammonia: latestIotReading.ammonia != null ? `${latestIotReading.ammonia} ppm` : '0 ppm',
-        methane: latestIotReading.methane != null && latestIotReading.methane > 0
-          ? `${latestIotReading.methane}%`
-          : '0%',
+        methane: latestIotReading.methane != null && latestIotReading.methane > 0 ? `${latestIotReading.methane}%` : '0%',
         rawValue: latestIotReading.rawValue != null ? latestIotReading.rawValue : null,
-        sensorId: latestIotReading.sensorId,
-        location: latestIotReading.location,
       };
     }
     if (iotAreas.length > 0) {
-      const worstArea = [...iotAreas].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3))[0];
+      const worstArea = [...iotAreas].sort((a, b) => (a.status === 'critical' ? -1 : 1))[0];
       return {
         status: worstArea.status || 'clean',
         airQuality: worstArea.status === 'critical' ? 'Poor' : worstArea.status === 'moderate' ? 'Moderate' : 'Good',
-        ammonia: worstArea.ammonia ? (typeof worstArea.ammonia === 'number' ? `${worstArea.ammonia} ppm` : worstArea.ammonia) : '0 ppm',
-        methane: worstArea.methane ? (typeof worstArea.methane === 'number' ? `${worstArea.methane}%` : worstArea.methane) : '0%',
+        ammonia: '0 ppm',
+        methane: '0%',
         rawValue: null,
-        sensorId: worstArea.sensorId,
-        location: worstArea.name,
       };
     }
     return null;
@@ -665,59 +568,34 @@ export default function HomeScreen({ navigation }) {
 
   const chartBars = useMemo(() => {
     if (iotReadingsHistory && iotReadingsHistory.length > 0) {
-      // iotReadingsHistory is descending (newest first). Slice 7 and reverse for chronological order
       const items = [...iotReadingsHistory].slice(0, 7).reverse();
       const padCount = Math.max(0, 7 - items.length);
       const padded = [];
       for (let p = 0; p < padCount; p++) {
-        padded.push({
-          id: `pad-${p}`,
-          height: 24,
-          color: "#A7F3D0",
-          airQuality: "Good",
-        });
+        padded.push({ id: `pad-${p}`, height: 16, color: "#A7F3D0" });
       }
 
       const activeBars = items.map((item, idx) => {
-        const isAlert =
-          item.airQuality === 'Unhealthy' ||
-          item.airQuality === 'Hazardous' ||
-          item.airQuality === 'Critical';
+        const isAlert = item.airQuality === 'Unhealthy' || item.airQuality === 'Hazardous' || item.airQuality === 'Critical';
         const isWarn = item.airQuality === 'Moderate';
         const color = isAlert ? '#EF4444' : isWarn ? '#F59E0B' : '#10B981';
-
-        let height = 28;
+        let height = isAlert ? 42 : isWarn ? 28 : 16;
         if (item.rawValue != null && item.rawValue > 0) {
-          height = Math.min(88, Math.max(20, Math.round((item.rawValue / 900) * 68 + 20)));
-        } else if (item.ammonia != null && item.ammonia > 0) {
-          height = Math.min(88, Math.max(20, Math.round(item.ammonia * 2 + 18)));
-        } else if (isAlert) {
-          height = 78;
-        } else if (isWarn) {
-          height = 50;
-        } else {
-          height = 28;
+          height = Math.min(48, Math.max(12, Math.round((item.rawValue / 900) * 36 + 12)));
         }
-
-        return {
-          id: item._id || `active-${idx}`,
-          height,
-          color,
-          airQuality: item.airQuality,
-        };
+        return { id: item._id || `active-${idx}`, height, color };
       });
 
       return [...padded, ...activeBars];
     }
-
     return [
-      { id: 1, height: 26, color: "#10B981" },
-      { id: 2, height: 32, color: "#10B981" },
-      { id: 3, height: 24, color: "#10B981" },
-      { id: 4, height: 36, color: "#10B981" },
-      { id: 5, height: 28, color: "#10B981" },
-      { id: 6, height: 30, color: "#10B981" },
-      { id: 7, height: 34, color: "#10B981" },
+      { id: 1, height: 16, color: "#10B981" },
+      { id: 2, height: 22, color: "#10B981" },
+      { id: 3, height: 16, color: "#10B981" },
+      { id: 4, height: 28, color: "#10B981" },
+      { id: 5, height: 20, color: "#10B981" },
+      { id: 6, height: 24, color: "#10B981" },
+      { id: 7, height: 18, color: "#10B981" },
     ];
   }, [iotReadingsHistory]);
 
@@ -740,61 +618,45 @@ export default function HomeScreen({ navigation }) {
             if (Array.isArray(dAct) && dAct.length > 0) return dAct;
           }
         } catch (_) {}
-        try {
-          const rGen = await fetch(`${API_URL}/api/trucks`);
-          if (rGen.ok) return await rGen.json();
-        } catch (_) {}
         return [];
       };
 
       const [trucksRes, schedulesRes, reportsRes, iotRes] = await Promise.allSettled([
         fetchLiveTrucks(),
-        fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) =>
-          r.json(),
-        ),
+        fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) => r.json()),
         fetch(`${API_URL}/api/reports`).then((r) => r.json()),
         fetch(`${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`).then((r) => r.json()),
       ]);
 
       if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
-        // Sort by most recently updated, online first
         const sorted = [...trucksRes.value].map(t => ({
           ...t,
           status: t.status || t.liveStatus || (t.lat && t.lng && Number(t.lat) !== 0 ? "online" : "offline")
         })).sort((a, b) => {
           if (a.status === "online" && b.status !== "online") return -1;
           if (b.status === "online" && a.status !== "online") return 1;
-          return new Date(b.updatedAt || b.lastSeen || 0) - new Date(a.updatedAt || a.lastSeen || 0);
+          return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
         });
         setTrucks(sorted);
       }
 
-      if (
-        schedulesRes.status === "fulfilled" &&
-        Array.isArray(schedulesRes.value.schedules)
-      ) {
+      if (schedulesRes.status === "fulfilled" && Array.isArray(schedulesRes.value.schedules)) {
         setTodaySchedules(schedulesRes.value.schedules);
       }
 
-      if (
-        reportsRes.status === "fulfilled" &&
-        Array.isArray(reportsRes.value)
-      ) {
-        setPendingCount(
-          reportsRes.value.filter((r) => r.status !== "resolved").length,
-        );
+      if (reportsRes.status === "fulfilled" && Array.isArray(reportsRes.value)) {
+        setPendingCount(reportsRes.value.filter((r) => r.status !== "resolved").length);
       }
 
       if (iotRes.status === "fulfilled" && Array.isArray(iotRes.value) && iotRes.value.length > 0) {
         setLatestIotReading(iotRes.value[0]);
         setIotReadingsHistory(iotRes.value);
       }
-    } catch (err) {
-      // silent — dashboard still shows with empty state
+    } catch (_) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.barangay]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -810,57 +672,28 @@ export default function HomeScreen({ navigation }) {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  useEffect(() => {
-    Notifications.requestPermissionsAsync().catch(() => {});
-  }, []);
-
-  // Get device location for proximity checks (request permissions and fallback gracefully)
+  // Location handling
   useEffect(() => {
     let isMounted = true;
-    const acquireLocation = async () => {
+    (async () => {
       try {
-        // 1. Immediately check AsyncStorage cached location for zero-latency load
-        try {
-          const cachedRaw = await AsyncStorage.getItem("@gtrash_last_user_location");
-          if (cachedRaw && isMounted) {
-            const parsed = JSON.parse(cachedRaw);
-            if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-              setUserLocation(parsed);
-              userLocationRef.current = parsed;
-            }
+        const cachedRaw = await AsyncStorage.getItem("@gtrash_last_user_location");
+        if (cachedRaw && isMounted) {
+          const parsed = JSON.parse(cachedRaw);
+          if (parsed?.lat && parsed?.lng) {
+            setUserLocation(parsed);
+            userLocationRef.current = parsed;
           }
-        } catch (_) {}
-
-        let { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== "granted") {
-          const req = await Location.requestForegroundPermissionsAsync();
-          status = req.status;
         }
+        const { status } = await Location.getForegroundPermissionsAsync();
         if (status === "granted") {
-          // 2. Fast OS hardware last known position (instant fix)
-          const last = await Location.getLastKnownPositionAsync();
-          if (last && isMounted && last.coords) {
-            const loc = { lat: last.coords.latitude, lng: last.coords.longitude };
-            setUserLocation(loc);
-            userLocationRef.current = loc;
-            AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(loc)).catch(() => {});
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (loc?.coords && isMounted) {
+            const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+            setUserLocation(pos);
+            userLocationRef.current = pos;
+            AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(pos)).catch(() => {});
           }
-
-          // 3. Refine with accurate GPS position in the background (non-blocking)
-          Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          })
-            .then((curr) => {
-              if (curr && isMounted && curr.coords) {
-                const loc = { lat: curr.coords.latitude, lng: curr.coords.longitude };
-                setUserLocation(loc);
-                userLocationRef.current = loc;
-                AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(loc)).catch(() => {});
-              }
-            })
-            .catch((err) => {
-              console.warn("HomeScreen background location refine error:", err);
-            });
         } else {
           const bKey = (user?.barangay || "").trim().toLowerCase();
           const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
@@ -869,26 +702,15 @@ export default function HomeScreen({ navigation }) {
             userLocationRef.current = fallback;
           }
         }
-      } catch (_) {
-        const bKey = (user?.barangay || "").trim().toLowerCase();
-        const fallback = CEBU_COORDS[bKey] || CEBU_COORDS.default;
-        if (isMounted && !userLocationRef.current) {
-          setUserLocation(fallback);
-          userLocationRef.current = fallback;
-        }
-      }
-    };
-    acquireLocation();
-    return () => {
-      isMounted = false;
-    };
+      } catch (_) {}
+    })();
+    return () => { isMounted = false; };
   }, [user?.barangay]);
 
-  // Real-time truck updates via socket
+  // Real-time socket
   useEffect(() => {
     const socket = io(API_URL, { transports: ["polling", "websocket"] });
 
-    // Join personal room for targeted events (points, rewards, report updates)
     if (user?.id) {
       socket.emit("resident:join", { residentId: user.id });
     }
@@ -896,148 +718,31 @@ export default function HomeScreen({ navigation }) {
     socket.on("resident:points:update", ({ pointsEarned, description, newTotal }) => {
       clearTimeout(pointsToastTimerRef.current);
       setPointsToast({ pointsEarned, description, newTotal });
-      pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 5000);
-    });
-
-    socket.on("report:updated", (report) => {
-      if (report.userId && report.userId === userIdRef.current && report.status === "resolved") {
-        clearTimeout(pointsToastTimerRef.current);
-        setPointsToast({ pointsEarned: 10, description: "Your report was resolved!", newTotal: null });
-        pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 6000);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Report Resolved!",
-            body: `Your report "${report.title || report.category}" has been resolved. +10 points earned!`,
-            sound: true,
-          },
-          trigger: null,
-        }).catch(() => {});
-      }
+      pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 4000);
     });
 
     socket.on("truck:location:update", ({ truckId, lat, lng }) => {
       setTrucks((prev) => {
         const exists = prev.some((t) => t.truckId === truckId);
         if (exists) {
-          return prev.map((t) =>
-            t.truckId === truckId
-              ? {
-                  ...t,
-                  lat,
-                  lng,
-                  status: "online",
-                  updatedAt: new Date().toISOString(),
-                }
-              : t,
-          );
+          return prev.map((t) => (t.truckId === truckId ? { ...t, lat, lng, status: "online", updatedAt: new Date().toISOString() } : t));
         }
-        return [
-          {
-            truckId,
-            lat,
-            lng,
-            status: "online",
-            updatedAt: new Date().toISOString(),
-          },
-          ...prev,
-        ];
+        return [{ truckId, lat, lng, status: "online", updatedAt: new Date().toISOString() }, ...prev];
       });
-
-      // Live truck position update: clear stale pickup-done flag since collection is actively ongoing
       setTodayPickupDone(false);
     });
 
-    socket.on("truck:status", async ({ truckId, status }) => {
-      setTrucks((prev) =>
-        prev.map((t) => (t.truckId === truckId ? { ...t, status } : t)),
-      );
-      if (status === "offline" && truckId) {
-        truckAlertFiredRef.current.delete(`near-${truckId}`);
-        truckAlertFiredRef.current.delete(`approach-${truckId}`);
-        clearTimeout(toastTimerRef.current);
-        setToastMsg(`Truck ${truckId} is now offline.`);
-        toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-
-        const notifId = `truck-offline-${truckId}`;
-        const now = Date.now();
-        const lastFired = activeNotifDebounceRef.current.get(notifId) || 0;
-
-        // Debounce duplicate socket emissions arriving within 10 seconds
-        if (now - lastFired < 10000) return;
-        activeNotifDebounceRef.current.set(notifId, now);
-
-        try {
-          // Check if notification with this ID or title is already popping up / presented
-          const presented = await Notifications.getPresentedNotificationsAsync().catch(() => []);
-          const isAlreadyPoppingUp = presented.some(
-            (n) =>
-              n.request?.identifier === notifId ||
-              (n.request?.content?.title === "Truck Offline" &&
-                n.request?.content?.body?.includes(truckId))
-          );
-
-          if (!isAlreadyPoppingUp) {
-            await Notifications.scheduleNotificationAsync({
-              identifier: notifId,
-              content: {
-                title: "Truck Offline",
-                body: `Truck ${truckId} is currently offline (app closed or wifi disconnected).`,
-                sound: true,
-              },
-              trigger: null,
-            });
-          }
-        } catch (_) {}
-      }
-    });
-
-    socket.on("garbage-area:updated", (area) => {
-      const brgy = userBarangayRef.current;
-      if (brgy && area.barangay && area.barangay !== brgy) return;
-      setIotAreas((prev) => {
-        const idx = prev.findIndex((a) => a._id === area._id);
-        return idx >= 0
-          ? prev.map((a) => (a._id === area._id ? area : a))
-          : [...prev, area];
-      });
-    });
-
-    socket.on("iot:reading", (reading) => {
-      const brgy = userBarangayRef.current;
-      if (brgy && reading.barangay && reading.barangay !== brgy) return;
-      setLatestIotReading(reading);
-      setIotReadingsHistory((prev) => [reading, ...prev.filter((r) => r._id !== reading._id).slice(0, 6)]);
-    });
-
-    socket.on("truck:clearing:update", (data) => {
-      if (data.status === "clearing") {
-        clearTimeout(toastTimerRef.current);
-        setToastMsg(`🧹 Waste Clearing in Progress at ${data.sitioName} (${data.truckId})`);
-        toastTimerRef.current = setTimeout(() => setToastMsg(null), 10000);
-      }
+    socket.on("truck:status", ({ truckId, status }) => {
+      setTrucks((prev) => prev.map((t) => (t.truckId === truckId ? { ...t, status } : t)));
     });
 
     socket.on("route:completed", (data) => {
       if (userBarangayRef.current && data.barangay?.toLowerCase() === userBarangayRef.current.toLowerCase()) {
         setTodayPickupDone(true);
         clearTimeout(toastTimerRef.current);
-        setToastMsg(`🎉 Route Finished! Waste collection complete for today in ${data.barangay}. +10 Eco-Points earned!`);
-        toastTimerRef.current = setTimeout(() => setToastMsg(null), 12000);
+        setToastMsg(`🎉 Route completed for today in ${data.barangay}!`);
+        toastTimerRef.current = setTimeout(() => setToastMsg(null), 8000);
       }
-    });
-
-    socket.on("pickup:completed", (run) => {
-      if (userBarangayRef.current && run.barangay === userBarangayRef.current) {
-        setTodayPickupDone(true);
-      }
-    });
-
-    socket.on("schedule:changed", () => {
-      fetchDashboard();
-    });
-
-    socket.on("schedules:updated", () => {
-      fetchDashboard();
     });
 
     socket.on("collection:new", (newLog) => {
@@ -1046,61 +751,25 @@ export default function HomeScreen({ navigation }) {
         setLatestPickupFeed({
           sitioName: newLog.stopName || newLog.sitioName,
           truckId: newLog.truckId,
-          driverName: newLog.driverName,
-          barangay: newLog.barangay,
           time: new Date(newLog.completedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         });
       }
     });
 
-    socket.on("schedule:task:completed", (data) => {
-      fetchDashboard();
-      if (data && data.sitioName) {
-        setLatestPickupFeed({
-          sitioName: data.sitioName,
-          truckId: data.truckId,
-          driverName: data.driverName,
-          barangay: data.barangay,
-          time: new Date(data.completedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        });
-      }
-    });
-
-    socket.on("resident:photo:deleted", ({ residentId, message }) => {
-      if (residentId === userIdRef.current) {
-        setOfficialNoticeText(
-          message || "LGU Official reviewed & cleared your disposal photo validation. Your streak & earned points remain completely safe!"
-        );
-        setOfficialNoticeVisible(true);
-      }
-    });
-
-    socket.on("task:completed", () => {
-      fetchDashboard();
-    });
-
-    socket.on("bin:status:update", () => {
-      const today = getTodayYMD();
-      AsyncStorage.getItem(`@bin_prepared_${today}`)
-        .then((val) => {
-          if (val === "true") setBinReady(true);
-        })
-        .catch(() => {});
-    });
+    socket.on("schedule:changed", () => { fetchDashboard(); });
+    socket.on("schedules:updated", () => { fetchDashboard(); });
 
     return () => {
       socket.disconnect();
       clearTimeout(toastTimerRef.current);
       clearTimeout(pointsToastTimerRef.current);
     };
-  }, [fetchDashboard]);
+  }, [fetchDashboard, user?.id]);
 
   const isTruckOnline = (t) => {
     if (!t) return false;
     const st = (t.status || "").trim().toLowerCase();
-    if (st === "online" || st === "active" || st === "collecting" || st === "en-route" || st === "in-transit") {
-      return true;
-    }
+    if (st === "online" || st === "active" || st === "collecting" || st === "en-route" || st === "in-transit") return true;
     if (t.updatedAt) {
       const diffMs = Date.now() - new Date(t.updatedAt).getTime();
       if (!isNaN(diffMs) && diffMs < 10 * 60 * 1000) return true;
@@ -1108,13 +777,11 @@ export default function HomeScreen({ navigation }) {
     return false;
   };
 
-  const onlineTrucks = useMemo(() => {
-    return trucks.filter(isTruckOnline);
-  }, [trucks]);
+  const onlineTrucks = useMemo(() => trucks.filter(isTruckOnline), [trucks]);
 
   const nearestTruck = useMemo(() => {
-    if (!onlineTrucks || onlineTrucks.length === 0) return null;
-    if (!userLocation || userLocation.lat == null) return onlineTrucks[0];
+    if (!onlineTrucks.length) return null;
+    if (!userLocation?.lat) return onlineTrucks[0];
     let closest = null;
     let minDist = Infinity;
     for (const t of onlineTrucks) {
@@ -1132,280 +799,35 @@ export default function HomeScreen({ navigation }) {
   const firstSchedule = todaySchedules[0] || null;
 
   const activeTruckId = useMemo(() => {
-    return (
-      nearestTruck?.truckId ||
-      nearestTruck?.plateNumber ||
-      firstSchedule?.truckId ||
-      onlineTrucks[0]?.truckId ||
-      (trucks.length > 0 ? (trucks[0].truckId || trucks[0].plateNumber) : null) ||
-      "GT-001"
-    );
-  }, [nearestTruck, firstSchedule, onlineTrucks, trucks]);
+    return nearestTruck?.truckId || firstSchedule?.truckId || (onlineTrucks[0]?.truckId) || "GT-001";
+  }, [nearestTruck, firstSchedule, onlineTrucks]);
 
-  // Distance in meters to the nearest online truck (null if no location or truck)
   const distToTruck = useMemo(() => {
     if (!nearestTruck?.lat || !userLocation?.lat) return null;
-    return Math.round(
-      getDistanceM(
-        userLocation.lat,
-        userLocation.lng,
-        nearestTruck.lat,
-        nearestTruck.lng,
-      ),
-    );
+    return Math.round(getDistanceM(userLocation.lat, userLocation.lng, nearestTruck.lat, nearestTruck.lng));
   }, [nearestTruck, userLocation]);
 
   const scheduledWasteType = useMemo(() => {
     const raw = (firstSchedule?.wasteType || todaySchedules[0]?.wasteType || "").trim();
     const lower = raw.toLowerCase();
-    if (lower.includes("di") || lower.includes("non") || lower.includes("recycl")) {
-      return "Di-Malata";
-    }
-    if (lower.includes("malata") || lower.includes("bio") || lower.includes("organ")) {
-      return "Malata";
-    }
+    if (lower.includes("di") || lower.includes("non") || lower.includes("recycl")) return "Di-Malata";
+    if (lower.includes("malata") || lower.includes("bio") || lower.includes("organ")) return "Malata";
     return raw || "Malata";
   }, [firstSchedule, todaySchedules]);
 
-  // Sync checklist items dynamically to today's active collection stream
   useEffect(() => {
     let source = GENERAL_CHECKLIST_ITEMS;
-    if (scheduledWasteType === "Malata") {
-      source = MALATA_CHECKLIST_ITEMS;
-    } else if (scheduledWasteType === "Di-Malata") {
-      source = DI_MALATA_CHECKLIST_ITEMS;
-    }
+    if (scheduledWasteType === "Malata") source = MALATA_CHECKLIST_ITEMS;
+    else if (scheduledWasteType === "Di-Malata") source = DI_MALATA_CHECKLIST_ITEMS;
     setChecklist(source.map((item) => ({ ...item, checked: false })));
   }, [scheduledWasteType]);
 
   const toggleCheck = (id) => {
-    setChecklist((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, checked: !item.checked } : item,
-      ),
-    );
+    setChecklist((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
   };
 
   const allChecked = checklist.every((item) => item.checked);
   const checkedCount = checklist.filter((item) => item.checked).length;
-
-  const handleConfirm = () => {
-    const today = getTodayYMD();
-    setBinReady(true);
-    setModalVisible(false);
-    AsyncStorage.setItem(`@bin_prepared_${today}`, 'true').catch(() => {});
-    if (user?.id && user?.barangay) {
-      fetch(`${API_URL}/api/bin/prepare`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
-      }).catch(() => {});
-    }
-  };
-
-  const handleOpenModal = () => {
-    if (binReady) return;
-    if (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") {
-      Alert.alert(
-        "Route Completed",
-        "The garbage truck has already completed its collection route in your area for today.",
-        [{ text: "OK" }],
-      );
-      return;
-    }
-    if (!hasActiveTruckOrSchedule) {
-      Alert.alert(
-        "No Active Collection",
-        "There is no active collection truck or schedule for your area at this time. Please check back when collection is scheduled.",
-        [{ text: "OK" }],
-      );
-      return;
-    }
-    setModalVisible(true);
-  };
-
-  const handleTrashPickedUp = () => {
-    const today = getTodayYMD();
-    setTodayPickedUp(true);
-    AsyncStorage.setItem(`@bin_pickedup_${today}`, 'true').catch(() => {});
-    if (user?.id && user?.barangay) {
-      fetch(`${API_URL}/api/bin/pickedup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
-      }).catch(() => {});
-    }
-    if (nearestTruck) {
-      truckAlertFiredRef.current.delete(`near-${nearestTruck.truckId}`);
-      truckAlertFiredRef.current.delete(`approach-${nearestTruck.truckId}`);
-    }
-    clearTimeout(toastTimerRef.current);
-    setToastMsg("✓ Trash collected — thank you for participating!");
-    toastTimerRef.current = setTimeout(() => setToastMsg(null), 5000);
-    notifyPickupComplete();
-  };
-
-  // Real route stops visual driven by actual driver's route/schedule
-  const routeStopsData = useMemo(() => {
-    const sched = firstSchedule || todaySchedules[0];
-    let stops = [];
-
-    if (sched?.sitioTasks && sched.sitioTasks.length > 0) {
-      stops = sched.sitioTasks.map((t) => ({
-        name: t.name,
-        completed: !!t.completed,
-      }));
-    } else if (sched?.sitios && sched.sitios.length > 0) {
-      stops = sched.sitios.map((name) => ({
-        name,
-        completed: sched.status === "completed",
-      }));
-    }
-
-    if (stops.length === 0) {
-      if (sched?.barangay || user?.barangay) {
-        const brgy = sched?.barangay || user?.barangay;
-        stops = [
-          { name: `${brgy} Main`, completed: sched?.status === "completed" },
-          { name: `${brgy} Route`, completed: false },
-        ];
-      } else {
-        stops = [
-          { name: "Scheduled Route", completed: false },
-        ];
-      }
-    }
-
-    // Determine current active stop index (first pending stop)
-    let activeIndex = stops.findIndex((s) => !s.completed);
-    if (activeIndex === -1 && stops.length > 0) {
-      activeIndex = stops.length - 1;
-    }
-
-    const hasActiveTruck = onlineTrucks.length > 0 || !!nearestTruck;
-
-    return stops.map((stop, index) => {
-      const isDone = stop.completed;
-      const isActive = !isDone && (index === activeIndex) && hasActiveTruck;
-
-      let statusLabel = "UPCOMING";
-      let icon = "place";
-
-      if (isDone) {
-        statusLabel = "CLEANED ✓";
-        icon = "check-circle";
-      } else if (isActive) {
-        statusLabel = distToTruck != null && distToTruck < 350 ? "NEARBY" : "APPROACHING";
-        icon = "local-shipping";
-      } else {
-        statusLabel = "UPCOMING";
-        icon = "place";
-      }
-
-      return {
-        name: stop.name,
-        status: statusLabel,
-        isCompleted: isDone,
-        isActive,
-        icon,
-        highlighted: isDone || isActive,
-      };
-    });
-  }, [firstSchedule, todaySchedules, onlineTrucks.length, nearestTruck, distToTruck, user?.barangay]);
-
-  const tarsiData = useMemo(() => {
-    const hour = new Date().getHours();
-    
-    // SUCCESS: User has prepared the bin
-    if (binReady) {
-      return {
-        insight: t("tarsi_bin_ready", { count: 12 }),
-        variant: "celebrate"
-      };
-    }
-
-    // URGENT: Truck is extremely close
-    if (distToTruck !== null && distToTruck < 350) {
-      return {
-        insight: t("tarsi_urgent"),
-        variant: "worrying"
-      };
-    }
-
-    // AQ CRITICAL: Poor air quality in barangay
-    if (aqData?.status === 'critical') {
-      return {
-        insight: `⚠ Poor air quality detected in ${user?.barangay || 'your area'}! Consider staying indoors and avoid prolonged outdoor exposure.`,
-        variant: "worrying"
-      };
-    }
-
-    // AQ MODERATE: Moderate air quality
-    if (aqData?.status === 'moderate') {
-      return {
-        insight: `Air quality is moderate in ${user?.barangay || 'your area'}. Sensitive groups should limit outdoor activities.`,
-        variant: "worrying"
-      };
-    }
-
-    // ALERT: Truck is nearby
-    if (distToTruck !== null && distToTruck < 1000) {
-      const mins = Math.ceil(distToTruck / 200);
-      return {
-        insight: t("tarsi_approaching", { dist: distToTruck, mins }),
-        variant: "urgent"
-      };
-    }
-
-    // ACTIVE: Trucks are in the city
-    if (onlineTrucks.length > 0) {
-      return {
-        insight: t("tarsi_active", { count: onlineTrucks.length }),
-        variant: "default"
-      };
-    }
-
-    // SCHEDULED: Nothing live, but something planned
-    if (firstSchedule) {
-      return {
-        insight: t("tarsi_scheduled", { route: firstSchedule.routeName }),
-        variant: "default"
-      };
-    }
-
-    // IDLE: No activity
-    if (hour < 10) {
-      return {
-        insight: t("tarsi_morning"),
-        variant: "default"
-      };
-    }
-    
-    if (hour > 18) {
-      return {
-        insight: t("tarsi_evening"),
-        variant: "default"
-      };
-    }
-
-    return {
-      insight: t("tarsi_idle"),
-      variant: "default"
-    };
-  }, [distToTruck, onlineTrucks.length, firstSchedule, binReady, t, aqData, user?.barangay, latestIotReading]);
-
-  const pulseTier = useMemo(() => {
-    if (distToTruck !== null) {
-      if (distToTruck < 350) return 4;
-      if (distToTruck < 700) return 3;
-      if (distToTruck < 1050) return 2;
-    }
-    if (onlineTrucks.length > 0) return 1;
-    return 0;
-  }, [distToTruck, onlineTrucks.length]);
-
-  // Zone 1 (< 350 m) is the only layer where pickup can be confirmed
-  const inZone1 = distToTruck !== null && distToTruck < 350;
 
   const isRouteCompleted = useMemo(() => {
     if (todayPickupDone) return true;
@@ -1413,252 +835,108 @@ export default function HomeScreen({ navigation }) {
     const brgy = user?.barangay?.trim()?.toLowerCase();
     if (brgy && todaySchedules.length > 0) {
       const userScheds = todaySchedules.filter(
-        (s) =>
-          (s.barangay && s.barangay.trim().toLowerCase() === brgy) ||
-          (s.routeName && s.routeName.toLowerCase().includes(brgy))
+        (s) => (s.barangay && s.barangay.trim().toLowerCase() === brgy) || (s.routeName && s.routeName.toLowerCase().includes(brgy))
       );
       if (userScheds.length > 0) {
-        return userScheds.every(
-          (s) =>
-            s.status === "completed" ||
-            (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed))
-        );
+        return userScheds.every((s) => s.status === "completed" || (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed)));
       }
-    }
-    if (todaySchedules.length > 0) {
-      return todaySchedules.every((s) => s.status === "completed");
     }
     return false;
   }, [todayPickupDone, todaySchedules, user?.barangay, firstSchedule]);
-
-  const isTruckCollecting = useMemo(() => {
-    return onlineTrucks.length > 0;
-  }, [onlineTrucks.length]);
 
   const hasActiveTruckOrSchedule = useMemo(() => {
     return onlineTrucks.length > 0 || !!firstSchedule || todaySchedules.length > 0;
   }, [onlineTrucks.length, firstSchedule, todaySchedules]);
 
-  const isTruckNear = useMemo(() => {
-    return distToTruck !== null && distToTruck <= 1500;
-  }, [distToTruck]);
+  const isTruckNear = useMemo(() => distToTruck !== null && distToTruck <= 1500, [distToTruck]);
 
-  const isTruckActiveNearby = isTruckCollecting;
-
-  const isTruckNearOrActive = useMemo(() => {
-    // 1. Must have at least one online truck
-    if (!onlineTrucks || onlineTrucks.length === 0) return false;
-
-    // 2. If the truck is physically nearby (within 2.5 km), ALWAYS active & near!
-    if (distToTruck !== null && distToTruck <= 2500) {
-      return true;
-    }
-
-    // 3. If there is a schedule for the resident's barangay and any truck is online
-    const brgy = user?.barangay?.trim()?.toLowerCase();
-    if (brgy && todaySchedules && todaySchedules.length > 0) {
-      const brgySched = todaySchedules.find(
-        (s) =>
-          (s.barangay && s.barangay.trim().toLowerCase() === brgy) ||
-          (s.routeName && s.routeName.toLowerCase().includes(brgy))
-      );
-      if (brgySched) {
-        return true;
-      }
-    }
-
-    // 4. Default: Any online truck in the system means collection is active
-    if (onlineTrucks.length > 0) {
-      return true;
-    }
-
-    return false;
-  }, [onlineTrucks, distToTruck, user?.barangay, todaySchedules]);
-
-  // Restart radar rings whenever the proximity tier changes
+  // Pulse & Flame micro-animations
   useEffect(() => {
-    const duration = PULSE_DURATIONS[pulseTier];
-    const stagger = Math.floor(duration / 3);
-
-    pulseLoop1.current?.stop();
-    pulseLoop2.current?.stop();
-    pulseLoop3.current?.stop();
-    pulseAnim1.setValue(0);
-    pulseAnim2.setValue(0);
-    pulseAnim3.setValue(0);
-
-    const makeLoop = (anim, delay) =>
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, {
-              toValue: 1,
-              duration: Math.floor(duration * 0.82),
-              useNativeDriver: true,
-            }),
-            Animated.timing(anim, {
-              toValue: 0,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-            Animated.delay(Math.floor(duration * 0.18)),
-          ]),
-        ),
-      ]);
-
-    pulseLoop1.current = makeLoop(pulseAnim1, 0);
-    pulseLoop2.current = makeLoop(pulseAnim2, stagger);
-    pulseLoop3.current = makeLoop(pulseAnim3, stagger * 2);
-    pulseLoop1.current.start();
-    pulseLoop2.current.start();
-    pulseLoop3.current.start();
-
-    return () => {
-      pulseLoop1.current?.stop();
-      pulseLoop2.current?.stop();
-      pulseLoop3.current?.stop();
-    };
-  }, [pulseTier]);
-
-  // Micro-animations: Truck float, flame streak pulse, and live beacon pulse
-  useEffect(() => {
-    const float = Animated.loop(
-      Animated.sequence([
-        Animated.timing(truckFloatAnim, {
-          toValue: -6,
-          duration: 1700,
-          useNativeDriver: true,
-        }),
-        Animated.timing(truckFloatAnim, {
-          toValue: 0,
-          duration: 1700,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    float.start();
-
     const flame = Animated.loop(
       Animated.sequence([
-        Animated.timing(flameAnim, {
-          toValue: 1.2,
-          duration: 850,
-          useNativeDriver: true,
-        }),
-        Animated.timing(flameAnim, {
-          toValue: 1,
-          duration: 850,
-          useNativeDriver: true,
-        }),
-      ]),
+        Animated.timing(flameAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
+        Animated.timing(flameAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
     );
     flame.start();
 
     const beacon = Animated.loop(
       Animated.sequence([
-        Animated.timing(liveBeaconAnim, {
-          toValue: 0.3,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(liveBeaconAnim, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-      ]),
+        Animated.timing(liveBeaconAnim, { toValue: 0.3, duration: 700, useNativeDriver: true }),
+        Animated.timing(liveBeaconAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
     );
     beacon.start();
 
     return () => {
-      float.stop();
       flame.stop();
       beacon.stop();
     };
   }, []);
-
-  useEffect(() => {
-    if (!user) {
-      navigation.navigate("Map");
-    }
-  }, [user]);
 
   if (!user) {
     return null;
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Proximity toast — overlays at the top */}
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <StatusBar style="light" backgroundColor="#006A3B" />
+
+      {/* Toast Notification */}
       {toastMsg && (
-        <View style={styles.proximityToast}>
-          <MaterialIcons name="local-shipping" size={16} color="#FFFFFF" />
-          <Text style={styles.proximityToastText} numberOfLines={2}>
-            {toastMsg}
+        <View style={styles.toastContainer}>
+          <MaterialIcons name="local-shipping" size={15} color="#FFFFFF" />
+          <Text style={styles.toastText} numberOfLines={2}>{toastMsg}</Text>
+        </View>
+      )}
+
+      {/* Points Toast */}
+      {pointsToast && (
+        <View style={styles.pointsToast}>
+          <Ionicons name="star" size={15} color="#FFFFFF" />
+          <Text style={styles.pointsToastText}>
+            +{pointsToast.pointsEarned} pts! {pointsToast.description}
           </Text>
         </View>
       )}
 
-      {/* Points toast — shows when resident earns points */}
-      {pointsToast && (
-        <View style={[styles.pointsToast, { top: toastMsg ? 134 : 80 }]}>
-          <Ionicons name="star" size={16} color="#FFFFFF" />
-          <View style={{ flex: 1, marginLeft: 8 }}>
-            <Text style={styles.pointsToastTitle}>+{pointsToast.pointsEarned} pts earned!</Text>
-            <Text style={styles.pointsToastSub} numberOfLines={1}>{pointsToast.description}</Text>
-          </View>
-          {pointsToast.newTotal != null && (
-            <Text style={styles.pointsToastTotal}>{pointsToast.newTotal} total</Text>
-          )}
-        </View>
-      )}
-
-      {/* Fixed Header */}
-      <View style={styles.fixedHeader}>
-        <View style={styles.headerLeft}>
-          <Image
-            source={require("../../assets/logo.png")}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
-          <View style={{ marginLeft: 8 }}>
-            <Text style={styles.headerTitleText}>G-TRASH</Text>
-            <Text style={styles.headerSubTitleText}>CLEANER CEBU, GREENER TOMORROW</Text>
+      {/* Green Native Top App Bar */}
+      <View style={styles.topAppBar}>
+        <View style={styles.appBarLeft}>
+          <Image source={require("../../assets/logo.png")} style={styles.appBarLogo} resizeMode="contain" />
+          <View style={{ marginLeft: 7 }}>
+            <Text style={styles.appBarTitle}>G-TRASH</Text>
+            <Text style={styles.appBarSubtitle}>CEBU CITY</Text>
           </View>
         </View>
 
-        <View style={styles.headerRightActions}>
+        <View style={styles.appBarRight}>
           <TouchableOpacity
-            style={styles.notificationBtn}
+            style={styles.appBarIconButton}
             onPress={() => navigation.navigate("Notifications")}
             activeOpacity={0.7}
           >
-            <Ionicons name="notifications-outline" size={22} color="#1E293B" />
+            <Ionicons name="notifications-outline" size={19} color="#FFFFFF" />
             {pendingCount + truckAlertCount > 0 && (
-              <View style={styles.badge}>
-                {pendingCount + truckAlertCount <= 9 && (
-                  <Text style={styles.badgeText}>
-                    {pendingCount + truckAlertCount}
-                  </Text>
-                )}
+              <View style={styles.badgeDot}>
+                <Text style={styles.badgeDotText}>{pendingCount + truckAlertCount}</Text>
               </View>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.avatarBtn}
+            style={styles.avatarButton}
             onPress={() => navigation.navigate("Profile")}
             activeOpacity={0.7}
           >
-            <MaterialIcons name="person" size={20} color="#FFFFFF" />
+            <MaterialIcons name="person" size={18} color="#006A3B" />
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContainer}
+        style={{ flex: 1, backgroundColor: "#F8FAFC" }}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -1673,241 +951,293 @@ export default function HomeScreen({ navigation }) {
           <HomeScreenSkeleton />
         ) : (
           <>
-            {/* Dynamic Greeting Header with Live Operational Beacon */}
-            <View style={styles.greetingSection}>
-              <View style={styles.greetingHeaderRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.greeting}>
-                    {user ? `${getGreeting(t)}, ${firstName}!` : "Welcome to G-Trash!"}
-                  </Text>
-                  <Text style={styles.subtitle}>
-                    {onlineTrucks.length > 0
-                      ? t("trucks_active", { count: onlineTrucks.length })
-                      : t("no_trucks_active")}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.liveStatusBeaconPill,
-                  onlineTrucks.length > 0 ? { backgroundColor: "#ECFDF5" }
-                  : isRouteCompleted ? { backgroundColor: "#F3F4F6" }
-                  : { backgroundColor: "#FEF3C7" }
-                ]}>
-                  <Animated.View
-                    style={[
-                      styles.liveStatusBeaconDot,
-                      onlineTrucks.length > 0 ? { backgroundColor: "#10B981", opacity: liveBeaconAnim }
-                      : isRouteCompleted ? { backgroundColor: "#6B7280" }
-                      : { backgroundColor: "#F59E0B" }
-                    ]}
-                  />
-                  <Text style={[
-                    styles.liveStatusBeaconText,
-                    onlineTrucks.length > 0 ? { color: "#065F46" }
-                    : isRouteCompleted ? { color: "#4B5563" }
-                    : { color: "#92400E" }
-                  ]}>
-                    {onlineTrucks.length > 0
-                      ? "LIVE ROUTE"
-                      : isRouteCompleted
-                      ? "COMPLETED"
-                      : "STANDBY"}
-                  </Text>
-                </View>
+            {/* Greeting & Live Status Header */}
+            <View style={styles.greetingHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.greetingText}>
+                  {getGreeting(t)}, {firstName}!
+                </Text>
+                <Text style={styles.barangaySubText} numberOfLines={1}>
+                  📍 Barangay {user?.barangay || "Apas"}
+                </Text>
               </View>
-            </View>
 
-            {/* 3-Column Resident Status Card with Animated Streak Flame */}
-            <View style={styles.statusThreeColCard}>
-              {/* Col 1: Streak with pulsating flame animation */}
-              <View style={styles.statusColItem}>
+              {/* Compact Live Status Chip */}
+              <View style={[
+                styles.liveStatusPill,
+                onlineTrucks.length > 0 ? styles.liveStatusPillGreen :
+                isRouteCompleted ? styles.liveStatusPillGray : styles.liveStatusPillAmber
+              ]}>
                 <Animated.View
                   style={[
-                    styles.statusColIconWrap,
-                    { backgroundColor: "#FFF7ED", transform: [{ scale: flameAnim }] },
+                    styles.liveDot,
+                    onlineTrucks.length > 0 ? { backgroundColor: "#10B981", opacity: liveBeaconAnim } :
+                    isRouteCompleted ? { backgroundColor: "#6B7280" } : { backgroundColor: "#F59E0B" }
                   ]}
-                >
-                  <MaterialIcons name="local-fire-department" size={20} color="#F97316" />
-                </Animated.View>
-                <Text style={styles.statusColValue}>
-                  {user ? `${disposalStreak} Days` : "0 Days"}
+                />
+                <Text style={[
+                  styles.liveStatusText,
+                  onlineTrucks.length > 0 ? { color: "#065F46" } :
+                  isRouteCompleted ? { color: "#4B5563" } : { color: "#92400E" }
+                ]}>
+                  {onlineTrucks.length > 0 ? "LIVE ROUTE" : isRouteCompleted ? "COMPLETED" : "STANDBY"}
                 </Text>
-                <Text style={styles.statusColLabel}>Disposal Streak</Text>
+              </View>
+            </View>
+
+            {/* Resident 3-Metric Bar (Streak, Eco Points, Community Posts) */}
+            <View style={styles.metricsBar}>
+              <View style={styles.metricColumn}>
+                <Animated.View style={[styles.metricIconWrap, { backgroundColor: "#FFF7ED", transform: [{ scale: flameAnim }] }]}>
+                  <MaterialIcons name="local-fire-department" size={16} color="#F97316" />
+                </Animated.View>
+                <Text style={styles.metricValText}>{disposalStreak}d</Text>
+                <Text style={styles.metricLblText}>Streak</Text>
               </View>
 
-              <View style={styles.statusColDivider} />
+              <View style={styles.metricDivider} />
 
-              {/* Col 2: Points */}
-              <TouchableOpacity
-                style={styles.statusColItem}
-                onPress={() => navigation.navigate("Profile")}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.statusColIconWrap, { backgroundColor: "#FEF3C7" }]}>
-                  <Ionicons name="star" size={19} color="#D97706" />
+              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("Profile")} activeOpacity={0.7}>
+                <View style={[styles.metricIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <Ionicons name="star" size={15} color="#D97706" />
                 </View>
-                <Text style={styles.statusColValue}>
-                  {user ? `${userPoints} Pts` : "0 Pts"}
-                </Text>
-                <Text style={styles.statusColLabel}>Eco Points</Text>
+                <Text style={styles.metricValText}>{userPoints}</Text>
+                <Text style={styles.metricLblText}>Points</Text>
               </TouchableOpacity>
 
-              <View style={styles.statusColDivider} />
+              <View style={styles.metricDivider} />
 
-              {/* Col 3: Community Posted */}
-              <TouchableOpacity
-                style={styles.statusColItem}
-                onPress={() => navigation.navigate("Community")}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.statusColIconWrap, { backgroundColor: "#EFF6FF" }]}>
-                  <MaterialIcons name="campaign" size={20} color="#2563EB" />
+              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("Community")} activeOpacity={0.7}>
+                <View style={[styles.metricIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                  <MaterialIcons name="campaign" size={16} color="#2563EB" />
                 </View>
-                <Text style={styles.statusColValue}>
-                  {communityPostsCount} {communityPostsCount === 1 ? "Post" : "Posts"}
-                </Text>
-                <Text style={styles.statusColLabel}>Community Posted</Text>
+                <Text style={styles.metricValText}>{communityPostsCount}</Text>
+                <Text style={styles.metricLblText}>Reports</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Air Quality Card */}
+            {/* Live Collection Hero Card (Compact Native Proportions) */}
+            <View style={styles.collectionHeroCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.streamBadge}>
+                  <MaterialIcons
+                    name={scheduledWasteType === "Di-Malata" ? "recycling" : "eco"}
+                    size={13}
+                    color={scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#047857"}
+                  />
+                  <Text style={[
+                    styles.streamBadgeText,
+                    { color: scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#047857" }
+                  ]}>
+                    {scheduledWasteType}
+                  </Text>
+                </View>
+
+                <View style={styles.pointsBadge}>
+                  <MaterialIcons name="emoji-events" size={12} color="#D97706" />
+                  <Text style={styles.pointsBadgeText}>+10 Pts</Text>
+                </View>
+              </View>
+
+              {/* Status summary */}
+              <View style={styles.heroStatusRow}>
+                <View style={[styles.heroTruckIconWrap, { backgroundColor: onlineTrucks.length > 0 ? "#ECFDF5" : "#F1F5F9" }]}>
+                  <MaterialIcons name="local-shipping" size={24} color={onlineTrucks.length > 0 ? "#006A3B" : "#64748B"} />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.heroMainTitle}>
+                    {hasSnappedToday
+                      ? "Bin Prepared & Verified ✓"
+                      : isRouteCompleted
+                      ? "Route Collection Completed"
+                      : distToTruck !== null && distToTruck < 400
+                      ? `Truck ${distToTruck}m Away (On Street!)`
+                      : distToTruck !== null
+                      ? `Truck ~${distToTruck}m Away (~${Math.ceil(distToTruck / 200)}m)`
+                      : onlineTrucks.length > 0
+                      ? `${onlineTrucks.length} Truck${onlineTrucks.length > 1 ? "s" : ""} Online in Area`
+                      : "Standby for Collection"}
+                  </Text>
+                  <Text style={styles.heroSubText}>
+                    {hasSnappedToday
+                      ? "Disposal photo verified for today. Resets tomorrow."
+                      : isRouteCompleted
+                      ? "Trash collection in your area is finished for today."
+                      : scheduledWasteType === "Di-Malata"
+                      ? "Dry recyclables only. Keep wet kitchen waste stored."
+                      : "Biodegradable organic waste. Please tie bags securely."}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Verified photo thumbnail if snapped today */}
+              {todayDisposalPhoto && hasSnappedToday && (
+                <View style={styles.verifiedThumbnailRow}>
+                  <Image source={{ uri: todayDisposalPhoto }} style={styles.verifiedThumbnailImg} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.verifiedThumbTitle}>Daily Proof Submitted ✓</Text>
+                    <Text style={styles.verifiedThumbSub}>Verified at curb • +10 points earned</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* CTA Action Button Row */}
+              <View style={styles.heroActionButtons}>
+                {hasSnappedToday ? (
+                  <TouchableOpacity
+                    style={[styles.primaryCtaBtn, { backgroundColor: "#ECFDF5" }]}
+                    onPress={() => {
+                      if (todayDisposalPhoto) {
+                        setSelectedPhoto(todayDisposalPhoto);
+                        setPhotoPreviewVisible(true);
+                      } else {
+                        Alert.alert("Daily Snap", "Your bin photo is verified for today!");
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="check-circle" size={16} color="#059669" />
+                    <Text style={[styles.primaryCtaBtnText, { color: "#059669" }]}>View Proof</Text>
+                  </TouchableOpacity>
+                ) : (isRouteCompleted || todayPickupDone) ? (
+                  <View style={[styles.primaryCtaBtn, { backgroundColor: "#F1F5F9" }]}>
+                    <MaterialIcons name="check-circle" size={16} color="#64748B" />
+                    <Text style={[styles.primaryCtaBtnText, { color: "#64748B" }]}>Finished ✓</Text>
+                  </View>
+                ) : hasActiveTruckOrSchedule ? (
+                  <TouchableOpacity
+                    style={styles.primaryCtaBtn}
+                    onPress={() => setModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="checklist" size={16} color="#FFFFFF" />
+                    <Text style={styles.primaryCtaBtnText}>Prepare Bin (+10 Pts)</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.primaryCtaBtn, { backgroundColor: "#F1F5F9" }]}
+                    onPress={() => navigation.navigate("Calendar")}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="event-note" size={16} color="#475569" />
+                    <Text style={[styles.primaryCtaBtnText, { color: "#475569" }]}>View Schedule</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={styles.secondaryCtaBtn}
+                  onPress={() => navigation.navigate("Map")}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="navigation" size={15} color="#006A3B" />
+                  <Text style={styles.secondaryCtaBtnText}>Track GPS</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Quick Actions 4-Column Native Grid */}
+            <View style={styles.quickGridContainer}>
+              <TouchableOpacity
+                style={styles.quickGridTile}
+                onPress={() => {
+                  if (hasActiveTruckOrSchedule) setModalVisible(true);
+                  else navigation.navigate("Community");
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickGridIconWrap, { backgroundColor: "#ECFDF5" }]}>
+                  <MaterialIcons name={hasActiveTruckOrSchedule ? "photo-camera" : "campaign"} size={20} color="#059669" />
+                </View>
+                <Text style={styles.quickGridLabel}>{hasActiveTruckOrSchedule ? "Daily Snap" : "Community"}</Text>
+                <Text style={styles.quickGridSub}>{hasActiveTruckOrSchedule ? "+10 Pts" : "Feed"}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickGridTile}
+                onPress={() => navigation.navigate("Map")}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickGridIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                  <MaterialIcons name="map" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.quickGridLabel}>Live GPS</Text>
+                <Text style={styles.quickGridSub}>Tracking</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickGridTile}
+                onPress={() => navigation.navigate("Calendar")}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickGridIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                  <MaterialIcons name="event-note" size={20} color="#D97706" />
+                </View>
+                <Text style={styles.quickGridLabel}>Schedule</Text>
+                <Text style={styles.quickGridSub}>Routes</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickGridTile}
+                onPress={() => navigation.navigate("Report")}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickGridIconWrap, { backgroundColor: "#FEE2E2" }]}>
+                  <MaterialIcons name="report-problem" size={20} color="#DC2626" />
+                </View>
+                <Text style={styles.quickGridLabel}>Report</Text>
+                <Text style={styles.quickGridSub}>File Issue</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Air Quality IoT Card (Compact & High-Density) */}
             {(() => {
-              const isCritical =
-                aqData?.status === "critical" ||
-                aqData?.airQuality === "Unhealthy" ||
-                aqData?.airQuality === "Hazardous" ||
-                aqData?.airQuality === "Critical";
-              const isModerate =
-                aqData?.status === "moderate" ||
-                aqData?.airQuality === "Moderate";
+              const isCritical = aqData?.status === "critical";
+              const isModerate = aqData?.status === "moderate";
               const activeLevel = isCritical ? 3 : isModerate ? 2 : 1;
-              const dotColor = isCritical
-                ? "#E53935"
-                : isModerate
-                ? "#F59E0B"
-                : aqData
-                ? "#10B981"
-                : "#9CA3AF";
-              const statusLabel =
-                aqData?.airQuality ||
-                (isCritical
-                  ? "Poor"
-                  : isModerate
-                  ? "Moderate"
-                  : aqData
-                  ? "Good"
-                  : "No data");
-              const statusColor = isCritical
-                ? "#DC2626"
-                : isModerate
-                ? "#92400E"
-                : aqData
-                ? "#065F46"
-                : "#6B7280";
+              const statusLabel = isCritical ? "Poor Quality" : isModerate ? "Moderate" : "Clean Air";
+              const statusColor = isCritical ? "#DC2626" : isModerate ? "#D97706" : "#059669";
+
               return (
-                <View style={styles.airQualityCard}>
-                  <View style={styles.cardHeader}>
-                    <View>
-                      <Text style={styles.cardTitle}>{t("air_quality")}</Text>
-                      <View style={styles.statusRow}>
-                        <View
-                          style={[styles.statusDot, { backgroundColor: dotColor }]}
-                        />
-                        <Text style={[styles.statusText, { color: statusColor }]}>
-                          {`Level ${activeLevel} · ${statusLabel}`}
-                        </Text>
-                      </View>
+                <View style={styles.compactCard}>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <MaterialIcons name="air" size={18} color="#475569" />
+                      <Text style={styles.compactCardTitle}>Air Quality (Barangay {user?.barangay || "Apas"})</Text>
                     </View>
-                    <MaterialIcons name="air" size={28} color="#6B7280" />
+                    <View style={[styles.aqStatusPill, { borderColor: statusColor, backgroundColor: isCritical ? "#FEF2F2" : isModerate ? "#FFFBEB" : "#ECFDF5" }]}>
+                      <View style={[styles.liveDot, { backgroundColor: statusColor }]} />
+                      <Text style={[styles.aqStatusText, { color: statusColor }]}>
+                        Level {activeLevel} • {statusLabel}
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Mini Chart */}
-                  <View style={styles.chartContainer}>
+                  {/* 7-Bar Sparkline Chart */}
+                  <View style={styles.miniChartRow}>
                     {chartBars.map((bar, i) => (
-                      <View
-                        key={bar.id || i}
-                        style={[
-                          styles.chartBar,
-                          { height: bar.height, backgroundColor: bar.color },
-                        ]}
-                      />
+                      <View key={bar.id || i} style={[styles.miniBar, { height: bar.height, backgroundColor: bar.color }]} />
                     ))}
                   </View>
 
-                  {/* 3 Levels of Air Quality */}
-                  <View style={styles.levelsContainer}>
+                  {/* 3-Level Breakdown */}
+                  <View style={styles.aqLevelColumns}>
                     {[
-                      {
-                        level: 1,
-                        label: "Good",
-                        sub: "Clean",
-                        color: "#10B981",
-                        bg: "#ECFDF5",
-                        border: "#10B981",
-                      },
-                      {
-                        level: 2,
-                        label: "Moderate",
-                        sub: "Fair",
-                        color: "#F59E0B",
-                        bg: "#FFFBEB",
-                        border: "#F59E0B",
-                      },
-                      {
-                        level: 3,
-                        label: "Poor",
-                        sub: "Alert",
-                        color: "#EF4444",
-                        bg: "#FEF2F2",
-                        border: "#EF4444",
-                      },
+                      { level: 1, label: "Good", desc: "Clean", color: "#10B981", bg: "#ECFDF5" },
+                      { level: 2, label: "Moderate", desc: "Caution", color: "#F59E0B", bg: "#FFFBEB" },
+                      { level: 3, label: "Poor", desc: "Alert", color: "#EF4444", bg: "#FEF2F2" },
                     ].map((lvl) => {
-                      const isActive = activeLevel === lvl.level;
+                      const isCur = activeLevel === lvl.level;
                       return (
                         <View
                           key={lvl.level}
                           style={[
-                            styles.levelCard,
-                            isActive && { borderColor: lvl.color, backgroundColor: lvl.bg },
-                            !isActive && styles.levelCardInactive,
+                            styles.aqLevelItem,
+                            isCur ? { backgroundColor: lvl.bg, borderColor: lvl.color, borderWidth: 1.5 } : styles.aqLevelItemInactive,
                           ]}
                         >
-                          <View style={styles.levelBadgeRow}>
-                            <View
-                              style={[
-                                styles.levelDot,
-                                { backgroundColor: isActive ? lvl.color : "#9CA3AF" },
-                              ]}
-                            />
-                            <Text
-                              style={[
-                                styles.levelNumText,
-                                { color: isActive ? lvl.color : "#9CA3AF" },
-                              ]}
-                            >
-                              Level {lvl.level}
-                            </Text>
-                          </View>
-                          <Text
-                            style={[
-                              styles.levelTitleText,
-                              {
-                                color: isActive ? "#111827" : "#6B7280",
-                                fontWeight: isActive ? "700" : "500",
-                              },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {lvl.label}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.levelSubText,
-                              { color: isActive ? lvl.color : "#9CA3AF" },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {lvl.sub}
-                          </Text>
+                          <Text style={[styles.aqLevelNum, { color: isCur ? lvl.color : "#94A3B8" }]}>Lvl {lvl.level}</Text>
+                          <Text style={[styles.aqLevelTitle, { color: isCur ? "#0F172A" : "#64748B" }]}>{lvl.label}</Text>
                         </View>
                       );
                     })}
@@ -1916,568 +1246,70 @@ export default function HomeScreen({ navigation }) {
               );
             })()}
 
-            {/* Pre-Information Live Pickup Feed Banner */}
-            {latestPickupFeed && (
-              <View style={styles.pickupPreInfoCard}>
-                <View style={styles.pickupPreInfoHeader}>
-                  <View style={styles.pickupPreInfoIconWrap}>
-                    <MaterialIcons name="check-circle" size={20} color="#006A3B" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pickupPreInfoTitle}>
-                      Waste Collected — Sitio {latestPickupFeed.sitioName}
-                    </Text>
-                    <Text style={styles.pickupPreInfoSub}>
-                      Truck {latestPickupFeed.truckId} completed pickup at {latestPickupFeed.time}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setLatestPickupFeed(null)}>
-                    <Ionicons name="close" size={18} color="#6F7A70" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* Pickup completion congratulation or Missed Pickup Banner */}
-            {todayPickupDone && !isTruckNearOrActive && binReady && (
-              <View style={styles.pickupDoneBanner}>
-                <MaterialIcons name="check-circle" size={22} color="#006A3B" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.pickupDoneTitle}>Collection Complete!</Text>
-                  <Text style={styles.pickupDoneSubtitle}>
-                    Today's pickup for {user?.barangay || "your barangay"} is done. Good job disposing your trash!
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {todayPickupDone && !isTruckNearOrActive && !binReady && (
-              <View style={styles.missedPickupBanner}>
-                <View style={styles.missedPickupHeader}>
-                  <View style={styles.missedPickupIconWrap}>
-                    <MaterialIcons name="event-busy" size={22} color="#D97706" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.missedPickupTitle}>You Missed Today's Collection Truck</Text>
-                    <Text style={styles.missedPickupSub}>
-                      The garbage truck finished collection in {user?.barangay || "your area"} before your bin was prepared.
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.missedPickupActions}>
-                  <TouchableOpacity
-                    style={styles.missedReportBtn}
-                    onPress={() => navigation.navigate("Report")}
-                    activeOpacity={0.8}
-                  >
-                    <MaterialIcons name="report-problem" size={15} color="#92400E" />
-                    <Text style={styles.missedReportBtnText}>Report Missed Pickup</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.missedSchedBtn}
-                    onPress={() => setModalVisible(true)}
-                    activeOpacity={0.8}
-                  >
-                    <MaterialIcons name="event" size={15} color="#374151" />
-                    <Text style={styles.missedSchedBtnText}>View Schedule</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* LIVE RADAR & COLLECTION HERO CARD (DYNAMIC & ANIMATED) */}
-            <View style={styles.liveRadarHeroCard}>
-              {/* Header with Live Status Beacon & Points */}
-              <View style={styles.radarCardHeaderRow}>
-                <View style={styles.radarBadgeRow}>
-                  <Animated.View
-                    style={[
-                      styles.radarLiveDot,
-                      {
-                        backgroundColor:
-                          hasSnappedToday || isRouteCompleted
-                            ? "#10B981"
-                            : onlineTrucks.length > 0
-                            ? "#10B981"
-                            : "#F59E0B",
-                        opacity: onlineTrucks.length > 0 ? liveBeaconAnim : 1,
-                      },
-                    ]}
-                  />
-                  <Text style={styles.radarLiveText}>
-                    {hasSnappedToday
-                      ? "BIN PREPARED & VERIFIED"
-                      : isRouteCompleted
-                      ? "ROUTE COMPLETED TODAY"
-                      : isTruckNear
-                      ? "TRUCK APPROACHING YOUR STREET"
-                      : onlineTrucks.length > 0
-                      ? "LIVE GPS TRACKING ACTIVE"
-                      : "COLLECTION STANDBY"}
-                  </Text>
-                </View>
-                <View style={styles.radarPointsPill}>
-                  <MaterialIcons name="emoji-events" size={13} color="#D97706" />
-                  <Text style={styles.radarPointsText}>
-                    {hasSnappedToday ? "Resets Tomorrow" : "+10 Eco Pts"}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Animated Radar Center Visual */}
-              <View style={styles.radarVisualContainer}>
-                {/* Expanding Concentric Pulse Waves */}
-                {onlineTrucks.length > 0 && (
-                  <>
-                    <Animated.View
-                      style={[
-                        styles.radarPulseWave,
-                        {
-                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
-                          transform: [
-                            {
-                              scale: pulseAnim1.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [1, 2.4],
-                              }),
-                            },
-                          ],
-                          opacity: pulseAnim1.interpolate({
-                            inputRange: [0, 0.7, 1],
-                            outputRange: [0.8, 0.3, 0],
-                          }),
-                        },
-                      ]}
-                    />
-                    <Animated.View
-                      style={[
-                        styles.radarPulseWave,
-                        {
-                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
-                          transform: [
-                            {
-                              scale: pulseAnim2.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [1, 2.4],
-                              }),
-                            },
-                          ],
-                          opacity: pulseAnim2.interpolate({
-                            inputRange: [0, 0.7, 1],
-                            outputRange: [0.8, 0.3, 0],
-                          }),
-                        },
-                      ]}
-                    />
-                    <Animated.View
-                      style={[
-                        styles.radarPulseWave,
-                        {
-                          borderColor: PULSE_RING_COLORS[pulseTier] || "#10B981",
-                          transform: [
-                            {
-                              scale: pulseAnim3.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [1, 2.4],
-                              }),
-                            },
-                          ],
-                          opacity: pulseAnim3.interpolate({
-                            inputRange: [0, 0.7, 1],
-                            outputRange: [0.8, 0.3, 0],
-                          }),
-                        },
-                      ]}
-                    />
-                  </>
-                )}
-
-                {/* Center Floating Truck Badge */}
-                <Animated.View
-                  style={[
-                    styles.radarCenterTruckBadge,
-                    {
-                      transform: [{ translateY: truckFloatAnim }],
-                      backgroundColor:
-                        onlineTrucks.length > 0 ? "#006A3B" : "#4B5563",
-                    },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="local-shipping"
-                    size={30}
-                    color="#FFFFFF"
-                  />
-                </Animated.View>
-              </View>
-
-              {/* Proximity Distance & Status Text */}
-              <View style={styles.radarInfoSection}>
-                <Text style={styles.radarInfoTitle}>
-                  {distToTruck !== null
-                    ? `${distToTruck}m Away from You`
-                    : onlineTrucks.length > 0
-                    ? `${onlineTrucks.length} Truck${onlineTrucks.length > 1 ? "s" : ""} Online in Cebu`
-                    : "Garbage Truck Standby"}
-                </Text>
-                <Text style={styles.radarInfoSub}>
-                  {distToTruck !== null && distToTruck < 350
-                    ? "Truck is on your street! Prepare to hand over your sorted bin."
-                    : distToTruck !== null && distToTruck < 1000
-                    ? `Estimated arrival: ~${Math.ceil(distToTruck / 200)} mins. Make sure your bin is at the curb!`
-                    : scheduledWasteType === "Di-Malata"
-                    ? "Today's stream: DI-MALATA (Recyclables & Dry Waste)."
-                    : "Today's stream: MALATA (Biodegradable & Kitchen Waste)."}
-                </Text>
-              </View>
-
-              {/* If user snapped a photo today, show the verified thumbnail */}
-              {(todayDisposalPhoto || selectedPhoto) && hasSnappedToday && (
-                <View style={styles.radarPhotoCard}>
-                  <Image
-                    source={{ uri: todayDisposalPhoto || selectedPhoto }}
-                    style={{ width: "100%", height: "100%" }}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.radarPhotoBadge}>
-                    <MaterialIcons name="verified" size={14} color="#FFFFFF" />
-                    <Text style={styles.radarPhotoBadgeText}>Disposal Verified ✓</Text>
-                  </View>
-                  <View style={styles.radarPhotoFooter}>
-                    <Text style={styles.radarPhotoFooterText} numberOfLines={1}>
-                      {user?.barangay || "Curb"} • {scheduledWasteType} Waste
-                    </Text>
-                    <Text style={styles.radarPhotoFooterPoints}>+10 Pts</Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Route Stops Timeline Preview */}
-              {routeStopsData && routeStopsData.length > 0 && (
-                <View style={styles.routeTimelineBox}>
-                  <View style={styles.routeTimelineHeaderRow}>
-                    <MaterialIcons name="alt-route" size={15} color="#006A3B" />
-                    <Text style={styles.routeTimelineTitle}>Live Route Progress</Text>
-                  </View>
-                  <View style={styles.routeStopsRow}>
-                    {routeStopsData.slice(0, 4).map((stop, idx) => (
-                      <View key={idx} style={styles.routeStopItem}>
-                        <View
-                          style={[
-                            styles.routeStopDot,
-                            stop.isCompleted && { backgroundColor: "#10B981" },
-                            stop.isActive && { backgroundColor: "#006A3B" },
-                          ]}
-                        >
-                          <MaterialIcons
-                            name={stop.isCompleted ? "check" : stop.isActive ? "local-shipping" : "place"}
-                            size={12}
-                            color={stop.isCompleted || stop.isActive ? "#FFFFFF" : "#9CA3AF"}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.routeStopName,
-                            (stop.isCompleted || stop.isActive) && { color: "#111827", fontWeight: "700" },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {stop.name}
-                        </Text>
-                        <Text style={styles.routeStopStatusText}>
-                          {stop.status}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {/* Primary Call-to-Actions */}
-              <View style={styles.radarActionButtonsRow}>
-                {hasSnappedToday ? (
-                  <TouchableOpacity
-                    style={[styles.radarBtnPrimary, { backgroundColor: "#ECFDF5" }]}
-                    onPress={() => {
-                      if (todayDisposalPhoto || selectedPhoto) {
-                        setSelectedPhoto(todayDisposalPhoto || selectedPhoto);
-                        setPhotoPreviewVisible(true);
-                      } else {
-                        Alert.alert("Daily Snap Recorded", "You have submitted your daily bin photo. Resets tomorrow at midnight!");
-                      }
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialIcons name="check-circle" size={18} color="#059669" />
-                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#059669" }]}>
-                      {todayDisposalPhoto || selectedPhoto ? "View Bin Photo ✓" : "Bin Prepared Today ✓"}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (isRouteCompleted || todayPickupDone || firstSchedule?.status === "completed") ? (
-                  <View style={[styles.radarBtnPrimary, { backgroundColor: "#F3F4F6" }]}>
-                    <MaterialIcons name="check-circle" size={18} color="#6B7280" />
-                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#6B7280" }]}>
-                      Route Completed ✓
-                    </Text>
-                  </View>
-                ) : hasActiveTruckOrSchedule ? (
-                  <TouchableOpacity
-                    style={styles.radarBtnPrimary}
-                    onPress={handleOpenModal}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialIcons name="checklist" size={18} color="#FFFFFF" />
-                    <Text numberOfLines={1} style={styles.radarBtnPrimaryText}>
-                      Prepare My Bin (+10 Pts)
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.radarBtnPrimary, { backgroundColor: "#F3F4F6" }]}
-                    onPress={() => navigation.navigate("Calendar")}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialIcons name="event-note" size={18} color="#4B5563" />
-                    <Text numberOfLines={1} style={[styles.radarBtnPrimaryText, { color: "#4B5563" }]}>
-                      View Collection Schedule
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.radarBtnSecondary}
-                  onPress={() => navigation.navigate("Map")}
-                  activeOpacity={0.85}
-                >
-                  <MaterialIcons name="navigation" size={17} color="#006A3B" />
-                  <Text numberOfLines={1} style={styles.radarBtnSecondaryText}>Live Map</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Quick Actions Grid */}
-            <View style={styles.quickActionsSection}>
-              <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
-              <View style={styles.quickActionsGrid}>
-                {hasActiveTruckOrSchedule ? (
-                  /* Snap Bin (Only shown when truck or schedule is active) */
-                  <TouchableOpacity
-                    style={styles.quickActionTile}
-                    onPress={handleOpenModal}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.quickActionIconWrap, { backgroundColor: "#ECFDF5" }]}>
-                      <MaterialIcons name="photo-camera" size={22} color="#059669" />
-                    </View>
-                    <Text style={styles.quickActionTileTitle}>Daily Snap</Text>
-                    <Text style={styles.quickActionTileSub}>+10 Pts</Text>
-                  </TouchableOpacity>
-                ) : (
-                  /* Community Feed (Shown when no active route) */
-                  <TouchableOpacity
-                    style={styles.quickActionTile}
-                    onPress={() => navigation.navigate("Community")}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.quickActionIconWrap, { backgroundColor: "#EFF6FF" }]}>
-                      <MaterialIcons name="campaign" size={22} color="#2563EB" />
-                    </View>
-                    <Text style={styles.quickActionTileTitle}>Community</Text>
-                    <Text style={styles.quickActionTileSub}>Updates</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Live GPS */}
-                <TouchableOpacity
-                  style={styles.quickActionTile}
-                  onPress={() => navigation.navigate("Map")}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#EFF6FF" }]}>
-                    <MaterialIcons name="map" size={22} color="#2563EB" />
-                  </View>
-                  <Text style={styles.quickActionTileTitle}>Live GPS</Text>
-                  <Text style={styles.quickActionTileSub}>Track Truck</Text>
-                </TouchableOpacity>
-
-                {/* Schedules */}
-                <TouchableOpacity
-                  style={styles.quickActionTile}
-                  onPress={() => navigation.navigate("Calendar")}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#FEF3C7" }]}>
-                    <MaterialIcons name="event-note" size={22} color="#D97706" />
-                  </View>
-                  <Text style={styles.quickActionTileTitle}>Schedule</Text>
-                  <Text style={styles.quickActionTileSub}>View Routes</Text>
-                </TouchableOpacity>
-
-                {/* Report Issue */}
-                <TouchableOpacity
-                  style={styles.quickActionTile}
-                  onPress={() => navigation.navigate("Report")}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.quickActionIconWrap, { backgroundColor: "#FEE2E2" }]}>
-                    <MaterialIcons name="report-problem" size={22} color="#DC2626" />
-                  </View>
-                  <Text style={styles.quickActionTileTitle}>Report</Text>
-                  <Text style={styles.quickActionTileSub}>File Issue</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* INTERACTIVE WASTE SEGREGATION GUIDE CARD */}
+            {/* Interactive Waste Segregation Guide (Compact Native Tabs) */}
             {(() => {
               const currentTab = activeSegregationTab || (scheduledWasteType === "Di-Malata" ? "di_malata" : "malata");
               const isMalata = currentTab === "malata";
 
               return (
-                <View style={styles.segregationGuideCard}>
-                  <View style={styles.segregationGuideHeader}>
+                <View style={styles.compactCard}>
+                  <View style={styles.cardHeaderRow}>
                     <View>
-                      <Text style={styles.segregationGuideTitle}>Waste Segregation Guide</Text>
-                      <Text style={styles.segregationGuideSub}>
-                        Tap to learn proper sorting rules for Cebu
-                      </Text>
+                      <Text style={styles.compactCardTitle}>Waste Segregation Guide</Text>
+                      <Text style={styles.compactCardSub}>Cebu City Solid Waste Guidelines</Text>
                     </View>
-                    <View
-                      style={[
-                        styles.todayFocusPill,
-                        scheduledWasteType === "Di-Malata"
-                          ? { backgroundColor: "#EFF6FF" }
-                          : { backgroundColor: "#ECFDF5" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.todayFocusText,
-                          scheduledWasteType === "Di-Malata" ? { color: "#1D4ED8" } : { color: "#065F46" },
-                        ]}
-                      >
-                        Today: {scheduledWasteType}
-                      </Text>
+                    <View style={styles.streamBadge}>
+                      <Text style={styles.streamBadgeText}>Today: {scheduledWasteType}</Text>
                     </View>
                   </View>
 
-                  {/* Interactive Category Switcher Tabs */}
-                  <View style={styles.segregationTabsRow}>
+                  {/* Segmented Tab Control */}
+                  <View style={styles.segTabsContainer}>
                     <TouchableOpacity
-                      style={[
-                        styles.segregationTabBtn,
-                        isMalata && styles.segregationTabBtnActiveMalata,
-                      ]}
+                      style={[styles.segTabButton, isMalata && styles.segTabButtonActiveMalata]}
                       onPress={() => setActiveSegregationTab("malata")}
-                      activeOpacity={0.8}
+                      activeOpacity={0.7}
                     >
-                      <MaterialIcons
-                        name="eco"
-                        size={17}
-                        color={isMalata ? "#047857" : "#6B7280"}
-                      />
-                      <Text
-                        style={[
-                          styles.segregationTabBtnText,
-                          isMalata && styles.segregationTabBtnTextActiveMalata,
-                        ]}
-                      >
-                        Malata (Bio)
-                      </Text>
+                      <MaterialIcons name="eco" size={14} color={isMalata ? "#047857" : "#64748B"} />
+                      <Text style={[styles.segTabText, isMalata && styles.segTabTextActiveMalata]}>Malata (Bio)</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[
-                        styles.segregationTabBtn,
-                        !isMalata && styles.segregationTabBtnActiveDiMalata,
-                      ]}
+                      style={[styles.segTabButton, !isMalata && styles.segTabButtonActiveDiMalata]}
                       onPress={() => setActiveSegregationTab("di_malata")}
-                      activeOpacity={0.8}
+                      activeOpacity={0.7}
                     >
-                      <MaterialIcons
-                        name="recycling"
-                        size={17}
-                        color={!isMalata ? "#1D4ED8" : "#6B7280"}
-                      />
-                      <Text
-                        style={[
-                          styles.segregationTabBtnText,
-                          !isMalata && styles.segregationTabBtnTextActiveDiMalata,
-                        ]}
-                      >
-                        Di-Malata (Non-Bio)
-                      </Text>
+                      <MaterialIcons name="recycling" size={14} color={!isMalata ? "#1D4ED8" : "#64748B"} />
+                      <Text style={[styles.segTabText, !isMalata && styles.segTabTextActiveDiMalata]}>Di-Malata (Dry)</Text>
                     </TouchableOpacity>
                   </View>
 
-                  {/* Tab Body Content */}
-                  {isMalata ? (
-                    <View style={styles.segregationTabBody}>
-                      <View style={styles.segregationGrid}>
-                        <View style={styles.segregationColAccept}>
-                          <View style={styles.segregationColHeader}>
-                            <MaterialIcons name="check-circle" size={14} color="#059669" />
-                            <Text style={styles.segregationColAcceptTitle}>PUT IN GREEN BIN</Text>
-                          </View>
-                          <Text style={styles.segregationItemText}>• Food leftovers & rice</Text>
-                          <Text style={styles.segregationItemText}>• Fruit & veggie peels</Text>
-                          <Text style={styles.segregationItemText}>• Fish & chicken bones</Text>
-                          <Text style={styles.segregationItemText}>• Leaves & garden twigs</Text>
-                        </View>
-
-                        <View style={styles.segregationColReject}>
-                          <View style={styles.segregationColHeader}>
-                            <MaterialIcons name="cancel" size={14} color="#DC2626" />
-                            <Text style={styles.segregationColRejectTitle}>HOLD / DO NOT MIX</Text>
-                          </View>
-                          <Text style={styles.segregationItemTextReject}>• Plastic bags & wrap</Text>
-                          <Text style={styles.segregationItemTextReject}>• Bottles & soda cans</Text>
-                          <Text style={styles.segregationItemTextReject}>• Foil packs & styro</Text>
-                          <Text style={styles.segregationItemTextReject}>• Diapers & batteries</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.segregationTipBanner}>
-                        <MaterialIcons name="tips-and-updates" size={16} color="#047857" />
-                        <Text style={styles.segregationTipText}>
-                          Clean biodegradable waste produces compost fertilizer for barangay urban gardens!
+                  {/* Two-Column Accept vs Reject List */}
+                  <View style={styles.segSplitGrid}>
+                    <View style={[styles.segColBox, isMalata ? styles.segColBoxGreen : styles.segColBoxBlue]}>
+                      <View style={styles.segColHead}>
+                        <MaterialIcons name="check-circle" size={13} color={isMalata ? "#059669" : "#2563EB"} />
+                        <Text style={[styles.segColHeadText, { color: isMalata ? "#059669" : "#2563EB" }]}>
+                          {isMalata ? "PUT IN GREEN BIN" : "PUT IN DRY BIN"}
                         </Text>
                       </View>
+                      <Text style={styles.segItemText}>• {isMalata ? "Leftover food & rice" : "Plastic bottles & cups"}</Text>
+                      <Text style={styles.segItemText}>• {isMalata ? "Fruit & veggie peelings" : "Tin & soda cans"}</Text>
+                      <Text style={styles.segItemText}>• {isMalata ? "Fish & meat bones" : "Cardboard boxes"}</Text>
+                      <Text style={styles.segItemText}>• {isMalata ? "Garden leaves & twigs" : "Clean dry wrappers"}</Text>
                     </View>
-                  ) : (
-                    <View style={styles.segregationTabBody}>
-                      <View style={styles.segregationGrid}>
-                        <View style={styles.segregationColAcceptBlue}>
-                          <View style={styles.segregationColHeader}>
-                            <MaterialIcons name="check-circle" size={14} color="#2563EB" />
-                            <Text style={styles.segregationColAcceptTitleBlue}>PUT IN BLUE/DRY BIN</Text>
-                          </View>
-                          <Text style={styles.segregationItemText}>• Clean plastic bottles</Text>
-                          <Text style={styles.segregationItemText}>• Tin & aluminum cans</Text>
-                          <Text style={styles.segregationItemText}>• Flattened cartons</Text>
-                          <Text style={styles.segregationItemText}>• Dry paper & wrappers</Text>
-                        </View>
 
-                        <View style={styles.segregationColReject}>
-                          <View style={styles.segregationColHeader}>
-                            <MaterialIcons name="cancel" size={14} color="#DC2626" />
-                            <Text style={styles.segregationColRejectTitle}>HOLD / DO NOT MIX</Text>
-                          </View>
-                          <Text style={styles.segregationItemTextReject}>• Wet leftover food</Text>
-                          <Text style={styles.segregationItemTextReject}>• Oily & greasy scraps</Text>
-                          <Text style={styles.segregationItemTextReject}>• Wet soil & garden dirt</Text>
-                          <Text style={styles.segregationItemTextReject}>• Bio / food wastes</Text>
-                        </View>
+                    <View style={[styles.segColBox, styles.segColBoxRed]}>
+                      <View style={styles.segColHead}>
+                        <MaterialIcons name="cancel" size={13} color="#DC2626" />
+                        <Text style={[styles.segColHeadText, { color: "#DC2626" }]}>DO NOT MIX</Text>
                       </View>
-
-                      <View style={[styles.segregationTipBanner, { backgroundColor: "#EFF6FF" }]}>
-                        <MaterialIcons name="tips-and-updates" size={16} color="#1D4ED8" />
-                        <Text style={[styles.segregationTipText, { color: "#1E40AF" }]}>
-                          Rinse plastic bottles and flatten cardboard boxes to maximize collection efficiency!
-                        </Text>
-                      </View>
+                      <Text style={styles.segItemTextReject}>• {isMalata ? "Plastic wrappers & cups" : "Wet leftover food"}</Text>
+                      <Text style={styles.segItemTextReject}>• {isMalata ? "Tin cans & bottles" : "Oily & greasy waste"}</Text>
+                      <Text style={styles.segItemTextReject}>• {isMalata ? "Diapers & batteries" : "Garden soil & weeds"}</Text>
+                      <Text style={styles.segItemTextReject}>• {isMalata ? "Styrofoam packs" : "Animal & meat waste"}</Text>
                     </View>
-                  )}
+                  </View>
                 </View>
               );
             })()}
@@ -2485,400 +1317,125 @@ export default function HomeScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Bin Prep Modal with Dedicated Segregation Teaching */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
+      {/* Prepare Bin Checklist Bottom Sheet Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setModalVisible(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheetContainer}>
+            <View style={styles.sheetHandle} />
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            >
-              <View style={styles.modalTitleRow}>
-                <View style={[
-                  styles.modalIconWrap,
-                  scheduledWasteType === "Di-Malata" && { backgroundColor: "#EFF6FF" },
-                ]}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <View style={styles.modalHeaderRow}>
+                <View style={styles.modalHeaderIconWrap}>
                   <MaterialIcons
                     name={scheduledWasteType === "Di-Malata" ? "recycling" : "delete-outline"}
-                    size={22}
+                    size={20}
                     color={scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#006A3B"}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.modalTitle}>Prepare Your Bin</Text>
-                  <Text style={styles.modalSubtitle}>
-                    {scheduledWasteType === "Malata"
-                      ? "Today's Collection: MALATA (Biodegradable Only)"
-                      : scheduledWasteType === "Di-Malata"
-                      ? "Today's Collection: DI-MALATA (Non-Biodegradable Only)"
-                      : "Today's Collection: General / Scheduled Route"}
-                  </Text>
+                  <Text style={styles.modalTitleText}>Prepare Your Bin</Text>
+                  <Text style={styles.modalSubText}>Today's Stream: {scheduledWasteType} Collection</Text>
                 </View>
               </View>
 
-              {/* Dedicated Sorting Teacher Section */}
-              {scheduledWasteType === "Malata" ? (
-                <View style={styles.sortingTeacherCardMalata}>
-                  <View style={styles.sortingTeacherHeader}>
-                    <MaterialIcons name="eco" size={20} color="#047857" />
-                    <Text style={styles.sortingTeacherTitleMalata}>
-                      🌱 FOCUS ON MALATA TODAY (Biodegradable)
-                    </Text>
-                  </View>
-                  <Text style={styles.sortingTeacherSubtitle}>
-                    The collection truck is accepting organic & kitchen waste only today. Keep all plastics and recyclables stored for Di-Malata day!
-                  </Text>
+              {/* Checklist Items */}
+              <Text style={styles.checklistSectionLabel}>Pre-Collection Checklist ({checkedCount}/{checklist.length})</Text>
 
-                  <View style={styles.sortingSplitGrid}>
-                    <View style={styles.sortingAcceptCol}>
-                      <View style={styles.sortingColHeaderRow}>
-                        <MaterialIcons name="check-circle" size={14} color="#059669" />
-                        <Text style={styles.sortingColHeaderAccept}>PUT IN BIN TODAY</Text>
-                      </View>
-                      <Text style={styles.sortingItemBullet}>• Leftover cooked food & rice</Text>
-                      <Text style={styles.sortingItemBullet}>• Fruit & vegetable peelings</Text>
-                      <Text style={styles.sortingItemBullet}>• Fish & meat bones / scraps</Text>
-                      <Text style={styles.sortingItemBullet}>• Eggshells & coffee grounds</Text>
-                      <Text style={styles.sortingItemBullet}>• Fallen leaves & plant cuttings</Text>
-                    </View>
-
-                    <View style={styles.sortingRejectCol}>
-                      <View style={styles.sortingColHeaderRow}>
-                        <MaterialIcons name="cancel" size={14} color="#DC2626" />
-                        <Text style={styles.sortingColHeaderReject}>HOLD FOR DI-MALATA</Text>
-                      </View>
-                      <Text style={styles.sortingItemBulletReject}>• Plastic bags & wrappers</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Bottles, cups & straws</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Tin cans & foil packs</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Cardboard & paper boxes</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Diapers & hazardous waste</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.sortingTipBannerMalata}>
-                    <MaterialIcons name="tips-and-updates" size={16} color="#047857" />
-                    <Text style={styles.sortingTipTextMalata}>
-                      💡 Compost Rule: Clean organic waste is turned into barangay fertilizer! Do not mix plastic bags.
-                    </Text>
-                  </View>
-                </View>
-              ) : scheduledWasteType === "Di-Malata" ? (
-                <View style={styles.sortingTeacherCardDiMalata}>
-                  <View style={styles.sortingTeacherHeader}>
-                    <MaterialIcons name="recycling" size={20} color="#1D4ED8" />
-                    <Text style={styles.sortingTeacherTitleDiMalata}>
-                      ♻️ FOCUS ON DI-MALATA TODAY (Recyclables)
-                    </Text>
-                  </View>
-                  <Text style={styles.sortingTeacherSubtitle}>
-                    The collection truck is accepting dry recyclables & non-biodegradable items. Hold all wet food waste for Malata day!
-                  </Text>
-
-                  <View style={styles.sortingSplitGrid}>
-                    <View style={styles.sortingAcceptColBlue}>
-                      <View style={styles.sortingColHeaderRow}>
-                        <MaterialIcons name="check-circle" size={14} color="#2563EB" />
-                        <Text style={styles.sortingColHeaderAcceptBlue}>PUT IN BIN TODAY</Text>
-                      </View>
-                      <Text style={styles.sortingItemBullet}>• Plastic bottles & beverage cups</Text>
-                      <Text style={styles.sortingItemBullet}>• Tin cans & soda cans</Text>
-                      <Text style={styles.sortingItemBullet}>• Cardboard boxes & cartons</Text>
-                      <Text style={styles.sortingItemBullet}>• Clean dry wrappers & plastic</Text>
-                      <Text style={styles.sortingItemBullet}>• Glass bottles & containers</Text>
-                    </View>
-
-                    <View style={styles.sortingRejectCol}>
-                      <View style={styles.sortingColHeaderRow}>
-                        <MaterialIcons name="cancel" size={14} color="#DC2626" />
-                        <Text style={styles.sortingColHeaderReject}>HOLD FOR MALATA</Text>
-                      </View>
-                      <Text style={styles.sortingItemBulletReject}>• Wet leftover food & rice</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Fruit & vegetable peelings</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Raw meat & fish waste</Text>
-                      <Text style={styles.sortingItemBulletReject}>• Wet yard waste & soil</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.sortingTipBannerDiMalata}>
-                    <MaterialIcons name="tips-and-updates" size={16} color="#1D4ED8" />
-                    <Text style={styles.sortingTipTextDiMalata}>
-                      💡 Recycler Tip: Rinse food containers and flatten boxes to save space in the truck!
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.sortingTeacherCardGeneral}>
-                  <View style={styles.sortingTeacherHeader}>
-                    <MaterialIcons name="alt-route" size={20} color="#006A3B" />
-                    <Text style={styles.sortingTeacherTitleGeneral}>
-                      🗑️ SEPARATE WASTE PROPERLY
-                    </Text>
-                  </View>
-                  <Text style={styles.sortingTeacherSubtitle}>
-                    Separate organic biodegradables (Malata) from dry recyclables (Di-Malata) into distinct bags or bins.
-                  </Text>
-                </View>
-              )}
-
-              {/* Pre-Collection Checklist */}
-              <View style={styles.checklistHeaderWrap}>
-                <Text style={styles.checklistSectionTitle}>Pre-Collection Checklist</Text>
-                <Text style={styles.checklistSectionSub}>Tap items to confirm your bin is properly sorted</Text>
-              </View>
-
-              {checklist.map((item, index) => (
+              {checklist.map((item) => (
                 <TouchableOpacity
                   key={item.id}
-                  style={[
-                    styles.checklistItem,
-                    index === checklist.length - 1 && styles.checklistItemLast,
-                  ]}
+                  style={styles.checkRow}
                   onPress={() => toggleCheck(item.id)}
                   activeOpacity={0.7}
                 >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      item.checked && styles.checkboxChecked,
-                    ]}
-                  >
-                    {item.checked && (
-                      <MaterialIcons name="check" size={14} color="#FFFFFF" />
-                    )}
+                  <View style={[styles.checkBox, item.checked && styles.checkBoxChecked]}>
+                    {item.checked && <MaterialIcons name="check" size={13} color="#FFFFFF" />}
                   </View>
-                  <Text
-                    style={[
-                      styles.checklistLabel,
-                      item.checked && styles.checklistLabelDone,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
+                  <Text style={[styles.checkLabel, item.checked && styles.checkLabelDone]}>{item.label}</Text>
                 </TouchableOpacity>
               ))}
 
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    { width: `${(checkedCount / checklist.length) * 100}%` },
-                  ]}
-                />
+              {/* Progress bar */}
+              <View style={styles.sheetProgressTrack}>
+                <View style={[styles.sheetProgressFill, { width: `${(checkedCount / checklist.length) * 100}%` }]} />
               </View>
-              <Text style={styles.progressText}>
-                {checkedCount} of {checklist.length} items ready
-              </Text>
 
-              {/* Step 2 / Final Step: Photo Verification */}
-              {!allChecked ? (
-                <View style={styles.snapPromptLockedCard}>
-                  <View style={styles.snapPromptLockedIconWrap}>
-                    <MaterialIcons name="camera-alt" size={20} color="#9CA3AF" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.snapPromptLockedTitle}>Step 2: Snap Bin Photo Proof</Text>
-                    <Text style={styles.snapPromptLockedSub}>
-                      Check all {checklist.length} items above to unlock photo capture & verify your bin.
-                    </Text>
+              {/* Camera Trigger */}
+              {allChecked ? (
+                <View style={styles.snapBoxActive}>
+                  <Text style={styles.snapBoxTitle}>Take Proof Photo (+10 Eco Points)</Text>
+                  <Text style={styles.snapBoxSub}>All checked! Snap your sorted bin at the curb to earn points.</Text>
+                  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                    <TouchableOpacity style={styles.snapCameraBtn} onPress={handleTakePhoto} activeOpacity={0.8}>
+                      <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                      <Text style={styles.snapCameraBtnText}>Take Photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.snapGalleryBtn} onPress={handlePickPhoto} activeOpacity={0.8}>
+                      <MaterialIcons name="photo-library" size={16} color="#006A3B" />
+                      <Text style={styles.snapGalleryBtnText}>Gallery</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               ) : (
-                <View style={styles.snapPromptActiveCard}>
-                  <View style={styles.snapPromptHeaderRow}>
-                    <View style={styles.snapPromptActiveIconWrap}>
-                      <MaterialIcons name="camera-alt" size={22} color="#059669" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.snapPromptActiveTitle}>Final Step: Snap Bin Photo Proof</Text>
-                      <Text style={styles.snapPromptActiveSub}>
-                        All items checked! Take a photo of your sorted bin at the curb to verify preparation, notify the collection crew, and earn +10 Eco Points.
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.snapActionRow}>
-                    <TouchableOpacity
-                      style={styles.snapActionBtnPrimary}
-                      onPress={handleTakePhoto}
-                      activeOpacity={0.85}
-                    >
-                      <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
-                      <Text style={styles.snapActionBtnPrimaryText}>Take Bin Photo</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.snapActionBtnSecondary}
-                      onPress={handlePickPhoto}
-                      activeOpacity={0.85}
-                    >
-                      <MaterialIcons name="photo-library" size={18} color="#006A3B" />
-                      <Text style={styles.snapActionBtnSecondaryText}>From Gallery</Text>
-                    </TouchableOpacity>
-                  </View>
+                <View style={styles.snapBoxDisabled}>
+                  <MaterialIcons name="lock" size={16} color="#94A3B8" />
+                  <Text style={styles.snapBoxDisabledText}>Check all {checklist.length} items above to unlock photo capture.</Text>
                 </View>
-              )}
-
-              {!allChecked && (
-                <TouchableOpacity
-                  style={[styles.confirmBtn, styles.confirmBtnDisabled]}
-                  disabled={true}
-                  activeOpacity={1}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                    <MaterialIcons name="lock" size={16} color="#FFFFFF" />
-                    <Text style={styles.confirmBtnText}>
-                      Check all items to proceed ({checkedCount}/{checklist.length})
-                    </Text>
-                  </View>
-                </TouchableOpacity>
               )}
             </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
-      {/* Story-Style Photo Overlay Preview Modal */}
-      <Modal
-        visible={photoPreviewVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPhotoPreviewVisible(false)}
-      >
+      {/* Story Preview Modal */}
+      <Modal visible={photoPreviewVisible} transparent animationType="fade" onRequestClose={() => setPhotoPreviewVisible(false)}>
         <View style={styles.modalOverlayDark}>
-          <View style={styles.stravaPreviewContainer}>
-            <Text style={styles.stravaHeaderTitle}>Disposal Story Photo</Text>
-            <Text style={styles.stravaHeaderSub}>Save to device or share to your stories</Text>
+          <View style={styles.storyModalCard}>
+            <Text style={styles.storyTitle}>Disposal Verification</Text>
+            <Text style={styles.storySubtitle}>Submit to earn points and keep your streak!</Text>
 
             {selectedPhoto && (
-              <View style={styles.stravaCardWrap}>
-                <Image source={{ uri: selectedPhoto }} style={styles.stravaImage} resizeMode="cover" />
-
-                {/* Top Glass Badges */}
-                <View style={styles.stravaOverlayTop}>
-                  <View style={styles.glassPill}>
-                    <MaterialIcons name="location-on" size={13} color="#10B981" />
-                    <Text style={styles.glassPillText} numberOfLines={1}>
-                      {user?.barangay || "Community Curb"} • Just Now
-                    </Text>
-                  </View>
-                  <View style={styles.verifiedPill}>
-                    <MaterialIcons name="verified" size={13} color="#FFFFFF" />
-                    <Text style={styles.verifiedPillText}>{activeTruckId || "Truck Active"}</Text>
-                  </View>
-                </View>
-
-                {/* Motivation Live Overlay Badge */}
-                <View style={styles.stravaMotivationBadge}>
-                  <MaterialIcons name="local-fire-department" size={14} color="#F59E0B" />
-                  <Text style={styles.stravaMotivationBadgeText} numberOfLines={1}>
-                    Motivation: {selectedMotivation}
-                  </Text>
-                </View>
-
-                {/* Bottom Glass Badges */}
-                <View style={styles.stravaOverlayBottom}>
-                  <View style={styles.streakOverlayBadge}>
-                    <Text style={styles.overlayIcon}>🗑️</Text>
-                    <View>
-                      <Text style={styles.overlayLabel}>STREAM</Text>
-                      <Text style={styles.overlayValue}>{scheduledWasteType}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.pointsOverlayBadge}>
-                    <Text style={styles.overlayIcon}>🌱</Text>
-                    <View>
-                      <Text style={styles.overlayLabel}>COMMUNITY</Text>
-                      <Text style={styles.overlayValue}>Cleaner Cebu</Text>
-                    </View>
-                  </View>
+              <View style={styles.storyPhotoWrap}>
+                <Image source={{ uri: selectedPhoto }} style={styles.storyImg} resizeMode="cover" />
+                <View style={styles.storyBadgeTop}>
+                  <Text style={styles.storyBadgeText}>📍 {user?.barangay || "Cebu City"} • {scheduledWasteType}</Text>
                 </View>
               </View>
             )}
 
-            {/* Motivation Feedback Selector */}
-            <View style={styles.motivationSection}>
-              <View style={styles.motivationHeaderRow}>
-                <MaterialIcons name="psychology" size={16} color="#006A3B" />
-                <Text style={styles.motivationSectionTitle}>
-                  What motivated you to dispose your trash today?
-                </Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.motivationChipsScroll}
-              >
-                {MOTIVATION_OPTIONS.map((opt) => {
-                  const isSelected = selectedMotivation === opt.label;
-                  return (
-                    <TouchableOpacity
-                      key={opt.id}
-                      style={[
-                        styles.motivationChip,
-                        isSelected && styles.motivationChipSelected,
-                      ]}
-                      onPress={() => setSelectedMotivation(opt.label)}
-                      activeOpacity={0.7}
-                    >
-                      <MaterialIcons
-                        name={opt.icon}
-                        size={14}
-                        color={isSelected ? "#FFFFFF" : opt.color}
-                      />
-                      <Text
-                        style={[
-                          styles.motivationChipText,
-                          isSelected && styles.motivationChipTextSelected,
-                        ]}
-                      >
-                        {opt.label}
-                      </Text>
-                      {isSelected && (
-                        <MaterialIcons name="check-circle" size={13} color="#FFFFFF" />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            {/* Motivation Chips */}
+            <Text style={styles.motivationLabel}>What motivated you to dispose your trash today?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.motivationScroll}>
+              {MOTIVATION_OPTIONS.map((opt) => {
+                const isSel = selectedMotivation === opt.label;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[styles.motivationChip, isSel && styles.motivationChipSelected]}
+                    onPress={() => setSelectedMotivation(opt.label)}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name={opt.icon} size={13} color={isSel ? "#FFFFFF" : opt.color} />
+                    <Text style={[styles.motivationChipText, isSel && { color: "#FFFFFF" }]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
-            <View style={styles.stravaActionsRow}>
-              <TouchableOpacity
-                style={styles.retakeBtn}
-                onPress={() => {
-                  setPhotoPreviewVisible(false);
-                  setProximityModalVisible(true);
-                }}
-              >
-                <MaterialIcons name="refresh" size={18} color="#4B5563" />
-                <Text style={styles.retakeBtnText}>Retake</Text>
+            <View style={styles.storyActionRow}>
+              <TouchableOpacity style={styles.retakeButton} onPress={handleTakePhoto} activeOpacity={0.7}>
+                <Text style={styles.retakeButtonText}>Retake</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
-                style={[styles.submitDisposalBtn, isSubmittingDisposal && { opacity: 0.7 }]}
+                style={[styles.submitButton, isSubmittingDisposal && { opacity: 0.7 }]}
                 onPress={handleShareOrSavePhoto}
                 disabled={isSubmittingDisposal}
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
                 {isSubmittingDisposal ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <>
-                    <MaterialIcons name="cloud-upload" size={18} color="#FFFFFF" />
-                    <Text style={styles.submitDisposalBtnText}>Submit & Share</Text>
-                  </>
+                  <Text style={styles.submitButtonText}>Submit (+10 Pts)</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -2887,119 +1444,27 @@ export default function HomeScreen({ navigation }) {
       </Modal>
 
       {/* Celebration Modal */}
-      <Modal
-        visible={celebrationVisible}
-        transparent
-        animationType="bounce"
-        onRequestClose={() => setCelebrationVisible(false)}
-      >
+      <Modal visible={celebrationVisible} transparent animationType="fade" onRequestClose={() => setCelebrationVisible(false)}>
         <View style={styles.modalOverlayDark}>
           <ConfettiExplosion visible={celebrationVisible} />
-          <View style={styles.celebrationCard}>
-            <View style={styles.celebrationTrophyWrap}>
-              <Text style={{ fontSize: 44 }}>🏆</Text>
-            </View>
-            <Text style={styles.celebrationTitle}>Trash Disposed!</Text>
-            <Text style={styles.celebrationMessage}>
-              {celebrationData?.message || `Awesome job! Your trash disposal is verified and your ${disposalStreak}-day streak is active!`}
-            </Text>
+          <View style={styles.celebrationBox}>
+            <Text style={{ fontSize: 36, textAlign: "center" }}>🏆</Text>
+            <Text style={styles.celebrationHeading}>Disposal Verified!</Text>
+            <Text style={styles.celebrationBody}>{celebrationData?.message}</Text>
 
-            {celebrationData?.motivation && (
-              <View style={styles.celebrationMotivationPill}>
-                <MaterialIcons name="lightbulb" size={15} color="#059669" />
-                <Text style={styles.celebrationMotivationText}>
-                  Motivation: {celebrationData.motivation}
-                </Text>
+            <View style={styles.rewardPillRow}>
+              <View style={styles.rewardPill}>
+                <Text style={styles.rewardPillVal}>🔥 {disposalStreak} Days</Text>
+                <Text style={styles.rewardPillLbl}>Streak</Text>
               </View>
-            )}
-
-            <View style={styles.rewardSummaryBox}>
-              <View style={styles.rewardSummaryItem}>
-                <Text style={styles.rewardSummaryIcon}>🔥</Text>
-                <Text style={styles.rewardSummaryValue}>{disposalStreak} Days</Text>
-                <Text style={styles.rewardSummaryLabel}>Disposal Streak</Text>
-              </View>
-              <View style={styles.rewardSummaryDivider} />
-              <View style={styles.rewardSummaryItem}>
-                <Text style={styles.rewardSummaryIcon}>🌟</Text>
-                <Text style={styles.rewardSummaryValue}>
-                  {celebrationData?.awardPoints ? `+${celebrationData.awardPoints}` : "Verified"}
-                </Text>
-                <Text style={styles.rewardSummaryLabel}>Eco Points</Text>
+              <View style={styles.rewardPill}>
+                <Text style={styles.rewardPillVal}>🌟 +{celebrationData?.awardPoints || 10} Pts</Text>
+                <Text style={styles.rewardPillLbl}>Eco Points</Text>
               </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.celebrationCloseBtn}
-              onPress={() => setCelebrationVisible(false)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.celebrationCloseBtnText}>Awesome! 🌟</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* LGU Official Clearance Notice Modal */}
-      <Modal
-        visible={officialNoticeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOfficialNoticeVisible(false)}
-      >
-        <View style={styles.modalOverlayDark}>
-          <View style={styles.officialNoticeCard}>
-            <View style={styles.officialNoticeIconWrap}>
-              <MaterialIcons name="verified-user" size={32} color="#006A3B" />
-            </View>
-            <Text style={styles.officialNoticeTitle}>Photo Review Updated</Text>
-            <Text style={styles.officialNoticeMessage}>
-              {officialNoticeText || "LGU Official reviewed & cleared your disposal photo validation. Your streak & earned points remain safe!"}
-            </Text>
-
-            <TouchableOpacity
-              style={styles.officialNoticeCloseBtn}
-              onPress={() => setOfficialNoticeVisible(false)}
-            >
-              <Text style={styles.officialNoticeCloseBtnText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Guest Sign-In Notice Modal */}
-      <Modal
-        visible={guestNoticeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setGuestNoticeVisible(false)}
-      >
-        <View style={styles.modalOverlayDark}>
-          <View style={styles.officialNoticeCard}>
-            <View style={[styles.officialNoticeIconWrap, { backgroundColor: "#FEF3C7" }]}>
-              <MaterialIcons name="stars" size={32} color="#D97706" />
-            </View>
-            <Text style={styles.officialNoticeTitle}>Sign In to Get Started</Text>
-            <Text style={styles.officialNoticeMessage}>
-              You are currently in Guest Mode. Sign in or create an account to prepare your bin and track garbage collection in real time!
-            </Text>
-
-            <TouchableOpacity
-              style={[styles.officialNoticeCloseBtn, { marginBottom: 10 }]}
-              onPress={() => {
-                setGuestNoticeVisible(false);
-                navigation.navigate("Login");
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.officialNoticeCloseBtnText}>Sign In / Register</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.retakeBtn}
-              onPress={() => setGuestNoticeVisible(false)}
-            >
-              <Text style={styles.retakeBtnText}>Continue Tracking as Guest</Text>
+            <TouchableOpacity style={styles.celebrationDoneBtn} onPress={() => setCelebrationVisible(false)} activeOpacity={0.8}>
+              <Text style={styles.celebrationDoneBtnText}>Great! 🌟</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3011,70 +1476,106 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#006A3B",
   },
-  fixedHeader: {
+  toastContainer: {
+    position: "absolute",
+    top: 56,
+    left: 16,
+    right: 16,
+    backgroundColor: "#006A3B",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    elevation: 8,
+    zIndex: 999,
+  },
+  toastText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+  },
+  pointsToast: {
+    position: "absolute",
+    top: 56,
+    left: 16,
+    right: 16,
+    backgroundColor: "#D97706",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    elevation: 8,
+    zIndex: 998,
+  },
+  pointsToastText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  // Fixed Top App Bar
+  topAppBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
+    paddingVertical: 10,
+    backgroundColor: "#006A3B",
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#00552F",
   },
-  headerLeft: {
+  appBarLeft: {
     flexDirection: "row",
     alignItems: "center",
   },
-  headerLogo: {
-    width: 32,
-    height: 32,
+  appBarLogo: {
+    width: 26,
+    height: 26,
   },
-  headerTitleText: {
-    fontSize: 16,
+  appBarTitle: {
+    fontSize: 14,
     fontWeight: "900",
-    color: "#006A3B",
+    color: "#FFFFFF",
     letterSpacing: 0.5,
-    lineHeight: 18,
+    lineHeight: 16,
   },
-  headerSubTitleText: {
-    fontSize: 8,
-    fontWeight: "700",
-    color: "#475569",
+  appBarSubtitle: {
+    fontSize: 7.5,
+    fontWeight: "800",
+    color: "#A7F3D0",
     letterSpacing: 0.5,
-    marginTop: 1,
   },
-  headerRightActions: {
+  appBarRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  avatarBtn: {
+  appBarIconButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#006A3B",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  notificationBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     justifyContent: "center",
     alignItems: "center",
   },
-  badge: {
+  avatarButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgeDot: {
     position: "absolute",
-    top: 6,
-    right: 6,
+    top: 4,
+    right: 4,
     minWidth: 14,
     height: 14,
     borderRadius: 7,
@@ -3083,2271 +1584,758 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 2,
   },
-  badgeText: {
-    fontSize: 9,
+  badgeDotText: {
+    fontSize: 8.5,
     fontWeight: "800",
     color: "#FFFFFF",
   },
-  scrollContainer: {
+  scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 40,
-  },
-  greeting: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.4,
-    lineHeight: 32,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: "#64748B",
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  cardGrid: {
-    gap: 16,
-    marginBottom: 28,
-  },
-  pickupDoneBanner: {
-    flexDirection: "row",
-    alignItems: "center",
+    paddingTop: 12,
+    paddingBottom: 28,
     gap: 12,
-    backgroundColor: "#F0FDF4",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    padding: 14,
-    marginBottom: 16,
   },
-  pickupDoneTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#065F46",
-  },
-  pickupDoneSubtitle: {
-    fontSize: 12,
-    color: "#047857",
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  airQualityCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  cardHeader: {
+  // Greeting Header
+  greetingHeader: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#F5A623",
-  },
-  statusText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#92400E",
-  },
-  chartContainer: {
-    height: 96,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 4,
-    marginTop: 16,
-  },
-  chartBar: {
-    flex: 1,
-    borderRadius: 8,
-  },
-  levelsContainer: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 14,
-  },
-  levelCard: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F8FAFC",
-    alignItems: "center",
-  },
-  levelCardInactive: {
-    opacity: 0.65,
-    borderColor: "#F1F5F9",
-  },
-  levelBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
     marginBottom: 2,
   },
-  levelDot: {
+  greetingText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  barangaySubText: {
+    fontSize: 11.5,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  liveStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 5,
+    borderWidth: 1,
+  },
+  liveStatusPillGreen: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  liveStatusPillGray: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  liveStatusPillAmber: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#FDE68A",
+  },
+  liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-  levelNumText: {
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
+  liveStatusText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
-  levelTitleText: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  levelSubText: {
-    fontSize: 9,
-    fontWeight: "600",
-    marginTop: 1,
-  },
-  metricsRow: {
+  // 3-Metric Bar
+  metricsBar: {
     flexDirection: "row",
-    marginTop: 12,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  metricItem: {
+  metricColumn: {
     flex: 1,
     alignItems: "center",
-  },
-  metricDivider: {
-    borderLeftWidth: 1,
-    borderLeftColor: "#D1D5DB",
-    paddingLeft: 16,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  metricValue: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1B1C1C",
-  },
-  collectionCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  collectionContent: {
-    zIndex: 1,
-  },
-  collectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 16,
-  },
-  truckIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#ECFDF5",
     justifyContent: "center",
+  },
+  metricIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
   },
-  collectionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748B",
-  },
-  collectionTime: {
-    fontSize: 18,
+  metricValText: {
+    fontSize: 13.5,
     fontWeight: "800",
     color: "#0F172A",
   },
-  collectionDetails: {
-    gap: 4,
+  metricLblText: {
+    fontSize: 9.5,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 1,
   },
-  detailRow: {
+  metricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#F1F5F9",
+  },
+  // Collection Hero Card
+  collectionHeroCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 10,
+  },
+  cardHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#F8FAFC",
   },
-  detailLabel: {
-    fontSize: 13,
-    color: "#64748B",
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  prepareButton: {
-    width: "100%",
-    backgroundColor: "#006A3B",
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginTop: 16,
-    alignItems: "center",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  prepareButtonReady: {
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-  },
-  prepareButtonLocked: {
-    backgroundColor: "#F3F4F6",
-  },
-  prepareButtonTextLocked: {
-    color: "#9CA3AF",
-  },
-  prepareButtonInner: {
+  streamBadge: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  streamBadgeText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  pointsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 3,
+  },
+  pointsBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#D97706",
+  },
+  heroStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  heroTruckIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroMainTitle: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  heroSubText: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  verifiedThumbnailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  verifiedThumbnailImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+  },
+  verifiedThumbTitle: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  verifiedThumbSub: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  heroActionButtons: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  primaryCtaBtn: {
+    flex: 1.3,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 11,
+    borderRadius: 12,
     gap: 6,
   },
-  prepareButtonText: {
-    fontSize: 15,
+  primaryCtaBtnText: {
+    fontSize: 12.5,
     fontWeight: "700",
     color: "#FFFFFF",
   },
-  modalOverlay: {
+  secondaryCtaBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 11,
+    borderRadius: 12,
+    gap: 5,
+  },
+  secondaryCtaBtnText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#006A3B",
+  },
+  // 4-Column Quick Actions Grid
+  quickGridContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  quickGridTile: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  quickGridIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 5,
+  },
+  quickGridLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  quickGridSub: {
+    fontSize: 9,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  // Generic Compact Card
+  compactCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+    gap: 10,
+  },
+  compactCardTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  compactCardSub: {
+    fontSize: 10.5,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  // Air Quality styles
+  aqStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 4,
+  },
+  aqStatusText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  miniChartRow: {
+    height: 48,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  miniBar: {
+    flex: 1,
+    marginHorizontal: 3,
+    borderRadius: 4,
+  },
+  aqLevelColumns: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  aqLevelItem: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  aqLevelItemInactive: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  aqLevelNum: {
+    fontSize: 8.5,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  aqLevelTitle: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  // Waste Segregation Styles
+  segTabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 10,
+    padding: 3,
+    gap: 4,
+  },
+  segTabButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 4,
+  },
+  segTabButtonActiveMalata: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segTabButtonActiveDiMalata: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segTabText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  segTabTextActiveMalata: {
+    color: "#047857",
+    fontWeight: "700",
+  },
+  segTabTextActiveDiMalata: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+  },
+  segSplitGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  segColBox: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 9,
+  },
+  segColBoxGreen: {
+    backgroundColor: "#ECFDF5",
+  },
+  segColBoxBlue: {
+    backgroundColor: "#EFF6FF",
+  },
+  segColBoxRed: {
+    backgroundColor: "#FEF2F2",
+  },
+  segColHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 5,
+  },
+  segColHeadText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  segItemText: {
+    fontSize: 10,
+    color: "#1E293B",
+    lineHeight: 14,
+    marginTop: 1.5,
+  },
+  segItemTextReject: {
+    fontSize: 10,
+    color: "#64748B",
+    lineHeight: 14,
+    marginTop: 1.5,
+  },
+  // Modal Sheet Styles
+  modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.45)",
   },
-  modalSheet: {
+  modalSheetContainer: {
     backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    maxHeight: "85%",
   },
-  modalHandle: {
-    width: 40,
+  sheetHandle: {
+    width: 36,
     height: 4,
-    backgroundColor: "#D1D5DB",
+    backgroundColor: "#CBD5E1",
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 24,
+    marginBottom: 14,
   },
-  modalTitleRow: {
+  modalHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 14,
   },
-  modalIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "#E4EEE9",
+  modalHeaderIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#ECFDF5",
     justifyContent: "center",
     alignItems: "center",
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1B1C1C",
-    letterSpacing: -0.3,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  sortingTeacherCardMalata: {
-    backgroundColor: "#ECFDF5",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 16,
-  },
-  sortingTeacherCardDiMalata: {
-    backgroundColor: "#EFF6FF",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 16,
-  },
-  sortingTeacherCardGeneral: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 16,
-  },
-  sortingTeacherHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 6,
-  },
-  sortingTeacherTitleMalata: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#065F46",
-    letterSpacing: -0.2,
-  },
-  sortingTeacherTitleDiMalata: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#1E40AF",
-    letterSpacing: -0.2,
-  },
-  sortingTeacherTitleGeneral: {
-    fontSize: 13,
+  modalTitleText: {
+    fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
   },
-  sortingTeacherSubtitle: {
-    fontSize: 12,
-    color: "#4B5563",
-    lineHeight: 17,
-    marginBottom: 12,
-  },
-  sortingSplitGrid: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-  },
-  sortingAcceptCol: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 10,
-  },
-  sortingAcceptColBlue: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 10,
-  },
-  sortingRejectCol: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 10,
-  },
-  sortingColHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 6,
-    paddingBottom: 4,
-  },
-  sortingColHeaderAccept: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#059669",
-    letterSpacing: 0.2,
-  },
-  sortingColHeaderAcceptBlue: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#2563EB",
-    letterSpacing: 0.2,
-  },
-  sortingColHeaderReject: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#DC2626",
-    letterSpacing: 0.2,
-  },
-  sortingItemBullet: {
-    fontSize: 10,
-    color: "#374151",
-    lineHeight: 15,
-    marginTop: 2,
-  },
-  sortingItemBulletReject: {
-    fontSize: 10,
-    color: "#6B7280",
-    lineHeight: 15,
-    marginTop: 2,
-  },
-  sortingTipBannerMalata: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#D1FAE5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    gap: 6,
-  },
-  sortingTipTextMalata: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#065F46",
-    lineHeight: 15,
-  },
-  sortingTipBannerDiMalata: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#DBEAFE",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    gap: 6,
-  },
-  sortingTipTextDiMalata: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#1E40AF",
-    lineHeight: 15,
-  },
-  checklistHeaderWrap: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  checklistSectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  checklistSectionSub: {
-    fontSize: 11,
-    color: "#6B7280",
+  modalSubText: {
+    fontSize: 11.5,
+    color: "#64748B",
     marginTop: 1,
   },
-  checklistItem: {
+  checklistSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 8,
+  },
+  checkRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    paddingVertical: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: "#F1F5F9",
+    gap: 10,
   },
-  checklistItemLast: {
-    borderBottomWidth: 0,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-    backgroundColor: "#FFFFFF",
+  checkBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
     justifyContent: "center",
     alignItems: "center",
   },
-  checkboxChecked: {
+  checkBoxChecked: {
     backgroundColor: "#006A3B",
     borderColor: "#006A3B",
   },
-  checklistLabel: {
+  checkLabel: {
     flex: 1,
-    fontSize: 15,
-    color: "#1B1C1C",
-    lineHeight: 22,
+    fontSize: 12.5,
+    color: "#1E293B",
   },
-  checklistLabelDone: {
-    color: "#9CA3AF",
+  checkLabelDone: {
+    color: "#94A3B8",
     textDecorationLine: "line-through",
   },
-  progressBarTrack: {
-    height: 6,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 3,
-    marginTop: 20,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: 6,
-    backgroundColor: "#006A3B",
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  confirmBtn: {
-    backgroundColor: "#006A3B",
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  confirmBtnDisabled: {
-    backgroundColor: "#6DA880",
-  },
-  confirmBtnText: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  decorativeIcon: {
-    display: "none",
-  },
-  truckStatusSection: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
-  },
-  liveBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#10B981",
-  },
-  liveDotOff: {
-    backgroundColor: "#BECABE",
-  },
-  liveText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#006A3B",
-  },
-  truckStatusCard: {
-    backgroundColor: "#F0EDED",
-    borderRadius: 24,
-    padding: 24,
-  },
-  zoneContainer: {
-    position: "relative",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 16,
-    marginBottom: 32,
-  },
-  progressLine: {
-    position: "absolute",
-    left: 40,
-    right: 40,
-    height: 2,
-    backgroundColor: "#BECABE",
-    top: 22,
-  },
-  zoneItem: {
-    alignItems: "center",
-    gap: 8,
-    zIndex: 1,
-  },
-  zoneCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 3,
-    borderColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  zoneCircleHighlighted: {
-    backgroundColor: "#006E1C",
-    borderColor: "#86D896",
-    shadowColor: "#006E1C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  zoneName: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  zoneNameHighlighted: {
-    color: "#006E1C",
-    fontWeight: "700",
-  },
-  zoneDistance: {
-    fontSize: 10,
-    color: "#6B7280",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  zoneDistanceHighlighted: {
-    color: "#006E1C",
-    fontWeight: "900",
-    letterSpacing: 2,
-  },
-  truckInfoCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FBF9F8",
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  truckImagePlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#ECFDF5",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  truckDetails: {
-    flex: 1,
-  },
-  truckTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1B1C1C",
-  },
-  truckEstimate: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  mapButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E6F8E2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  mapPreview: {
-    height: 192,
-    borderRadius: 24,
-    backgroundColor: "#D4EDDA",
-    overflow: "hidden",
-    position: "relative",
-    marginBottom: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  mapPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radarRing: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 2,
-    backgroundColor: "transparent",
-  },
-  radarCenter: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: "#006A3B",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    elevation: 4,
-    zIndex: 2,
-  },
-  radarTruckMarker: {
-    position: "absolute",
-    top: 32,
-    right: 48,
-    backgroundColor: "#006A3B",
-    padding: 7,
-    borderRadius: 22,
-    borderWidth: 2.5,
-    borderColor: "#FFFFFF",
-    elevation: 6,
-    zIndex: 3,
-  },
-  radarLiveBadge: {
-    position: "absolute",
-    top: 16,
-    left: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#006A3B",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  radarLiveBadgeOff: {
-    backgroundColor: "#6B7280",
-  },
-  radarLiveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: "#86EFAC",
-  },
-  radarLiveDotOff: {
-    backgroundColor: "#D1D5DB",
-  },
-  radarLiveText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  mapViewBadge: {
-    position: "absolute",
-    top: 16,
-    right: 16,
-    backgroundColor: "#3F4941",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  mapViewBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  mapOverlay: {
-    position: "absolute",
-    bottom: 16,
-    left: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  mapAddress: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1B1C1C",
-  },
-  quickReportSection: {
-    marginBottom: 32,
-  },
-  quickReportCard: {
-    flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 18,
-    alignItems: "center",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  quickReportInfo: {
-    flex: 1,
-  },
-  quickReportTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-  quickReportSubtitle: {
-    fontSize: 13,
-    color: "#64748B",
-    marginBottom: 14,
-    lineHeight: 18,
-  },
-  reportNowBtn: {
-    backgroundColor: "#BA1A1A",
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignSelf: "flex-start",
-    shadowColor: "#BA1A1A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  reportNowBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  quickReportIcon: {
-    width: 80,
-    height: 80,
-    backgroundColor: "#FFDAD6",
-    borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-  viewAllText: {
-    fontSize: 14,
-    color: "#006A3B",
-    fontWeight: "600",
-  },
-  proximityToast: {
-    position: "absolute",
-    top: 80,
-    left: 16,
-    right: 16,
-    backgroundColor: "#006A3B",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 16,
-    zIndex: 999,
-  },
-  proximityToastText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-    flex: 1,
-    lineHeight: 20,
-  },
-  pointsToast: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    backgroundColor: "#D97706",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#D97706",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 16,
-    zIndex: 998,
-  },
-  pointsToastTitle: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-  pointsToastSub: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 11,
-    marginTop: 1,
-  },
-  pointsToastTotal: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 11,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  greetingSection: {
-    marginBottom: 20,
-  },
-
-  pickedUpBtn: {
-    backgroundColor: "#006A3B",
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 10,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  pickedUpBtnDisabled: {
-    backgroundColor: "#E5E7EB",
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  pickedUpBtnText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: -0.2,
-  },
-  statusThreeColCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    marginBottom: 18,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  statusColItem: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statusColIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  statusColValue: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  statusColLabel: {
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "600",
-    marginTop: 2,
-    textAlign: "center",
-  },
-  statusColDivider: {
-    width: 1,
-    height: 38,
+  sheetProgressTrack: {
+    height: 4,
     backgroundColor: "#F1F5F9",
+    borderRadius: 2,
+    marginVertical: 12,
+    overflow: "hidden",
   },
-  // Missed Pickup Banner Styles
-  missedPickupBanner: {
-    backgroundColor: "#FFFBEB",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    padding: 14,
-    marginBottom: 16,
-  },
-  missedPickupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 12,
-  },
-  missedPickupIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#FDE68A",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  missedPickupTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#92400E",
-  },
-  missedPickupSub: {
-    fontSize: 12,
-    color: "#B45309",
-    marginTop: 2,
-    lineHeight: 16,
-    fontWeight: "500",
-  },
-  missedPickupActions: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  missedReportBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "#FDE68A",
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  missedReportBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#92400E",
-  },
-  missedSchedBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  missedSchedBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#374151",
-  },
-
-  // Proximity Card Styles
-  proximityCard: {
-    paddingVertical: 8,
-    paddingHorizontal: 0,
-    marginBottom: 16,
-  },
-  proximityCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  proximityBadgePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 6,
-  },
-  livePulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#10B981",
-  },
-  proximityBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#047857",
-    letterSpacing: 0.5,
-  },
-  streakTagPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF7ED",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 4,
-  },
-  streakTagIcon: {
-    fontSize: 12,
-  },
-  streakTagText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#C2410C",
-  },
-  proximityCardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  proximityCardSub: {
-    fontSize: 13,
-    color: "#6B7280",
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  proximityActionsRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  proximityBtnSecondary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F3F4F6",
-    paddingVertical: 12,
-    borderRadius: 16,
-    gap: 6,
-  },
-  proximityBtnSecondaryText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#006A3B",
-  },
-  proximityBtnPrimary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+  sheetProgressFill: {
+    height: "100%",
     backgroundColor: "#006A3B",
-    paddingVertical: 12,
-    borderRadius: 16,
-    gap: 6,
+    borderRadius: 2,
   },
-  proximityBtnPrimaryText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-
-  // Merged Step 2 Snap Photo Verification UI
-  snapPromptLockedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 14,
-    marginTop: 18,
-    gap: 12,
-  },
-  snapPromptLockedIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  snapPromptLockedTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#4B5563",
-  },
-  snapPromptLockedSub: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  snapPromptActiveCard: {
+  snapBoxActive: {
     backgroundColor: "#ECFDF5",
-    borderRadius: 18,
-    padding: 16,
-    marginTop: 18,
-  },
-  snapPromptHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 14,
-  },
-  snapPromptActiveIconWrap: {
-    width: 42,
-    height: 42,
     borderRadius: 14,
-    backgroundColor: "#D1FAE5",
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
   },
-  snapPromptActiveTitle: {
-    fontSize: 15,
+  snapBoxTitle: {
+    fontSize: 13,
     fontWeight: "800",
     color: "#065F46",
   },
-  snapPromptActiveSub: {
-    fontSize: 12,
+  snapBoxSub: {
+    fontSize: 11,
     color: "#047857",
     marginTop: 2,
-    lineHeight: 17,
   },
-  snapActionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
-  },
-  snapActionBtnPrimary: {
+  snapCameraBtn: {
     flex: 1.2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#006A3B",
-    paddingVertical: 13,
-    borderRadius: 14,
-    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 5,
   },
-  snapActionBtnPrimaryText: {
-    fontSize: 14,
+  snapCameraBtnText: {
+    fontSize: 12,
     fontWeight: "700",
     color: "#FFFFFF",
   },
-  snapActionBtnSecondary: {
+  snapGalleryBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#E6F4EA",
-    paddingVertical: 13,
-    borderRadius: 14,
-    gap: 6,
+    backgroundColor: "#D1FAE5",
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 5,
   },
-  snapActionBtnSecondaryText: {
-    fontSize: 14,
+  snapGalleryBtnText: {
+    fontSize: 12,
     fontWeight: "700",
     color: "#006A3B",
   },
-
-  // Modal Choice Option Cards
-  choiceOptionCard: {
+  snapBoxDisabled: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 10,
-    gap: 12,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
   },
-  choiceIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
+  snapBoxDisabledText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#64748B",
   },
-  choiceOptionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  choiceOptionSub: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-
-  // Dark Overlay & Strava Preview
+  // Story Preview Modal
   modalOverlayDark: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
   },
-  stravaPreviewContainer: {
+  storyModalCard: {
     width: "100%",
+    maxWidth: 360,
     backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 20,
-    alignItems: "center",
+    borderRadius: 22,
+    padding: 16,
+    gap: 10,
   },
-  stravaHeaderTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
+  storyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
   },
-  stravaHeaderSub: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 4,
-    marginBottom: 16,
+  storySubtitle: {
+    fontSize: 11.5,
+    color: "#64748B",
   },
-  stravaCardWrap: {
+  storyPhotoWrap: {
     width: "100%",
-    height: 260,
-    borderRadius: 20,
+    height: 190,
+    borderRadius: 14,
     overflow: "hidden",
     position: "relative",
   },
-  stravaImage: {
+  storyImg: {
     width: "100%",
     height: "100%",
   },
-  stravaOverlayTop: {
+  storyBadgeTop: {
     position: "absolute",
-    top: 12,
-    left: 12,
-    right: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    top: 8,
+    left: 8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  glassPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    gap: 4,
-    maxWidth: "65%",
-  },
-  glassPillText: {
-    fontSize: 11,
-    fontWeight: "600",
+  storyBadgeText: {
     color: "#FFFFFF",
-  },
-  verifiedPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#10B981",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    gap: 4,
-  },
-  verifiedPillText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  stravaOverlayBottom: {
-    position: "absolute",
-    bottom: 12,
-    left: 12,
-    right: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  streakOverlayBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(234, 88, 12, 0.9)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    gap: 8,
-  },
-  pointsOverlayBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.9)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    gap: 8,
-  },
-  overlayIcon: {
-    fontSize: 18,
-  },
-  overlayLabel: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "rgba(255, 255, 255, 0.8)",
-    letterSpacing: 0.5,
-  },
-  overlayValue: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  stravaMotivationBadge: {
-    position: "absolute",
-    top: 50,
-    left: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(17, 24, 39, 0.82)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 5,
-    maxWidth: "80%",
-  },
-  stravaMotivationBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#FDE68A",
   },
-  motivationSection: {
-    width: "100%",
-    marginTop: 14,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 12,
-  },
-  motivationHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
-  },
-  motivationSectionTitle: {
-    fontSize: 12,
+  motivationLabel: {
+    fontSize: 11,
     fontWeight: "700",
-    color: "#1F2937",
+    color: "#334155",
+    marginTop: 2,
   },
-  motivationChipsScroll: {
-    flexDirection: "row",
-    gap: 8,
+  motivationScroll: {
+    gap: 6,
     paddingVertical: 2,
   },
   motivationChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
   },
   motivationChipSelected: {
     backgroundColor: "#006A3B",
   },
   motivationChipText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "600",
-    color: "#374151",
+    color: "#334155",
   },
-  motivationChipTextSelected: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-  celebrationMotivationPill: {
+  storyActionRow: {
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 10,
-    marginBottom: 4,
-    gap: 6,
-  },
-  celebrationMotivationText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#065F46",
-  },
-  stravaActionsRow: {
-    flexDirection: "row",
-    width: "100%",
-    gap: 12,
-    marginTop: 14,
-  },
-  retakeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F3F4F6",
-    paddingVertical: 14,
-    borderRadius: 18,
-    gap: 6,
-  },
-  retakeBtnText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#4B5563",
-  },
-  submitDisposalBtn: {
-    flex: 2,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#006A3B",
-    paddingVertical: 14,
-    borderRadius: 18,
-    gap: 6,
-  },
-  submitDisposalBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  // Celebration Modal Styles
-  celebrationCard: {
-    width: "100%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 24,
-    alignItems: "center",
-  },
-  celebrationTrophyWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#FEF3C7",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  celebrationTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  celebrationMessage: {
-    fontSize: 14,
-    color: "#4B5563",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  rewardSummaryBox: {
-    flexDirection: "row",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    width: "100%",
-    marginTop: 16,
-    marginBottom: 20,
-    alignItems: "center",
-    justifyContent: "space-around",
-  },
-  rewardSummaryItem: {
-    alignItems: "center",
-  },
-  rewardSummaryIcon: {
-    fontSize: 20,
-  },
-  rewardSummaryValue: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-    marginTop: 2,
-  },
-  rewardSummaryLabel: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 1,
-  },
-  rewardSummaryDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: "#E5E7EB",
-  },
-  celebrationCloseBtn: {
-    width: "100%",
-    backgroundColor: "#006A3B",
-    paddingVertical: 14,
-    borderRadius: 18,
-    alignItems: "center",
-  },
-  celebrationCloseBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  // Official Notice Modal
-  officialNoticeCard: {
-    width: "100%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 24,
-    alignItems: "center",
-  },
-  officialNoticeIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#ECFDF5",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  officialNoticeTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  officialNoticeMessage: {
-    fontSize: 13,
-    color: "#4B5563",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 20,
-    lineHeight: 18,
-  },
-  officialNoticeCloseBtn: {
-    width: "100%",
-    backgroundColor: "#006A3B",
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  officialNoticeCloseBtnText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-
-  // Soft UI Streaks & Eco Points Hero Banner Styles
-  streaksHeroCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 0,
-    marginBottom: 16,
-  },
-  streaksHeroItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  streaksHeroIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  streaksHeroValue: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  streaksHeroLabel: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 1,
-  },
-  streaksHeroDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: "#E5E7EB",
-    marginHorizontal: 12,
-  },
-  streaksSnapBtn: {
-    marginLeft: "auto",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#006A3B",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    gap: 6,
-  },
-  streaksSnapBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  // Status and Analysis Card Styles
-  statusAnalysisCard: {
-    paddingVertical: 8,
-    paddingHorizontal: 0,
-    marginBottom: 16,
-  },
-  statusAnalysisHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 12,
-  },
-  statusAnalysisIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#ECFDF5",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  statusAnalysisTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  statusAnalysisSub: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 1,
-  },
-  livePillBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 5,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  livePillText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  insightBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "#F0FFF4",
-    padding: 12,
-    borderRadius: 16,
-    gap: 10,
-    marginBottom: 14,
-  },
-  insightText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#065F46",
-    lineHeight: 18,
-    fontWeight: "500",
-  },
-  analysisGrid: {
-    flexDirection: "row",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 12,
-  },
-  analysisStatItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  analysisStatDivider: {
-    borderLeftWidth: 1,
-    borderLeftColor: "#E5E7EB",
-  },
-  analysisStatLabel: {
-    fontSize: 11,
-    color: "#6B7280",
-    fontWeight: "500",
-  },
-  analysisStatValue: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#111827",
-    marginTop: 2,
-  },
-  pickupPreInfoCard: {
-    backgroundColor: "#F0FDF4",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    padding: 14,
-    marginBottom: 16,
-  },
-  pickupPreInfoHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  pickupPreInfoIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#D5E7DD",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pickupPreInfoTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#006A3B",
-  },
-  pickupPreInfoSub: {
-    fontSize: 12,
-    color: "#404943",
-    marginTop: 2,
-  },
-
-  // Dynamic Greeting Header & Live Beacon
-  greetingHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  liveStatusBeaconPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    gap: 6,
-  },
-  liveStatusBeaconDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  liveStatusBeaconText: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-  },
-
-  // Live Radar & Collection Hero Card
-  liveRadarHeroCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    elevation: 3,
-  },
-  radarCardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 14,
-  },
-  radarBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flex: 1,
-    minWidth: 0,
-  },
-  radarLiveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  radarLiveText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#065F46",
-    letterSpacing: 0.4,
-    flexShrink: 1,
-  },
-  radarPointsPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  radarPointsText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#D97706",
-  },
-  radarVisualContainer: {
-    height: 96,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    marginVertical: 6,
-  },
-  radarPulseWave: {
-    position: "absolute",
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-  },
-  radarCenterTruckBadge: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  radarInfoSection: {
-    alignItems: "center",
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  radarInfoTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0F172A",
-    textAlign: "center",
-  },
-  radarInfoSub: {
-    fontSize: 13,
-    color: "#64748B",
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 19,
-    paddingHorizontal: 12,
-  },
-  radarPhotoCard: {
-    marginTop: 8,
-    marginBottom: 12,
-    borderRadius: 14,
-    overflow: "hidden",
-    height: 160,
-    position: "relative",
-  },
-  radarPhotoBadge: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "rgba(5, 150, 105, 0.9)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  radarPhotoBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  radarPhotoFooter: {
-    position: "absolute",
-    bottom: 10,
-    left: 10,
-    right: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.68)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  radarPhotoFooterText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  radarPhotoFooterPoints: {
-    color: "#FCD34D",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  // Route Stops Timeline Preview
-  routeTimelineBox: {
-    paddingTop: 12,
-    paddingBottom: 4,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    marginBottom: 14,
-  },
-  routeTimelineHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
-  },
-  routeTimelineTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#374151",
-  },
-  routeStopsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  routeStopItem: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 2,
-  },
-  routeStopDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  routeStopName: {
-    fontSize: 10,
-    color: "#6B7280",
-    textAlign: "center",
-    fontWeight: "500",
-  },
-  routeStopStatusText: {
-    fontSize: 8,
-    color: "#9CA3AF",
-    textAlign: "center",
-    marginTop: 1,
-    fontWeight: "600",
-  },
-
-  // Radar Action Buttons
-  radarActionButtonsRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: 10,
-    marginTop: 4,
-  },
-  radarBtnPrimary: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#006A3B",
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    gap: 6,
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  radarBtnPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
-  radarBtnSecondary: {
-    flexShrink: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1.5,
-    borderColor: "#006A3B",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-    gap: 6,
-  },
-  radarBtnSecondaryText: {
-    color: "#006A3B",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  // Quick Actions Section
-  quickActionsSection: {
-    marginBottom: 20,
-  },
-  sectionHeaderTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 12,
-    letterSpacing: -0.2,
-  },
-  quickActionsGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     gap: 8,
+    marginTop: 6,
   },
-  quickActionTile: {
+  retakeButton: {
     flex: 1,
-    minWidth: 0,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
     alignItems: "center",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  quickActionIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
     justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  quickActionTileTitle: {
+  retakeButtonText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#0F172A",
-    textAlign: "center",
+    color: "#475569",
   },
-  quickActionTileSub: {
-    fontSize: 10,
-    color: "#64748B",
-    textAlign: "center",
-    marginTop: 1,
-    fontWeight: "500",
+  submitButton: {
+    flex: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#006A3B",
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-
-  // Interactive Waste Segregation Guide
-  segregationGuideCard: {
+  submitButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  // Celebration Box
+  celebrationBox: {
+    width: "100%",
+    maxWidth: 320,
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
+    padding: 20,
+    alignItems: "center",
+    gap: 10,
   },
-  segregationGuideHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 14,
-  },
-  segregationGuideTitle: {
-    fontSize: 17,
+  celebrationHeading: {
+    fontSize: 18,
     fontWeight: "800",
     color: "#0F172A",
   },
-  segregationGuideSub: {
+  celebrationBody: {
     fontSize: 12,
-    color: "#64748B",
-    marginTop: 2,
+    color: "#475569",
+    textAlign: "center",
+    lineHeight: 16,
   },
-  todayFocusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  todayFocusText: {
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  segregationTabsRow: {
+  rewardPillRow: {
     flexDirection: "row",
-    marginBottom: 12,
-    gap: 8,
-  },
-  segregationTabBtn: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#F3F4F6",
-    gap: 5,
-  },
-  segregationTabBtnActiveMalata: {
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-  },
-  segregationTabBtnActiveDiMalata: {
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-  },
-  segregationTabBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  segregationTabBtnTextActiveMalata: {
-    color: "#047857",
-    fontWeight: "700",
-  },
-  segregationTabBtnTextActiveDiMalata: {
-    color: "#1D4ED8",
-    fontWeight: "700",
-  },
-  segregationTabBody: {
     gap: 10,
+    width: "100%",
+    marginTop: 4,
   },
-  segregationGrid: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  segregationColAccept: {
+  rewardPill: {
     flex: 1,
-    minWidth: 0,
-    backgroundColor: "#F0FDF4",
+    backgroundColor: "#F8FAFC",
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    padding: 10,
-  },
-  segregationColAcceptBlue: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: "#EFF6FF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    padding: 10,
-  },
-  segregationColReject: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: "#FEF2F2",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    padding: 10,
-  },
-  segregationColHeader: {
-    flexDirection: "row",
+    paddingVertical: 8,
     alignItems: "center",
-    gap: 4,
-    marginBottom: 6,
-  },
-  segregationColAcceptTitle: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#059669",
-  },
-  segregationColAcceptTitleBlue: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#2563EB",
-  },
-  segregationColRejectTitle: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#DC2626",
-  },
-  segregationItemText: {
-    fontSize: 11,
-    color: "#374151",
-    lineHeight: 16,
-    marginBottom: 2,
-  },
-  segregationItemTextReject: {
-    fontSize: 11,
-    color: "#4B5563",
-    lineHeight: 16,
-    marginBottom: 2,
-  },
-  segregationTipBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0FDF4",
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#BBF7D0",
-    padding: 10,
-    gap: 8,
+    borderColor: "#E2E8F0",
   },
-  segregationTipText: {
-    flex: 1,
-    fontSize: 11,
-    color: "#065F46",
-    lineHeight: 15,
+  rewardPillVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  rewardPillLbl: {
+    fontSize: 9.5,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  celebrationDoneBtn: {
+    width: "100%",
+    backgroundColor: "#006A3B",
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  celebrationDoneBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });

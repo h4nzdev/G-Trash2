@@ -16,6 +16,7 @@ import {
   FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -202,11 +203,17 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <StatusBar style="light" backgroundColor="#006A3B" />
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Green cover ── */}
         <View style={styles.coverHeader}>
-          <Text style={styles.screenLabel}>{t("profile")}</Text>
+          <View style={styles.coverTopRow}>
+            <Text style={styles.screenLabel}>{t("profile")}</Text>
+            <TouchableOpacity onPress={() => navigation.navigate("Notifications")} style={styles.headerIconBtn} activeOpacity={0.8}>
+              <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── White sheet (covers everything below cover) ── */}
@@ -819,12 +826,25 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 62,
   },
+  coverTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   screenLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "800",
-    color: "rgba(255,255,255,0.65)",
+    color: "#FFFFFF",
     textTransform: "uppercase",
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
+  },
+  headerIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   // ── White sheet below cover ──

@@ -17,6 +17,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import {
   MaterialIcons,
   Ionicons,
@@ -54,7 +55,7 @@ function slaHoursLeft(deadline) {
   return h;
 }
 
-function StatusBar({ statusHistory = [], resolutionConfirmed }) {
+function ReportStatusTracker({ statusHistory = [], resolutionConfirmed }) {
   const steps = [
     { key: "pending", label: "Reported", icon: "flag" },
     { key: "in-progress", label: "In Progress", icon: "build" },
@@ -678,7 +679,7 @@ export default function CommunityFeedScreen() {
         {/* Status progression */}
         {(item.statusHistory?.length > 0 || item.resolutionConfirmed) && (
           <View style={styles.statusBarWrap}>
-            <StatusBar
+            <ReportStatusTracker
               statusHistory={item.statusHistory || []}
               resolutionConfirmed={item.resolutionConfirmed}
             />
@@ -854,15 +855,32 @@ export default function CommunityFeedScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <StatusBar style="light" backgroundColor="#006A3B" />
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Community Feed</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Community Feed</Text>
+            <View style={styles.barangayLabel}>
+              <MaterialIcons
+                name="location-on"
+                size={13}
+                color="#A7F3D0"
+              />
+              <Text style={styles.barangayName}>
+                Barangay {user?.barangay || "Cebu City"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Quick Add Report Button */}
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => navigation.navigate("Report")}
+            activeOpacity={0.85}
           >
-            <MaterialIcons name="add" size={28} color="#FFFFFF" />
+            <MaterialIcons name="add" size={18} color="#006A3B" />
+            <Text style={styles.addBtnText}>Report</Text>
           </TouchableOpacity>
         </View>
 
@@ -871,15 +889,17 @@ export default function CommunityFeedScreen() {
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'feed' && styles.tabBtnActive]}
             onPress={() => setActiveTab('feed')}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="forum" size={14} color={activeTab === 'feed' ? '#fff' : '#6B7280'} />
+            <MaterialIcons name="forum" size={14} color={activeTab === 'feed' ? '#006A3B' : '#FFFFFF'} />
             <Text style={[styles.tabBtnText, activeTab === 'feed' && styles.tabBtnTextActive]}>Reports</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'cleanups' && styles.tabBtnActive]}
             onPress={() => setActiveTab('cleanups')}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="check-circle" size={14} color={activeTab === 'cleanups' ? '#fff' : '#6B7280'} />
+            <MaterialIcons name="check-circle" size={14} color={activeTab === 'cleanups' ? '#006A3B' : '#FFFFFF'} />
             <Text style={[styles.tabBtnText, activeTab === 'cleanups' && styles.tabBtnTextActive]}>Cleanups</Text>
             {cleanups.length > 0 && (
               <View style={styles.tabBadge}>
@@ -888,26 +908,16 @@ export default function CommunityFeedScreen() {
             )}
           </TouchableOpacity>
         </View>
-
-        <View style={styles.barangayLabel}>
-          <MaterialIcons
-            name="location-city"
-            size={16}
-            color={colors.primaryGreen}
-          />
-          <Text style={styles.barangayName}>
-            Area: {user?.barangay || "Cebu City"}
-          </Text>
-        </View>
       </View>
 
-      {isLoading && !isRefreshing ? (
-        <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
-          <CommunityFeedSkeleton />
-        </ScrollView>
-      ) : activeTab === 'feed' ? (
-        <FlatList
-          data={feedItems}
+      <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+        {isLoading && !isRefreshing ? (
+          <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+            <CommunityFeedSkeleton />
+          </ScrollView>
+        ) : activeTab === 'feed' ? (
+          <FlatList
+            data={feedItems}
           renderItem={renderFeedItem}
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.listContent}
@@ -972,6 +982,7 @@ export default function CommunityFeedScreen() {
           }
         />
       )}
+      </View>
 
       {/* Discussion Modal */}
       <Modal
@@ -1258,7 +1269,7 @@ export default function CommunityFeedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#006A3B",
   },
   loadingContainer: {
     flex: 1,
@@ -1272,11 +1283,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   header: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    backgroundColor: "#006A3B",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#00552F",
   },
   headerTop: {
     flexDirection: "row",
@@ -1284,32 +1296,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#111827",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   addBtn: {
-    backgroundColor: "#006A3B",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
+    flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#006A3B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    gap: 4,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#006A3B",
   },
   barangayLabel: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
-    gap: 4,
+    marginTop: 2,
+    gap: 3,
   },
   barangayName: {
-    fontSize: 14,
-    color: "#6B7280",
+    fontSize: 12,
+    color: "#A7F3D0",
     fontWeight: "600",
   },
   listContent: {
@@ -1796,21 +1814,28 @@ const styles = StyleSheet.create({
   tabRow: {
     flexDirection: "row",
     gap: 8,
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 10,
   },
   tabBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: "#F3F4F6",
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
   },
-  tabBtnActive: { backgroundColor: "#006A3B" },
-  tabBtnText: { fontSize: 13, fontWeight: "700", color: "#6B7280" },
-  tabBtnTextActive: { color: "#fff" },
+  tabBtnActive: {
+    backgroundColor: "#FFFFFF",
+  },
+  tabBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  tabBtnTextActive: {
+    color: "#006A3B",
+  },
   tabBadge: {
     backgroundColor: "#EF4444",
     borderRadius: 8,

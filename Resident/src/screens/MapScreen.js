@@ -977,10 +977,23 @@ export default function MapScreen() {
   useEffect(() => {
     if (!webViewReady) return;
 
-    // Collect all unique stops from today's schedules (including report stops) + sitioList
+    // If there is no schedule today, do not show any routes or stops on the map
+    if (!hasScheduleToday) {
+      webViewRef.current?.injectJavaScript(`window.clearResidentStops(); window.updateTruckRoute('[]'); true;`);
+      return;
+    }
+
+    // Collect all unique stops only from today's active schedules
     const allStopsMap = new Map();
 
-    for (const sched of todaySchedules || []) {
+    const matchingSchedules = (todaySchedules || []).filter(
+      (s) =>
+        !s.barangay ||
+        s.barangay.toLowerCase() === activeBarangay.toLowerCase() ||
+        s.routeName?.toLowerCase().includes(activeBarangay.toLowerCase())
+    );
+
+    for (const sched of matchingSchedules) {
       if (Array.isArray(sched.sitioTasks)) {
         for (const t of sched.sitioTasks) {
           if (t.lat && t.lng) {
@@ -997,18 +1010,6 @@ export default function MapScreen() {
       }
     }
 
-    for (const s of sitioList || []) {
-      const key = (s.name || "").toLowerCase();
-      if (!allStopsMap.has(key)) {
-        allStopsMap.set(key, {
-          name: s.name,
-          lat: s.lat,
-          lng: s.lng,
-          status: "upcoming",
-        });
-      }
-    }
-
     const markersPayload = Array.from(allStopsMap.values());
     if (markersPayload.length === 0) {
       webViewRef.current?.injectJavaScript(`window.clearResidentStops(); window.updateTruckRoute('[]'); true;`);
@@ -1018,11 +1019,11 @@ export default function MapScreen() {
     const markersJson = JSON.stringify(markersPayload).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     webViewRef.current?.injectJavaScript(`window.addResidentStops('${markersJson}'); true;`);
 
-    // Draw real road route polyline connecting sequential sitios along the street network
+    // Draw real road route polyline connecting sequential stops from today's schedule
     let isMounted = true;
     (async () => {
       let rawWaypoints = [];
-      for (const sched of todaySchedules || []) {
+      for (const sched of matchingSchedules) {
         if (sched.routeCoords && sched.routeCoords.length > 15) {
           // Already has rich road geometry from backend
           if (isMounted) {
@@ -1035,10 +1036,6 @@ export default function MapScreen() {
         } else if (sched.routeCoords && sched.routeCoords.length > 1) {
           rawWaypoints = sched.routeCoords;
         }
-      }
-
-      if (rawWaypoints.length === 0 && sitioList.length > 1) {
-        rawWaypoints = sitioList.map((s) => [s.lat, s.lng]);
       }
 
       if (rawWaypoints.length > 1) {
@@ -1057,7 +1054,7 @@ export default function MapScreen() {
     return () => {
       isMounted = false;
     };
-  }, [sitioList, todaySchedules, webViewReady]);
+  }, [hasScheduleToday, todaySchedules, activeBarangay, webViewReady]);
 
   useEffect(() => {
     const socket = io(TRACKING_SERVER, {
@@ -1651,11 +1648,13 @@ export default function MapScreen() {
                                 : 'Truck Active on Route')
                           : hasScheduleToday
                             ? 'Scheduled · Collection Standby'
-                            : 'No Collection Scheduled Today'}
+                            : 'No schedule for today'}
                     </Text>
                   </View>
                   <Text numberOfLines={1} style={{ fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' }}>
-                    Route: {activeSchedule?.routeName || activeSchedule?.barangay || userBarangay || 'Collection Area'}
+                    {hasScheduleToday
+                      ? `Route: ${activeSchedule?.routeName || activeSchedule?.barangay || userBarangay || 'Collection Area'}`
+                      : 'No schedule for today'}
                   </Text>
                 </View>
                 {/* Remaining stops pill & arrow indicator */}
@@ -1675,7 +1674,7 @@ export default function MapScreen() {
                       return (
                         <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
                           <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>
-                            No schedule
+                            No schedule for today
                           </Text>
                         </View>
                       );
@@ -1810,7 +1809,7 @@ export default function MapScreen() {
                       ? `Collecting waste in ${activeBarangay || userBarangay || 'area'}`
                       : hasScheduleToday
                         ? 'Scheduled for collection'
-                        : 'No collection schedule today'}
+                        : 'No schedule for today'}
                 </Text>
               </View>
 

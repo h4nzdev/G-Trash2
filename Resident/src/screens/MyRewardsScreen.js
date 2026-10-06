@@ -5,6 +5,7 @@ import {
   ScrollView, Share, Animated, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
@@ -453,84 +454,87 @@ export default function MyRewardsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#006A3B" />
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={22} color="#1F2937" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+          <MaterialIcons name="arrow-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Rewards</Text>
-        <TouchableOpacity onPress={() => fetchRewards()} style={styles.refreshBtn}>
-          <MaterialIcons name="refresh" size={22} color="#1F2937" />
+        <TouchableOpacity onPress={() => fetchRewards()} style={styles.refreshBtn} activeOpacity={0.7}>
+          <MaterialIcons name="refresh" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Stats bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{rewards.length}</Text>
-          <Text style={styles.statLabel}>Total</Text>
+      <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+        {/* Stats bar */}
+        <View style={styles.statsBar}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{rewards.length}</Text>
+            <Text style={styles.statLabel}>Total</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: '#006A3B' }]}>{rewards.filter(r => r.status === 'published').length}</Text>
+            <Text style={styles.statLabel}>To Claim</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: '#3B82F6' }]}>{rewards.filter(r => r.status === 'claimed').length}</Text>
+            <Text style={styles.statLabel}>Claimed</Text>
+          </View>
         </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: '#006A3B' }]}>{rewards.filter(r => r.status === 'published').length}</Text>
-          <Text style={styles.statLabel}>To Claim</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: '#3B82F6' }]}>{rewards.filter(r => r.status === 'claimed').length}</Text>
-          <Text style={styles.statLabel}>Claimed</Text>
-        </View>
-      </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {tabs.map(t => (
-          <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, activeTab === t.key && styles.tabActive]}
-            onPress={() => setActiveTab(t.key)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>{t.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          {tabs.map(t => (
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.tab, activeTab === t.key && styles.tabActive]}
+              onPress={() => setActiveTab(t.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#006A3B" />
-        </View>
-      ) : filtered.length === 0 ? (
-        <View style={styles.center}>
-          <MaterialIcons name="card-giftcard" size={64} color="#E5E7EB" />
-          <Text style={styles.emptyTitle}>
-            {activeTab === 'all' ? 'No rewards yet' : activeTab === 'published' ? 'Nothing to claim' : 'No claimed rewards'}
-          </Text>
-          <Text style={styles.emptySub}>
-            {activeTab === 'all'
-              ? 'Keep being active in your barangay to earn rewards!'
-              : 'Check back after officials publish new rewards.'}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={r => r._id}
-          renderItem={({ item }) => (
-            <RewardCard
-              reward={item}
-              onClaim={handleClaim}
-              onViewCode={setClaimCodeReward}
-              onViewCertificate={setCertificateReward}
-            />
-          )}
-          contentContainerStyle={[styles.list, { paddingBottom: bottom + 24 }]}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRewards(true); }} tintColor="#006A3B" />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color="#006A3B" />
+          </View>
+        ) : filtered.length === 0 ? (
+          <View style={styles.center}>
+            <MaterialIcons name="card-giftcard" size={64} color="#CBD5E1" />
+            <Text style={styles.emptyTitle}>
+              {activeTab === 'all' ? 'No rewards yet' : activeTab === 'published' ? 'Nothing to claim' : 'No claimed rewards'}
+            </Text>
+            <Text style={styles.emptySub}>
+              {activeTab === 'all'
+                ? 'Keep being active in your barangay to earn rewards!'
+                : 'Check back after officials publish new rewards.'}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={r => r._id}
+            renderItem={({ item }) => (
+              <RewardCard
+                reward={item}
+                onClaim={handleClaim}
+                onViewCode={setClaimCodeReward}
+                onViewCertificate={setCertificateReward}
+              />
+            )}
+            contentContainerStyle={[styles.list, { paddingBottom: bottom + 24 }]}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRewards(true); }} tintColor="#006A3B" />
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
 
       {claiming && (
         <View style={styles.claimingOverlay}>
@@ -550,17 +554,62 @@ export default function MyRewardsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  refreshBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: '#1F2937' },
-  statsBar: { flexDirection: 'row', backgroundColor: '#FFF', paddingVertical: 16, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  safe: { flex: 1, backgroundColor: '#006A3B' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#006A3B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#00552F',
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    paddingVertical: 16,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
   statItem: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '900', color: '#1F2937' },
   statLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', marginTop: 2 },
   statDivider: { width: 1, backgroundColor: '#F0F0F0', marginVertical: 4 },
-  tabs: { flexDirection: 'row', backgroundColor: '#FFF', paddingHorizontal: 16, paddingBottom: 12, paddingTop: 8, gap: 8 },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    paddingTop: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
   tab: { flex: 1, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center' },
   tabActive: { backgroundColor: '#006A3B' },
   tabText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
@@ -568,7 +617,7 @@ const styles = StyleSheet.create({
   list: { padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: '#9CA3AF', textAlign: 'center' },
-  emptySub: { fontSize: 13, color: '#D1D5DB', textAlign: 'center', lineHeight: 20 },
+  emptySub: { fontSize: 13, color: '#94A3B8', textAlign: 'center', lineHeight: 20 },
   claimingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', gap: 12 },
   claimingText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
 });

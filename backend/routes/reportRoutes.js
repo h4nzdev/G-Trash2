@@ -20,6 +20,7 @@ router.post("/:id/vote", reportController.voteReport);
 router.post("/:id/comment", reportController.addComment);
 
 // Main CRUD
+router.get("/weekly-summary", optionalAuth, reportController.getWeeklySummary);
 router.get("/:id", optionalAuth, reportController.getReportById);
 router.patch("/:id", authMiddleware, reportController.updateReport);
 router.delete("/:id", optionalAuth, reportController.deleteReport);

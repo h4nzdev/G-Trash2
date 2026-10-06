@@ -60,6 +60,176 @@ exports.getReportById = async (req, res, next) => {
   }
 };
 
+// GET /api/reports/weekly-summary
+exports.getWeeklySummary = async (req, res, next) => {
+  try {
+    const { barangay, days = 7 } = req.query;
+    const numDays = parseInt(days, 10) || 7;
+
+    const filter = barangayFilter(req.official || req);
+    if (barangay && barangay !== "All") {
+      filter.barangay = new RegExp(`^${barangay.trim()}$`, "i");
+    }
+
+    const now = new Date();
+    const periodStart = new Date(now.getTime() - numDays * 24 * 60 * 60 * 1000);
+    const prevPeriodStart = new Date(now.getTime() - 2 * numDays * 24 * 60 * 60 * 1000);
+
+    // 1. Current period reports
+    const currentReports = await Report.find({
+      ...filter,
+      createdAt: { $gte: periodStart, $lte: now },
+    }).lean();
+
+    // 2. Previous period count (for WoW comparisons)
+    const prevReportsCount = await Report.countDocuments({
+      ...filter,
+      createdAt: { $gte: prevPeriodStart, $lt: periodStart },
+    });
+
+    const totalThisWeek = currentReports.length;
+    const resolvedThisWeek = currentReports.filter((r) => r.status === "resolved").length;
+    const pendingThisWeek = currentReports.filter((r) => r.status === "pending").length;
+    const inProgressThisWeek = currentReports.filter(
+      (r) => r.status === "in-progress" || r.status === "in_progress" || r.status === "acknowledged"
+    ).length;
+    const healthConcernsThisWeek = currentReports.filter((r) => r.healthConcern === true).length;
+
+    const resolutionRate = totalThisWeek > 0 ? Math.round((resolvedThisWeek / totalThisWeek) * 100) : 0;
+
+    // Percent Change Week over Week
+    let percentChange = 0;
+    if (prevReportsCount > 0) {
+      percentChange = Math.round(((totalThisWeek - prevReportsCount) / prevReportsCount) * 100);
+    } else if (totalThisWeek > 0) {
+      percentChange = 100;
+    }
+
+    // Average resolution time in hours for resolved reports
+    let totalResolutionHours = 0;
+    let resolvedWithDurationCount = 0;
+    currentReports.forEach((r) => {
+      if (r.status === "resolved" && r.resolvedAt && r.createdAt) {
+        const diffMs = new Date(r.resolvedAt).getTime() - new Date(r.createdAt).getTime();
+        if (diffMs > 0) {
+          totalResolutionHours += diffMs / (1000 * 60 * 60);
+          resolvedWithDurationCount++;
+        }
+      }
+    });
+    const avgResolutionHours =
+      resolvedWithDurationCount > 0 ? Number((totalResolutionHours / resolvedWithDurationCount).toFixed(1)) : 0;
+
+    // Category Breakdown
+    const categoryCounts = {};
+    currentReports.forEach((r) => {
+      const cat = r.category || "General Waste";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    });
+
+    const categoryBreakdown = Object.entries(categoryCounts)
+      .map(([category, count]) => ({
+        category,
+        count,
+        percentage: totalThisWeek > 0 ? Math.round((count / totalThisWeek) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Sitio Hotspots Breakdown
+    const sitioCounts = {};
+    currentReports.forEach((r) => {
+      const sitio = r.sitio || r.location || "Central Area";
+      sitioCounts[sitio] = (sitioCounts[sitio] || 0) + 1;
+    });
+
+    const sitioHotspots = Object.entries(sitioCounts)
+      .map(([sitio, count]) => ({
+        sitio,
+        count,
+        percentage: totalThisWeek > 0 ? Math.round((count / totalThisWeek) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // Daily Trend for the past 7 days
+    const dailyMap = {};
+    for (let i = numDays - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().substring(0, 10);
+      const dayLabel = d.toLocaleDateString("en-US", { weekday: "short" });
+      dailyMap[dateStr] = { date: dateStr, day: dayLabel, reports: 0, resolved: 0 };
+    }
+
+    currentReports.forEach((r) => {
+      const dStr = new Date(r.createdAt).toISOString().substring(0, 10);
+      if (dailyMap[dStr]) {
+        dailyMap[dStr].reports += 1;
+        if (r.status === "resolved") {
+          dailyMap[dStr].resolved += 1;
+        }
+      }
+    });
+    const dailyTrend = Object.values(dailyMap);
+
+    // Generate Executive Summary Key Highlights
+    const topCategory = categoryBreakdown[0];
+    const topSitio = sitioHotspots[0];
+    const highlights = [];
+
+    if (totalThisWeek === 0) {
+      highlights.push("No community waste reports filed in the last 7 days.");
+      highlights.push("Sanitation levels in the barangay are currently optimal with zero active backlog.");
+    } else {
+      if (topCategory) {
+        highlights.push(
+          `Primary report type: ${topCategory.category} (${topCategory.percentage}% of all complaints, ${topCategory.count} cases).`
+        );
+      }
+      if (topSitio) {
+        highlights.push(`Top hotspot: ${topSitio.sitio} with ${topSitio.count} reported issues this week.`);
+      }
+      if (resolutionRate >= 70) {
+        highlights.push(
+          `High resolution efficiency: ${resolutionRate}% of reports resolved with an average turnaround of ${
+            avgResolutionHours || "< 24"
+          } hours.`
+        );
+      } else if (pendingThisWeek > 0) {
+        highlights.push(`${pendingThisWeek} report(s) are currently awaiting official acknowledgment or dispatch.`);
+      }
+      if (healthConcernsThisWeek > 0) {
+        highlights.push(
+          `⚠️ ${healthConcernsThisWeek} report(s) flagged for potential environmental/health hazards requiring inspection.`
+        );
+      }
+      if (percentChange < 0) {
+        highlights.push(`Overall report volume dropped by ${Math.abs(percentChange)}% compared to the prior week.`);
+      } else if (percentChange > 0 && prevReportsCount > 0) {
+        highlights.push(`Report submissions increased by ${percentChange}% vs the previous week.`);
+      }
+    }
+
+    res.json({
+      periodDays: numDays,
+      totalThisWeek,
+      totalLastWeek: prevReportsCount,
+      percentChange,
+      resolvedThisWeek,
+      pendingThisWeek,
+      inProgressThisWeek,
+      healthConcernsThisWeek,
+      resolutionRate,
+      avgResolutionHours,
+      categoryBreakdown,
+      sitioHotspots,
+      dailyTrend,
+      highlights,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // POST /api/reports
 exports.createReport = async (req, res, next) => {
   try {

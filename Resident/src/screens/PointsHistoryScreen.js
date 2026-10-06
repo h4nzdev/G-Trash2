@@ -4,6 +4,7 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import API_URL from '../config';
@@ -104,79 +105,111 @@ export default function PointsHistoryScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#006A3B" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={22} color="#1F2937" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+          <MaterialIcons name="arrow-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Points History</Text>
         <View style={{ width: 38 }} />
       </View>
 
-      {/* Summary */}
-      {summary && (
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryCard}>
-            <Ionicons name="star" size={20} color="#F59E0B" />
-            <Text style={styles.summaryVal}>{summary.totalPoints ?? 0}</Text>
-            <Text style={styles.summaryLabel}>Total</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="calendar-outline" size={20} color="#3B82F6" />
-            <Text style={styles.summaryVal}>{summary.monthlyPoints ?? 0}</Text>
-            <Text style={styles.summaryLabel}>This Month</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="scan-outline" size={20} color="#10B981" />
-            <Text style={styles.summaryVal}>{summary.stats?.correctScans ?? 0}</Text>
-            <Text style={styles.summaryLabel}>Scans</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="document-text-outline" size={20} color="#8B5CF6" />
-            <Text style={styles.summaryVal}>{summary.stats?.reportsSubmitted ?? 0}</Text>
-            <Text style={styles.summaryLabel}>Reports</Text>
-          </View>
-        </View>
-      )}
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#006A3B" />
-        </View>
-      ) : (
-        <FlatList
-          data={history}
-          keyExtractor={(_, i) => String(i)}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#006A3B" />}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.3}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <Text style={styles.countText}>{total} transaction{total !== 1 ? 's' : ''}</Text>
-          }
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="star-outline" size={56} color="#E5E7EB" />
-              <Text style={styles.emptyTitle}>No activity yet</Text>
-              <Text style={styles.emptySub}>Submit verified reports or participate in community cleanups to earn points!</Text>
+      <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+        {/* Summary */}
+        {summary && (
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Ionicons name="star" size={20} color="#F59E0B" />
+              <Text style={styles.summaryVal}>{summary.totalPoints ?? 0}</Text>
+              <Text style={styles.summaryLabel}>Total</Text>
             </View>
-          }
-          ListFooterComponent={
-            hasMore ? <ActivityIndicator size="small" color="#006A3B" style={{ marginVertical: 16 }} /> : null
-          }
-        />
-      )}
+            <View style={styles.summaryCard}>
+              <Ionicons name="calendar-outline" size={20} color="#3B82F6" />
+              <Text style={styles.summaryVal}>{summary.monthlyPoints ?? 0}</Text>
+              <Text style={styles.summaryLabel}>This Month</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Ionicons name="scan-outline" size={20} color="#10B981" />
+              <Text style={styles.summaryVal}>{summary.stats?.correctScans ?? 0}</Text>
+              <Text style={styles.summaryLabel}>Scans</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Ionicons name="document-text-outline" size={20} color="#8B5CF6" />
+              <Text style={styles.summaryVal}>{summary.stats?.reportsSubmitted ?? 0}</Text>
+              <Text style={styles.summaryLabel}>Reports</Text>
+            </View>
+          </View>
+        )}
+
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color="#006A3B" />
+          </View>
+        ) : (
+          <FlatList
+            data={history}
+            keyExtractor={(_, i) => String(i)}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#006A3B" />}
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.3}
+            showsVerticalScrollIndicator={false}
+            ListHeaderComponent={
+              <Text style={styles.countText}>{total} transaction{total !== 1 ? 's' : ''}</Text>
+            }
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Ionicons name="star-outline" size={56} color="#CBD5E1" />
+                <Text style={styles.emptyTitle}>No activity yet</Text>
+                <Text style={styles.emptySub}>Submit verified reports or participate in community cleanups to earn points!</Text>
+              </View>
+            }
+            ListFooterComponent={
+              hasMore ? <ActivityIndicator size="small" color="#006A3B" style={{ marginVertical: 16 }} /> : null
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: '#1F2937' },
-  summaryRow: { flexDirection: 'row', backgroundColor: '#FFF', paddingVertical: 14, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  safe: { flex: 1, backgroundColor: '#006A3B' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#006A3B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#00552F',
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
   summaryCard: { flex: 1, alignItems: 'center', gap: 4 },
   summaryVal: { fontSize: 18, fontWeight: '900', color: '#1F2937' },
   summaryLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600' },
@@ -192,5 +225,5 @@ const styles = StyleSheet.create({
   itemPoints: { fontSize: 18, fontWeight: '900', marginLeft: 12, flexShrink: 0 },
   empty: { alignItems: 'center', marginTop: 80, gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: '#9CA3AF' },
-  emptySub: { fontSize: 13, color: '#D1D5DB', textAlign: 'center', lineHeight: 20 },
+  emptySub: { fontSize: 13, color: '#94A3B8', textAlign: 'center', lineHeight: 20 },
 });

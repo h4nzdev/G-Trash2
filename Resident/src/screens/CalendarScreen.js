@@ -9,6 +9,7 @@ import {
   Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
@@ -213,31 +214,32 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        
-        {/* Top Header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Collection Calendar</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
-              <MaterialIcons name="location-on" size={14} color="#006A3B" />
-              <Text style={styles.headerSub}>
-                {userBarangay ? `Barangay ${userBarangay}` : "All Routes"}
-              </Text>
-            </View>
-          </View>
-          {!isCurrentMonth ? (
-            <TouchableOpacity style={styles.todayBtn} onPress={goToToday} activeOpacity={0.8}>
-              <MaterialIcons name="today" size={16} color="#006A3B" />
-              <Text style={styles.todayBtnText}>Today</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.monthPill}>
-              <Text style={styles.monthPillText}>{MONTH_NAMES[currentMonth].slice(0, 3)} {currentYear}</Text>
-            </View>
-          )}
-        </View>
+      <StatusBar style="light" backgroundColor="#006A3B" />
 
+      {/* Green Fixed Top App Bar */}
+      <View style={styles.topAppBar}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Collection Calendar</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>
+            <MaterialIcons name="location-on" size={13} color="#A7F3D0" />
+            <Text style={styles.headerSub}>
+              {userBarangay ? `Barangay ${userBarangay}` : "All Routes"}
+            </Text>
+          </View>
+        </View>
+        {!isCurrentMonth ? (
+          <TouchableOpacity style={styles.todayBtn} onPress={goToToday} activeOpacity={0.8}>
+            <MaterialIcons name="today" size={15} color="#006A3B" />
+            <Text style={styles.todayBtnText}>Today</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.monthPill}>
+            <Text style={styles.monthPillText}>{MONTH_NAMES[currentMonth].slice(0, 3)} {currentYear}</Text>
+          </View>
+        )}
+      </View>
+
+      <ScrollView style={{ flex: 1, backgroundColor: "#F8FAFC" }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Next Pickup Hero Card */}
         <View style={[styles.pickupHero, nextPickup.urgent && styles.pickupHeroUrgent]}>
           <View style={styles.pickupHeroTop}>
@@ -677,51 +679,49 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#006A3B",
   },
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-  },
-
-  // Header
-  header: {
+  topAppBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 14,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#006A3B",
+    borderBottomWidth: 1,
+    borderBottomColor: "#00552F",
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.5,
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   headerSub: {
-    fontSize: 13,
-    color: "#006A3B",
+    fontSize: 12,
+    color: "#A7F3D0",
     fontWeight: "600",
   },
   todayBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   todayBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
     color: "#006A3B",
   },
   monthPill: {
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -729,7 +729,12 @@ const styles = StyleSheet.create({
   monthPillText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#475569",
+    color: "#FFFFFF",
+  },
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
 
   // Pickup Hero Banner

@@ -12,6 +12,7 @@ import RecentAlerts from '../components/dashboard/RecentAlerts';
 import BarangayRanking from '../components/dashboard/BarangayRanking';
 import RecentReportsWidget from '../components/dashboard/RecentReportsWidget';
 import SensorStatusWidget from '../components/dashboard/SensorStatusWidget';
+import WeeklyReportSummary from '../components/dashboard/WeeklyReportSummary';
 import ProgressBar from '../components/shared/ProgressBar';
 import QuickSetupSurveyCard from '../components/dashboard/QuickSetupSurveyCard';
 import { useAuth } from '../context/AuthContext';
@@ -1037,10 +1038,11 @@ export default function OfficialsDashboard() {
 
               {/* Live MQ-135 Sensor Status Widget */}
               <SensorStatusWidget readings={latestReadings} onNavigateAlerts={() => navigate('/alerts')} />
-
-              
             </div>
           </div>
+
+          {/* Weekly Reports Intelligence & Summary */}
+          <WeeklyReportSummary barangay={official?.barangay} />
 
           {/* SPLIT CARD VIEW: Waste Collection Volume (Left: Rounded Bar Chart, Right: Sitio Distribution) */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
