@@ -44,14 +44,32 @@ function timeAgo(dateStr) {
 }
 
 function ChdDashboard() {
-  const [healthData, setHealthData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [healthData, setHealthData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cache_chd_dashboard');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => !healthData);
 
-  useEffect(() => {
+  const fetchHealthData = (showLoading = false) => {
+    if (showLoading) setLoading(true);
     fetch(`${API}/api/iot/health-summary`)
       .then(r => r.json())
-      .then(data => { setHealthData(data); setLoading(false); })
+      .then(data => {
+        setHealthData(data);
+        setLoading(false);
+        try {
+          localStorage.setItem('cache_chd_dashboard', JSON.stringify(data));
+        } catch {}
+      })
       .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchHealthData(!healthData);
   }, []);
 
   const riskCounts = healthData?.riskCounts || { high: 0, moderate: 0, low: 0 };
@@ -70,10 +88,7 @@ function ChdDashboard() {
           <p className="text-xs text-slate-500 mt-0.5">City Health Department — Environmental health monitoring</p>
         </div>
         <button
-          onClick={() => {
-            setLoading(true);
-            fetch(`${API}/api/iot/health-summary`).then(r => r.json()).then(data => { setHealthData(data); setLoading(false); }).catch(() => setLoading(false));
-          }}
+          onClick={() => fetchHealthData(true)}
           className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -491,27 +506,38 @@ export default function OfficialsDashboard() {
   const socketRef = useRef(null);
   const isChd = official?.role === 'chd';
 
+  // Cache key scoped to official's barangay
+  const cacheKey = `cache_officials_dashboard_${official?.barangay || 'all'}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   // Shared state — toast for access denied redirect
   const [accessDeniedToast, setAccessDeniedToast] = useState(false);
 
   // Active view tab state: 'operations' (default) vs 'analytics'
   const [activeTab, setActiveTab] = useState('operations');
 
-  // Officials-only state
-  const [iotSummary, setIotSummary] = useState({ totalSensors: 0, recentReadings: 0, activeAlerts: 0, criticalAlerts: 0 });
-  const [pollutionData, setPollutionData] = useState([]);
-  const [iotAlerts, setIotAlerts] = useState([]);
-  const [latestReadings, setLatestReadings] = useState([]);
-  const [reportsList, setReportsList] = useState([]);
-  const [sitioDistribution, setSitioDistribution] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 });
-  const [rankings, setRankings] = useState([]);
+  // Officials-only state initialized with cache if available
+  const [iotSummary, setIotSummary] = useState(initialCache?.iotSummary || { totalSensors: 0, recentReadings: 0, activeAlerts: 0, criticalAlerts: 0 });
+  const [pollutionData, setPollutionData] = useState(initialCache?.pollutionData || []);
+  const [iotAlerts, setIotAlerts] = useState(initialCache?.iotAlerts || []);
+  const [latestReadings, setLatestReadings] = useState(initialCache?.latestReadings || []);
+  const [reportsList, setReportsList] = useState(initialCache?.reportsList || []);
+  const [sitioDistribution, setSitioDistribution] = useState(initialCache?.sitioDistribution || []);
+  const [loading, setLoading] = useState(!initialCache);
+  const [stats, setStats] = useState(initialCache?.stats || { totalFleet: 0, activeTrucks: 0, totalReports: 0, pendingReports: 0 });
+  const [rankings, setRankings] = useState(initialCache?.rankings || []);
   const [surveyData, setSurveyData] = useState(null);
   const [surveyPeriod, setSurveyPeriod] = useState('all');
   const [surveyContext, setSurveyContext] = useState('all');
   const [collectionFilter, setCollectionFilter] = useState('week');
-  const [collectionStats, setCollectionStats] = useState([]);
+  const [collectionStats, setCollectionStats] = useState(initialCache?.collectionStats || []);
 
   useEffect(() => {
     if (location.state?.chdAccessDenied) {
@@ -521,6 +547,14 @@ export default function OfficialsDashboard() {
   }, [location.state]);
 
   const fetchSurvey = async (period = surveyPeriod, ctx = surveyContext) => {
+    const surveyCacheKey = `cache_survey_${period}_${ctx}`;
+    try {
+      const cached = localStorage.getItem(surveyCacheKey);
+      if (cached) {
+        setSurveyData(JSON.parse(cached));
+      }
+    } catch {}
+
     try {
       const params = new URLSearchParams();
       if (period !== 'all') params.set('period', period);
@@ -528,11 +562,14 @@ export default function OfficialsDashboard() {
       const res = await fetch(`${API}/api/survey/results?${params}`);
       const data = await res.json();
       setSurveyData(data);
+      try {
+        localStorage.setItem(surveyCacheKey, JSON.stringify(data));
+      } catch {}
     } catch {}
   };
 
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${localStorage.getItem('gtrash_token')}` };
       const todayStr = new Date().toISOString().substring(0, 10);
@@ -552,9 +589,13 @@ export default function OfficialsDashboard() {
         fetch(`${API}/api/reports`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
 
-      setIotSummary(summaryRes || {});
-      setPollutionData(Array.isArray(trendsRes) ? trendsRes : []);
-      setRankings(Array.isArray(rankingsRes) ? rankingsRes : []);
+      const updatedIotSummary = summaryRes || {};
+      const updatedPollutionData = Array.isArray(trendsRes) ? trendsRes : [];
+      const updatedRankings = Array.isArray(rankingsRes) ? rankingsRes : [];
+
+      setIotSummary(updatedIotSummary);
+      setPollutionData(updatedPollutionData);
+      setRankings(updatedRankings);
 
       // Calculate scoped & accurate stats
       const isScoped = official?.barangay && official.barangay !== 'All' && official.role !== 'superadmin';
@@ -698,7 +739,7 @@ export default function OfficialsDashboard() {
           ? `${(totalWeightKg / 1000).toFixed(2)} Tons`
           : `${Math.round(totalWeightKg).toLocaleString()} kg`;
 
-      setStats({
+      const newStats = {
         totalFleet,
         activeTrucks,
         totalTasks,
@@ -711,21 +752,39 @@ export default function OfficialsDashboard() {
         totalWeightDisplay,
         priorityArea,
         priorityReason,
-      });
+      };
+
+      setStats(newStats);
 
       // Collections chart scoping
+      let finalCollectionStats = [];
       if (Array.isArray(collectionRes) && collectionRes.length > 0) {
-        setCollectionStats(collectionRes);
+        finalCollectionStats = collectionRes;
       } else if (allCollections.length > 0) {
         const byDay = {};
         allCollections.forEach(c => {
           const d = (c.createdAt || c.date || '').substring(0, 10);
           if (d) byDay[d] = (byDay[d] || 0) + (c.bins || 1);
         });
-        const generatedStats = Object.entries(byDay).map(([date, binsCleared]) => ({ date, binsCleared }));
-        setCollectionStats(generatedStats);
-      } else {
-        setCollectionStats([]);
+        finalCollectionStats = Object.entries(byDay).map(([date, binsCleared]) => ({ date, binsCleared }));
+      }
+      setCollectionStats(finalCollectionStats);
+
+      // Save to localStorage cache
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          iotSummary: updatedIotSummary,
+          pollutionData: updatedPollutionData,
+          rankings: updatedRankings,
+          latestReadings: scopedReadings,
+          iotAlerts: scopedAlerts,
+          reportsList: allReports,
+          sitioDistribution: formattedSitioDist,
+          stats: newStats,
+          collectionStats: finalCollectionStats,
+        }));
+      } catch (e) {
+        console.error('Failed to cache dashboard data:', e);
       }
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -738,7 +797,7 @@ export default function OfficialsDashboard() {
   useEffect(() => {
     if (isChd) return;
 
-    fetchAll();
+    fetchAll(!initialCache);
 
     const socket = io(API, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
@@ -786,14 +845,14 @@ export default function OfficialsDashboard() {
       }));
     });
 
-    socket.on('report:new', () => { fetchAll(); });
-    socket.on('report:updated', () => { fetchAll(); });
-    socket.on('report:deleted', () => { fetchAll(); });
-    socket.on('reports:batch-deleted', () => { fetchAll(); });
-    socket.on('truck:status', () => { fetchAll(); });
-    socket.on('schedule:changed', () => { fetchAll(); });
-    socket.on('collection:new', () => { fetchAll(); });
-    socket.on('truck:shift-completed', () => { fetchAll(); });
+    socket.on('report:new', () => { fetchAll(false); });
+    socket.on('report:updated', () => { fetchAll(false); });
+    socket.on('report:deleted', () => { fetchAll(false); });
+    socket.on('reports:batch-deleted', () => { fetchAll(false); });
+    socket.on('truck:status', () => { fetchAll(false); });
+    socket.on('schedule:changed', () => { fetchAll(false); });
+    socket.on('collection:new', () => { fetchAll(false); });
+    socket.on('truck:shift-completed', () => { fetchAll(false); });
 
     return () => socket.disconnect();
   }, [isChd]);
@@ -937,7 +996,7 @@ export default function OfficialsDashboard() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchAll}
+            onClick={() => fetchAll(true)}
             className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh

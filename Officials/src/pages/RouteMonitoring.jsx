@@ -786,14 +786,26 @@ function AssignModal({ route, fleet, onClose, onSave }) {
 export default function RouteMonitoring() {
   // ── State Management ──
   const { official } = useAuth();
-  const [routes, setRoutes] = useState([]);
-  const [trucks, setTrucks] = useState({});
-  const [fleet, setFleet] = useState([]);
-  const [reports, setReports] = useState([]);
-  const [collections, setCollections] = useState([]);
+
+  // Cache key scoped to official's barangay
+  const cacheKey = `cache_fleet_tracking_${official?.barangay || 'all'}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [routes, setRoutes] = useState(initialCache?.routes || []);
+  const [trucks, setTrucks] = useState(initialCache?.trucks || {});
+  const [fleet, setFleet] = useState(initialCache?.fleet || []);
+  const [reports, setReports] = useState(initialCache?.reports || []);
+  const [collections, setCollections] = useState(initialCache?.collections || []);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCache);
   const [deviationAlerts, setDeviationAlerts] = useState([]);
   const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [showReports, setShowReports] = useState(true);
@@ -925,8 +937,8 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
 }
 
   // ── API Data Fetching ──
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const localDate = (() => {
         const d = new Date();
@@ -1153,12 +1165,25 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
         });
         return merged;
       });
-      setReports(reportsRes.data.filter((r) => r.status !== "resolved"));
-      setCollections(
-        (collectionsRes.data || []).filter(
-          (c) => c.lat != null && c.lng != null,
-        ),
+      const filteredReportsData = reportsRes.data.filter((r) => r.status !== "resolved");
+      setReports(filteredReportsData);
+      const filteredCollectionsData = (collectionsRes.data || []).filter(
+        (c) => c.lat != null && c.lng != null,
       );
+      setCollections(filteredCollectionsData);
+
+      // Save to localStorage cache
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          routes: filteredRoutes,
+          fleet: fleetRes.data,
+          trucks: newTruckMap,
+          reports: filteredReportsData,
+          collections: filteredCollectionsData,
+        }));
+      } catch (e) {
+        console.warn("Failed to cache fleet tracking data:", e);
+      }
     } catch (err) {
       console.error("Failed to load route monitoring data:", err);
     } finally {
@@ -1266,7 +1291,7 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
 
   // ── WebSocket & Socket Listeners ──
   useEffect(() => {
-    fetchData();
+    fetchData(!initialCache);
     const interval = setInterval(fetchLiveTruckLocations, 15000);
     const socket = io(API, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
@@ -1962,10 +1987,10 @@ async function resolveRoadRouteCoords(waypoints, existingRouteCoords) {
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </div>
               <button
-                onClick={fetchData}
+                onClick={() => fetchData(true)}
                 className="flex items-center gap-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg shadow-sm transition-colors"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </button>
             </div>
           </div>

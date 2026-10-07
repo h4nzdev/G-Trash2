@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Search, Download, Package, Truck, Archive, Heart, AlertTriangle, Camera, X, Clock,
   Scale, Edit3, Check, TrendingUp, BarChart3, PieChart as PieIcon, Building2,
-  ChevronDown, ChevronUp, Activity, Sparkles, Layers, ArrowUpRight
+  ChevronDown, ChevronUp, Activity, Sparkles, Layers, ArrowUpRight, RefreshCw
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -179,8 +179,22 @@ export default function CollectionHistory() {
   const { official } = useAuth();
   const isChd = official?.role === 'city_health' || official?.role === 'superadmin';
 
-  const [logs,       setLogs]       = useState([]);
-  const [loading,    setLoading]    = useState(true);
+  const getCacheKey = (p, d, t) =>
+    `cache_collection_history_${official?.barangay || 'all'}_${p}_${d || 'none'}_${t || 'all'}`;
+
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(
+        `cache_collection_history_${official?.barangay || 'all'}_month_none_all`
+      );
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [logs,       setLogs]       = useState(initialCache || []);
+  const [loading,    setLoading]    = useState(!initialCache);
   const [search,     setSearch]     = useState('');
   const [period,     setPeriod]     = useState('month');
   const [dateFilter, setDateFilter] = useState('');
@@ -249,29 +263,47 @@ export default function CollectionHistory() {
     }
   };
 
+  const fetchLogs = async (showLoading = false) => {
+    const cKey = getCacheKey(period, dateFilter, truckFilter);
+    try {
+      const cached = localStorage.getItem(cKey);
+      if (cached) {
+        setLogs(JSON.parse(cached));
+        showLoading = false;
+      }
+    } catch {}
+
+    if (showLoading) setLoading(true);
+    try {
+      const params = {};
+      if (dateFilter) {
+        params.date = dateFilter;
+      } else if (period !== 'all') {
+        params.period = period;
+      }
+      if (truckFilter) params.truckId = truckFilter;
+
+      const { data } = await axios.get(`${API}/api/collections`, { params });
+      const fetchedLogs = data || [];
+      setLogs(fetchedLogs);
+      try {
+        localStorage.setItem(cKey, JSON.stringify(fetchedLogs));
+      } catch (e) {
+        console.warn('Cache save failed:', e);
+      }
+    } catch (err) {
+      console.error('Failed to fetch collection logs:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch logs whenever period or dateFilter changes
   useEffect(() => {
-    const fetchLogs = async () => {
-      setLoading(true);
-      try {
-        const params = {};
-        if (dateFilter) {
-          params.date = dateFilter;
-        } else if (period !== 'all') {
-          params.period = period;
-        }
-        if (truckFilter) params.truckId = truckFilter;
-
-        const { data } = await axios.get(`${API}/api/collections`, { params });
-        setLogs(data);
-      } catch (err) {
-        console.error('Failed to fetch collection logs:', err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchLogs();
-  }, [period, dateFilter, truckFilter]);
+    const cKey = getCacheKey(period, dateFilter, truckFilter);
+    const hasCached = !!localStorage.getItem(cKey);
+    fetchLogs(!hasCached);
+  }, [period, dateFilter, truckFilter, official?.barangay]);
 
   // Reset page when filters change
   useEffect(() => { setPage(0); }, [search, dateFilter, truckFilter, period]);
@@ -978,6 +1010,13 @@ export default function CollectionHistory() {
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Download className="w-3.5 h-3.5" /> Export CSV
+              </button>
+              <button
+                onClick={() => fetchLogs(true)}
+                className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors"
+                title="Refresh Collection Logs"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>

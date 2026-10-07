@@ -2,22 +2,40 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { AlertTriangle, Filter, CheckCircle, Clock, ShieldAlert, AlertCircle, Search, RefreshCw, Trash2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
 export default function AlertsManagement() {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { official } = useAuth();
+  const cacheKey = `cache_iot_alerts_${official?.barangay || 'all'}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [alerts, setAlerts] = useState(initialCache || []);
+  const [loading, setLoading] = useState(!initialCache);
   
   // Filters
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all'); // all, unacknowledged, acknowledged
 
-  const fetchAlerts = async () => {
-    setLoading(true);
+  const fetchAlerts = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const { data } = await axios.get(`${API}/api/iot/alerts?limit=500`);
-      setAlerts(data);
+      const fetchedAlerts = data || [];
+      setAlerts(fetchedAlerts);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(fetchedAlerts));
+      } catch (e) {
+        console.warn('Cache save failed:', e);
+      }
     } catch (err) {
       console.error('Failed to fetch alerts', err);
     } finally {
@@ -26,8 +44,8 @@ export default function AlertsManagement() {
   };
 
   useEffect(() => {
-    fetchAlerts();
-  }, []);
+    fetchAlerts(!initialCache);
+  }, [official?.barangay]);
 
   const handleAcknowledge = async (id) => {
     try {
@@ -179,7 +197,7 @@ export default function AlertsManagement() {
               <Trash2 className="w-3.5 h-3.5" /> Clear All Alerts
             </button>
             <button 
-              onClick={fetchAlerts}
+              onClick={() => fetchAlerts(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh

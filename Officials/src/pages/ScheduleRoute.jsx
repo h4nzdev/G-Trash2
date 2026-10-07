@@ -31,10 +31,21 @@ export default function ScheduleRoute() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-indexed
 
-  const [schedules, setSchedules] = useState([]);     // all schedules for current month
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const cacheKey = `cache_schedule_route_${official?.barangay || 'all'}_${monthKey}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [schedules, setSchedules] = useState(initialCache?.schedules || []);     // all schedules for current month
   const [selectedDate, setSelectedDate] = useState(todayYMD());
-  const [fleet, setFleet] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [fleet, setFleet] = useState(initialCache?.fleet || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [scheduleError, setScheduleError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [fleetError, setFleetError] = useState(false);
@@ -144,29 +155,57 @@ export default function ScheduleRoute() {
   const [searchingMap, setSearchingMap] = useState(false);
   const [searchError, setSearchError] = useState('');
 
-  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setScheduleError('');
     const barangayParam = official?.barangay && official.barangay !== 'All' ? `&barangay=${encodeURIComponent(official.barangay)}` : '';
     const [sRes, fRes] = await Promise.allSettled([
       axios.get(`${API}/api/schedules?month=${monthKey}${barangayParam}`),
       axios.get(`${API}/api/fleet`),
     ]);
+    let newSchedules = schedules;
+    let newFleet = fleet;
     if (sRes.status === 'fulfilled') {
-      setSchedules(sRes.value.data);
+      newSchedules = sRes.value.data;
+      setSchedules(newSchedules);
     } else {
       const msg = sRes.reason?.response?.data?.error || sRes.reason?.message || 'Failed to load schedules';
       setScheduleError(msg);
       console.error('[ScheduleRoute] schedule fetch error:', sRes.reason);
     }
-    if (fRes.status === 'fulfilled') { setFleet(fRes.value.data); setFleetError(false); }
-    else { setFleetError(true); }
+    if (fRes.status === 'fulfilled') {
+      newFleet = fRes.value.data;
+      setFleet(newFleet);
+      setFleetError(false);
+    } else {
+      setFleetError(true);
+    }
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        schedules: newSchedules,
+        fleet: newFleet,
+      }));
+    } catch (e) {
+      console.warn('Failed to cache schedule route data:', e);
+    }
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, [monthKey, official?.barangay]);
+  useEffect(() => {
+    const cached = (() => {
+      try {
+        const c = localStorage.getItem(cacheKey);
+        return c ? JSON.parse(c) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (cached) {
+      setSchedules(cached.schedules || []);
+      if (cached.fleet) setFleet(cached.fleet);
+    }
+    fetchAll(!cached);
+  }, [monthKey, official?.barangay]);
 
   // Load Cebu City barangays from backend API on mount
   useEffect(() => {
@@ -329,7 +368,13 @@ export default function ScheduleRoute() {
     if (!confirm('Remove this schedule?')) return;
     try {
       await axios.delete(`${API}/api/schedules/${id}`);
-      setSchedules(prev => prev.filter(s => s._id !== id));
+      setSchedules(prev => {
+        const next = prev.filter(s => s._id !== id);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ schedules: next, fleet }));
+        } catch {}
+        return next;
+      });
       toast.success("Schedule removed successfully.");
     } catch {
       toast.error("Failed to remove schedule.");
@@ -339,7 +384,13 @@ export default function ScheduleRoute() {
   const handleUpdateStatus = async (id, status) => {
     try {
       const { data } = await axios.patch(`${API}/api/schedules/${id}/status`, { status });
-      setSchedules(prev => prev.map(s => s._id === id ? { ...s, status: data.status } : s));
+      setSchedules(prev => {
+        const next = prev.map(s => s._id === id ? { ...s, status: data.status } : s);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ schedules: next, fleet }));
+        } catch {}
+        return next;
+      });
       toast.success(`Schedule status updated to ${status}!`);
       return data;
     } catch (err) {
@@ -484,10 +535,10 @@ export default function ScheduleRoute() {
           <p className="text-sm text-slate-500 mt-0.5">Assign trucks to routes on specific dates</p>
         </div>
         <button
-          onClick={fetchAll}
+          onClick={() => fetchAll(true)}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
         >
-          <RefreshCw className="w-4 h-4" /> Refresh
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
 

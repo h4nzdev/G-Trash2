@@ -1190,14 +1190,25 @@ function MapPickerModal({ open, onClose, onConfirm }) {
 export default function HeatmapAnalytics() {
   const { official } = useAuth();
   const isChd = official?.role === "chd";
-  const [zones, setZones] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const cacheKey = `cache_heatmap_analytics_${official?.barangay || "all"}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [zones, setZones] = useState(initialCache?.zones || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [activeTileKey, setActiveTileKey] = useState("grayscale");
   const [selectedZone, setSelectedZone] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [newArea, setNewArea] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [boundary, setBoundary] = useState(null);
+  const [boundary, setBoundary] = useState(initialCache?.boundary || null);
   const [outOfBoundsError, setOutOfBoundsError] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [cebuCityBoundary, setCebuCityBoundary] = useState(CEBU_CITY_OUTLINE);
@@ -1213,7 +1224,7 @@ export default function HeatmapAnalytics() {
   });
   const [sensorSaving, setSensorSaving] = useState(false);
   const [sensorMsg, setSensorMsg] = useState(null);
-  const [sensorZones, setSensorZones] = useState([]);
+  const [sensorZones, setSensorZones] = useState(initialCache?.sensorZones || []);
   const [unregisteredSensors, setUnregisteredSensors] = useState([]);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [selectedAirQualityZone, setSelectedAirQualityZone] = useState(null);
@@ -1338,8 +1349,8 @@ export default function HeatmapAnalytics() {
     }
   }, [official]);
 
-  const fetchZonesAndBoundary = async () => {
-    setLoading(true);
+  const fetchZonesAndBoundary = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const [zonesRes, boundaryRes, sensorRes] = await Promise.all([
         axios.get(`${API}/api/garbage-areas`),
@@ -1348,13 +1359,30 @@ export default function HeatmapAnalytics() {
           : Promise.resolve({ data: { boundary: [] } }),
         axios.get(`${API}/api/sensor-zones`),
       ]);
-      setZones(zonesRes.data);
-      setSensorZones(sensorRes.data);
-      if (boundaryRes.data.boundary?.length > 0) {
-        setBoundary(boundaryRes.data.boundary);
+      const fetchedZones = zonesRes.data || [];
+      const fetchedSensorZones = sensorRes.data || [];
+      const fetchedBoundary = boundaryRes.data.boundary?.length > 0 ? boundaryRes.data.boundary : null;
+
+      setZones(fetchedZones);
+      setSensorZones(fetchedSensorZones);
+      if (fetchedBoundary) {
+        setBoundary(fetchedBoundary);
+      }
+
+      try {
+        localStorage.setItem(
+          cacheKey,
+          JSON.stringify({
+            zones: fetchedZones,
+            sensorZones: fetchedSensorZones,
+            boundary: fetchedBoundary,
+          })
+        );
+      } catch (e) {
+        console.warn("Cache save failed:", e);
       }
     } catch (err) {
-      console.error("Failed to fetch data");
+      console.error("Failed to fetch data", err);
     } finally {
       setLoading(false);
     }
@@ -1372,7 +1400,7 @@ export default function HeatmapAnalytics() {
       setSensorZones((prev) =>
         prev.map((z) => (z._id === zone._id ? { ...z, ...updatedZone } : z)),
       );
-      fetchZonesAndBoundary();
+      fetchZonesAndBoundary(false);
     } catch (e) {
       console.error(e);
     }
@@ -1430,7 +1458,7 @@ export default function HeatmapAnalytics() {
   };
 
   useEffect(() => {
-    fetchZonesAndBoundary();
+    fetchZonesAndBoundary(!initialCache);
 
     // Connect Socket.IO for live IoT heatmap updates
     const socket = io(API, { transports: ["websocket", "polling"] });
@@ -1649,7 +1677,7 @@ export default function HeatmapAnalytics() {
             </h1>
             <div className="flex gap-2">
               <button
-                onClick={fetchZonesAndBoundary}
+                onClick={() => fetchZonesAndBoundary(true)}
                 className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
                 title="Refresh Data"
               >

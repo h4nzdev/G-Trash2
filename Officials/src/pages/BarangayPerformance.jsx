@@ -65,22 +65,48 @@ const PERIOD_OPTIONS = [
 
 function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
   const { official } = useAuth();
-  const [residents, setResidents] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('month');
+  const cacheKey = `cache_top_residents_${barangay}_${period}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const [residents, setResidents] = useState(initialCache?.topResidents || initialCache || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [selected, setSelected] = useState(null);
 
-  const fetchTopResidents = useCallback(async (p) => {
-    setLoading(true);
+  const fetchTopResidents = useCallback(async (p, showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const res = await fetch(`${API}/api/barangays/${encodeURIComponent(barangay)}/top-residents?period=${p}`);
       const data = await res.json();
-      setResidents(data.topResidents || []);
+      const list = data.topResidents || [];
+      setResidents(list);
+      try {
+        localStorage.setItem(`cache_top_residents_${barangay}_${p}`, JSON.stringify(list));
+      } catch {}
     } catch { setResidents([]); }
     finally { setLoading(false); }
   }, [barangay]);
 
-  useEffect(() => { fetchTopResidents(period); }, [period, fetchTopResidents]);
+  useEffect(() => {
+    const cached = (() => {
+      try {
+        const c = localStorage.getItem(`cache_top_residents_${barangay}_${period}`);
+        return c ? JSON.parse(c) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (cached) {
+      setResidents(cached.topResidents || cached || []);
+    }
+    fetchTopResidents(period, !cached);
+  }, [period, fetchTopResidents]);
 
   const MEDAL = ['🥇', '🥈', '🥉'];
   const sortField = period === 'month' ? 'monthlyPoints' : 'totalPoints';
@@ -230,27 +256,40 @@ function TopResidentsPanel({ barangay, onClose, onOpenHistory }) {
 }
 
 const PointsHistoryModal = ({ barangay, onClose, currentScore }) => {
-  const [history, setHistory] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const cacheKey = `cache_points_history_${barangay}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const [history, setHistory] = useState(initialCache || []);
+  const [loadingHistory, setLoadingHistory] = useState(!initialCache);
   const [selectedFilter, setSelectedFilter] = useState("all");
 
-  const loadHistory = useCallback(async () => {
-    setLoadingHistory(true);
+  const loadHistory = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoadingHistory(true);
     try {
       const res = await fetch(
         `${API}/api/barangay-points-history?barangay=${encodeURIComponent(barangay)}&limit=10`
       );
       const data = await res.json();
-      setHistory(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setHistory(list);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(list));
+      } catch {}
     } catch {
       setHistory([]);
     } finally {
       setLoadingHistory(false);
     }
-  }, [barangay]);
+  }, [barangay, cacheKey]);
 
   useEffect(() => {
-    loadHistory();
+    loadHistory(!initialCache);
   }, [loadHistory]);
 
   const totalPoints =
@@ -565,23 +604,35 @@ const PointsHistoryModal = ({ barangay, onClose, currentScore }) => {
 
 export default function BarangayPerformance() {
   const { official } = useAuth();
-  const [rankings, setRankings] = useState([]);
+  const CACHE_KEY = 'cache_barangay_rankings';
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [rankings, setRankings] = useState(initialCache || []);
   const [drillDown, setDrillDown] = useState(null);
   const [restrictedAlert, setRestrictedAlert] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCache);
   const [sortKey, setSortKey] = useState('points');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
   const [historyModal, setHistoryModal] = useState(null);
 
-  
-
-  const fetchRankings = useCallback(async () => {
-    setLoading(true);
+  const fetchRankings = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const res = await fetch(`${API}/api/leaderboard`);
       const data = await res.json();
-      setRankings(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setRankings(list);
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+      } catch {}
     } catch (e) {
       console.error('Leaderboard fetch error:', e);
     } finally {
@@ -589,7 +640,9 @@ export default function BarangayPerformance() {
     }
   }, []);
 
-  useEffect(() => { fetchRankings(); }, [fetchRankings]);
+  useEffect(() => {
+    fetchRankings(!initialCache);
+  }, [fetchRankings]);
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -760,7 +813,7 @@ export default function BarangayPerformance() {
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400">{rankings.length} barangay{rankings.length !== 1 ? 's' : ''}</span>
             <button
-              onClick={fetchRankings}
+              onClick={() => fetchRankings(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200 transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />

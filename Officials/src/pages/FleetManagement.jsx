@@ -13,9 +13,21 @@ import { toast } from 'sonner';
 export default function FleetManagement() {
   const navigate = useNavigate();
   const { official } = useAuth();
-  const [fleet, setFleet] = useState([]);
-  const [barangays, setBarangays] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // Cache key scoped to official's barangay
+  const cacheKey = `cache_fleet_management_${official?.barangay || 'all'}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [fleet, setFleet] = useState(initialCache?.fleet || []);
+  const [barangays, setBarangays] = useState(initialCache?.barangays || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   
@@ -72,8 +84,8 @@ export default function FleetManagement() {
   const [generatedEntry, setGeneratedEntry] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const fetchFleet = async () => {
-    setLoading(true);
+  const fetchFleet = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const [fleetRes, barangaysRes] = await Promise.all([
@@ -82,6 +94,14 @@ export default function FleetManagement() {
       ]);
       setFleet(fleetRes.data);
       setBarangays(barangaysRes.data);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          fleet: fleetRes.data,
+          barangays: barangaysRes.data,
+        }));
+      } catch (e) {
+        console.warn('Failed to cache fleet management data:', e);
+      }
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) {
@@ -96,7 +116,9 @@ export default function FleetManagement() {
     }
   };
 
-  useEffect(() => { fetchFleet(); }, []);
+  useEffect(() => {
+    fetchFleet(!initialCache);
+  }, []);
 
   const handleImageChange = (e, target = 'main') => {
     const file = e.target.files[0];
@@ -202,7 +224,13 @@ export default function FleetManagement() {
       
       toast.success("Truck registered successfully!");
       setGeneratedEntry(data);
-      setFleet((prev) => [data, ...prev]);
+      setFleet((prev) => {
+        const next = [data, ...prev];
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ fleet: next, barangays }));
+        } catch {}
+        return next;
+      });
       
       // Reset forms
       setDriverName(''); setDriverId(''); setDriverPhone(''); setDriverImage(null);
@@ -242,7 +270,13 @@ export default function FleetManagement() {
         driverPhone: assignDriverPhone.trim(),
         driverImage: assignDriverImage,
       });
-      setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
+      setFleet((prev) => {
+        const next = prev.map((t) => (t.truckId === data.truckId ? data : t));
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ fleet: next, barangays }));
+        } catch {}
+        return next;
+      });
       setIsAssignModalOpen(false);
       toast.success("Driver assigned successfully!");
     } catch (err) {
@@ -289,7 +323,13 @@ export default function FleetManagement() {
         wasteType: editWasteType || 'Both',
       });
 
-      setFleet((prev) => prev.map((t) => (t.truckId === data.truckId ? data : t)));
+      setFleet((prev) => {
+        const next = prev.map((t) => (t.truckId === data.truckId ? data : t));
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ fleet: next, barangays }));
+        } catch {}
+        return next;
+      });
       setIsEditModalOpen(false);
       toast.success("Truck details updated!");
     } catch (err) {
@@ -303,7 +343,13 @@ export default function FleetManagement() {
     if (!confirm(`Remove ${truckId} from the fleet?`)) return;
     try {
       await axios.delete(`${API}/api/fleet/${truckId}`);
-      setFleet((prev) => prev.filter((t) => t.truckId !== truckId));
+      setFleet((prev) => {
+        const next = prev.filter((t) => t.truckId !== truckId);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ fleet: next, barangays }));
+        } catch {}
+        return next;
+      });
       toast.success(`Truck ${truckId} removed from fleet.`);
     } catch {
       toast.error("Failed to remove truck.");
@@ -325,10 +371,10 @@ export default function FleetManagement() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchFleet}
+            onClick={() => fetchFleet(true)}
             className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
           >
-            <RefreshCw className="w-4 h-4" /> Refresh
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
           <button
             onClick={openAddTruckModal}

@@ -71,9 +71,20 @@ export default function ReportsManagement() {
     healthOnly: false,
   });
 
-  const [reportList, setReportList] = useState([]);
-  const [fleet, setFleet] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Cache key scoped to official's barangay
+  const cacheKey = `cache_reports_management_${official?.barangay || 'all'}`;
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [reportList, setReportList] = useState(initialCache?.reportList || []);
+  const [fleet, setFleet] = useState(initialCache?.fleet || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "incidents");
   const [activeView, setActiveView] = useState("reports");
@@ -90,7 +101,7 @@ export default function ReportsManagement() {
   const [resolutionProofImage, setResolutionProofImage] = useState("");
   const [proofSource, setProofSource] = useState("truck"); // "truck" | "official"
   const [resolving, setResolving] = useState(false);
-  const [schedulesList, setSchedulesList] = useState([]);
+  const [schedulesList, setSchedulesList] = useState(initialCache?.schedulesList || []);
   const [dispatchMode, setDispatchMode] = useState("next_schedule");
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
   const [dispatchingImmediate, setDispatchingImmediate] = useState(false);
@@ -156,8 +167,8 @@ export default function ReportsManagement() {
       );
   }, [schedulesList]);
 
-  const fetchReports = async () => {
-    setLoading(true);
+  const fetchReports = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const { data } = await axios.get(`${API}/api/reports`);
@@ -168,6 +179,15 @@ export default function ReportsManagement() {
         urgency: (r.upvotes?.length || 0) - (r.downvotes?.length || 0),
       }));
       setReportList(mapped);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          reportList: mapped,
+          fleet,
+          schedulesList,
+        }));
+      } catch (e) {
+        console.warn("Failed to cache reports data:", e);
+      }
 
       const urlReportId = searchParams.get("openReportId");
       if (urlReportId) {
@@ -193,17 +213,29 @@ export default function ReportsManagement() {
     axios
       .get(`${API}/api/schedules`, config)
       .then(({ data }) => {
-        if (Array.isArray(data)) setSchedulesList(data);
+        if (Array.isArray(data)) {
+          setSchedulesList(data);
+          try {
+            const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+            localStorage.setItem(cacheKey, JSON.stringify({ ...cached, schedulesList: data }));
+          } catch {}
+        }
       })
       .catch(() => {});
   };
 
   useEffect(() => {
-    fetchReports();
+    fetchReports(!initialCache);
     fetchSchedulesList();
     axios
       .get(`${API}/api/fleet`)
-      .then(({ data }) => setFleet(data))
+      .then(({ data }) => {
+        setFleet(data);
+        try {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+          localStorage.setItem(cacheKey, JSON.stringify({ ...cached, fleet: data }));
+        } catch {}
+      })
       .catch(() => {});
 
     const socket = io(API, { transports: ["websocket", "polling"] });
@@ -245,11 +277,11 @@ export default function ReportsManagement() {
     });
 
     socket.on("report:new", () => {
-      fetchReports();
+      fetchReports(false);
     });
 
     socket.on("report:updated", () => {
-      fetchReports();
+      fetchReports(false);
     });
 
     return () => {
@@ -764,10 +796,10 @@ export default function ReportsManagement() {
                 </button>
               )}
               <button
-                onClick={fetchReports}
+                onClick={() => fetchReports(true)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
               >
-                <RefreshCw className="w-4 h-4" /> Refresh
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </button>
               <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
                 <button

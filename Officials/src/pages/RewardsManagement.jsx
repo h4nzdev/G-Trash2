@@ -829,15 +829,35 @@ function DetailModal({ reward, onClose, onUpdated, official }) {
 
 // ── Rewards & Points Log Drawer ──────────────────────────────
 function RewardsLogModal({ onClose, official }) {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState("all");
   const [barangayFilter, setBarangayFilter] = useState(
     official?.barangay && official.barangay !== "All" ? official.barangay : ""
   );
 
-  const loadLogData = useCallback(async () => {
-    setLoading(true);
+  const logCacheKey = `cache_rewards_log_${barangayFilter || "all"}`;
+  const initialLogCache = (() => {
+    try {
+      const cached = localStorage.getItem(logCacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [history, setHistory] = useState(initialLogCache || []);
+  const [loading, setLoading] = useState(!initialLogCache);
+  const [selectedFilter, setSelectedFilter] = useState("all");
+
+  const loadLogData = useCallback(async (showLoading = false) => {
+    const currentKey = `cache_rewards_log_${barangayFilter || "all"}`;
+    try {
+      const cached = localStorage.getItem(currentKey);
+      if (cached) {
+        setHistory(JSON.parse(cached));
+        showLoading = false;
+      }
+    } catch {}
+
+    if (showLoading) setLoading(true);
     try {
       const bParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}&limit=10` : "?limit=10";
       const rewParam = barangayFilter ? `?barangay=${encodeURIComponent(barangayFilter)}&limit=10` : "?limit=10";
@@ -883,7 +903,13 @@ function RewardsLogModal({ onClose, official }) {
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
 
-      setHistory(combined.slice(0, 10));
+      const slicedHistory = combined.slice(0, 10);
+      setHistory(slicedHistory);
+      try {
+        localStorage.setItem(currentKey, JSON.stringify(slicedHistory));
+      } catch (e) {
+        console.warn("Cache save failed:", e);
+      }
     } catch {
       setHistory([]);
     } finally {
@@ -892,8 +918,10 @@ function RewardsLogModal({ onClose, official }) {
   }, [barangayFilter]);
 
   useEffect(() => {
-    loadLogData();
-  }, [loadLogData]);
+    const currentKey = `cache_rewards_log_${barangayFilter || "all"}`;
+    const hasCached = !!localStorage.getItem(currentKey);
+    loadLogData(!hasCached);
+  }, [loadLogData, barangayFilter]);
 
   const totalGains = history
     .filter((h) => h.logType === "point" && h.points > 0)
@@ -1222,8 +1250,23 @@ function RewardsLogModal({ onClose, official }) {
 // ── Main Page ────────────────────────────────────────────────
 export default function RewardsManagement() {
   const { official } = useAuth();
-  const [rewards, setRewards] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const getCacheKey = (st, cat) =>
+    `cache_rewards_management_${official?.barangay || "all"}_${st || "all"}_${cat || "all"}`;
+
+  const initialCache = (() => {
+    try {
+      const cached = localStorage.getItem(
+        `cache_rewards_management_${official?.barangay || "all"}_all_all`
+      );
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [rewards, setRewards] = useState(initialCache || []);
+  const [loading, setLoading] = useState(!initialCache);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -1231,8 +1274,17 @@ export default function RewardsManagement() {
   const [detailReward, setDetailReward] = useState(null);
   const [showRewardsLog, setShowRewardsLog] = useState(false);
 
-  const fetchRewards = useCallback(async () => {
-    setLoading(true);
+  const fetchRewards = useCallback(async (showLoading = false) => {
+    const cKey = getCacheKey(filterStatus, filterCategory);
+    try {
+      const cached = localStorage.getItem(cKey);
+      if (cached) {
+        setRewards(JSON.parse(cached));
+        showLoading = false;
+      }
+    } catch {}
+
+    if (showLoading) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (official?.barangay && official.barangay !== "All")
@@ -1240,7 +1292,13 @@ export default function RewardsManagement() {
       if (filterStatus) params.set("status", filterStatus);
       if (filterCategory) params.set("category", filterCategory);
       const { data } = await axios.get(`${API}/api/rewards?${params}`);
-      setRewards(data);
+      const fetchedRewards = data || [];
+      setRewards(fetchedRewards);
+      try {
+        localStorage.setItem(cKey, JSON.stringify(fetchedRewards));
+      } catch (e) {
+        console.warn("Cache save failed:", e);
+      }
     } catch {
       /* silent */
     } finally {
@@ -1249,8 +1307,10 @@ export default function RewardsManagement() {
   }, [official, filterStatus, filterCategory]);
 
   useEffect(() => {
-    fetchRewards();
-  }, [fetchRewards]);
+    const cKey = getCacheKey(filterStatus, filterCategory);
+    const hasCached = !!localStorage.getItem(cKey);
+    fetchRewards(!hasCached);
+  }, [fetchRewards, filterStatus, filterCategory]);
 
   const onSaved = (reward) => {
     setRewards((prev) => {
@@ -1390,10 +1450,11 @@ export default function RewardsManagement() {
           ))}
         </select>
         <button
-          onClick={fetchRewards}
+          onClick={() => fetchRewards(true)}
           className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+          title="Refresh Rewards"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
         </button>
       </div>
 
