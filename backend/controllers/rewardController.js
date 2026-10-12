@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { Reward, Resident, Report, Official, DisposalVerification, BarangayScore } = require("../models");
+const { Reward, RewardGoal, Resident, Report, Official, DisposalVerification, BarangayScore } = require("../models");
 const { getIO } = require("../config/socket");
 const { wasteClassificationMap, lookupWasteClassification } = require("../config/wasteClassification");
 
@@ -601,6 +601,306 @@ exports.logScan = async (req, res, next) => {
     await resident.save();
 
     res.json({ ok: true, logged: true, pointsAwarded: 0 });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// REWARD GOALS (Points Catalog & Targets)
+// ==========================================
+
+// GET /api/reward-goals
+exports.getRewardGoals = async (req, res, next) => {
+  try {
+    const { barangay, status, category, isActive } = req.query;
+    const filter = {};
+
+    if (barangay && barangay !== "All") {
+      filter.$or = [
+        { barangay: { $regex: new RegExp(`^${barangay.trim()}$`, "i") } },
+        { barangay: "All" },
+      ];
+    }
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+    if (category && category !== "all") {
+      filter.category = category;
+    }
+    if (isActive !== undefined && isActive !== "") {
+      filter.isActive = isActive === "true";
+    }
+
+    const goals = await RewardGoal.find(filter).sort({ pointsRequired: 1, createdAt: -1 });
+
+    const totalGoals = goals.length;
+    const activeGoals = goals.filter((g) => g.isActive && g.status === "active").length;
+    const totalInventory = goals.reduce((sum, g) => sum + (g.quantity || 0), 0);
+    const totalClaimed = goals.reduce((sum, g) => sum + (g.claimedCount || 0), 0);
+
+    res.json({
+      goals,
+      stats: {
+        totalGoals,
+        activeGoals,
+        totalInventory,
+        totalClaimed,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/reward-goals/:id
+exports.getRewardGoalById = async (req, res, next) => {
+  try {
+    const goal = await RewardGoal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: "Reward goal not found" });
+    res.json(goal);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/reward-goals
+exports.createRewardGoal = async (req, res, next) => {
+  try {
+    const {
+      title,
+      description,
+      pointsRequired,
+      goalPoints,
+      quantity,
+      isActive,
+      claimValidityDays,
+      expirationDate,
+      category,
+      barangay,
+      createdBy,
+      createdByName,
+    } = req.body;
+
+    const points = Number(pointsRequired ?? goalPoints);
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Reward name is required" });
+    }
+    if (isNaN(points) || points <= 0) {
+      return res.status(400).json({ error: "Goal points must be a positive number greater than 0" });
+    }
+    const qty = Number(quantity);
+    if (isNaN(qty) || qty < 0) {
+      return res.status(400).json({ error: "Quantity must be 0 or greater" });
+    }
+    if (!barangay) {
+      return res.status(400).json({ error: "Barangay is required" });
+    }
+
+    const validityDays = Number(claimValidityDays);
+    const validClaimDays = !isNaN(validityDays) && validityDays > 0 ? validityDays : 30;
+
+    const goal = await RewardGoal.create({
+      title: title.trim(),
+      description: description ? description.trim() : "",
+      pointsRequired: points,
+      quantity: qty,
+      claimedCount: 0,
+      isActive: isActive !== false,
+      claimValidityDays: validClaimDays,
+      expirationDate: expirationDate ? new Date(expirationDate) : null,
+      category: category || "essentials",
+      barangay: barangay.trim(),
+      createdBy: createdBy || null,
+      createdByName: createdByName || "",
+    });
+
+    const io = getIO();
+    if (io) {
+      io.emit("reward-goal:created", goal);
+    }
+
+    res.status(201).json(goal);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/reward-goals/:id
+exports.updateRewardGoal = async (req, res, next) => {
+  try {
+    const {
+      title,
+      description,
+      pointsRequired,
+      goalPoints,
+      quantity,
+      isActive,
+      claimValidityDays,
+      expirationDate,
+      category,
+      status,
+    } = req.body;
+
+    const goal = await RewardGoal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: "Reward goal not found" });
+
+    if (title !== undefined) goal.title = title.trim();
+    if (description !== undefined) goal.description = description.trim();
+    if (pointsRequired !== undefined || goalPoints !== undefined) {
+      const p = Number(pointsRequired ?? goalPoints);
+      if (!isNaN(p) && p > 0) goal.pointsRequired = p;
+    }
+    if (quantity !== undefined) {
+      const q = Number(quantity);
+      if (!isNaN(q) && q >= 0) goal.quantity = q;
+    }
+    if (isActive !== undefined) goal.isActive = Boolean(isActive);
+    if (claimValidityDays !== undefined) {
+      const d = Number(claimValidityDays);
+      if (!isNaN(d) && d > 0) goal.claimValidityDays = d;
+    }
+    if (expirationDate !== undefined) {
+      goal.expirationDate = expirationDate ? new Date(expirationDate) : null;
+    }
+    if (category !== undefined) goal.category = category;
+    if (status !== undefined) goal.status = status;
+
+    await goal.save();
+
+    const io = getIO();
+    if (io) {
+      io.emit("reward-goal:updated", goal);
+    }
+
+    res.json(goal);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/reward-goals/:id
+exports.deleteRewardGoal = async (req, res, next) => {
+  try {
+    const goal = await RewardGoal.findByIdAndDelete(req.params.id);
+    if (!goal) return res.status(404).json({ error: "Reward goal not found" });
+
+    const io = getIO();
+    if (io) {
+      io.emit("reward-goal:deleted", { id: req.params.id });
+    }
+
+    res.json({ ok: true, message: "Reward goal deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/reward-goals/:id/claim (Resident Redeems Reward Goal with Points)
+exports.claimRewardGoal = async (req, res, next) => {
+  try {
+    const { residentId } = req.body;
+    if (!residentId) {
+      return res.status(400).json({ error: "residentId is required" });
+    }
+
+    const goal = await RewardGoal.findById(req.params.id);
+    if (!goal) return res.status(404).json({ error: "Reward goal not found" });
+
+    if (!goal.isActive || goal.status === "inactive" || goal.status === "archived") {
+      return res.status(400).json({ error: "This reward goal is currently not active" });
+    }
+
+    const remainingStock = Math.max(0, (goal.quantity || 0) - (goal.claimedCount || 0));
+    if (remainingStock <= 0 || goal.status === "out_of_stock") {
+      return res.status(400).json({ error: "This reward is out of stock" });
+    }
+
+    const resident = await Resident.findById(residentId);
+    if (!resident) {
+      return res.status(404).json({ error: "Resident not found" });
+    }
+
+    const currentPoints = Number(resident.totalPoints || 0);
+    if (currentPoints < goal.pointsRequired) {
+      return res.status(400).json({
+        error: `Insufficient points. You have ${currentPoints} points, but ${goal.pointsRequired} points are required.`,
+      });
+    }
+
+    // Generate unique claim code
+    let claimCode = null;
+    let attempts = 0;
+    do {
+      claimCode = generateClaimCode();
+      attempts++;
+    } while (attempts < 10 && (await Reward.findOne({ claimCode })));
+
+    // Calculate claim deadline (e.g. 30 days from claim)
+    const validityDays = Number(goal.claimValidityDays || 30);
+    const claimDeadline = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000);
+
+    // Deduct points
+    resident.totalPoints = Math.max(0, currentPoints - goal.pointsRequired);
+    resident.pointsHistory = resident.pointsHistory || [];
+    resident.pointsHistory.unshift({
+      type: "reward_claim",
+      points: -goal.pointsRequired,
+      description: `Redeemed Goal: "${goal.title}"`,
+      date: new Date(),
+    });
+
+    // Create the claimed reward voucher
+    const claimedReward = await Reward.create({
+      title: goal.title,
+      description: goal.description,
+      category: goal.category === "certificates" ? "most_active" : "best_segregation",
+      barangay: goal.barangay || resident.barangay || "All",
+      rewardType: goal.category === "certificates" ? "certificate" : "physical_prize",
+      rewardValue: `${goal.pointsRequired} Points Milestone`,
+      status: "claimed",
+      recipientId: resident._id,
+      recipientName:
+        `${resident.firstName || ""} ${resident.lastName || ""}`.trim() ||
+        resident.name ||
+        "Resident",
+      issuedDate: new Date(),
+      claimedDate: new Date(),
+      claimDeadline: claimDeadline,
+      claimCode: claimCode,
+      notes: `Redeemed reward goal "${goal.title}" for ${goal.pointsRequired} points.`,
+    });
+
+    // Update goal claimed count
+    goal.claimedCount = (goal.claimedCount || 0) + 1;
+    if (goal.claimedCount >= goal.quantity) {
+      goal.status = "out_of_stock";
+    }
+    await goal.save();
+
+    // Link reward to resident
+    resident.rewardsReceived = resident.rewardsReceived || [];
+    resident.rewardsReceived.push(claimedReward._id);
+    resident.totalRewardsClaimed = (resident.totalRewardsClaimed || 0) + 1;
+    await resident.save();
+
+    const io = getIO();
+    if (io) {
+      io.emit("reward-goal:updated", goal);
+      io.emit("reward:claimed", {
+        rewardId: claimedReward._id,
+        title: claimedReward.title,
+        barangay: claimedReward.barangay,
+      });
+    }
+
+    res.json({
+      success: true,
+      reward: claimedReward,
+      goal,
+      remainingPoints: resident.totalPoints,
+      message: `Successfully redeemed "${goal.title}"!`,
+    });
   } catch (err) {
     next(err);
   }

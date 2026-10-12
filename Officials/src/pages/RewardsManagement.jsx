@@ -21,6 +21,18 @@ import {
   Wind,
   ShieldAlert,
   Award,
+  Target,
+  Sparkles,
+  Clock,
+  Edit2,
+  AlertTriangle,
+  Package,
+  CheckCircle2,
+  Tag,
+  Layers,
+  ChevronRight,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -45,6 +57,15 @@ const STATUS_META = {
   claimed: { label: "Claimed", cls: "bg-emerald-100 text-emerald-700" },
   expired: { label: "Expired", cls: "bg-red-100 text-red-600" },
 };
+
+const GOAL_CATEGORIES = [
+  { value: "essentials", label: "Food & Essentials", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  { value: "merchandise", label: "Eco-Merchandise", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  { value: "vouchers", label: "Vouchers & Discounts", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  { value: "utilities", label: "Utility & City Perks", cls: "bg-purple-50 text-purple-700 border-purple-200" },
+  { value: "certificates", label: "Certificates & Honors", cls: "bg-rose-50 text-rose-700 border-rose-200" },
+  { value: "other", label: "Other Perks", cls: "bg-slate-50 text-slate-700 border-slate-200" },
+];
 
 function statusBadge(status) {
   const m = STATUS_META[status] || STATUS_META.draft;
@@ -1247,10 +1268,542 @@ function RewardsLogModal({ onClose, official }) {
   );
 }
 
+// ── Reward Goal Modal (Points Milestone Targets) ────────────
+function RewardGoalModal({ goal, onClose, onSaved, official }) {
+  const isEdit = !!goal;
+  const [form, setForm] = useState({
+    title: goal?.title || "",
+    description: goal?.description || "",
+    pointsRequired:
+      goal?.pointsRequired != null ? String(goal.pointsRequired) : "500",
+    quantity: goal?.quantity != null ? String(goal.quantity) : "25",
+    isActive: goal?.isActive !== undefined ? goal.isActive : true,
+    claimValidityDays:
+      goal?.claimValidityDays != null ? String(goal.claimValidityDays) : "30",
+    expirationDate: goal?.expirationDate
+      ? new Date(goal.expirationDate).toISOString().split("T")[0]
+      : "",
+    category: goal?.category || "essentials",
+    barangay: goal?.barangay || official?.barangay || "All",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const presetPoints = [100, 250, 500, 1000, 2000];
+  const presetDays = [7, 14, 30, 60, 90];
+
+  const handleSave = async (e) => {
+    e?.preventDefault();
+    if (!form.title.trim()) {
+      setError("Reward name is required.");
+      return;
+    }
+    const pts = Number(form.pointsRequired);
+    if (isNaN(pts) || pts <= 0) {
+      setError("Please specify valid points required (greater than 0).");
+      return;
+    }
+    const qty = Number(form.quantity);
+    if (isNaN(qty) || qty < 0) {
+      setError("Please enter a valid stock quantity (0 or more).");
+      return;
+    }
+    const days = Number(form.claimValidityDays);
+    if (isNaN(days) || days <= 0) {
+      setError("Please specify claim validity days upon claiming (e.g. 30).");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      if (isEdit) {
+        const { data } = await axios.patch(
+          `${API}/api/reward-goals/${goal._id}`,
+          {
+            title: form.title.trim(),
+            description: form.description.trim(),
+            pointsRequired: pts,
+            quantity: qty,
+            isActive: form.isActive,
+            claimValidityDays: days,
+            expirationDate: form.expirationDate || null,
+            category: form.category,
+          }
+        );
+        toast.success("Reward goal updated successfully!");
+        onSaved(data);
+      } else {
+        const { data } = await axios.post(`${API}/api/reward-goals`, {
+          title: form.title.trim(),
+          description: form.description.trim(),
+          pointsRequired: pts,
+          quantity: qty,
+          isActive: form.isActive,
+          claimValidityDays: days,
+          expirationDate: form.expirationDate || null,
+          category: form.category,
+          barangay: form.barangay || official?.barangay || "All",
+          createdBy: official?._id,
+          createdByName: official?.name || "Official",
+        });
+        toast.success("New reward goal published for residents!");
+        onSaved(data);
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error || "Failed to save reward goal.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedCat =
+    GOAL_CATEGORIES.find((c) => c.value === form.category) ||
+    GOAL_CATEGORIES[0];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[5000] flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-100 my-auto animate-in fade-in zoom-in-95">
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50/70 via-teal-50/40 to-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
+              <Target className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                {isEdit ? "Edit Reward Goal" : "New Reward Goal for Residents"}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Set milestone goals residents can redeem with eco-points
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form
+          onSubmit={handleSave}
+          className="p-6 space-y-4 max-h-[75vh] overflow-y-auto"
+        >
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Reward Name */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Reward Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={form.title}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, title: e.target.value }))
+              }
+              placeholder="e.g. 5kg Premium Rice Voucher, Eco Stainless Tumbler"
+              className="w-full px-3.5 py-2.5 text-sm font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            />
+          </div>
+
+          {/* Category & Status */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Category
+              </label>
+              <select
+                value={form.category}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, category: e.target.value }))
+                }
+                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
+              >
+                {GOAL_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Active Status
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({ ...f, isActive: !f.isActive }))
+                }
+                className={`w-full px-3 py-2.5 text-xs font-bold rounded-xl border flex items-center justify-between transition-colors ${
+                  form.isActive
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : "bg-slate-100 border-slate-200 text-slate-600"
+                }`}
+              >
+                <span>
+                  {form.isActive ? "Active (Visible to all)" : "Inactive (Hidden)"}
+                </span>
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    form.isActive ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Required Points & Presets */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Goal / Required Points <span className="text-red-500">*</span>
+              </label>
+              <span className="text-[11px] font-semibold text-emerald-700">
+                Points needed to unlock
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                min="1"
+                required
+                value={form.pointsRequired}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, pointsRequired: e.target.value }))
+                }
+                placeholder="500"
+                className="w-full pl-3.5 pr-14 py-2.5 text-sm font-black border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-emerald-800"
+              />
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                PTS
+              </span>
+            </div>
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">
+                Quick Select:
+              </span>
+              {presetPoints.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, pointsRequired: String(p) }))
+                  }
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold border transition-colors ${
+                    Number(form.pointsRequired) === p
+                      ? "bg-emerald-700 text-white border-emerald-700"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {p} pts
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quantity & Expiry Upon Claimed */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Total Quantity / Stock <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                required
+                value={form.quantity}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, quantity: e.target.value }))
+                }
+                placeholder="20"
+                className="w-full px-3.5 py-2.5 text-sm font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              />
+              <p className="text-[10.5px] text-slate-400 mt-1">
+                Available inventory count
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Expire Upon Claimed <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={form.claimValidityDays}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      claimValidityDays: e.target.value,
+                    }))
+                  }
+                  placeholder="30"
+                  className="w-full pl-3.5 pr-14 py-2.5 text-sm font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                  Days
+                </span>
+              </div>
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                {presetDays.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        claimValidityDays: String(d),
+                      }))
+                    }
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                      Number(form.claimValidityDays) === d
+                        ? "bg-slate-800 text-white border-slate-800"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Description & Claim Instructions
+            </label>
+            <textarea
+              value={form.description}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, description: e.target.value }))
+              }
+              rows={2}
+              placeholder="e.g. Present your digital claim code at the Barangay Hall Eco-Desk during office hours (8AM - 5PM)."
+              className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white resize-none"
+            />
+          </div>
+
+          {/* Barangay Scope */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Barangay Scope
+            </label>
+            <input
+              type="text"
+              value={form.barangay}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, barangay: e.target.value }))
+              }
+              placeholder="e.g. Mabolo or All"
+              className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+            />
+          </div>
+
+          {/* Resident Live Preview Card */}
+          <div className="pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
+              Resident Preview
+            </span>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start justify-between gap-3 shadow-2xs">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${selectedCat.cls}`}
+                  >
+                    {selectedCat.label}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    Stock: {form.quantity || 0}
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold text-slate-900 truncate">
+                  {form.title || "Reward Name"}
+                </h4>
+                <p className="text-xs text-slate-500 line-clamp-1">
+                  {form.description || "Instructions will appear here."}
+                </p>
+                <p className="text-[10px] text-amber-700 font-medium">
+                  ⏳ Valid for {form.claimValidityDays || 30} days once claimed
+                </p>
+              </div>
+              <div className="shrink-0 bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-black text-xs shadow-xs text-center">
+                <div>{form.pointsRequired || 0}</div>
+                <div className="text-[9px] font-bold opacity-80">POINTS</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="pt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2.5 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors shadow-md shadow-emerald-700/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              {saving ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Target className="w-4 h-4" />
+              )}
+              {saving ? "Saving…" : isEdit ? "Update Goal" : "Publish Goal"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────
 export default function RewardsManagement() {
   const { official } = useAuth();
 
+  // Active Tab: "goals" (Milestone Targets) or "direct" (Direct Individual Awards)
+  const [activeTab, setActiveTab] = useState("goals");
+
+  // ── REWARD GOALS STATE ──
+  const goalsCacheKey = `cache_reward_goals_${official?.barangay || "all"}`;
+  const initialGoalsCache = (() => {
+    try {
+      const cached = localStorage.getItem(goalsCacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [rewardGoals, setRewardGoals] = useState(
+    initialGoalsCache?.goals || []
+  );
+  const [goalStats, setGoalStats] = useState(initialGoalsCache?.stats || null);
+  const [goalsLoading, setGoalsLoading] = useState(!initialGoalsCache);
+  const [goalSearch, setGoalSearch] = useState("");
+  const [goalCategoryFilter, setGoalCategoryFilter] = useState("");
+  const [goalStatusFilter, setGoalStatusFilter] = useState("");
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
+
+  const fetchRewardGoals = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) setGoalsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (official?.barangay && official.barangay !== "All")
+          params.set("barangay", official.barangay);
+        if (goalCategoryFilter) params.set("category", goalCategoryFilter);
+        if (goalStatusFilter) params.set("status", goalStatusFilter);
+
+        const { data } = await axios.get(`${API}/api/reward-goals?${params}`);
+        const fetchedGoals = data.goals || [];
+        setRewardGoals(fetchedGoals);
+        setGoalStats(data.stats || null);
+        try {
+          localStorage.setItem(
+            goalsCacheKey,
+            JSON.stringify({ goals: fetchedGoals, stats: data.stats })
+          );
+        } catch (e) {
+          console.warn("Goals cache save failed:", e);
+        }
+      } catch (err) {
+        console.error("Failed to fetch reward goals:", err);
+      } finally {
+        setGoalsLoading(false);
+      }
+    },
+    [official, goalCategoryFilter, goalStatusFilter, goalsCacheKey]
+  );
+
+  useEffect(() => {
+    fetchRewardGoals(!initialGoalsCache);
+  }, [fetchRewardGoals, goalCategoryFilter, goalStatusFilter]);
+
+  const handleToggleGoalActive = async (g) => {
+    try {
+      const newStatus = !g.isActive;
+      const { data } = await axios.patch(`${API}/api/reward-goals/${g._id}`, {
+        isActive: newStatus,
+      });
+      setRewardGoals((prev) =>
+        prev.map((item) => (item._id === g._id ? data : item))
+      );
+      toast.success(
+        newStatus ? "Goal marked as Active" : "Goal paused / marked Inactive"
+      );
+    } catch {
+      toast.error("Failed to toggle goal status.");
+    }
+  };
+
+  const handleDeleteGoal = async (id, title) => {
+    if (!window.confirm(`Are you sure you want to delete reward goal "${title}"?`))
+      return;
+    try {
+      await axios.delete(`${API}/api/reward-goals/${id}`);
+      setRewardGoals((prev) => prev.filter((item) => item._id !== id));
+      toast.success("Reward goal deleted successfully.");
+    } catch {
+      toast.error("Failed to delete reward goal.");
+    }
+  };
+
+  const onGoalSaved = (savedGoal) => {
+    setRewardGoals((prev) => {
+      const idx = prev.findIndex((g) => g._id === savedGoal._id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = savedGoal;
+        return next;
+      }
+      return [savedGoal, ...prev];
+    });
+    setShowGoalModal(false);
+    setEditingGoal(null);
+    fetchRewardGoals(false);
+  };
+
+  const filteredGoals = rewardGoals.filter((g) => {
+    const q = goalSearch.toLowerCase().trim();
+    const matchSearch =
+      !q ||
+      g.title?.toLowerCase().includes(q) ||
+      g.description?.toLowerCase().includes(q);
+    const matchCategory =
+      !goalCategoryFilter || g.category === goalCategoryFilter;
+    const matchStatus =
+      !goalStatusFilter ||
+      (goalStatusFilter === "active" && g.isActive && g.status === "active") ||
+      (goalStatusFilter === "inactive" && !g.isActive) ||
+      (goalStatusFilter === "out_of_stock" && g.status === "out_of_stock");
+    return matchSearch && matchCategory && matchStatus;
+  });
+
+  // ── DIRECT AWARDS STATE (Existing Direct Workflow) ──
   const getCacheKey = (st, cat) =>
     `cache_rewards_management_${official?.barangay || "all"}_${st || "all"}_${cat || "all"}`;
 
@@ -1274,37 +1827,40 @@ export default function RewardsManagement() {
   const [detailReward, setDetailReward] = useState(null);
   const [showRewardsLog, setShowRewardsLog] = useState(false);
 
-  const fetchRewards = useCallback(async (showLoading = false) => {
-    const cKey = getCacheKey(filterStatus, filterCategory);
-    try {
-      const cached = localStorage.getItem(cKey);
-      if (cached) {
-        setRewards(JSON.parse(cached));
-        showLoading = false;
-      }
-    } catch {}
-
-    if (showLoading) setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (official?.barangay && official.barangay !== "All")
-        params.set("barangay", official.barangay);
-      if (filterStatus) params.set("status", filterStatus);
-      if (filterCategory) params.set("category", filterCategory);
-      const { data } = await axios.get(`${API}/api/rewards?${params}`);
-      const fetchedRewards = data || [];
-      setRewards(fetchedRewards);
+  const fetchRewards = useCallback(
+    async (showLoading = false) => {
+      const cKey = getCacheKey(filterStatus, filterCategory);
       try {
-        localStorage.setItem(cKey, JSON.stringify(fetchedRewards));
-      } catch (e) {
-        console.warn("Cache save failed:", e);
+        const cached = localStorage.getItem(cKey);
+        if (cached) {
+          setRewards(JSON.parse(cached));
+          showLoading = false;
+        }
+      } catch {}
+
+      if (showLoading) setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (official?.barangay && official.barangay !== "All")
+          params.set("barangay", official.barangay);
+        if (filterStatus) params.set("status", filterStatus);
+        if (filterCategory) params.set("category", filterCategory);
+        const { data } = await axios.get(`${API}/api/rewards?${params}`);
+        const fetchedRewards = data || [];
+        setRewards(fetchedRewards);
+        try {
+          localStorage.setItem(cKey, JSON.stringify(fetchedRewards));
+        } catch (e) {
+          console.warn("Cache save failed:", e);
+        }
+      } catch {
+        /* silent */
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      /* silent */
-    } finally {
-      setLoading(false);
-    }
-  }, [official, filterStatus, filterCategory]);
+    },
+    [official, filterStatus, filterCategory]
+  );
 
   useEffect(() => {
     const cKey = getCacheKey(filterStatus, filterCategory);
@@ -1328,11 +1884,10 @@ export default function RewardsManagement() {
 
   const onUpdated = (reward) => {
     if (!reward) {
-      // revoked — remove
       setRewards((prev) => prev.filter((r) => r._id !== detailReward?._id));
     } else {
       setRewards((prev) =>
-        prev.map((r) => (r._id === reward._id ? reward : r)),
+        prev.map((r) => (r._id === reward._id ? reward : r))
       );
     }
     setDetailReward(null);
@@ -1353,223 +1908,659 @@ export default function RewardsManagement() {
     (r) =>
       r.status === "published" &&
       daysLeft(r.claimDeadline) != null &&
-      daysLeft(r.claimDeadline) <= 7,
+      daysLeft(r.claimDeadline) <= 7
   ).length;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top bar */}
-      <div className="px-6 pt-6 pb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col h-full bg-slate-50/50">
+      {/* Top Header */}
+      <div className="px-6 pt-6 pb-4 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold text-slate-900">
-            Rewards Management
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Grant and track resident rewards
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">
+              Rewards & Points Management
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200">
+              {official?.barangay || "City"} Portal
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Set target points goals for residents and manage official awards
           </p>
+
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl mt-3.5 w-fit border border-slate-200/60">
+            <button
+              onClick={() => setActiveTab("goals")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === "goals"
+                  ? "bg-white text-emerald-800 shadow-sm border border-slate-200/50"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Target className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Reward Goals (Points Catalog)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  activeTab === "goals"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {rewardGoals.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("direct")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === "direct"
+                  ? "bg-white text-emerald-800 shadow-sm border border-slate-200/50"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Award className="w-3.5 h-3.5 text-purple-600" />
+              <span>Direct Awards & Recognitions</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  activeTab === "direct"
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {rewards.length}
+              </span>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2.5">
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setShowRewardsLog(true)}
-            className="flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-2xs"
+            className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-2xs"
           >
-            <History className="w-4 h-4 text-emerald-600" /> Rewards Log
+            <History className="w-4 h-4 text-emerald-600" /> Rewards & Points Log
           </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" /> Create Reward
-          </button>
-        </div>
-      </div>
 
-      {/* Summary cards */}
-      <div className="px-6 pb-4 grid grid-cols-3 gap-3">
-        <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
-          <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
-            Total Rewards
-          </p>
-          <p className="text-2xl font-extrabold text-slate-900">
-            {rewards.length}
-          </p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
-          <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
-            Pending Claim
-          </p>
-          <p className="text-2xl font-extrabold text-blue-700">{pendingCt}</p>
-        </div>
-        <div
-          className={`border rounded-2xl p-4 shadow-sm ${expiringSoon > 0 ? "bg-amber-50 border-amber-200" : "bg-white border-slate-100"}`}
-        >
-          <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
-            Expiring Soon
-          </p>
-          <p
-            className={`text-2xl font-extrabold ${expiringSoon > 0 ? "text-amber-600" : "text-slate-900"}`}
-          >
-            {expiringSoon}
-          </p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="px-6 pb-3 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search rewards…"
-            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-          />
-        </div>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-        >
-          <option value="">All Status</option>
-          {Object.entries(STATUS_META).map(([v, m]) => (
-            <option key={v} value={v}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-        >
-          <option value="">All Categories</option>
-          {CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => fetchRewards(true)}
-          className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-          title="Refresh Rewards"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
-        </button>
-      </div>
-
-      {/* Table */}
-      <div className="flex-1 px-6 pb-6 min-h-0 overflow-auto">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="p-6 space-y-4 animate-pulse">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between px-6 gap-4">
-                  <div className="flex items-center gap-3 w-1/3">
-                    <div className="w-10 h-10 bg-slate-200 rounded-xl flex-shrink-0" />
-                    <div className="space-y-1.5 flex-1">
-                      <div className="h-4 w-32 bg-slate-200 rounded" />
-                      <div className="h-3 w-20 bg-slate-100 rounded" />
-                    </div>
-                  </div>
-                  <div className="h-4 w-28 bg-slate-200 rounded" />
-                  <div className="h-6 w-20 bg-slate-100 rounded-full" />
-                  <div className="h-8 w-24 bg-slate-200 rounded-xl" />
-                </div>
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-              <Gift className="w-10 h-10 mb-3 text-slate-200" />
-              <p className="text-sm font-semibold">No rewards found</p>
-              <p className="text-xs mt-1">
-                Create your first reward to get started
-              </p>
-            </div>
+          {activeTab === "goals" ? (
+            <button
+              onClick={() => {
+                setEditingGoal(null);
+                setShowGoalModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-md shadow-emerald-700/20 active:scale-95"
+            >
+              <Plus className="w-4 h-4" /> New Reward Goal
+            </button>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Title
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Recipient
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Barangay
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Deadline
-                  </th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filtered.map((r) => {
-                  const days = daysLeft(r.claimDeadline);
-                  const catLabel =
-                    CATEGORIES.find((c) => c.value === r.category)?.label ||
-                    r.category;
-                  return (
-                    <tr
-                      key={r._id}
-                      className="hover:bg-slate-50 transition-colors"
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-800 truncate max-w-[200px]">
-                          {r.title}
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          {catLabel}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700 font-medium">
-                        {r.recipientName || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">
-                        {r.barangay}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs capitalize">
-                        {r.rewardType?.replace("_", " ")}
-                      </td>
-                      <td className="px-4 py-3">{statusBadge(r.status)}</td>
-                      <td className="px-4 py-3">
-                        {r.claimDeadline ? (
-                          <span
-                            className={`text-xs font-semibold ${days != null && days <= 7 && r.status === "published" ? "text-red-600" : "text-slate-500"}`}
-                          >
-                            {new Date(r.claimDeadline).toLocaleDateString()}
-                            {days != null &&
-                              r.status === "published" &&
-                              ` (${days > 0 ? `${days}d` : "today"})`}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => setDetailReward(r)}
-                          className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-md shadow-emerald-700/20 active:scale-95"
+            >
+              <Plus className="w-4 h-4" /> Issue Direct Award
+            </button>
           )}
         </div>
       </div>
+
+      {/* ── TAB 1: REWARD GOALS (POINTS CATALOG) ── */}
+      {activeTab === "goals" && (
+        <div className="flex-1 flex flex-col p-6 space-y-6 overflow-auto">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Total Goals
+                </span>
+                <Target className="w-4 h-4 text-emerald-600" />
+              </div>
+              <p className="text-2xl font-black text-slate-900">
+                {goalStats?.totalGoals ?? rewardGoals.length}
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                Milestones created for residents
+              </p>
+            </div>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Active in App
+                </span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <p className="text-2xl font-black text-emerald-700">
+                {goalStats?.activeGoals ??
+                  rewardGoals.filter((g) => g.isActive && g.status === "active")
+                    .length}
+              </p>
+              <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+                Visible to residents
+              </p>
+            </div>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Total Stock Inventory
+                </span>
+                <Package className="w-4 h-4 text-blue-600" />
+              </div>
+              <p className="text-2xl font-black text-blue-700">
+                {goalStats?.totalInventory ??
+                  rewardGoals.reduce((sum, g) => sum + (g.quantity || 0), 0)}
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                Physical prizes & vouchers
+              </p>
+            </div>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Total Claimed
+                </span>
+                <Sparkles className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-2xl font-black text-amber-700">
+                {goalStats?.totalClaimed ??
+                  rewardGoals.reduce((sum, g) => sum + (g.claimedCount || 0), 0)}
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                Redeemed by residents
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Toolbar */}
+          <div className="flex flex-wrap items-center gap-2.5 bg-white p-3.5 rounded-2xl border border-slate-100 shadow-xs">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                value={goalSearch}
+                onChange={(e) => setGoalSearch(e.target.value)}
+                placeholder="Search reward goals by name or instructions…"
+                className="w-full pl-9 pr-3 py-2 text-xs font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              />
+            </div>
+
+            <select
+              value={goalCategoryFilter}
+              onChange={(e) => setGoalCategoryFilter(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            >
+              <option value="">All Categories</option>
+              {GOAL_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={goalStatusFilter}
+              onChange={(e) => setGoalStatusFilter(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+              <option value="out_of_stock">Out of Stock</option>
+            </select>
+
+            <button
+              onClick={() => fetchRewardGoals(true)}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-colors"
+              title="Refresh Reward Goals"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${
+                  goalsLoading ? "animate-spin text-emerald-600" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Goals Card Grid */}
+          {goalsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-3xl p-5 border border-slate-100 shadow-xs space-y-4 animate-pulse"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="h-5 w-24 bg-slate-200 rounded-full" />
+                    <div className="h-5 w-16 bg-slate-200 rounded-full" />
+                  </div>
+                  <div className="h-6 w-44 bg-slate-200 rounded" />
+                  <div className="h-10 w-full bg-slate-100 rounded-xl" />
+                  <div className="h-12 w-full bg-slate-200 rounded-2xl" />
+                </div>
+              ))}
+            </div>
+          ) : filteredGoals.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100 shadow-xs text-center p-6">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+                <Target className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">
+                No Reward Goals Found
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                Create target points milestones that residents in your barangay can
+                strive to unlock with their eco-points.
+              </p>
+              <button
+                onClick={() => {
+                  setEditingGoal(null);
+                  setShowGoalModal(true);
+                }}
+                className="mt-4 flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-md shadow-emerald-700/20 transition-all"
+              >
+                <Plus className="w-4 h-4" /> Create First Reward Goal
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredGoals.map((g) => {
+                const categoryMeta =
+                  GOAL_CATEGORIES.find((c) => c.value === g.category) ||
+                  GOAL_CATEGORIES[0];
+                const claimed = g.claimedCount || 0;
+                const total = g.quantity || 0;
+                const remaining = Math.max(0, total - claimed);
+                const percentClaimed =
+                  total > 0 ? Math.min(100, Math.round((claimed / total) * 100)) : 0;
+                const isOutOfStock = remaining === 0;
+
+                return (
+                  <div
+                    key={g._id}
+                    className={`bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
+                      !g.isActive
+                        ? "border-slate-200 opacity-75"
+                        : isOutOfStock
+                        ? "border-red-200"
+                        : "border-slate-100 hover:border-emerald-200"
+                    }`}
+                  >
+                    <div>
+                      {/* Top Meta Bar */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${categoryMeta.cls}`}
+                        >
+                          {categoryMeta.label}
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          {isOutOfStock ? (
+                            <span className="text-[10px] font-black uppercase text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                              Out of stock
+                            </span>
+                          ) : g.isActive ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                              Inactive
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Title & Description */}
+                      <h3 className="text-base font-extrabold text-slate-900 leading-snug">
+                        {g.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                        {g.description || "No specific instructions provided."}
+                      </p>
+
+                      {/* Required Points Pill */}
+                      <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-100/80 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Target Points
+                            </span>
+                            <span className="text-base font-black text-emerald-800">
+                              {g.pointsRequired.toLocaleString()} PTS
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-bold text-emerald-700 bg-white px-2 py-1 rounded-lg border border-emerald-200 shadow-2xs">
+                          Goal
+                        </span>
+                      </div>
+
+                      {/* Stock / Inventory Progress */}
+                      <div className="mt-4 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-semibold">
+                          <span className="text-slate-500">
+                            Claimed:{" "}
+                            <strong className="text-slate-800 font-bold">
+                              {claimed} / {total}
+                            </strong>
+                          </span>
+                          <span
+                            className={
+                              remaining <= 3
+                                ? "text-red-600 font-bold"
+                                : "text-emerald-700 font-bold"
+                            }
+                          >
+                            {remaining > 0
+                              ? `${remaining} in stock`
+                              : "Depleted"}
+                          </span>
+                        </div>
+
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isOutOfStock
+                                ? "bg-red-500"
+                                : percentClaimed > 80
+                                ? "bg-amber-500"
+                                : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${percentClaimed}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Claim Expiration Duration */}
+                      <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          Valid for{" "}
+                          <strong className="text-slate-700">
+                            {g.claimValidityDays || 30} days
+                          </strong>{" "}
+                          upon claim
+                        </span>
+                        {g.barangay && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {g.barangay}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Card Actions Footer */}
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleToggleGoalActive(g)}
+                        className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border flex items-center gap-1.5 transition-colors ${
+                          g.isActive
+                            ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                            : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                        }`}
+                        title={g.isActive ? "Pause goal" : "Activate goal"}
+                      >
+                        {g.isActive ? "Pause" : "Activate"}
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setEditingGoal(g);
+                            setShowGoalModal(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors border border-transparent hover:border-emerald-200"
+                          title="Edit Goal"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteGoal(g._id, g.title)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-200"
+                          title="Delete Goal"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 2: DIRECT AWARDS (EXISTING DIRECT WORKFLOW) ── */}
+      {activeTab === "direct" && (
+        <div className="flex-1 flex flex-col p-6 space-y-4 overflow-auto">
+          {/* Summary cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                Total Direct Awards
+              </p>
+              <p className="text-2xl font-extrabold text-slate-900">
+                {rewards.length}
+              </p>
+            </div>
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                Pending Claim
+              </p>
+              <p className="text-2xl font-extrabold text-blue-700">{pendingCt}</p>
+            </div>
+            <div
+              className={`border rounded-2xl p-4 shadow-sm ${
+                expiringSoon > 0
+                  ? "bg-amber-50 border-amber-200"
+                  : "bg-white border-slate-100"
+              }`}
+            >
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                Expiring Soon
+              </p>
+              <p
+                className={`text-2xl font-extrabold ${
+                  expiringSoon > 0 ? "text-amber-600" : "text-slate-900"
+                }`}
+              >
+                {expiringSoon}
+              </p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search direct rewards…"
+                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            >
+              <option value="">All Status</option>
+              {Object.entries(STATUS_META).map(([v, m]) => (
+                <option key={v} value={v}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            >
+              <option value="">All Categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => fetchRewards(true)}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              title="Refresh Rewards"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${
+                  loading ? "animate-spin text-emerald-600" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="flex-1 min-h-0 overflow-auto">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              {loading ? (
+                <div className="p-6 space-y-4 animate-pulse">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="h-16 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between px-6 gap-4"
+                    >
+                      <div className="flex items-center gap-3 w-1/3">
+                        <div className="w-10 h-10 bg-slate-200 rounded-xl flex-shrink-0" />
+                        <div className="space-y-1.5 flex-1">
+                          <div className="h-4 w-32 bg-slate-200 rounded" />
+                          <div className="h-3 w-20 bg-slate-100 rounded" />
+                        </div>
+                      </div>
+                      <div className="h-4 w-28 bg-slate-200 rounded" />
+                      <div className="h-6 w-20 bg-slate-100 rounded-full" />
+                      <div className="h-8 w-24 bg-slate-200 rounded-xl" />
+                    </div>
+                  ))}
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <Gift className="w-10 h-10 mb-3 text-slate-200" />
+                  <p className="text-sm font-semibold">No direct rewards found</p>
+                  <p className="text-xs mt-1">
+                    Grant an award directly to an active resident
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50">
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Title
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Recipient
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Barangay
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Deadline
+                      </th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filtered.map((r) => {
+                      const days = daysLeft(r.claimDeadline);
+                      const catLabel =
+                        CATEGORIES.find((c) => c.value === r.category)?.label ||
+                        r.category;
+                      return (
+                        <tr
+                          key={r._id}
+                          className="hover:bg-slate-50 transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-800 truncate max-w-[200px]">
+                              {r.title}
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {catLabel}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 font-medium">
+                            {r.recipientName || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">
+                            {r.barangay}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 text-xs capitalize">
+                            {r.rewardType?.replace("_", " ")}
+                          </td>
+                          <td className="px-4 py-3">{statusBadge(r.status)}</td>
+                          <td className="px-4 py-3">
+                            {r.claimDeadline ? (
+                              <span
+                                className={`text-xs font-semibold ${
+                                  days != null &&
+                                  days <= 7 &&
+                                  r.status === "published"
+                                    ? "text-red-600"
+                                    : "text-slate-500"
+                                }`}
+                              >
+                                {new Date(r.claimDeadline).toLocaleDateString()}
+                                {days != null &&
+                                  r.status === "published" &&
+                                  ` (${days > 0 ? `${days}d` : "today"})`}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setDetailReward(r)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showGoalModal && (
+        <RewardGoalModal
+          goal={editingGoal}
+          onClose={() => {
+            setShowGoalModal(false);
+            setEditingGoal(null);
+          }}
+          onSaved={onGoalSaved}
+          official={official}
+        />
+      )}
 
       {showCreate && (
         <RewardModal
@@ -1578,6 +2569,7 @@ export default function RewardsManagement() {
           official={official}
         />
       )}
+
       {detailReward && (
         <DetailModal
           reward={detailReward}
@@ -1586,6 +2578,7 @@ export default function RewardsManagement() {
           official={official}
         />
       )}
+
       {showRewardsLog && (
         <RewardsLogModal
           onClose={() => setShowRewardsLog(false)}

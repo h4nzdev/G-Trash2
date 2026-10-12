@@ -10,7 +10,7 @@ router.get("/residents/:id/rank", rewardController.getResidentRank);
 router.post("/residents/:id/scan-log", rewardController.logScan);
 router.get("/barangays/:barangayName/top-residents", rewardController.getTopResidents);
 
-// Rewards
+// Rewards (Direct Awards)
 router.get("/rewards/leaderboard-eligible", rewardController.getLeaderboardEligible);
 router.get("/rewards/resident/:residentId", rewardController.getResidentRewards);
 router.post("/rewards/:id/claim", rewardController.claimReward);
@@ -18,6 +18,14 @@ router.patch("/rewards/:id", rewardController.updateReward);
 router.get("/rewards/:id", rewardController.getRewardById);
 router.get("/rewards", rewardController.getRewards);
 router.post("/rewards", rewardController.createReward);
+
+// Reward Goals (Points Catalog & Target Goals)
+router.get("/reward-goals", rewardController.getRewardGoals);
+router.get("/reward-goals/:id", rewardController.getRewardGoalById);
+router.post("/reward-goals", rewardController.createRewardGoal);
+router.post("/reward-goals/:id/claim", rewardController.claimRewardGoal);
+router.patch("/reward-goals/:id", rewardController.updateRewardGoal);
+router.delete("/reward-goals/:id", rewardController.deleteRewardGoal);
 
 // Disposal verifications
 router.post("/disposal/submit", rewardController.submitDisposal);

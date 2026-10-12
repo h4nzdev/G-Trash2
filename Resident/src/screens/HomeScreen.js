@@ -997,7 +997,7 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.metricDivider} />
 
-              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("Profile")} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("MyRewards")} activeOpacity={0.7}>
                 <View style={[styles.metricIconWrap, { backgroundColor: "#FEF3C7" }]}>
                   <Ionicons name="star" size={15} color="#D97706" />
                 </View>

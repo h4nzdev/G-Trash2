@@ -16,6 +16,7 @@ module.exports = {
   User: require("./User.js"),
   DisposalVerification: require("./DisposalVerification.js"),
   Reward: require("./Reward.js"),
+  RewardGoal: require("./RewardGoal.js"),
   BarangayBoundary: require("./BarangayBoundary.js"),
   BarangayScore: require("./BarangayScore.js"),
   BarangayPointHistory: require("./BarangayPointHistory.js"),
