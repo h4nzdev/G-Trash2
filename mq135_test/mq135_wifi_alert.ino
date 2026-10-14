@@ -39,10 +39,9 @@ const char* WIFI_PASSWORD = "PbcY7UbQ";             // Wi-Fi Password
 // Render HTTPS Backend API URL
 const char* SERVER_URL    = "https://g-trash2.onrender.com/api/iot/sensor-data";
 
-// Sensor Metadata
+// Sensor Metadata — only sensorId is needed; barangay & location
+// are resolved by the backend from the official's registration.
 const char* SENSOR_ID     = "SENSOR-001";
-const char* LOCATION      = "2nd Street";
-const char* BARANGAY      = "Apas";
 
 // ---------------------------------------------------------------------------------
 // Calibration & Threshold Configuration (Temporary Initial Calibration Values)
@@ -238,8 +237,6 @@ void uploadTelemetry() {
   StaticJsonDocument<512> doc;
   doc["sensorId"]          = SENSOR_ID;
   doc["deviceType"]        = "ESP32";
-  doc["location"]          = LOCATION;
-  doc["barangay"]          = BARANGAY;
   doc["rawValue"]          = rawValue;
   doc["airQuality"]        = statusStr;
   doc["cleanThreshold"]    = cleanThreshold;
@@ -305,7 +302,7 @@ void setup() {
 
   Serial.println("\n==================================================");
   Serial.println(" G-TRASH MQ-135 Garbage-Area Air Monitor - ESP32");
-  Serial.println(" Location: 2nd Street, Apas");
+  Serial.print(" Sensor: "); Serial.println(SENSOR_ID);
   Serial.println(" Operational Levels: CLEAN | MODERATE | CRITICAL");
   Serial.println(" Serial Stream: Every 1s | Telemetry Upload: Every 60s");
   Serial.println("==================================================");

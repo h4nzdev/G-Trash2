@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check, Leaf, Recycle, MapPin } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Trash2, Truck, Route, X, RefreshCw, Clock, Search, Phone, Edit3, CheckCircle2, AlertCircle, Check, Leaf, Recycle, MapPin, Layers, Globe } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -154,6 +154,7 @@ export default function ScheduleRoute() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchingMap, setSearchingMap] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [sitioMapType, setSitioMapType] = useState('streets');
 
   const fetchAll = async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -963,8 +964,8 @@ export default function ScheduleRoute() {
 
       {/* ── Add Schedule Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-240 p-7 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col p-5 sm:p-7 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center">
@@ -1019,7 +1020,7 @@ export default function ScheduleRoute() {
               ))}
             </div>
 
-            <form onSubmit={handleAddSchedule} className="space-y-5">
+            <form onSubmit={handleAddSchedule} className="space-y-5 overflow-y-auto pr-1.5 flex-1 custom-green-scrollbar">
               {/* STEP 1: Area & Sitios */}
               {modalStep === 1 && (
                 <div className="space-y-5 animate-in fade-in duration-150">
@@ -1100,7 +1101,35 @@ export default function ScheduleRoute() {
 
                         {/* Live Route Preview Map */}
                         {selectedSitios.length > 0 && (
-                          <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
+                          <div className="w-full h-64 sm:h-72 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
+                            {/* Satellite / Default Layer Toggle */}
+                            <div className="absolute top-2.5 right-2.5 z-[1000] flex bg-white/95 backdrop-blur-md p-0.5 rounded-xl shadow-md border border-slate-200 text-xs font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => setSitioMapType('streets')}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                  sitioMapType === 'streets'
+                                    ? 'bg-emerald-600 text-white shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                }`}
+                              >
+                                <Layers className="w-3 h-3" />
+                                <span>Default</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSitioMapType('satellite')}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                  sitioMapType === 'satellite'
+                                    ? 'bg-emerald-600 text-white shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                }`}
+                              >
+                                <Globe className="w-3 h-3" />
+                                <span>Satellite</span>
+                              </button>
+                            </div>
+
                             <MapContainer
                               center={[
                                 sitioList.find(s => s.name === selectedSitios[0])?.lat || getBarangayCenter(selectedBarangay).lat,
@@ -1110,11 +1139,19 @@ export default function ScheduleRoute() {
                               style={{ height: '100%', width: '100%' }}
                               zoomControl={false}
                             >
-                              <TileLayer
-                                className="leaflet-tile-grayscale"
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                attribution='&copy; OpenStreetMap contributors'
-                              />
+                              {sitioMapType === 'satellite' ? (
+                                <TileLayer
+                                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                  attribution="&copy; Esri, Maxar, Earthstar Geographics"
+                                  maxZoom={19}
+                                />
+                              ) : (
+                                <TileLayer
+                                  className="leaflet-tile-grayscale"
+                                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  attribution='&copy; OpenStreetMap contributors'
+                                />
+                              )}
                               {selectedSitios.map((name, index) => {
                                 const s = sitioList.find(s => s.name === name);
                                 if (!s) return null;
@@ -1188,21 +1225,62 @@ export default function ScheduleRoute() {
                             </div>
                             {searchError && <p className="text-[10px] text-red-600 font-medium">{searchError}</p>}
 
-                            <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-1">
+                            <div className="w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-slate-200 shadow-md relative z-10 mt-1.5">
+                              {/* Satellite / Default Layer Toggle */}
+                              <div className="absolute top-3 right-3 z-[1000] flex bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-slate-200 text-xs font-semibold">
+                                <button
+                                  type="button"
+                                  onClick={() => setSitioMapType('streets')}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                    sitioMapType === 'streets'
+                                      ? 'bg-emerald-600 text-white shadow-sm'
+                                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <Layers className="w-3.5 h-3.5" />
+                                  <span>Default</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSitioMapType('satellite')}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                    sitioMapType === 'satellite'
+                                      ? 'bg-emerald-600 text-white shadow-sm'
+                                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <Globe className="w-3.5 h-3.5" />
+                                  <span>Satellite</span>
+                                </button>
+                              </div>
+
                               <MapContainer
                                 center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
                                 zoom={15}
                                 style={{ height: '100%', width: '100%' }}
                                 zoomControl={false}
                               >
-                                <TileLayer
-                                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                  attribution='&copy; OpenStreetMap contributors'
-                                />
+                                {sitioMapType === 'satellite' ? (
+                                  <TileLayer
+                                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                    attribution="&copy; Esri, Maxar, Earthstar Geographics"
+                                    maxZoom={19}
+                                  />
+                                ) : (
+                                  <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution='&copy; OpenStreetMap contributors'
+                                  />
+                                )}
                                 <CircleMarker
                                   center={[newSitioLat || 10.3157, newSitioLng || 123.8854]}
-                                  pathOptions={{ color: '#10B981', fillColor: '#10B981', fillOpacity: 0.9 }}
-                                  radius={8}
+                                  pathOptions={{
+                                    color: '#FFFFFF',
+                                    weight: 2.5,
+                                    fillColor: '#10B981',
+                                    fillOpacity: 1
+                                  }}
+                                  radius={9}
                                 />
                                 <MapClickHandler onClick={(e) => {
                                   setNewSitioLat(Number(e.latlng.lat).toFixed(6));

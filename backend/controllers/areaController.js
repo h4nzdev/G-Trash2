@@ -295,7 +295,8 @@ exports.updateZoneStatus = async (req, res, next) => {
 // GET /api/sensor-zones
 exports.getSensorZones = async (req, res, next) => {
   try {
-    const zones = await GarbageArea.find({ sensorId: { $ne: null } }).sort({ createdAt: -1 }).lean();
+    const brgyFilter = barangayFilter(req.official || req);
+    const zones = await GarbageArea.find({ sensorId: { $ne: null }, ...brgyFilter }).sort({ createdAt: -1 }).lean();
     if (zones.length > 0) {
       const sensorIds = zones.map((z) => z.sensorId);
       const latestReadings = await SensorReading.aggregate([

@@ -1466,6 +1466,11 @@ export default function HeatmapAnalytics() {
 
     // When IoT sensor updates a garbage area, update the heatmap in real-time
     socket.on("garbage-area:updated", (updatedArea) => {
+      // Only accept updates for sensors that belong to this official's barangay
+      const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
+      if (isScoped && updatedArea.barangay && updatedArea.barangay.toLowerCase().trim() !== official.barangay.toLowerCase().trim()) {
+        return; // Skip cross-barangay updates
+      }
       setZones((prev) => {
         const exists = prev.find((z) => z._id === updatedArea._id);
         if (exists)
@@ -2244,7 +2249,7 @@ export default function HeatmapAnalytics() {
 
           {/* Visible interactive markers and popups for the IoT sensors */}
           {zones
-            .filter((z) => z.sensorId)
+            .filter((z) => z.sensorId && z.lat != null && z.lng != null && !isNaN(z.lat) && !isNaN(z.lng))
             .map((zone) => {
               const rawVal = zone.rawValue || 0;
               // Synchronize marker color directly with the heatmap air quality intensity
@@ -2493,9 +2498,9 @@ export default function HeatmapAnalytics() {
             <div className="p-6">
               <form onSubmit={handleRegisterSensor} className="space-y-4">
                 <p className="text-xs text-slate-500 font-medium leading-relaxed bg-blue-50 p-3 rounded-xl border border-blue-100">
-                  Enter the sensor ID exactly as sent by the ESP32 hardware,
-                  then pick its physical location on the map. The heatmap circle
-                  will auto-update based on real-time gas readings.
+                  Click "Generate ID" to create a unique sensor ID, then program
+                  it into your ESP32 hardware. Pick the sensor's physical location
+                  on the map. The heatmap will auto-update based on real-time gas readings.
                 </p>
 
                 {sensorMsg && (
@@ -2516,18 +2521,27 @@ export default function HeatmapAnalytics() {
                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                       Sensor ID *
                     </label>
-                    <input
-                      required
-                      placeholder="e.g. IR-SENSOR-001"
-                      value={sensorForm.sensorId}
-                      onChange={(e) =>
-                        setSensorForm((f) => ({
-                          ...f,
-                          sensorId: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-3 text-sm font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white shadow-sm"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        required
+                        readOnly
+                        placeholder="Click Generate to create ID"
+                        value={sensorForm.sensorId}
+                        className="flex-1 px-4 py-3 text-sm font-mono font-bold border border-slate-200 rounded-xl bg-slate-50 text-slate-700 shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                          let id = 'GTR-';
+                          for (let i = 0; i < 7; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
+                          setSensorForm((f) => ({ ...f, sensorId: id }));
+                        }}
+                        className="px-4 py-3 text-xs font-bold bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors whitespace-nowrap shadow-sm"
+                      >
+                        Generate ID
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">

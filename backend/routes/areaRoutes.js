@@ -20,7 +20,7 @@ router.get("/zones/:zoneId", areaController.getZoneById);
 router.get("/zones", areaController.getZones);
 
 // Sensor Zones
-router.get("/sensor-zones", areaController.getSensorZones);
+router.get("/sensor-zones", optionalAuth, areaController.getSensorZones);
 router.post("/sensor-zones", optionalAuth, areaController.registerSensorZone);
 
 // Barangay Boundaries
