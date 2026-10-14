@@ -20,6 +20,7 @@ const communityRoutes = require("./communityRoutes");
 router.use("/auth", authRoutes);
 router.use("/residents", authRoutes);
 router.use("/officials", officialRoutes);
+router.use("/", officialRoutes);
 
 // 2. Schedules, Collections, Pickups, Bins
 router.use("/schedules", scheduleRoutes);

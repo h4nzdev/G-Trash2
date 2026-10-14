@@ -26,7 +26,7 @@ export default function OfficialDetail() {
       setLoading(true);
       try {
         // 1. Fetch Official details
-        const offRes = await axios.get(`${API}/api/admin/officials`);
+        const offRes = await axios.get(`${API}/api/officials`);
         const targetOff = offRes.data.find(o => o._id === id);
         
         if (!targetOff) {

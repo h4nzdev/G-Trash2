@@ -16,6 +16,7 @@ router.post("/admin/officials", authMiddleware, officialController.createOfficia
 router.put("/admin/officials/:id", authMiddleware, officialController.updateOfficial);
 router.delete("/admin/officials/:id", authMiddleware, officialController.deleteOfficial);
 router.patch("/admin/officials/:id/role", authMiddleware, officialController.updateRole);
+router.patch("/admin/officials/:id/status", authMiddleware, officialController.updateStatus);
 
 // Direct CRUD routes
 router.get("/", authMiddleware, officialController.getOfficials);
@@ -23,5 +24,6 @@ router.post("/", authMiddleware, officialController.createOfficial);
 router.put("/:id", authMiddleware, officialController.updateOfficial);
 router.delete("/:id", authMiddleware, officialController.deleteOfficial);
 router.patch("/:id/role", authMiddleware, officialController.updateRole);
+router.patch("/:id/status", authMiddleware, officialController.updateStatus);
 
 module.exports = router;

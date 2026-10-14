@@ -10,6 +10,23 @@ import {
 } from 'lucide-react';
 import API from '../../config';
 
+const CEBU_BARANGAYS = [
+  "Adlaon","Agsungot","Apas","Babag","Bacayan","Banilad","Basak Pardo",
+  "Basak San Nicolas","Binaliw","Bonbon","Budla-an","Buhisan","Bulacao",
+  "Buot-Taup","Busay","Calamba","Cambinocot","Capitol Site","Carreta",
+  "Cogon Pardo","Cogon Ramos","Day-as","Duljo Fatima","Ermita",
+  "Guadalupe","Guba","Hippodromo","Inayawan","IT Park","Kalubihan",
+  "Kalunasan","Kamagayan","Kamputhaw","Kasambagan","Kinasang-an",
+  "Labangon","Lahug","Lorega San Miguel","Lusaran","Luz","Mabini",
+  "Mabolo","Malubog","Mambaling","Pahina Central","Pahina San Nicolas",
+  "Pardo","Pari-an","Paril","Pasil","Pit-os","Poblacion Pardo",
+  "Pulangbato","Pung-ol Sibugay","Punta Princesa","Quiot","Sambag I",
+  "Sambag II","San Antonio","San Jose","San Nicolas Proper","San Roque",
+  "Santa Cruz","Sapangdaku","Sawang Calero","Sinsin","Sirao",
+  "Suba","Sudlon I","Sudlon II","T. Padilla","Tabunan","Tagbao",
+  "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong","Zapatera",
+];
+
 export default function Officials() {
   const navigate = useNavigate();
   const [officials, setOfficials] = useState([]);
@@ -30,7 +47,7 @@ export default function Officials() {
   const fetchOfficials = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/api/admin/officials`);
+      const { data } = await axios.get(`${API}/api/officials`);
       setOfficials(data);
     } catch (err) {
       console.error('Failed to fetch officials:', err);
@@ -47,7 +64,7 @@ export default function Officials() {
   const handleStatusToggle = async (id, currentStatus) => {
     const newStatus = currentStatus === 'active' ? 'revoked' : 'active';
     try {
-      await axios.patch(`${API}/api/admin/officials/${id}/status`, { status: newStatus });
+      await axios.patch(`${API}/api/officials/${id}/status`, { status: newStatus });
       setToast({ msg: `Access ${newStatus === 'active' ? 'restored' : 'revoked'} successfully`, type: 'success' });
       fetchOfficials();
     } catch (err) {
@@ -61,7 +78,7 @@ export default function Officials() {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this official? This action cannot be undone.')) return;
     try {
-      await axios.delete(`${API}/api/admin/officials/${id}`);
+      await axios.delete(`${API}/api/officials/${id}`);
       setToast({ msg: 'Official deleted successfully', type: 'success' });
       fetchOfficials();
     } catch (err) {
@@ -95,11 +112,11 @@ export default function Officials() {
     setSubmitting(true);
     try {
       if (isEditing) {
-        await axios.put(`${API}/api/admin/officials/${selectedId}`, formData);
+        await axios.put(`${API}/api/officials/${selectedId}`, formData);
         setToast({ msg: 'Official updated successfully!', type: 'success' });
         fetchOfficials();
       } else {
-        await axios.post(`${API}/api/admin/officials`, formData);
+        await axios.post(`${API}/api/officials`, formData);
         setToast({ msg: 'Official created successfully!', type: 'success' });
         fetchOfficials();
       }
@@ -279,11 +296,11 @@ export default function Officials() {
                     onChange={e => setFormData({...formData, barangay: e.target.value})}
                     className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
                   >
-                    <option>Lahug</option>
-                    <option>Apas</option>
-                    <option>Guadalupe</option>
-                    <option>Mabolo</option>
-                    <option>Talamban</option>
+                    {CEBU_BARANGAYS.map((brgy) => (
+                      <option key={brgy} value={brgy}>
+                        {brgy}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
