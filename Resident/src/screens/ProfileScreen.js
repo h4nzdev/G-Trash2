@@ -57,24 +57,90 @@ export default function ProfileScreen({ navigation }) {
   });
 
   const CEBU_BARANGAYS = [
-    "Adlaon","Agsungot","Apas","Babag","Bacayan","Banilad","Basak Pardo",
-    "Basak San Nicolas","Binaliw","Bonbon","Budla-an","Buhisan","Bulacao",
-    "Buot-Taup","Busay","Calamba","Cambinocot","Capitol Site","Carreta",
-    "Cogon Pardo","Cogon Ramos","Day-as","Duljo Fatima","Ermita",
-    "Guadalupe","Guba","Hippodromo","Inayawan","IT Park","Kalubihan",
-    "Kalunasan","Kamagayan","Kamputhaw","Kasambagan","Kinasang-an",
-    "Labangon","Lahug","Lorega San Miguel","Lusaran","Luz","Mabini",
-    "Mabolo","Malubog","Mambaling","Pahina Central","Pahina San Nicolas",
-    "Pardo","Pari-an","Paril","Pasil","Pit-os","Poblacion Pardo",
-    "Pulangbato","Pung-ol Sibugay","Punta Princesa","Quiot","Sambag I",
-    "Sambag II","San Antonio","San Jose","San Nicolas Proper","San Roque",
-    "Santa Cruz","Sapangdaku","Sawang Calero","Sinsin","Sirao",
-    "Suba","Sudlon I","Sudlon II","T. Padilla","Tabunan","Tagbao",
-    "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong","Zapatera",
+    "Adlaon",
+    "Agsungot",
+    "Apas",
+    "Babag",
+    "Bacayan",
+    "Banilad",
+    "Basak Pardo",
+    "Basak San Nicolas",
+    "Binaliw",
+    "Bonbon",
+    "Budla-an",
+    "Buhisan",
+    "Bulacao",
+    "Buot-Taup",
+    "Busay",
+    "Calamba",
+    "Cambinocot",
+    "Capitol Site",
+    "Carreta",
+    "Cogon Pardo",
+    "Cogon Ramos",
+    "Day-as",
+    "Duljo Fatima",
+    "Ermita",
+    "Guadalupe",
+    "Guba",
+    "Hippodromo",
+    "Inayawan",
+    "IT Park",
+    "Kalubihan",
+    "Kalunasan",
+    "Kamagayan",
+    "Kamputhaw",
+    "Kasambagan",
+    "Kinasang-an",
+    "Labangon",
+    "Lahug",
+    "Lorega San Miguel",
+    "Lusaran",
+    "Luz",
+    "Mabini",
+    "Mabolo",
+    "Malubog",
+    "Mambaling",
+    "Pahina Central",
+    "Pahina San Nicolas",
+    "Pardo",
+    "Pari-an",
+    "Paril",
+    "Pasil",
+    "Pit-os",
+    "Poblacion Pardo",
+    "Pulangbato",
+    "Pung-ol Sibugay",
+    "Punta Princesa",
+    "Quiot",
+    "Sambag I",
+    "Sambag II",
+    "San Antonio",
+    "San Jose",
+    "San Nicolas Proper",
+    "San Roque",
+    "Santa Cruz",
+    "Sapangdaku",
+    "Sawang Calero",
+    "Sinsin",
+    "Sirao",
+    "Suba",
+    "Sudlon I",
+    "Sudlon II",
+    "T. Padilla",
+    "Tabunan",
+    "Tagbao",
+    "Talamban",
+    "Taptap",
+    "Tejero",
+    "Tinago",
+    "Tisa",
+    "To-ong",
+    "Zapatera",
   ];
 
   const filteredBarangays = CEBU_BARANGAYS.filter((b) =>
-    b.toLowerCase().includes(barangaySearch.toLowerCase())
+    b.toLowerCase().includes(barangaySearch.toLowerCase()),
   );
 
   useEffect(() => {
@@ -110,11 +176,11 @@ export default function ProfileScreen({ navigation }) {
 
   const uploadToCloudinary = async (base64Data) => {
     const res = await fetch(`${API_URL}/api/upload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: base64Data }),
     });
-    if (!res.ok) throw new Error('Image upload failed');
+    if (!res.ok) throw new Error("Image upload failed");
     const json = await res.json();
     return json.url;
   };
@@ -122,8 +188,10 @@ export default function ProfileScreen({ navigation }) {
   const handleSaveProfile = async () => {
     try {
       let profileData = { ...editForm };
-      if (profileData.profilePicture?.startsWith('data:')) {
-        profileData.profilePicture = await uploadToCloudinary(profileData.profilePicture);
+      if (profileData.profilePicture?.startsWith("data:")) {
+        profileData.profilePicture = await uploadToCloudinary(
+          profileData.profilePicture,
+        );
       }
       await updateProfile(profileData);
       setIsEditModalVisible(false);
@@ -139,8 +207,10 @@ export default function ProfileScreen({ navigation }) {
     try {
       const res = await fetch(`${API_URL}/api/reports?userId=${user.id}`);
       if (res.ok) setMyReports(await res.json());
-    } catch (_) {}
-    finally { setReportsLoading(false); }
+    } catch (_) {
+    } finally {
+      setReportsLoading(false);
+    }
   }, [user?.id]);
 
   const fetchPoints = useCallback(async () => {
@@ -156,7 +226,10 @@ export default function ProfileScreen({ navigation }) {
     } catch (_) {}
   }, [user?.id, user?._id]);
 
-  useEffect(() => { fetchReports(); fetchPoints(); }, [fetchReports, fetchPoints]);
+  useEffect(() => {
+    fetchReports();
+    fetchPoints();
+  }, [fetchReports, fetchPoints]);
 
   const handleDeleteReport = async (reportId) => {
     Alert.alert("Delete Report", "Are you sure? This cannot be undone.", [
@@ -170,7 +243,9 @@ export default function ProfileScreen({ navigation }) {
               method: "DELETE",
               headers: {
                 "Content-Type": "application/json",
-                ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
+                ...(user?.token
+                  ? { Authorization: `Bearer ${user.token}` }
+                  : {}),
               },
               body: JSON.stringify({ userId: user?.id || user?._id }),
             });
@@ -178,7 +253,9 @@ export default function ProfileScreen({ navigation }) {
               setMyReports((prev) => prev.filter((r) => r._id !== reportId));
               Alert.alert("Deleted", "Report removed successfully.");
             } else throw new Error();
-          } catch { Alert.alert("Error", "Failed to delete report."); }
+          } catch {
+            Alert.alert("Error", "Failed to delete report.");
+          }
         },
       },
     ]);
@@ -198,20 +275,27 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const resolvedCount = myReports.filter((r) => r.status === "resolved").length;
-  const pendingCount  = myReports.filter((r) => r.status === "pending").length;
+  const pendingCount = myReports.filter((r) => r.status === "pending").length;
   const recentReports = myReports.slice(0, 5);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <StatusBar style="light" backgroundColor="#006A3B" />
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-
         {/* ── Green cover ── */}
         <View style={styles.coverHeader}>
           <View style={styles.coverTopRow}>
             <Text style={styles.screenLabel}>{t("profile")}</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Notifications")} style={styles.headerIconBtn} activeOpacity={0.8}>
-              <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Notifications")}
+              style={styles.headerIconBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={18}
+                color="#FFFFFF"
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -219,449 +303,765 @@ export default function ProfileScreen({ navigation }) {
         {/* ── White sheet (covers everything below cover) ── */}
         <View style={styles.whiteSheet}>
           {!user ? (
-            <View style={{ paddingHorizontal: 24, paddingVertical: 32, alignItems: 'center' }}>
-              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
-                <Ionicons name="person-circle-outline" size={56} color="#006A3B" />
+            <View
+              style={{
+                paddingHorizontal: 24,
+                paddingVertical: 32,
+                alignItems: "center",
+              }}
+            >
+              <View
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 40,
+                  backgroundColor: "#ECFDF5",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginBottom: 16,
+                }}
+              >
+                <Ionicons
+                  name="person-circle-outline"
+                  size={56}
+                  color="#006A3B"
+                />
               </View>
 
-              <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center' }}>
+              <Text
+                style={{
+                  fontSize: 22,
+                  fontWeight: "800",
+                  color: "#111827",
+                  textAlign: "center",
+                }}
+              >
                 Guest Mode Active
               </Text>
-              <Text style={{ fontSize: 13, color: '#6B7280', textAlign: 'center', marginTop: 8, lineHeight: 19, marginBottom: 24 }}>
-                You are currently exploring G-Trash as a guest. You can track garbage trucks, view barangay schedules, and check air quality maps freely!
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: "#6B7280",
+                  textAlign: "center",
+                  marginTop: 8,
+                  lineHeight: 19,
+                  marginBottom: 24,
+                }}
+              >
+                You are currently exploring G-Trash as a guest. You can track
+                garbage trucks, view barangay schedules, and check air quality
+                maps freely!
               </Text>
 
-              <View style={{ width: '100%', backgroundColor: '#F9FAFB', borderRadius: 20, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#F3F4F6', gap: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View
+                style={{
+                  width: "100%",
+                  backgroundColor: "#F9FAFB",
+                  borderRadius: 20,
+                  padding: 16,
+                  marginBottom: 24,
+                  borderWidth: 1,
+                  borderColor: "#F3F4F6",
+                  gap: 12,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Live GPS Garbage Truck Tracking</Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: "#374151",
+                    }}
+                  >
+                    Live GPS Garbage Truck Tracking
+                  </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Barangay Route Schedules</Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: "#374151",
+                    }}
+                  >
+                    Barangay Route Schedules
+                  </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#374151' }}>Air Quality & Hazard Sensor Maps</Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: "#374151",
+                    }}
+                  >
+                    Air Quality & Hazard Sensor Maps
+                  </Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                style={{ width: '100%', backgroundColor: '#006A3B', paddingVertical: 16, borderRadius: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 }}
+                style={{
+                  width: "100%",
+                  backgroundColor: "#006A3B",
+                  paddingVertical: 16,
+                  borderRadius: 18,
+                  alignItems: "center",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: 8,
+                  marginBottom: 12,
+                }}
                 onPress={() => navigation.navigate("Login")}
                 activeOpacity={0.85}
               >
                 <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Sign In / Register Account</Text>
+                <Text
+                  style={{ fontSize: 15, fontWeight: "700", color: "#FFFFFF" }}
+                >
+                  Sign In / Register Account
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
             <>
-          {/* Avatar section */}
-          <View style={styles.avatarSection}>
-            <View style={styles.avatarRing}>
-              <View style={styles.avatar}>
-                {user?.profilePicture ? (
-                  <Image source={{ uri: user.profilePicture }} style={styles.avatarImage} />
-                ) : (
-                  <Ionicons name="person" size={52} color="#A8C4B4" />
+              {/* Avatar section */}
+              <View style={styles.avatarSection}>
+                <View style={styles.avatarRing}>
+                  <View style={styles.avatar}>
+                    {user?.profilePicture ? (
+                      <Image
+                        source={{ uri: user.profilePicture }}
+                        style={styles.avatarImage}
+                      />
+                    ) : (
+                      <Ionicons name="person" size={52} color="#A8C4B4" />
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.editBadge}
+                    onPress={() => setIsEditModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="pencil" size={12} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.userName}>{user?.name || "User"}</Text>
+
+                {user?.barangay && (
+                  <View style={styles.barangayBadge}>
+                    <Ionicons name="location-sharp" size={13} color="#006A3B" />
+                    <Text style={styles.barangayBadgeText}>
+                      {t("barangay")} {user.barangay}
+                    </Text>
+                  </View>
+                )}
+
+                {user?.email && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="mail-outline" size={13} color="#7A8C7F" />
+                    <Text style={styles.metaText}>{user.email}</Text>
+                  </View>
                 )}
               </View>
+
+              {/* ── Stats row ── */}
+              <View style={styles.statsRow}>
+                <View style={styles.statCell}>
+                  {reportsLoading ? (
+                    <Skeleton
+                      width={24}
+                      height={18}
+                      style={{ marginBottom: 4 }}
+                    />
+                  ) : (
+                    <Text style={styles.statValue}>{myReports.length}</Text>
+                  )}
+                  <Text style={styles.statLabel}>{t("total_reports")}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  {reportsLoading ? (
+                    <Skeleton
+                      width={24}
+                      height={18}
+                      style={{ marginBottom: 4 }}
+                    />
+                  ) : (
+                    <Text style={[styles.statValue, { color: "#006A3B" }]}>
+                      {resolvedCount}
+                    </Text>
+                  )}
+                  <Text style={styles.statLabel}>Resolved</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  {reportsLoading ? (
+                    <Skeleton
+                      width={24}
+                      height={18}
+                      style={{ marginBottom: 4 }}
+                    />
+                  ) : (
+                    <Text style={styles.statValue}>{pendingCount}</Text>
+                  )}
+                  <Text style={styles.statLabel}>{t("pending")}</Text>
+                </View>
+              </View>
+
+              {/* ── Points card ── */}
               <TouchableOpacity
-                style={styles.editBadge}
-                onPress={() => setIsEditModalVisible(true)}
-                activeOpacity={0.8}
+                style={styles.pointsCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate("PointsHistory")}
               >
-                <Ionicons name="pencil" size={12} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.userName}>{user?.name || "User"}</Text>
-
-            {user?.barangay && (
-              <View style={styles.barangayBadge}>
-                <Ionicons name="location-sharp" size={13} color="#006A3B" />
-                <Text style={styles.barangayBadgeText}>{t("barangay")} {user.barangay}</Text>
-              </View>
-            )}
-
-            {user?.email && (
-              <View style={styles.metaRow}>
-                <Ionicons name="mail-outline" size={13} color="#7A8C7F" />
-                <Text style={styles.metaText}>{user.email}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* ── Stats row ── */}
-          <View style={styles.statsRow}>
-            <View style={styles.statCell}>
-              {reportsLoading
-                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
-                : <Text style={styles.statValue}>{myReports.length}</Text>}
-              <Text style={styles.statLabel}>{t("total_reports")}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCell}>
-              {reportsLoading
-                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
-                : <Text style={[styles.statValue, { color: "#006A3B" }]}>{resolvedCount}</Text>}
-              <Text style={styles.statLabel}>Resolved</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCell}>
-              {reportsLoading
-                ? <Skeleton width={24} height={18} style={{ marginBottom: 4 }} />
-                : <Text style={styles.statValue}>{pendingCount}</Text>}
-              <Text style={styles.statLabel}>{t("pending")}</Text>
-            </View>
-          </View>
-
-          {/* ── Points card ── */}
-          <TouchableOpacity
-            style={styles.pointsCard}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('PointsHistory')}
-          >
-            <View style={styles.pointsLeft}>
-              <Ionicons name="star" size={28} color="#F59E0B" />
-              <View>
-                <Text style={styles.pointsTotal}>{points?.totalPoints ?? '—'}</Text>
-                <Text style={styles.pointsLabel}>Total Points</Text>
-              </View>
-            </View>
-            <View style={styles.pointsMid}>
-              <Text style={styles.pointsMonthly}>{points?.monthlyPoints ?? 0}</Text>
-              <Text style={styles.pointsMonthLabel}>This month</Text>
-            </View>
-            <View style={styles.pointsRight}>
-              {rank ? (
-                <>
-                  <Text style={styles.rankNum}>#{rank.monthlyRank}</Text>
-                  <Text style={styles.rankLabel}>of {rank.total} in Brgy.</Text>
-                </>
-              ) : null}
-              <Ionicons name="chevron-forward" size={16} color="#C4CEC7" style={{ marginTop: 4 }} />
-            </View>
-          </TouchableOpacity>
-
-          {/* ── Activity mini-stats ── */}
-          {points?.stats && (
-            <View style={styles.activityRow}>
-              {[
-                { icon: 'scan-outline', label: 'Scans', val: points.stats.correctScans ?? 0 },
-                { icon: 'document-text-outline', label: 'Reports', val: points.stats.reportsSubmitted ?? 0 },
-                { icon: 'checkmark-circle-outline', label: 'Verified', val: points.stats.resolutionsVerified ?? 0 },
-              ].map(({ icon, label, val }) => (
-                <View key={label} style={styles.activityCell}>
-                  <Ionicons name={icon} size={20} color="#006A3B" />
-                  <Text style={styles.activityVal}>{val}</Text>
-                  <Text style={styles.activityLabel}>{label}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* ── Body content ── */}
-          <View style={styles.body}>
-
-            {/* Impact banner */}
-            <View style={styles.impactCard}>
-              <View style={styles.impactLeft}>
-                <Text style={styles.impactTitle}>{t("community_impact")}</Text>
-                <Text style={styles.impactSub}>
-                  {resolvedCount > 0
-                    ? t("impact_message_active", { count: resolvedCount })
-                    : t("impact_message_empty")}
-                </Text>
-              </View>
-              <MaterialIcons name="forest" size={64} color="#fff" style={{ opacity: 0.2 }} />
-            </View>
-
-            {/* Preferences */}
-            <Text style={styles.sectionLabel}>{t("preferences")}</Text>
-            <View style={styles.card}>
-              <View style={styles.menuRow}>
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
-                    <Ionicons name="notifications" size={18} color="#006A3B" />
+                <View style={styles.pointsLeft}>
+                  <Ionicons name="star" size={28} color="#F59E0B" />
+                  <View>
+                    <Text style={styles.pointsTotal}>
+                      {points?.totalPoints ?? "—"}
+                    </Text>
+                    <Text style={styles.pointsLabel}>Total Points</Text>
                   </View>
-                  <Text style={styles.menuText}>{t("notifications")}</Text>
                 </View>
-                <Switch
-                  value={notifEnabled}
-                  onValueChange={setNotifEnabled}
-                  trackColor={{ false: "#DCD9D9", true: "#006A3B" }}
-                  thumbColor="#fff"
-                  ios_backgroundColor="#DCD9D9"
-                />
-              </View>
-
-
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
-                    <Ionicons name="leaf" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>{t("segregation_guide")}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity 
-                style={styles.menuRow} 
-                activeOpacity={0.5}
-                onPress={() => setShowLanguageModal(true)}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
-                    <Ionicons name="language" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>{t("language")}</Text>
-                </View>
-                <View style={styles.menuRight}>
-                  <Text style={styles.menuValue}>
-                    {i18n.language === "en" ? "English" : "Cebuano"}
+                <View style={styles.pointsMid}>
+                  <Text style={styles.pointsMonthly}>
+                    {points?.monthlyPoints ?? 0}
                   </Text>
-                  <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
+                  <Text style={styles.pointsMonthLabel}>This month</Text>
+                </View>
+                <View style={styles.pointsRight}>
+                  {rank ? (
+                    <>
+                      <Text style={styles.rankNum}>#{rank.monthlyRank}</Text>
+                      <Text style={styles.rankLabel}>
+                        of {rank.total} in Brgy.
+                      </Text>
+                    </>
+                  ) : null}
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color="#C4CEC7"
+                    style={{ marginTop: 4 }}
+                  />
                 </View>
               </TouchableOpacity>
-            </View>
 
-            {/* Account */}
-            <Text style={styles.sectionLabel}>{t("account")}</Text>
-            <View style={styles.card}>
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => setIsEditModalVisible(true)}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}>
-                    <Ionicons name="person" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>{t("edit_profile")}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => navigation.navigate('PointsHistory')}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#FFFBEB" }]}>
-                    <Ionicons name="star-outline" size={18} color="#F59E0B" />
-                  </View>
-                  <Text style={styles.menuText}>Points History</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => navigation.navigate('MyRewards')}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#FFF7ED" }]}>
-                    <Ionicons name="gift-outline" size={18} color="#F59E0B" />
-                  </View>
-                  <Text style={styles.menuText}>My Rewards</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => navigation.navigate('BugReport')}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#FEF3C7" }]}>
-                    <Ionicons name="bug-outline" size={18} color="#D97706" />
-                  </View>
-                  <Text style={styles.menuText}>Report a Bug</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => navigation.navigate('Onboarding')}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#DCFCE7" }]}>
-                    <Ionicons name="sparkles-outline" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>Welcome Guide & Terms</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity
-                style={styles.menuRow}
-                activeOpacity={0.5}
-                onPress={() => setShowPrivacyModal(true)}
-              >
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#ECFDF5" }]}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color="#006A3B" />
-                  </View>
-                  <Text style={styles.menuText}>Privacy Policy</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4CEC7" />
-              </TouchableOpacity>
-
-              <View style={styles.separator} />
-
-              <TouchableOpacity style={styles.menuRow} activeOpacity={0.5} onPress={handleLogout}>
-                <View style={styles.menuLeft}>
-                  <View style={[styles.iconBox, { backgroundColor: "#FEE2E2" }]}>
-                    <Ionicons name="log-out-outline" size={18} color="#DC2626" />
-                  </View>
-                  <Text style={[styles.menuText, { color: "#DC2626" }]}>Logout</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            {/* My Reports */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>My Reports</Text>
-              {myReports.length > 0 && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{myReports.length}</Text>
+              {/* ── Activity mini-stats ── */}
+              {points?.stats && (
+                <View style={styles.activityRow}>
+                  {[
+                    {
+                      icon: "scan-outline",
+                      label: "Scans",
+                      val: points.stats.correctScans ?? 0,
+                    },
+                    {
+                      icon: "document-text-outline",
+                      label: "Reports",
+                      val: points.stats.reportsSubmitted ?? 0,
+                    },
+                    {
+                      icon: "checkmark-circle-outline",
+                      label: "Verified",
+                      val: points.stats.resolutionsVerified ?? 0,
+                    },
+                  ].map(({ icon, label, val }) => (
+                    <View key={label} style={styles.activityCell}>
+                      <Ionicons name={icon} size={20} color="#006A3B" />
+                      <Text style={styles.activityVal}>{val}</Text>
+                      <Text style={styles.activityLabel}>{label}</Text>
+                    </View>
+                  ))}
                 </View>
               )}
-            </View>
 
-            {reportsLoading ? (
-              <ProfileReportsSkeleton />
-            ) : recentReports.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons name="document-text-outline" size={36} color="#C4CEC7" />
-                <Text style={styles.emptyText}>No reports submitted yet</Text>
-                <Text style={styles.emptySubText}>Your reports will appear here</Text>
-              </View>
-            ) : (
-              <View style={styles.card}>
-                {recentReports.map((report, idx) => {
-                  const isResolved = report.status === "resolved";
-                  const isProgress = report.status === "in-progress";
-                  return (
-                    <React.Fragment key={report._id || idx}>
-                      {idx > 0 && <View style={styles.separator} />}
-                      <View style={styles.reportRow}>
-                        <View style={[
-                          styles.reportIcon,
-                          isResolved && { backgroundColor: "#DCFCE7" },
-                          isProgress && { backgroundColor: "#ECFDF5" },
-                          !isResolved && !isProgress && { backgroundColor: "#EFF3F0" },
-                        ]}>
-                          <Ionicons
-                            name={isResolved ? "checkmark-circle" : isProgress ? "time" : "alert-circle"}
-                            size={22}
-                            color={isResolved ? "#006A3B" : isProgress ? "#338862" : "#A8C4B4"}
-                          />
-                        </View>
-                        <View style={styles.reportInfo}>
-                          <View style={styles.reportTopRow}>
-                            <Text style={styles.reportCategory} numberOfLines={1}>
-                              {report.category || "Report"}
-                            </Text>
-                            <Text style={styles.reportDate}>{formatDate(report.createdAt)}</Text>
-                          </View>
-                          <Text style={styles.reportDesc} numberOfLines={1}>
-                            {report.description}
-                          </Text>
-                          <View style={[
-                            styles.statusPill,
-                            isResolved && { backgroundColor: "#DCFCE7" },
-                            isProgress && { backgroundColor: "#ECFDF5" },
-                          ]}>
-                            <Text style={[
-                              styles.statusPillText,
-                              isResolved && { color: "#006A3B" },
-                              isProgress && { color: "#338862" },
-                            ]}>
-                              {isResolved ? "Resolved" : isProgress ? "In Progress" : "Under Review"}
-                            </Text>
-                          </View>
-                        </View>
-                        {!isResolved && (
-                          <TouchableOpacity
-                            onPress={() => handleDeleteReport(report._id)}
-                            style={styles.deleteBtn}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Ionicons name="trash-outline" size={18} color="#A8C4B4" />
-                          </TouchableOpacity>
-                        )}
+              {/* ── Body content ── */}
+              <View style={styles.body}>
+                {/* Impact banner */}
+                <View style={styles.impactCard}>
+                  <View style={styles.impactLeft}>
+                    <Text style={styles.impactTitle}>
+                      {t("community_impact")}
+                    </Text>
+                    <Text style={styles.impactSub}>
+                      {resolvedCount > 0
+                        ? t("impact_message_active", { count: resolvedCount })
+                        : t("impact_message_empty")}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name="forest"
+                    size={64}
+                    color="#fff"
+                    style={{ opacity: 0.2 }}
+                  />
+                </View>
+
+                {/* Preferences */}
+                <Text style={styles.sectionLabel}>{t("preferences")}</Text>
+                <View style={styles.card}>
+                  <View style={styles.menuRow}>
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}
+                      >
+                        <Ionicons
+                          name="notifications"
+                          size={18}
+                          color="#006A3B"
+                        />
                       </View>
-                    </React.Fragment>
-                  );
-                })}
+                      <Text style={styles.menuText}>{t("notifications")}</Text>
+                    </View>
+                    <Switch
+                      value={notifEnabled}
+                      onValueChange={setNotifEnabled}
+                      trackColor={{ false: "#DCD9D9", true: "#006A3B" }}
+                      thumbColor="#fff"
+                      ios_backgroundColor="#DCD9D9"
+                    />
+                  </View>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity style={styles.menuRow} activeOpacity={0.5}>
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}
+                      >
+                        <Ionicons name="leaf" size={18} color="#006A3B" />
+                      </View>
+                      <Text style={styles.menuText}>
+                        {t("segregation_guide")}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => setShowLanguageModal(true)}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}
+                      >
+                        <Ionicons name="language" size={18} color="#006A3B" />
+                      </View>
+                      <Text style={styles.menuText}>{t("language")}</Text>
+                    </View>
+                    <View style={styles.menuRight}>
+                      <Text style={styles.menuValue}>
+                        {i18n.language === "en" ? "English" : "Cebuano"}
+                      </Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#C4CEC7"
+                      />
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Account */}
+                <Text style={styles.sectionLabel}>{t("account")}</Text>
+                <View style={styles.card}>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => setIsEditModalVisible(true)}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#E4EEE9" }]}
+                      >
+                        <Ionicons name="person" size={18} color="#006A3B" />
+                      </View>
+                      <Text style={styles.menuText}>{t("edit_profile")}</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => navigation.navigate("PointsHistory")}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#FFFBEB" }]}
+                      >
+                        <Ionicons
+                          name="star-outline"
+                          size={18}
+                          color="#F59E0B"
+                        />
+                      </View>
+                      <Text style={styles.menuText}>Points History</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => navigation.navigate("MyRewards")}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#FFF7ED" }]}
+                      >
+                        <Ionicons
+                          name="gift-outline"
+                          size={18}
+                          color="#F59E0B"
+                        />
+                      </View>
+                      <Text style={styles.menuText}>My Rewards</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => navigation.navigate("BugReport")}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#FEF3C7" }]}
+                      >
+                        <Ionicons
+                          name="bug-outline"
+                          size={18}
+                          color="#D97706"
+                        />
+                      </View>
+                      <Text style={styles.menuText}>Report a Bug</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => navigation.navigate("Onboarding")}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#DCFCE7" }]}
+                      >
+                        <Ionicons
+                          name="sparkles-outline"
+                          size={18}
+                          color="#006A3B"
+                        />
+                      </View>
+                      <Text style={styles.menuText}>Welcome Guide & Terms</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={() => setShowPrivacyModal(true)}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#ECFDF5" }]}
+                      >
+                        <Ionicons
+                          name="shield-checkmark-outline"
+                          size={18}
+                          color="#006A3B"
+                        />
+                      </View>
+                      <Text style={styles.menuText}>Privacy Policy</Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#C4CEC7"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.separator} />
+
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    activeOpacity={0.5}
+                    onPress={handleLogout}
+                  >
+                    <View style={styles.menuLeft}>
+                      <View
+                        style={[styles.iconBox, { backgroundColor: "#FEE2E2" }]}
+                      >
+                        <Ionicons
+                          name="log-out-outline"
+                          size={18}
+                          color="#DC2626"
+                        />
+                      </View>
+                      <Text style={[styles.menuText, { color: "#DC2626" }]}>
+                        Logout
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                {/* My Reports */}
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionLabel}>My Reports</Text>
+                  {myReports.length > 0 && (
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>
+                        {myReports.length}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {reportsLoading ? (
+                  <ProfileReportsSkeleton />
+                ) : recentReports.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Ionicons
+                      name="document-text-outline"
+                      size={36}
+                      color="#C4CEC7"
+                    />
+                    <Text style={styles.emptyText}>
+                      No reports submitted yet
+                    </Text>
+                    <Text style={styles.emptySubText}>
+                      Your reports will appear here
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.card}>
+                    {recentReports.map((report, idx) => {
+                      const isResolved = report.status === "resolved";
+                      const isProgress = report.status === "in-progress";
+                      return (
+                        <React.Fragment key={report._id || idx}>
+                          {idx > 0 && <View style={styles.separator} />}
+                          <View style={styles.reportRow}>
+                            <View
+                              style={[
+                                styles.reportIcon,
+                                isResolved && { backgroundColor: "#DCFCE7" },
+                                isProgress && { backgroundColor: "#ECFDF5" },
+                                !isResolved &&
+                                  !isProgress && { backgroundColor: "#EFF3F0" },
+                              ]}
+                            >
+                              <Ionicons
+                                name={
+                                  isResolved
+                                    ? "checkmark-circle"
+                                    : isProgress
+                                      ? "time"
+                                      : "alert-circle"
+                                }
+                                size={22}
+                                color={
+                                  isResolved
+                                    ? "#006A3B"
+                                    : isProgress
+                                      ? "#338862"
+                                      : "#A8C4B4"
+                                }
+                              />
+                            </View>
+                            <View style={styles.reportInfo}>
+                              <View style={styles.reportTopRow}>
+                                <Text
+                                  style={styles.reportCategory}
+                                  numberOfLines={1}
+                                >
+                                  {report.category || "Report"}
+                                </Text>
+                                <Text style={styles.reportDate}>
+                                  {formatDate(report.createdAt)}
+                                </Text>
+                              </View>
+                              <Text style={styles.reportDesc} numberOfLines={1}>
+                                {report.description}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.statusPill,
+                                  isResolved && { backgroundColor: "#DCFCE7" },
+                                  isProgress && { backgroundColor: "#ECFDF5" },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.statusPillText,
+                                    isResolved && { color: "#006A3B" },
+                                    isProgress && { color: "#338862" },
+                                  ]}
+                                >
+                                  {isResolved
+                                    ? "Resolved"
+                                    : isProgress
+                                      ? "In Progress"
+                                      : "Under Review"}
+                                </Text>
+                              </View>
+                            </View>
+                            {!isResolved && (
+                              <TouchableOpacity
+                                onPress={() => handleDeleteReport(report._id)}
+                                style={styles.deleteBtn}
+                                hitSlop={{
+                                  top: 8,
+                                  bottom: 8,
+                                  left: 8,
+                                  right: 8,
+                                }}
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={18}
+                                  color="#A8C4B4"
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </React.Fragment>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <View style={{ height: 48 }} />
               </View>
-            )}
+            </>
+          )}
+        </View>
+      </ScrollView>
 
-            <View style={{ height: 48 }} />
-          </View>
-        </>
-        )}
-      </View>
-    </ScrollView>
-
-        {/* Language Modal */}
-        <Modal
-          visible={showLanguageModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowLanguageModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.languageModalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{t("language")}</Text>
-                <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
-                  <Ionicons name="close" size={24} color="#7A8C7F" />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity 
-                style={[styles.langOption, i18n.language === "en" && styles.activeLangOption]} 
-                onPress={() => changeLanguage("en")}
-              >
-                <Text style={[styles.langText, i18n.language === "en" && styles.activeLangText]}>English</Text>
-                {i18n.language === "en" && <Ionicons name="checkmark-circle" size={20} color="#006A3B" />}
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.langOption, i18n.language === "ceb" && styles.activeLangOption]} 
-                onPress={() => changeLanguage("ceb")}
-              >
-                <Text style={[styles.langText, i18n.language === "ceb" && styles.activeLangText]}>Cebuano</Text>
-                {i18n.language === "ceb" && <Ionicons name="checkmark-circle" size={20} color="#006A3B" />}
+      {/* Language Modal */}
+      <Modal
+        visible={showLanguageModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <View style={styles.languageModalOverlay}>
+          <View style={styles.languageModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t("language")}</Text>
+              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                <Ionicons name="close" size={24} color="#7A8C7F" />
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={[
+                styles.langOption,
+                i18n.language === "en" && styles.activeLangOption,
+              ]}
+              onPress={() => changeLanguage("en")}
+            >
+              <Text
+                style={[
+                  styles.langText,
+                  i18n.language === "en" && styles.activeLangText,
+                ]}
+              >
+                English
+              </Text>
+              {i18n.language === "en" && (
+                <Ionicons name="checkmark-circle" size={20} color="#006A3B" />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.langOption,
+                i18n.language === "ceb" && styles.activeLangOption,
+              ]}
+              onPress={() => changeLanguage("ceb")}
+            >
+              <Text
+                style={[
+                  styles.langText,
+                  i18n.language === "ceb" && styles.activeLangText,
+                ]}
+              >
+                Cebuano
+              </Text>
+              {i18n.language === "ceb" && (
+                <Ionicons name="checkmark-circle" size={20} color="#006A3B" />
+              )}
+            </TouchableOpacity>
           </View>
-        </Modal>
+        </View>
+      </Modal>
 
       {/* ── Edit Profile Modal ── */}
       <Modal
@@ -671,10 +1071,10 @@ export default function ProfileScreen({ navigation }) {
         onRequestClose={() => setIsEditModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalOverlay}
         >
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, styles.editProfileSheet]}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
@@ -686,19 +1086,35 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.editProfileScroll}
+              contentContainerStyle={styles.editProfileContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Avatar picker */}
-              <TouchableOpacity style={styles.avatarPickerRow} onPress={pickImage} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.avatarPickerRow}
+                onPress={pickImage}
+                activeOpacity={0.7}
+              >
                 <View style={styles.modalAvatarCircle}>
                   {editForm.profilePicture ? (
-                    <Image source={{ uri: editForm.profilePicture }} style={styles.avatarImage} />
+                    <Image
+                      source={{ uri: editForm.profilePicture }}
+                      style={styles.avatarImage}
+                    />
                   ) : (
                     <Ionicons name="person" size={36} color="#C4CEC7" />
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.changePicLabel}>Change Profile Picture</Text>
-                  <Text style={styles.changePicHint}>10-day cooldown applies</Text>
+                  <Text style={styles.changePicLabel}>
+                    Change Profile Picture
+                  </Text>
+                  <Text style={styles.changePicHint}>
+                    10-day cooldown applies
+                  </Text>
                 </View>
                 <View style={styles.changePicBtn}>
                   <Ionicons name="camera" size={16} color="#006A3B" />
@@ -706,9 +1122,22 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
 
               {[
-                { label: "First Name", key: "firstName", placeholder: "e.g. Juan" },
-                { label: "Last Name",  key: "lastName",  placeholder: "e.g. Dela Cruz" },
-                { label: "Phone",      key: "phone",     placeholder: "+63 9XX XXX XXXX", keyboard: "phone-pad" },
+                {
+                  label: "First Name",
+                  key: "firstName",
+                  placeholder: "e.g. Juan",
+                },
+                {
+                  label: "Last Name",
+                  key: "lastName",
+                  placeholder: "e.g. Dela Cruz",
+                },
+                {
+                  label: "Phone",
+                  key: "phone",
+                  placeholder: "+63 9XX XXX XXXX",
+                  keyboard: "phone-pad",
+                },
               ].map(({ label, key, placeholder, keyboard }) => (
                 <View key={key} style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{label}</Text>
@@ -729,19 +1158,29 @@ export default function ProfileScreen({ navigation }) {
                 <View style={styles.readonlyAddress}>
                   <Ionicons name="home-outline" size={16} color="#7A8C7F" />
                   <Text style={styles.readonlyAddressText}>
-                    {[editForm.houseNo, editForm.street, editForm.barangay].filter(Boolean).join(', ') || 'No address on record'}
-                    {editForm.barangay ? ', Cebu City' : ''}
+                    {[editForm.houseNo, editForm.street, editForm.barangay]
+                      .filter(Boolean)
+                      .join(", ") || "No address on record"}
+                    {editForm.barangay ? ", Cebu City" : ""}
                   </Text>
                 </View>
                 <View style={styles.addressLockNotice}>
-                  <Ionicons name="lock-closed-outline" size={13} color="#D97706" />
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={13}
+                    color="#D97706"
+                  />
                   <Text style={styles.addressLockText}>
-                    Address cannot be changed here. Contact your Barangay Office to update it.
+                    Address cannot be changed here. Contact your Barangay Office
+                    to update it.
                   </Text>
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSaveProfile}
+              >
                 <Text style={styles.saveBtnText}>Save Changes</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -755,7 +1194,12 @@ export default function ProfileScreen({ navigation }) {
           <View style={[styles.modalSheet, { paddingTop: 0 }]}>
             <View style={styles.barangayModalHeader}>
               <Text style={styles.modalTitle}>Select Barangay</Text>
-              <TouchableOpacity onPress={() => { setShowBarangayModal(false); setBarangaySearch(""); }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowBarangayModal(false);
+                  setBarangaySearch("");
+                }}
+              >
                 <Ionicons name="close" size={24} color="#1B1C1C" />
               </TouchableOpacity>
             </View>
@@ -791,14 +1235,23 @@ export default function ProfileScreen({ navigation }) {
                     size={16}
                     color={editForm.barangay === item ? "#006A3B" : "#C4CEC7"}
                   />
-                  <Text style={[
-                    styles.barangayItemText,
-                    editForm.barangay === item && { color: "#006A3B", fontWeight: "700" },
-                  ]}>
+                  <Text
+                    style={[
+                      styles.barangayItemText,
+                      editForm.barangay === item && {
+                        color: "#006A3B",
+                        fontWeight: "700",
+                      },
+                    ]}
+                  >
                     {item}
                   </Text>
                   {editForm.barangay === item && (
-                    <Ionicons name="checkmark-circle" size={18} color="#006A3B" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#006A3B"
+                    />
                   )}
                 </TouchableOpacity>
               )}
@@ -817,7 +1270,7 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#006A3B" },
-  scroll:   { flex: 1, backgroundColor: "#FBF9F8" },
+  scroll: { flex: 1, backgroundColor: "#FBF9F8" },
 
   // ── Cover ──
   coverHeader: {
@@ -957,30 +1410,61 @@ const styles = StyleSheet.create({
 
   // ── Points card ──
   pointsCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#006A3B', borderRadius: 20, marginHorizontal: 16, marginTop: 14,
-    paddingHorizontal: 18, paddingVertical: 16, shadowColor: '#006A3B',
-    shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#006A3B",
+    borderRadius: 20,
+    marginHorizontal: 16,
+    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: "#006A3B",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
-  pointsLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  pointsTotal: { fontSize: 26, fontWeight: '900', color: '#fff' },
-  pointsLabel: { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginTop: 1 },
-  pointsMid: { alignItems: 'center' },
-  pointsMonthly: { fontSize: 20, fontWeight: '800', color: '#FFD700' },
-  pointsMonthLabel: { fontSize: 10, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
-  pointsRight: { alignItems: 'center' },
-  rankNum: { fontSize: 18, fontWeight: '900', color: '#fff' },
-  rankLabel: { fontSize: 9, color: 'rgba(255,255,255,0.65)', fontWeight: '600', textAlign: 'center' },
+  pointsLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pointsTotal: { fontSize: 26, fontWeight: "900", color: "#fff" },
+  pointsLabel: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.7)",
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  pointsMid: { alignItems: "center" },
+  pointsMonthly: { fontSize: 20, fontWeight: "800", color: "#FFD700" },
+  pointsMonthLabel: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.65)",
+    fontWeight: "600",
+  },
+  pointsRight: { alignItems: "center" },
+  rankNum: { fontSize: 18, fontWeight: "900", color: "#fff" },
+  rankLabel: {
+    fontSize: 9,
+    color: "rgba(255,255,255,0.65)",
+    fontWeight: "600",
+    textAlign: "center",
+  },
 
   // ── Activity mini-stats ──
   activityRow: {
-    flexDirection: 'row', marginHorizontal: 16, marginTop: 12,
-    backgroundColor: '#fff', borderRadius: 16, paddingVertical: 14,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  activityCell: { flex: 1, alignItems: 'center', gap: 4 },
-  activityVal: { fontSize: 18, fontWeight: '900', color: '#1F2937' },
-  activityLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600' },
+  activityCell: { flex: 1, alignItems: "center", gap: 4 },
+  activityVal: { fontSize: 18, fontWeight: "900", color: "#1F2937" },
+  activityLabel: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
 
   // ── Body ──
   body: {
@@ -1061,7 +1545,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  menuLeft:  { flexDirection: "row", alignItems: "center", gap: 12 },
+  menuLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   menuRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   iconBox: {
     width: 36,
@@ -1070,7 +1554,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  menuText:  { fontSize: 15, color: "#1B1C1C", fontWeight: "500" },
+  menuText: { fontSize: 15, color: "#1B1C1C", fontWeight: "500" },
   menuValue: { fontSize: 14, color: "#7A8C7F" },
 
   // ── Reports ──
@@ -1083,7 +1567,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  emptyText:    { fontSize: 15, fontWeight: "600", color: "#7A8C7F", marginTop: 10 },
+  emptyText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#7A8C7F",
+    marginTop: 10,
+  },
   emptySubText: { fontSize: 13, color: "#C4CEC7", marginTop: 4 },
   reportRow: {
     flexDirection: "row",
@@ -1113,7 +1602,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   reportDate: { fontSize: 11, color: "#C4CEC7" },
-  reportDesc:  { fontSize: 12, color: "#7A8C7F", marginBottom: 6 },
+  reportDesc: { fontSize: 12, color: "#7A8C7F", marginBottom: 6 },
   statusPill: {
     alignSelf: "flex-start",
     backgroundColor: "#EDF4F0",
@@ -1130,7 +1619,7 @@ const styles = StyleSheet.create({
   },
   deleteBtn: { paddingTop: 2 },
 
-  // ── Modal ──
+  // ── Modal (bottom-sheet style — used by Edit Profile & Barangay Picker) ──
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -1143,6 +1632,15 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 12,
     maxHeight: "92%",
+  },
+  editProfileSheet: {
+    height: "92%",
+  },
+  editProfileScroll: {
+    flex: 1,
+  },
+  editProfileContent: {
+    paddingBottom: 12,
   },
   modalHandle: {
     width: 36,
@@ -1180,7 +1678,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   changePicLabel: { fontSize: 15, fontWeight: "600", color: "#006A3B" },
-  changePicHint:  { fontSize: 12, color: "#C4CEC7", marginTop: 2 },
+  changePicHint: { fontSize: 12, color: "#C4CEC7", marginTop: 2 },
   changePicBtn: {
     width: 32,
     height: 32,
@@ -1257,7 +1755,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EDF4F0",
   },
-  selectorValue:       { fontSize: 15, color: "#1B1C1C" },
+  selectorValue: { fontSize: 15, color: "#1B1C1C" },
   selectorPlaceholder: { fontSize: 15, color: "#C4CEC7" },
   saveBtn: {
     backgroundColor: "#006A3B",
@@ -1305,9 +1803,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 12,
   },
-  barangayItemActive:  { backgroundColor: "#ECFDF5" },
-  barangayItemText:    { flex: 1, fontSize: 15, color: "#374151" },
-  modalOverlay: {
+  barangayItemActive: { backgroundColor: "#ECFDF5" },
+  barangayItemText: { flex: 1, fontSize: 15, color: "#374151" },
+
+  // ── Language modal (centered card — separate overlay so it doesn't clash) ──
+  languageModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",

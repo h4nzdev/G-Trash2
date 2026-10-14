@@ -314,6 +314,9 @@ MONGO_URI=mongodb://localhost:27017/gtrash
 # Authentication Secret
 JWT_SECRET=your_secure_jwt_secret_key_2025
 
+# Optional: temporary, one-time superadmin recovery secret
+SUPERADMIN_BOOTSTRAP_SECRET=generate_a_long_random_secret
+
 # AI Integrations
 GROQ_API_KEY=gsk_your_groq_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -323,6 +326,18 @@ CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 ```
+
+To recover a superadmin account when none exists, temporarily configure
+`SUPERADMIN_BOOTSTRAP_SECRET` on the backend and restart it. Send a
+`POST /api/officials/bootstrap-superadmin` request over HTTPS with that value in
+the `x-bootstrap-secret` header and a JSON body containing `name`, `email`,
+`password`, `barangay`, and `"role": "superadmin"`. The endpoint can create only
+the first superadmin and records a permanent one-time claim. Remove the secret
+from the backend environment and restart the server after a successful recovery,
+then sign in through `POST /api/officials/login` to receive a normal JWT. If the
+server stops after claiming the bootstrap slot but before creating the account,
+remove the `initial-superadmin` document from the `superadminbootstraps`
+collection only after confirming that no superadmin was created.
 
 ---
 
@@ -336,6 +351,14 @@ CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 | `GET` | `/api/auth/me` | Authenticated | Validate and restore active JWT session |
 | `POST` | `/api/auth/register` | Public | Register a new resident account |
 | `PATCH`| `/api/auth/resident/:id` | Authenticated | Update resident profile info (10-day avatar cooldown) |
+
+### Superadmin Recovery
+
+`POST /api/officials/bootstrap-superadmin` is disabled unless
+`SUPERADMIN_BOOTSTRAP_SECRET` is configured. It requires the matching
+`x-bootstrap-secret` header, must be called over HTTPS, and succeeds only when
+there is no existing superadmin and the one-time bootstrap claim has not been
+used. Remove the environment secret after recovery.
 
 ### 2. IoT Telemetry & Environmental Monitoring (`/api/iot`)
 
@@ -427,4 +450,3 @@ Barangays compete on a live leaderboard to foster community-wide cleanliness and
 ## License & Attribution
 
 Developed for smart municipal waste management and environmental health research in Cebu City, Philippines. Distributed under the MIT License.
-

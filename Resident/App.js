@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ActivityIndicator, StyleSheet,
   Modal, TouchableOpacity, Platform,
@@ -6,6 +6,7 @@ import {
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,13 +20,16 @@ import PointsHistoryScreen from './src/screens/PointsHistoryScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
-import CustomSplashScreen from './src/screens/CustomSplashScreen';
+import AnimatedSplash from './src/components/AnimatedSplash';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import colors from './src/constants/colors';
 import API_URL from './src/config';
 import useTruckProximity from './src/hooks/useTruckProximity';
 import TruckProximityBanner from './src/components/TruckProximityBanner';
 import './src/i18n';
+
+// Keep the native splash until our animated one is on screen or session restores
+SplashScreen.preventAutoHideAsync();
 
 const Stack = createNativeStackNavigator();
 
@@ -88,22 +92,60 @@ const LAYER_ORDER = { FAR: 1, MEDIUM: 2, NEAR: 3 };
 
 function AppNavigator() {
   const { user, isLoading } = useAuth();
-  const [showSplash, setShowSplash] = useState(true);
+  const [hasSeenSplash, setHasSeenSplash] = useState(null);
   const [hasSeenTour, setHasSeenTour] = useState(null);
-  const [prevUser, setPrevUser] = useState(null);
+  const [minAnimationPassed, setMinAnimationPassed] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
   const [announcementQueue, setAnnouncementQueue] = useState([]);
   const [socket, setSocket] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const prevProxLayerRef = useRef(null);
 
   useEffect(() => {
-    checkTourStatus();
+    checkInitialStatus();
   }, []);
 
+  const checkInitialStatus = async () => {
+    try {
+      const [tourVal, splashVal] = await Promise.all([
+        AsyncStorage.getItem('@HasSeenTour'),
+        AsyncStorage.getItem('@has_seen_animated_splash'),
+      ]);
+      const seenTour = tourVal === 'true';
+      const seenSplash = splashVal === 'true' || seenTour;
+      setHasSeenTour(seenTour);
+      setHasSeenSplash(seenSplash);
+      if (seenSplash) {
+        setSplashDone(true);
+      }
+    } catch (_e) {
+      setHasSeenTour(false);
+      setHasSeenSplash(false);
+    }
+  };
+
+  // For returning users: hide native splash once AuthContext finishes restoring session
   useEffect(() => {
-    if (!prevUser && user) setShowSplash(true);
-    setPrevUser(user);
-  }, [user]);
+    if (hasSeenSplash === true && !isLoading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [hasSeenSplash, isLoading]);
+
+  // For first-time users: dismiss animated splash only when BOTH min duration has passed AND session restored
+  useEffect(() => {
+    if (hasSeenSplash === false && minAnimationPassed && !isLoading) {
+      AsyncStorage.setItem('@has_seen_animated_splash', 'true').catch(() => {});
+      setSplashDone(true);
+    }
+  }, [hasSeenSplash, minAnimationPassed, isLoading]);
+
+  const handleNativeReady = useCallback(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  const handleAnimationFinish = useCallback(() => {
+    setMinAnimationPassed(true);
+  }, []);
 
   // Global socket — announcements, report status, truck proximity, and rewards
   useEffect(() => {
@@ -167,57 +209,51 @@ function AppNavigator() {
     setAnnouncementQueue((q) => q.slice(1));
   };
 
-  const checkTourStatus = async () => {
-    try {
-      const value = await AsyncStorage.getItem('@HasSeenTour');
-      setHasSeenTour(value === 'true');
-    } catch (e) {
-      setHasSeenTour(false);
-    }
-  };
-
-  if (isLoading || hasSeenTour === null) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primaryGreen} />
-      </View>
-    );
-  }
-
-  if (showSplash) {
-    return <CustomSplashScreen onFinish={() => setShowSplash(false)} />;
-  }
-
-  if (!hasSeenTour) {
-    return <OnboardingScreen onFinish={() => setHasSeenTour(true)} />;
-  }
+  const showAnimatedSplash = hasSeenSplash === false && !splashDone;
 
   return (
     <>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
-        <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="Report" component={ReportIssueScreen} />
-        <Stack.Screen name="Notifications" component={NotificationScreen} />
-        <Stack.Screen name="BugReport" component={BugReportScreen} />
-        <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
-        <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      </Stack.Navigator>
+      {isLoading && !showAnimatedSplash ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primaryGreen} />
+        </View>
+      ) : !hasSeenTour ? (
+        <OnboardingScreen onFinish={() => setHasSeenTour(true)} />
+      ) : (
+        <>
+          <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="MainTabs">
+            <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="Report" component={ReportIssueScreen} />
+            <Stack.Screen name="Notifications" component={NotificationScreen} />
+            <Stack.Screen name="BugReport" component={BugReportScreen} />
+            <Stack.Screen name="MyRewards" component={MyRewardsScreen} />
+            <Stack.Screen name="PointsHistory" component={PointsHistoryScreen} />
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          </Stack.Navigator>
 
-      {/* Truck proximity banner — floats over every screen */}
-      <TruckProximityBanner
-        layer={bannerDismissed ? null : proximityLayer}
-        nearestTruck={nearestTruck}
-        onDismiss={() => setBannerDismissed(true)}
-      />
+          {/* Truck proximity banner — floats over every screen */}
+          <TruckProximityBanner
+            layer={bannerDismissed ? null : proximityLayer}
+            nearestTruck={nearestTruck}
+            onDismiss={() => setBannerDismissed(true)}
+          />
 
-      {/* Global announcement modal — renders on top of any screen */}
-      <AnnouncementModal
-        announcement={announcementQueue[0] ?? null}
-        onDismiss={dismissAnnouncement}
-      />
+          {/* Global announcement modal — renders on top of any screen */}
+          <AnnouncementModal
+            announcement={announcementQueue[0] ?? null}
+            onDismiss={dismissAnnouncement}
+          />
+        </>
+      )}
+
+      {showAnimatedSplash && (
+        <AnimatedSplash
+          onReady={handleNativeReady}
+          onFinish={handleAnimationFinish}
+        />
+      )}
     </>
   );
 }

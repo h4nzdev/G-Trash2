@@ -101,6 +101,9 @@ const resources = {
       phone: "Phone Number",
       barangay: "Barangay",
       create_account: "Create Account",
+      personal_info: "Personal Info",
+      address_details: "Address Details",
+      account_setup: "Account Setup",
     }
   },
   ceb: {
@@ -201,6 +204,9 @@ const resources = {
       phone: "Numero sa Telepono",
       barangay: "Barangay",
       create_account: "Paghimo og Akaunt",
+      personal_info: "Impormasyon",
+      address_details: "Direksyon sa Balay",
+      account_setup: "Paghimo'g Akaunt",
     }
   }
 };

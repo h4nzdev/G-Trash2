@@ -298,15 +298,18 @@ export default function RegisterScreen({ navigation }) {
                     {isDone ? (
                       <Ionicons name="checkmark" size={16} color="#FFF" />
                     ) : (
-                      <MaterialIcons name={step.icon} size={16}
-                        color={isActive ? '#FFF' : '#9CA3AF'} />
+                      <MaterialIcons
+                        name={step.icon}
+                        size={18}
+                        color={isActive ? (colors.primaryGreen || '#006A3B') : 'rgba(255,255,255,0.75)'}
+                      />
                     )}
                   </View>
                   <Text style={[
                     styles.stepLabel,
                     isActive && styles.stepLabelActive,
                     isDone && styles.stepLabelDone,
-                  ]}>{t(step.label)}</Text>
+                  ]}>{t(step.label) || (step.key === 'personal' ? 'Personal Info' : step.key === 'address' ? 'Address' : 'Account')}</Text>
                 </View>
               );
             })}

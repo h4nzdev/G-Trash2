@@ -795,26 +795,35 @@ export default function ScannerScreen() {
     const isLowConfidence = detectionResult && detectionResult.confidence < 60 && detectionResult.label !== "No Item Detected";
 
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.resultsSafeArea} edges={['top']}>
+        {/* Consistent G-Trash Header */}
+        <View style={styles.resultsHeaderBar}>
+          <TouchableOpacity
+            onPress={resetScan}
+            style={styles.resultsBackBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.resultsTitleWrap}>
+            <Text style={styles.resultsHeaderTitle}>Waste Scan Result</Text>
+            <Text style={styles.resultsHeaderSub}>AI Classification & Bin Guide</Text>
+          </View>
+          <TouchableOpacity
+            onPress={resetScan}
+            style={styles.resultsResetBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="camera-reverse" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          style={styles.resultsScrollView}
+          contentContainerStyle={styles.resultsScrollContent}
           showsVerticalScrollIndicator={false}
           bounces={true}
         >
-          {/* Header */}
-          <View style={styles.resultsHeader}>
-            <View style={styles.resultsHeaderLeft}>
-              <Ionicons name="leaf" size={28} color={colors.primaryGreen} />
-              <Text style={styles.resultsTitle}>Scan Results</Text>
-            </View>
-            <TouchableOpacity
-              onPress={resetScan}
-              style={styles.closeButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close-circle" size={32} color={colors.primaryGreen} />
-            </TouchableOpacity>
-          </View>
 
           {/* Low confidence warning */}
           {isLowConfidence && (
@@ -1033,8 +1042,8 @@ export default function ScannerScreen() {
               onPress={resetScan}
               activeOpacity={0.8}
             >
-              <Ionicons name="camera-reverse" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Scan Again</Text>
+              <Ionicons name="camera-reverse" size={20} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Scan Another Item</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1048,8 +1057,8 @@ export default function ScannerScreen() {
               }}
               activeOpacity={0.8}
             >
-              <Ionicons name="close-circle" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Incorrect?</Text>
+              <Ionicons name="create-outline" size={18} color="#006A3B" />
+              <Text style={styles.incorrectButtonText}>Manual Fix</Text>
             </TouchableOpacity>
           </View>
 
@@ -1480,70 +1489,105 @@ const styles = StyleSheet.create({
 
   // ── RESULTS VIEW ENHANCED STYLES ─────────────
 
-  // Results Header
-  resultsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 20,
-    paddingHorizontal: 4,
+  // ── RESULTS VIEW ENHANCED STYLES ─────────────
+  resultsSafeArea: {
+    flex: 1,
+    backgroundColor: "#006A3B",
   },
-  resultsHeaderLeft: {
+  resultsHeaderBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#006A3B",
   },
-  resultsTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.primaryGreen,
-    letterSpacing: -0.5,
+  resultsBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "#F0F0F0",
+  resultsTitleWrap: {
+    flex: 1,
+    alignItems: "center",
+  },
+  resultsHeaderTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.2,
+  },
+  resultsHeaderSub: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  resultsResetBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  resultsScrollView: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  resultsScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 14,
   },
 
   // Image Section
   imageSection: {
-    marginBottom: 24,
+    marginBottom: 4,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   imageLabelContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
     paddingHorizontal: 4,
     gap: 8,
   },
   imageLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#475569",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   imageContainer: {
     position: "relative",
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: "hidden",
-    backgroundColor: "#e0e0e0",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
+    backgroundColor: "#F1F5F9",
   },
   capturedImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 20,
+    borderRadius: 16,
   },
 
   // Bounding Boxes
@@ -1570,19 +1614,21 @@ const styles = StyleSheet.create({
 
   // Eco Score Card
   ecoCard: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 24,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
       },
       android: {
-        elevation: 6,
+        elevation: 3,
       },
     }),
   },
@@ -1590,97 +1636,96 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   ecoCardTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   ecoCardTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1A1A1A",
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
   },
   ecoBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   ecoBadgeText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "800",
   },
   ecoScoreRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
+    gap: 16,
   },
   ecoScoreCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 4,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3.5,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F8F9FA",
+    backgroundColor: "#F8FAFC",
   },
   ecoGrade: {
-    fontSize: 32,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: "900",
   },
   ecoScoreInfo: {
     flex: 1,
   },
   ecoScoreLabel: {
-    fontSize: 13,
-    color: "#666",
-    marginBottom: 4,
+    fontSize: 11,
+    color: "#64748B",
+    marginBottom: 2,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   ecoScoreValue: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#1A1A1A",
-    marginBottom: 12,
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
   },
   ecoProgressBar: {
     width: "100%",
-    height: 10,
-    backgroundColor: "#E8E8E8",
-    borderRadius: 5,
+    height: 6,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 3,
     overflow: "hidden",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   ecoProgressFill: {
     height: "100%",
-    borderRadius: 5,
+    borderRadius: 3,
   },
   ecoScoreHint: {
-    fontSize: 13,
-    color: "#888",
-    fontStyle: "italic",
-    lineHeight: 18,
+    fontSize: 11.5,
+    color: "#64748B",
+    lineHeight: 16,
   },
 
   // Result Card Section
   resultCardSection: {
-    marginBottom: 24,
+    marginBottom: 4,
   },
   sectionLabel: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: 8,
+    gap: 6,
   },
   sectionLabelText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#475569",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
 
   // Action Buttons
@@ -1688,42 +1733,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 12,
-    marginTop: 8,
-    marginBottom: 24,
+    marginTop: 6,
+    marginBottom: 16,
   },
   actionButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 16,
-    gap: 10,
+    gap: 8,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
       },
       android: {
-        elevation: 4,
+        elevation: 2,
       },
     }),
   },
   scanAgainBtn: {
-    backgroundColor: colors.primaryGreen,
+    backgroundColor: "#006A3B",
   },
   learnMoreBtn: {
     backgroundColor: "#2196F3",
   },
   incorrectBtn: {
-    backgroundColor: "#F44336",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#006A3B",
   },
   actionButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  incorrectButtonText: {
+    color: "#006A3B",
+    fontSize: 14,
+    fontWeight: "800",
   },
 
   // ── Low Confidence Warning ──────────────────

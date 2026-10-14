@@ -1,7 +1,10 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const { Official } = require("../models");
+const { Official, SuperadminBootstrap } = require("../models");
 const { JWT_SECRET } = require("../middleware/auth");
+
+const SUPERADMIN_BOOTSTRAP_ID = "initial-superadmin";
 
 const CHD_ALLOWED_PAGES = ["dashboard", "heatmap", "reports", "history"];
 function getAllowedPages(role) {
@@ -44,6 +47,84 @@ exports.login = async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+};
+
+exports.bootstrapSuperadmin = async (req, res, next) => {
+  const configuredSecret = process.env.SUPERADMIN_BOOTSTRAP_SECRET;
+  if (!configuredSecret) {
+    return res.status(503).json({ error: "Superadmin bootstrap is disabled" });
+  }
+
+  const suppliedSecret = req.get("x-bootstrap-secret");
+  if (
+    typeof suppliedSecret !== "string" ||
+    !crypto.timingSafeEqual(
+      crypto.createHash("sha256").update(suppliedSecret).digest(),
+      crypto.createHash("sha256").update(configuredSecret).digest()
+    )
+  ) {
+    return res.status(401).json({ error: "Invalid bootstrap secret" });
+  }
+
+  const { name, email, password, barangay, role } = req.body;
+  if (
+    [name, email, password, barangay].some(
+      (value) => typeof value !== "string" || !value.trim()
+    )
+  ) {
+    return res
+      .status(400)
+      .json({ error: "name, email, password, and barangay are required" });
+  }
+  if (role !== "superadmin") {
+    return res.status(400).json({ error: "role must be superadmin" });
+  }
+
+  try {
+    if (await Official.exists({ role: "superadmin" })) {
+      return res.status(409).json({ error: "A superadmin already exists" });
+    }
+
+    await SuperadminBootstrap.create({ _id: SUPERADMIN_BOOTSTRAP_ID });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "Superadmin bootstrap has already been used" });
+    }
+    return next(err);
+  }
+
+  try {
+    if (await Official.exists({ role: "superadmin" })) {
+      await SuperadminBootstrap.deleteOne({ _id: SUPERADMIN_BOOTSTRAP_ID });
+      return res.status(409).json({ error: "A superadmin already exists" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (await Official.exists({ email: normalizedEmail })) {
+      await SuperadminBootstrap.deleteOne({ _id: SUPERADMIN_BOOTSTRAP_ID });
+      return res.status(409).json({ error: "Email already in use" });
+    }
+
+    const official = await Official.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      passwordHash: await bcrypt.hash(password, 10),
+      barangay: barangay.trim(),
+      role: "superadmin",
+      status: "active",
+    });
+    const out = official.toObject();
+    delete out.passwordHash;
+    return res.status(201).json(out);
+  } catch (err) {
+    try {
+      await SuperadminBootstrap.deleteOne({ _id: SUPERADMIN_BOOTSTRAP_ID });
+    } catch (cleanupError) {
+      console.error("Failed to release the superadmin bootstrap claim:", cleanupError);
+      return next(cleanupError);
+    }
+    return next(err);
   }
 };
 

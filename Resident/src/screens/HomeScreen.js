@@ -65,28 +65,62 @@ const CEBU_COORDS = {
   luz: { lat: 10.3278, lng: 123.9048 },
   talamban: { lat: 10.3688, lng: 123.9168 },
   capitol: { lat: 10.3175, lng: 123.8912 },
-  default: { lat: 10.3250, lng: 123.8930 },
+  default: { lat: 10.325, lng: 123.893 },
 };
 
 const MOTIVATION_OPTIONS = [
-  { id: "clean_barangay", label: "Clean Neighborhood", icon: "park", color: "#059669" },
-  { id: "streak_points", label: "Points & Streak", icon: "emoji-events", color: "#D97706" },
-  { id: "truck_on_time", label: "Truck On Time", icon: "local-shipping", color: "#2563EB" },
-  { id: "flood_health", label: "Flood & Health Safety", icon: "health-and-safety", color: "#DC2626" },
-  { id: "segregation_advocacy", label: "Proper Sorting Habit", icon: "recycling", color: "#7C3AED" },
+  {
+    id: "clean_barangay",
+    label: "Clean Neighborhood",
+    icon: "park",
+    color: "#059669",
+  },
+  {
+    id: "streak_points",
+    label: "Points & Streak",
+    icon: "emoji-events",
+    color: "#D97706",
+  },
+  {
+    id: "truck_on_time",
+    label: "Truck On Time",
+    icon: "local-shipping",
+    color: "#2563EB",
+  },
+  {
+    id: "flood_health",
+    label: "Flood & Health Safety",
+    icon: "health-and-safety",
+    color: "#DC2626",
+  },
+  {
+    id: "segregation_advocacy",
+    label: "Proper Sorting Habit",
+    icon: "recycling",
+    color: "#7C3AED",
+  },
 ];
 
 const MALATA_CHECKLIST_ITEMS = [
-  { id: 1, label: "Collect food scraps & organic waste into green bio-bin/bag" },
+  {
+    id: 1,
+    label: "Collect food scraps & organic waste into green bio-bin/bag",
+  },
   { id: 2, label: "Ensure ZERO plastics, foil, bottles, or cans are mixed" },
   { id: 3, label: "Cover bio-bin securely to prevent pests and foul odors" },
-  { id: 4, label: "Store plastics & dry recyclables for Di-Malata collection day" },
+  {
+    id: 4,
+    label: "Store plastics & dry recyclables for Di-Malata collection day",
+  },
   { id: 5, label: "Place Malata bin outside at designated curb spot" },
 ];
 
 const DI_MALATA_CHECKLIST_ITEMS = [
   { id: 1, label: "Separate clean dry recyclables (bottles, cans, cartons)" },
-  { id: 2, label: "Rinse food and sauce residue from containers before placing" },
+  {
+    id: 2,
+    label: "Rinse food and sauce residue from containers before placing",
+  },
   { id: 3, label: "Flatten cardboard boxes and crush plastic bottles" },
   { id: 4, label: "Ensure ZERO wet kitchen or organic waste is mixed" },
   { id: 5, label: "Tie recyclable bag securely and place at curb spot" },
@@ -122,7 +156,7 @@ function ConfettiExplosion({ visible }) {
       y: new Animated.Value(0),
       scale: new Animated.Value(0),
       opacity: new Animated.Value(1),
-    }))
+    })),
   ).current;
 
   useEffect(() => {
@@ -174,7 +208,14 @@ function ConfettiExplosion({ visible }) {
 
   if (!visible) return null;
 
-  const COLORS = ["#10B981", "#3B82F6", "#F59E0B", "#EC4899", "#8B5CF6", "#14B8A6"];
+  const COLORS = [
+    "#10B981",
+    "#3B82F6",
+    "#F59E0B",
+    "#EC4899",
+    "#8B5CF6",
+    "#14B8A6",
+  ];
 
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -238,7 +279,7 @@ export default function HomeScreen({ navigation }) {
   const [binReady, setBinReady] = useState(false);
   const [todayPickedUp, setTodayPickedUp] = useState(false);
   const [checklist, setChecklist] = useState(
-    GENERAL_CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false }))
+    GENERAL_CHECKLIST_ITEMS.map((item) => ({ ...item, checked: false })),
   );
   const [iotAreas, setIotAreas] = useState([]);
   const [latestIotReading, setLatestIotReading] = useState(null);
@@ -256,8 +297,12 @@ export default function HomeScreen({ navigation }) {
   const [pointsToast, setPointsToast] = useState(null);
   const pointsToastTimerRef = useRef(null);
 
-  const [disposalStreak, setDisposalStreak] = useState(user?.disposalStreak || 0);
-  const [userPoints, setUserPoints] = useState(user?.totalPoints || user?.points || 0);
+  const [disposalStreak, setDisposalStreak] = useState(
+    user?.disposalStreak || 0,
+  );
+  const [userPoints, setUserPoints] = useState(
+    user?.totalPoints || user?.points || 0,
+  );
   const [communityPostsCount, setCommunityPostsCount] = useState(0);
 
   useEffect(() => {
@@ -266,7 +311,8 @@ export default function HomeScreen({ navigation }) {
       .then((r) => r.json())
       .then((data) => {
         if (data) {
-          if (data.disposalStreak != null) setDisposalStreak(data.disposalStreak);
+          if (data.disposalStreak != null)
+            setDisposalStreak(data.disposalStreak);
           if (data.totalPoints != null) setUserPoints(data.totalPoints);
         }
       })
@@ -290,20 +336,24 @@ export default function HomeScreen({ navigation }) {
   const [celebrationData, setCelebrationData] = useState(null);
   const [officialNoticeVisible, setOfficialNoticeVisible] = useState(false);
   const [officialNoticeText, setOfficialNoticeText] = useState("");
-  const [selectedMotivation, setSelectedMotivation] = useState("Clean Neighborhood");
+  const [selectedMotivation, setSelectedMotivation] =
+    useState("Clean Neighborhood");
 
   const handleTakePhoto = async () => {
     if (hasSnappedToday) {
       Alert.alert(
         "Daily Limit Reached",
-        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today."
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today.",
       );
       return;
     }
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission Needed", "Camera permission is required to capture photos.");
+        Alert.alert(
+          "Permission Needed",
+          "Camera permission is required to capture photos.",
+        );
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -327,14 +377,17 @@ export default function HomeScreen({ navigation }) {
     if (hasSnappedToday) {
       Alert.alert(
         "Daily Limit Reached",
-        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today."
+        "You can only snap once per day! Your daily garbage disposal photo has already been submitted today.",
       );
       return;
     }
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission Needed", "Photo library access is required to select photos.");
+        Alert.alert(
+          "Permission Needed",
+          "Photo library access is required to select photos.",
+        );
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -357,7 +410,10 @@ export default function HomeScreen({ navigation }) {
   const handleShareOrSavePhoto = async () => {
     if (!selectedPhoto) return;
     if (hasSnappedToday) {
-      Alert.alert("Daily Snap Completed", "You have already submitted your disposal photo for today.");
+      Alert.alert(
+        "Daily Snap Completed",
+        "You have already submitted your disposal photo for today.",
+      );
       setPhotoPreviewVisible(false);
       return;
     }
@@ -373,7 +429,9 @@ export default function HomeScreen({ navigation }) {
           const uploadRes = await fetch(`${API_URL}/api/upload`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: `data:image/jpeg;base64,${capturedBase64}` }),
+            body: JSON.stringify({
+              data: `data:image/jpeg;base64,${capturedBase64}`,
+            }),
           });
           if (uploadRes.ok) {
             const uploadJson = await uploadRes.json();
@@ -410,7 +468,10 @@ export default function HomeScreen({ navigation }) {
           await AsyncStorage.setItem(`@disposal_snapped_${today}`, "true");
           setPhotoPreviewVisible(false);
           setIsSubmittingDisposal(false);
-          Alert.alert("Daily Snap Recorded", "Your daily disposal photo is already recorded for today.");
+          Alert.alert(
+            "Daily Snap Recorded",
+            "Your daily disposal photo is already recorded for today.",
+          );
           return;
         }
 
@@ -424,7 +485,10 @@ export default function HomeScreen({ navigation }) {
         fetch(`${API_URL}/api/bin/prepare`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+          body: JSON.stringify({
+            residentId: user.id,
+            barangay: user.barangay,
+          }),
         }).catch(() => {});
       }
 
@@ -440,8 +504,12 @@ export default function HomeScreen({ navigation }) {
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
 
-      const earnedPts = subJson?.pointsAwarded != null ? subJson.pointsAwarded : 10;
-      const streakVal = subJson?.newStreak != null ? subJson.newStreak : ((disposalStreak || 0) + 1);
+      const earnedPts =
+        subJson?.pointsAwarded != null ? subJson.pointsAwarded : 10;
+      const streakVal =
+        subJson?.newStreak != null
+          ? subJson.newStreak
+          : (disposalStreak || 0) + 1;
       setCelebrationData({
         message: `Disposal verified! Your ${streakVal}-day streak is active. Thank you for sorting ${scheduledWasteType} waste!`,
         awardPoints: earnedPts,
@@ -464,11 +532,18 @@ export default function HomeScreen({ navigation }) {
         fetch(`${API_URL}/api/bin/prepare`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ residentId: user.id, barangay: user.barangay }),
+          body: JSON.stringify({
+            residentId: user.id,
+            barangay: user.barangay,
+          }),
         }).catch(() => {});
       }
-      AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
-      AsyncStorage.setItem(`@disposal_photo_${today}`, selectedPhoto).catch(() => {});
+      AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(
+        () => {},
+      );
+      AsyncStorage.setItem(`@disposal_photo_${today}`, selectedPhoto).catch(
+        () => {},
+      );
       AsyncStorage.setItem(`@bin_prepared_${today}`, "true").catch(() => {});
       setPhotoPreviewVisible(false);
       setIsSubmittingDisposal(false);
@@ -480,10 +555,14 @@ export default function HomeScreen({ navigation }) {
     const brgy = user?.barangay || "Apas";
     fetch(`${API_URL}/api/garbage-areas?barangay=${encodeURIComponent(brgy)}`)
       .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setIotAreas(data); })
+      .then((data) => {
+        if (Array.isArray(data)) setIotAreas(data);
+      })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`)
+    fetch(
+      `${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`,
+    )
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -503,12 +582,14 @@ export default function HomeScreen({ navigation }) {
         AsyncStorage.getItem(`@bin_pickedup_${today}`),
         AsyncStorage.getItem(`@disposal_snapped_${today}`),
         AsyncStorage.getItem(`@disposal_photo_${today}`),
-      ]).then(([prepared, pickedUp, snapped, photo]) => {
-        if (prepared === 'true') setBinReady(true);
-        if (pickedUp === 'true') setTodayPickedUp(true);
-        if (snapped === 'true') setHasSnappedToday(true);
-        if (photo) setTodayDisposalPhoto(photo);
-      }).catch(() => {});
+      ])
+        .then(([prepared, pickedUp, snapped, photo]) => {
+          if (prepared === "true") setBinReady(true);
+          if (pickedUp === "true") setTodayPickedUp(true);
+          if (snapped === "true") setHasSnappedToday(true);
+          if (photo) setTodayDisposalPhoto(photo);
+        })
+        .catch(() => {});
 
       const residentId = user?.id || user?._id;
       if (residentId) {
@@ -517,10 +598,15 @@ export default function HomeScreen({ navigation }) {
           .then((data) => {
             if (data?.hasSnappedToday) {
               setHasSnappedToday(true);
-              AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(() => {});
+              AsyncStorage.setItem(`@disposal_snapped_${today}`, "true").catch(
+                () => {},
+              );
               if (data?.submission?.photoUrl) {
                 setTodayDisposalPhoto(data.submission.photoUrl);
-                AsyncStorage.setItem(`@disposal_photo_${today}`, data.submission.photoUrl).catch(() => {});
+                AsyncStorage.setItem(
+                  `@disposal_photo_${today}`,
+                  data.submission.photoUrl,
+                ).catch(() => {});
               }
             }
           })
@@ -529,7 +615,9 @@ export default function HomeScreen({ navigation }) {
     };
 
     syncDailyState();
-    const unsubscribe = navigation?.addListener ? navigation.addListener("focus", syncDailyState) : undefined;
+    const unsubscribe = navigation?.addListener
+      ? navigation.addListener("focus", syncDailyState)
+      : undefined;
     return () => {
       if (unsubscribe) unsubscribe();
     };
@@ -537,29 +625,43 @@ export default function HomeScreen({ navigation }) {
 
   const aqData = useMemo(() => {
     const aqMap = {
-      Hazardous: 'critical',
-      Unhealthy: 'critical',
-      Critical: 'critical',
-      Moderate: 'moderate',
-      Good: 'clean',
-      Clean: 'clean',
+      Hazardous: "critical",
+      Unhealthy: "critical",
+      Critical: "critical",
+      Moderate: "moderate",
+      Good: "clean",
+      Clean: "clean",
     };
     if (latestIotReading) {
       return {
-        status: aqMap[latestIotReading.airQuality] || 'clean',
-        airQuality: latestIotReading.airQuality || 'Good',
-        ammonia: latestIotReading.ammonia != null ? `${latestIotReading.ammonia} ppm` : '0 ppm',
-        methane: latestIotReading.methane != null && latestIotReading.methane > 0 ? `${latestIotReading.methane}%` : '0%',
-        rawValue: latestIotReading.rawValue != null ? latestIotReading.rawValue : null,
+        status: aqMap[latestIotReading.airQuality] || "clean",
+        airQuality: latestIotReading.airQuality || "Good",
+        ammonia:
+          latestIotReading.ammonia != null
+            ? `${latestIotReading.ammonia} ppm`
+            : "0 ppm",
+        methane:
+          latestIotReading.methane != null && latestIotReading.methane > 0
+            ? `${latestIotReading.methane}%`
+            : "0%",
+        rawValue:
+          latestIotReading.rawValue != null ? latestIotReading.rawValue : null,
       };
     }
     if (iotAreas.length > 0) {
-      const worstArea = [...iotAreas].sort((a, b) => (a.status === 'critical' ? -1 : 1))[0];
+      const worstArea = [...iotAreas].sort((a, b) =>
+        a.status === "critical" ? -1 : 1,
+      )[0];
       return {
-        status: worstArea.status || 'clean',
-        airQuality: worstArea.status === 'critical' ? 'Poor' : worstArea.status === 'moderate' ? 'Moderate' : 'Good',
-        ammonia: '0 ppm',
-        methane: '0%',
+        status: worstArea.status || "clean",
+        airQuality:
+          worstArea.status === "critical"
+            ? "Poor"
+            : worstArea.status === "moderate"
+              ? "Moderate"
+              : "Good",
+        ammonia: "0 ppm",
+        methane: "0%",
         rawValue: null,
       };
     }
@@ -576,12 +678,18 @@ export default function HomeScreen({ navigation }) {
       }
 
       const activeBars = items.map((item, idx) => {
-        const isAlert = item.airQuality === 'Unhealthy' || item.airQuality === 'Hazardous' || item.airQuality === 'Critical';
-        const isWarn = item.airQuality === 'Moderate';
-        const color = isAlert ? '#EF4444' : isWarn ? '#F59E0B' : '#10B981';
+        const isAlert =
+          item.airQuality === "Unhealthy" ||
+          item.airQuality === "Hazardous" ||
+          item.airQuality === "Critical";
+        const isWarn = item.airQuality === "Moderate";
+        const color = isAlert ? "#EF4444" : isWarn ? "#F59E0B" : "#10B981";
         let height = isAlert ? 42 : isWarn ? 28 : 16;
         if (item.rawValue != null && item.rawValue > 0) {
-          height = Math.min(48, Math.max(12, Math.round((item.rawValue / 900) * 36 + 12)));
+          height = Math.min(
+            48,
+            Math.max(12, Math.round((item.rawValue / 900) * 36 + 12)),
+          );
         }
         return { id: item._id || `active-${idx}`, height, color };
       });
@@ -621,34 +729,56 @@ export default function HomeScreen({ navigation }) {
         return [];
       };
 
-      const [trucksRes, schedulesRes, reportsRes, iotRes] = await Promise.allSettled([
-        fetchLiveTrucks(),
-        fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) => r.json()),
-        fetch(`${API_URL}/api/reports`).then((r) => r.json()),
-        fetch(`${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`).then((r) => r.json()),
-      ]);
+      const [trucksRes, schedulesRes, reportsRes, iotRes] =
+        await Promise.allSettled([
+          fetchLiveTrucks(),
+          fetch(`${API_URL}/api/schedules/today?date=${today}`).then((r) =>
+            r.json(),
+          ),
+          fetch(`${API_URL}/api/reports`).then((r) => r.json()),
+          fetch(
+            `${API_URL}/api/iot/readings?barangay=${encodeURIComponent(brgy)}&limit=7`,
+          ).then((r) => r.json()),
+        ]);
 
       if (trucksRes.status === "fulfilled" && Array.isArray(trucksRes.value)) {
-        const sorted = [...trucksRes.value].map(t => ({
-          ...t,
-          status: t.status || t.liveStatus || (t.lat && t.lng && Number(t.lat) !== 0 ? "online" : "offline")
-        })).sort((a, b) => {
-          if (a.status === "online" && b.status !== "online") return -1;
-          if (b.status === "online" && a.status !== "online") return 1;
-          return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
-        });
+        const sorted = [...trucksRes.value]
+          .map((t) => ({
+            ...t,
+            status:
+              t.status ||
+              t.liveStatus ||
+              (t.lat && t.lng && Number(t.lat) !== 0 ? "online" : "offline"),
+          }))
+          .sort((a, b) => {
+            if (a.status === "online" && b.status !== "online") return -1;
+            if (b.status === "online" && a.status !== "online") return 1;
+            return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+          });
         setTrucks(sorted);
       }
 
-      if (schedulesRes.status === "fulfilled" && Array.isArray(schedulesRes.value.schedules)) {
+      if (
+        schedulesRes.status === "fulfilled" &&
+        Array.isArray(schedulesRes.value.schedules)
+      ) {
         setTodaySchedules(schedulesRes.value.schedules);
       }
 
-      if (reportsRes.status === "fulfilled" && Array.isArray(reportsRes.value)) {
-        setPendingCount(reportsRes.value.filter((r) => r.status !== "resolved").length);
+      if (
+        reportsRes.status === "fulfilled" &&
+        Array.isArray(reportsRes.value)
+      ) {
+        setPendingCount(
+          reportsRes.value.filter((r) => r.status !== "resolved").length,
+        );
       }
 
-      if (iotRes.status === "fulfilled" && Array.isArray(iotRes.value) && iotRes.value.length > 0) {
+      if (
+        iotRes.status === "fulfilled" &&
+        Array.isArray(iotRes.value) &&
+        iotRes.value.length > 0
+      ) {
         setLatestIotReading(iotRes.value[0]);
         setIotReadingsHistory(iotRes.value);
       }
@@ -677,7 +807,9 @@ export default function HomeScreen({ navigation }) {
     let isMounted = true;
     (async () => {
       try {
-        const cachedRaw = await AsyncStorage.getItem("@gtrash_last_user_location");
+        const cachedRaw = await AsyncStorage.getItem(
+          "@gtrash_last_user_location",
+        );
         if (cachedRaw && isMounted) {
           const parsed = JSON.parse(cachedRaw);
           if (parsed?.lat && parsed?.lng) {
@@ -687,12 +819,17 @@ export default function HomeScreen({ navigation }) {
         }
         const { status } = await Location.getForegroundPermissionsAsync();
         if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
           if (loc?.coords && isMounted) {
             const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
             setUserLocation(pos);
             userLocationRef.current = pos;
-            AsyncStorage.setItem("@gtrash_last_user_location", JSON.stringify(pos)).catch(() => {});
+            AsyncStorage.setItem(
+              "@gtrash_last_user_location",
+              JSON.stringify(pos),
+            ).catch(() => {});
           }
         } else {
           const bKey = (user?.barangay || "").trim().toLowerCase();
@@ -704,7 +841,9 @@ export default function HomeScreen({ navigation }) {
         }
       } catch (_) {}
     })();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [user?.barangay]);
 
   // Real-time socket
@@ -715,29 +854,59 @@ export default function HomeScreen({ navigation }) {
       socket.emit("resident:join", { residentId: user.id });
     }
 
-    socket.on("resident:points:update", ({ pointsEarned, description, newTotal }) => {
-      clearTimeout(pointsToastTimerRef.current);
-      setPointsToast({ pointsEarned, description, newTotal });
-      pointsToastTimerRef.current = setTimeout(() => setPointsToast(null), 4000);
-    });
+    socket.on(
+      "resident:points:update",
+      ({ pointsEarned, description, newTotal }) => {
+        clearTimeout(pointsToastTimerRef.current);
+        setPointsToast({ pointsEarned, description, newTotal });
+        pointsToastTimerRef.current = setTimeout(
+          () => setPointsToast(null),
+          4000,
+        );
+      },
+    );
 
     socket.on("truck:location:update", ({ truckId, lat, lng }) => {
       setTrucks((prev) => {
         const exists = prev.some((t) => t.truckId === truckId);
         if (exists) {
-          return prev.map((t) => (t.truckId === truckId ? { ...t, lat, lng, status: "online", updatedAt: new Date().toISOString() } : t));
+          return prev.map((t) =>
+            t.truckId === truckId
+              ? {
+                  ...t,
+                  lat,
+                  lng,
+                  status: "online",
+                  updatedAt: new Date().toISOString(),
+                }
+              : t,
+          );
         }
-        return [{ truckId, lat, lng, status: "online", updatedAt: new Date().toISOString() }, ...prev];
+        return [
+          {
+            truckId,
+            lat,
+            lng,
+            status: "online",
+            updatedAt: new Date().toISOString(),
+          },
+          ...prev,
+        ];
       });
       setTodayPickupDone(false);
     });
 
     socket.on("truck:status", ({ truckId, status }) => {
-      setTrucks((prev) => prev.map((t) => (t.truckId === truckId ? { ...t, status } : t)));
+      setTrucks((prev) =>
+        prev.map((t) => (t.truckId === truckId ? { ...t, status } : t)),
+      );
     });
 
     socket.on("route:completed", (data) => {
-      if (userBarangayRef.current && data.barangay?.toLowerCase() === userBarangayRef.current.toLowerCase()) {
+      if (
+        userBarangayRef.current &&
+        data.barangay?.toLowerCase() === userBarangayRef.current.toLowerCase()
+      ) {
         setTodayPickupDone(true);
         clearTimeout(toastTimerRef.current);
         setToastMsg(`🎉 Route completed for today in ${data.barangay}!`);
@@ -751,13 +920,20 @@ export default function HomeScreen({ navigation }) {
         setLatestPickupFeed({
           sitioName: newLog.stopName || newLog.sitioName,
           truckId: newLog.truckId,
-          time: new Date(newLog.completedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(newLog.completedAt || Date.now()).toLocaleTimeString(
+            [],
+            { hour: "2-digit", minute: "2-digit" },
+          ),
         });
       }
     });
 
-    socket.on("schedule:changed", () => { fetchDashboard(); });
-    socket.on("schedules:updated", () => { fetchDashboard(); });
+    socket.on("schedule:changed", () => {
+      fetchDashboard();
+    });
+    socket.on("schedules:updated", () => {
+      fetchDashboard();
+    });
 
     return () => {
       socket.disconnect();
@@ -769,7 +945,14 @@ export default function HomeScreen({ navigation }) {
   const isTruckOnline = (t) => {
     if (!t) return false;
     const st = (t.status || "").trim().toLowerCase();
-    if (st === "online" || st === "active" || st === "collecting" || st === "en-route" || st === "in-transit") return true;
+    if (
+      st === "online" ||
+      st === "active" ||
+      st === "collecting" ||
+      st === "en-route" ||
+      st === "in-transit"
+    )
+      return true;
     if (t.updatedAt) {
       const diffMs = Date.now() - new Date(t.updatedAt).getTime();
       if (!isNaN(diffMs) && diffMs < 10 * 60 * 1000) return true;
@@ -786,7 +969,12 @@ export default function HomeScreen({ navigation }) {
     let minDist = Infinity;
     for (const t of onlineTrucks) {
       if (t.lat != null && t.lng != null) {
-        const d = getDistanceM(userLocation.lat, userLocation.lng, t.lat, t.lng);
+        const d = getDistanceM(
+          userLocation.lat,
+          userLocation.lng,
+          t.lat,
+          t.lng,
+        );
         if (d < minDist) {
           minDist = d;
           closest = t;
@@ -799,31 +987,62 @@ export default function HomeScreen({ navigation }) {
   const firstSchedule = todaySchedules[0] || null;
 
   const activeTruckId = useMemo(() => {
-    return nearestTruck?.truckId || firstSchedule?.truckId || (onlineTrucks[0]?.truckId) || "GT-001";
+    return (
+      nearestTruck?.truckId ||
+      firstSchedule?.truckId ||
+      onlineTrucks[0]?.truckId ||
+      "GT-001"
+    );
   }, [nearestTruck, firstSchedule, onlineTrucks]);
 
   const distToTruck = useMemo(() => {
     if (!nearestTruck?.lat || !userLocation?.lat) return null;
-    return Math.round(getDistanceM(userLocation.lat, userLocation.lng, nearestTruck.lat, nearestTruck.lng));
+    return Math.round(
+      getDistanceM(
+        userLocation.lat,
+        userLocation.lng,
+        nearestTruck.lat,
+        nearestTruck.lng,
+      ),
+    );
   }, [nearestTruck, userLocation]);
 
   const scheduledWasteType = useMemo(() => {
-    const raw = (firstSchedule?.wasteType || todaySchedules[0]?.wasteType || "").trim();
+    const raw = (
+      firstSchedule?.wasteType ||
+      todaySchedules[0]?.wasteType ||
+      ""
+    ).trim();
     const lower = raw.toLowerCase();
-    if (lower.includes("di") || lower.includes("non") || lower.includes("recycl")) return "Di-Malata";
-    if (lower.includes("malata") || lower.includes("bio") || lower.includes("organ")) return "Malata";
+    if (
+      lower.includes("di") ||
+      lower.includes("non") ||
+      lower.includes("recycl")
+    )
+      return "Di-Malata";
+    if (
+      lower.includes("malata") ||
+      lower.includes("bio") ||
+      lower.includes("organ")
+    )
+      return "Malata";
     return raw || "Malata";
   }, [firstSchedule, todaySchedules]);
 
   useEffect(() => {
     let source = GENERAL_CHECKLIST_ITEMS;
     if (scheduledWasteType === "Malata") source = MALATA_CHECKLIST_ITEMS;
-    else if (scheduledWasteType === "Di-Malata") source = DI_MALATA_CHECKLIST_ITEMS;
+    else if (scheduledWasteType === "Di-Malata")
+      source = DI_MALATA_CHECKLIST_ITEMS;
     setChecklist(source.map((item) => ({ ...item, checked: false })));
   }, [scheduledWasteType]);
 
   const toggleCheck = (id) => {
-    setChecklist((prev) => prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item)));
+    setChecklist((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, checked: !item.checked } : item,
+      ),
+    );
   };
 
   const allChecked = checklist.every((item) => item.checked);
@@ -835,36 +1054,64 @@ export default function HomeScreen({ navigation }) {
     const brgy = user?.barangay?.trim()?.toLowerCase();
     if (brgy && todaySchedules.length > 0) {
       const userScheds = todaySchedules.filter(
-        (s) => (s.barangay && s.barangay.trim().toLowerCase() === brgy) || (s.routeName && s.routeName.toLowerCase().includes(brgy))
+        (s) =>
+          (s.barangay && s.barangay.trim().toLowerCase() === brgy) ||
+          (s.routeName && s.routeName.toLowerCase().includes(brgy)),
       );
       if (userScheds.length > 0) {
-        return userScheds.every((s) => s.status === "completed" || (s.sitioTasks?.length > 0 && s.sitioTasks.every((t) => t.completed)));
+        return userScheds.every(
+          (s) =>
+            s.status === "completed" ||
+            (s.sitioTasks?.length > 0 &&
+              s.sitioTasks.every((t) => t.completed)),
+        );
       }
     }
     return false;
   }, [todayPickupDone, todaySchedules, user?.barangay, firstSchedule]);
 
   const hasActiveTruckOrSchedule = useMemo(() => {
-    return onlineTrucks.length > 0 || !!firstSchedule || todaySchedules.length > 0;
+    return (
+      onlineTrucks.length > 0 || !!firstSchedule || todaySchedules.length > 0
+    );
   }, [onlineTrucks.length, firstSchedule, todaySchedules]);
 
-  const isTruckNear = useMemo(() => distToTruck !== null && distToTruck <= 1500, [distToTruck]);
+  const isTruckNear = useMemo(
+    () => distToTruck !== null && distToTruck <= 1500,
+    [distToTruck],
+  );
 
   // Pulse & Flame micro-animations
   useEffect(() => {
     const flame = Animated.loop(
       Animated.sequence([
-        Animated.timing(flameAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-        Animated.timing(flameAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
+        Animated.timing(flameAnim, {
+          toValue: 1.15,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(flameAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
     );
     flame.start();
 
     const beacon = Animated.loop(
       Animated.sequence([
-        Animated.timing(liveBeaconAnim, { toValue: 0.3, duration: 700, useNativeDriver: true }),
-        Animated.timing(liveBeaconAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ])
+        Animated.timing(liveBeaconAnim, {
+          toValue: 0.3,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(liveBeaconAnim, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
     );
     beacon.start();
 
@@ -886,7 +1133,9 @@ export default function HomeScreen({ navigation }) {
       {toastMsg && (
         <View style={styles.toastContainer}>
           <MaterialIcons name="local-shipping" size={15} color="#FFFFFF" />
-          <Text style={styles.toastText} numberOfLines={2}>{toastMsg}</Text>
+          <Text style={styles.toastText} numberOfLines={2}>
+            {toastMsg}
+          </Text>
         </View>
       )}
 
@@ -903,7 +1152,11 @@ export default function HomeScreen({ navigation }) {
       {/* Green Native Top App Bar */}
       <View style={styles.topAppBar}>
         <View style={styles.appBarLeft}>
-          <Image source={require("../../assets/logo.png")} style={styles.appBarLogo} resizeMode="contain" />
+          <Image
+            source={require("../../assets/logo.png")}
+            style={styles.appBarLogo}
+            resizeMode="contain"
+          />
           <View style={{ marginLeft: 7 }}>
             <Text style={styles.appBarTitle}>G-TRASH</Text>
             <Text style={styles.appBarSubtitle}>CEBU CITY</Text>
@@ -919,7 +1172,9 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="notifications-outline" size={19} color="#FFFFFF" />
             {pendingCount + truckAlertCount > 0 && (
               <View style={styles.badgeDot}>
-                <Text style={styles.badgeDotText}>{pendingCount + truckAlertCount}</Text>
+                <Text style={styles.badgeDotText}>
+                  {pendingCount + truckAlertCount}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
@@ -929,7 +1184,14 @@ export default function HomeScreen({ navigation }) {
             onPress={() => navigation.navigate("Profile")}
             activeOpacity={0.7}
           >
-            <MaterialIcons name="person" size={18} color="#006A3B" />
+            {user?.profilePicture ? (
+              <Image
+                source={{ uri: user.profilePicture }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <MaterialIcons name="person" size={18} color="#006A3B" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -963,24 +1225,41 @@ export default function HomeScreen({ navigation }) {
               </View>
 
               {/* Compact Live Status Chip */}
-              <View style={[
-                styles.liveStatusPill,
-                onlineTrucks.length > 0 ? styles.liveStatusPillGreen :
-                isRouteCompleted ? styles.liveStatusPillGray : styles.liveStatusPillAmber
-              ]}>
+              <View
+                style={[
+                  styles.liveStatusPill,
+                  onlineTrucks.length > 0
+                    ? styles.liveStatusPillGreen
+                    : isRouteCompleted
+                      ? styles.liveStatusPillGray
+                      : styles.liveStatusPillAmber,
+                ]}
+              >
                 <Animated.View
                   style={[
                     styles.liveDot,
-                    onlineTrucks.length > 0 ? { backgroundColor: "#10B981", opacity: liveBeaconAnim } :
-                    isRouteCompleted ? { backgroundColor: "#6B7280" } : { backgroundColor: "#F59E0B" }
+                    onlineTrucks.length > 0
+                      ? { backgroundColor: "#10B981", opacity: liveBeaconAnim }
+                      : isRouteCompleted
+                        ? { backgroundColor: "#6B7280" }
+                        : { backgroundColor: "#F59E0B" },
                   ]}
                 />
-                <Text style={[
-                  styles.liveStatusText,
-                  onlineTrucks.length > 0 ? { color: "#065F46" } :
-                  isRouteCompleted ? { color: "#4B5563" } : { color: "#92400E" }
-                ]}>
-                  {onlineTrucks.length > 0 ? "LIVE ROUTE" : isRouteCompleted ? "COMPLETED" : "STANDBY"}
+                <Text
+                  style={[
+                    styles.liveStatusText,
+                    onlineTrucks.length > 0
+                      ? { color: "#065F46" }
+                      : isRouteCompleted
+                        ? { color: "#4B5563" }
+                        : { color: "#92400E" },
+                  ]}
+                >
+                  {onlineTrucks.length > 0
+                    ? "LIVE ROUTE"
+                    : isRouteCompleted
+                      ? "COMPLETED"
+                      : "STANDBY"}
                 </Text>
               </View>
             </View>
@@ -988,8 +1267,20 @@ export default function HomeScreen({ navigation }) {
             {/* Resident 3-Metric Bar (Streak, Eco Points, Community Posts) */}
             <View style={styles.metricsBar}>
               <View style={styles.metricColumn}>
-                <Animated.View style={[styles.metricIconWrap, { backgroundColor: "#FFF7ED", transform: [{ scale: flameAnim }] }]}>
-                  <MaterialIcons name="local-fire-department" size={16} color="#F97316" />
+                <Animated.View
+                  style={[
+                    styles.metricIconWrap,
+                    {
+                      backgroundColor: "#FFF7ED",
+                      transform: [{ scale: flameAnim }],
+                    },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="local-fire-department"
+                    size={16}
+                    color="#F97316"
+                  />
                 </Animated.View>
                 <Text style={styles.metricValText}>{disposalStreak}d</Text>
                 <Text style={styles.metricLblText}>Streak</Text>
@@ -997,8 +1288,17 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.metricDivider} />
 
-              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("MyRewards")} activeOpacity={0.7}>
-                <View style={[styles.metricIconWrap, { backgroundColor: "#FEF3C7" }]}>
+              <TouchableOpacity
+                style={styles.metricColumn}
+                onPress={() => navigation.navigate("MyRewards")}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.metricIconWrap,
+                    { backgroundColor: "#FEF3C7" },
+                  ]}
+                >
                   <Ionicons name="star" size={15} color="#D97706" />
                 </View>
                 <Text style={styles.metricValText}>{userPoints}</Text>
@@ -1007,8 +1307,17 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.metricDivider} />
 
-              <TouchableOpacity style={styles.metricColumn} onPress={() => navigation.navigate("Community")} activeOpacity={0.7}>
-                <View style={[styles.metricIconWrap, { backgroundColor: "#EFF6FF" }]}>
+              <TouchableOpacity
+                style={styles.metricColumn}
+                onPress={() => navigation.navigate("Community")}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.metricIconWrap,
+                    { backgroundColor: "#EFF6FF" },
+                  ]}
+                >
                   <MaterialIcons name="campaign" size={16} color="#2563EB" />
                 </View>
                 <Text style={styles.metricValText}>{communityPostsCount}</Text>
@@ -1021,28 +1330,55 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.cardHeaderRow}>
                 <View style={styles.streamBadge}>
                   <MaterialIcons
-                    name={scheduledWasteType === "Di-Malata" ? "recycling" : "eco"}
+                    name={
+                      scheduledWasteType === "Di-Malata" ? "recycling" : "eco"
+                    }
                     size={13}
-                    color={scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#047857"}
+                    color={
+                      scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#047857"
+                    }
                   />
-                  <Text style={[
-                    styles.streamBadgeText,
-                    { color: scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#047857" }
-                  ]}>
+                  <Text
+                    style={[
+                      styles.streamBadgeText,
+                      {
+                        color:
+                          scheduledWasteType === "Di-Malata"
+                            ? "#1D4ED8"
+                            : "#047857",
+                      },
+                    ]}
+                  >
                     {scheduledWasteType}
                   </Text>
                 </View>
 
                 <View style={styles.pointsBadge}>
-                  <MaterialIcons name="emoji-events" size={12} color="#D97706" />
+                  <MaterialIcons
+                    name="emoji-events"
+                    size={12}
+                    color="#D97706"
+                  />
                   <Text style={styles.pointsBadgeText}>+10 Pts</Text>
                 </View>
               </View>
 
               {/* Status summary */}
               <View style={styles.heroStatusRow}>
-                <View style={[styles.heroTruckIconWrap, { backgroundColor: onlineTrucks.length > 0 ? "#ECFDF5" : "#F1F5F9" }]}>
-                  <MaterialIcons name="local-shipping" size={24} color={onlineTrucks.length > 0 ? "#006A3B" : "#64748B"} />
+                <View
+                  style={[
+                    styles.heroTruckIconWrap,
+                    {
+                      backgroundColor:
+                        onlineTrucks.length > 0 ? "#ECFDF5" : "#F1F5F9",
+                    },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="local-shipping"
+                    size={24}
+                    color={onlineTrucks.length > 0 ? "#006A3B" : "#64748B"}
+                  />
                 </View>
 
                 <View style={{ flex: 1 }}>
@@ -1050,23 +1386,23 @@ export default function HomeScreen({ navigation }) {
                     {hasSnappedToday
                       ? "Bin Prepared & Verified ✓"
                       : isRouteCompleted
-                      ? "Route Collection Completed"
-                      : distToTruck !== null && distToTruck < 400
-                      ? `Truck ${distToTruck}m Away (On Street!)`
-                      : distToTruck !== null
-                      ? `Truck ~${distToTruck}m Away (~${Math.ceil(distToTruck / 200)}m)`
-                      : onlineTrucks.length > 0
-                      ? `${onlineTrucks.length} Truck${onlineTrucks.length > 1 ? "s" : ""} Online in Area`
-                      : "Standby for Collection"}
+                        ? "Route Collection Completed"
+                        : distToTruck !== null && distToTruck < 400
+                          ? `Truck ${distToTruck}m Away (On Street!)`
+                          : distToTruck !== null
+                            ? `Truck ~${distToTruck}m Away (~${Math.ceil(distToTruck / 200)}m)`
+                            : onlineTrucks.length > 0
+                              ? `${onlineTrucks.length} Truck${onlineTrucks.length > 1 ? "s" : ""} Online in Area`
+                              : "Standby for Collection"}
                   </Text>
                   <Text style={styles.heroSubText}>
                     {hasSnappedToday
                       ? "Disposal photo verified for today. Resets tomorrow."
                       : isRouteCompleted
-                      ? "Trash collection in your area is finished for today."
-                      : scheduledWasteType === "Di-Malata"
-                      ? "Dry recyclables only. Keep wet kitchen waste stored."
-                      : "Biodegradable organic waste. Please tie bags securely."}
+                        ? "Trash collection in your area is finished for today."
+                        : scheduledWasteType === "Di-Malata"
+                          ? "Dry recyclables only. Keep wet kitchen waste stored."
+                          : "Biodegradable organic waste. Please tie bags securely."}
                   </Text>
                 </View>
               </View>
@@ -1074,10 +1410,17 @@ export default function HomeScreen({ navigation }) {
               {/* Verified photo thumbnail if snapped today */}
               {todayDisposalPhoto && hasSnappedToday && (
                 <View style={styles.verifiedThumbnailRow}>
-                  <Image source={{ uri: todayDisposalPhoto }} style={styles.verifiedThumbnailImg} />
+                  <Image
+                    source={{ uri: todayDisposalPhoto }}
+                    style={styles.verifiedThumbnailImg}
+                  />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.verifiedThumbTitle}>Daily Proof Submitted ✓</Text>
-                    <Text style={styles.verifiedThumbSub}>Verified at curb • +10 points earned</Text>
+                    <Text style={styles.verifiedThumbTitle}>
+                      Daily Proof Submitted ✓
+                    </Text>
+                    <Text style={styles.verifiedThumbSub}>
+                      Verified at curb • +10 points earned
+                    </Text>
                   </View>
                 </View>
               )}
@@ -1086,24 +1429,51 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.heroActionButtons}>
                 {hasSnappedToday ? (
                   <TouchableOpacity
-                    style={[styles.primaryCtaBtn, { backgroundColor: "#ECFDF5" }]}
+                    style={[
+                      styles.primaryCtaBtn,
+                      { backgroundColor: "#ECFDF5" },
+                    ]}
                     onPress={() => {
                       if (todayDisposalPhoto) {
                         setSelectedPhoto(todayDisposalPhoto);
                         setPhotoPreviewVisible(true);
                       } else {
-                        Alert.alert("Daily Snap", "Your bin photo is verified for today!");
+                        Alert.alert(
+                          "Daily Snap",
+                          "Your bin photo is verified for today!",
+                        );
                       }
                     }}
                     activeOpacity={0.8}
                   >
-                    <MaterialIcons name="check-circle" size={16} color="#059669" />
-                    <Text style={[styles.primaryCtaBtnText, { color: "#059669" }]}>View Proof</Text>
+                    <MaterialIcons
+                      name="check-circle"
+                      size={16}
+                      color="#059669"
+                    />
+                    <Text
+                      style={[styles.primaryCtaBtnText, { color: "#059669" }]}
+                    >
+                      View Proof
+                    </Text>
                   </TouchableOpacity>
-                ) : (isRouteCompleted || todayPickupDone) ? (
-                  <View style={[styles.primaryCtaBtn, { backgroundColor: "#F1F5F9" }]}>
-                    <MaterialIcons name="check-circle" size={16} color="#64748B" />
-                    <Text style={[styles.primaryCtaBtnText, { color: "#64748B" }]}>Finished ✓</Text>
+                ) : isRouteCompleted || todayPickupDone ? (
+                  <View
+                    style={[
+                      styles.primaryCtaBtn,
+                      { backgroundColor: "#F1F5F9" },
+                    ]}
+                  >
+                    <MaterialIcons
+                      name="check-circle"
+                      size={16}
+                      color="#64748B"
+                    />
+                    <Text
+                      style={[styles.primaryCtaBtnText, { color: "#64748B" }]}
+                    >
+                      Finished ✓
+                    </Text>
                   </View>
                 ) : hasActiveTruckOrSchedule ? (
                   <TouchableOpacity
@@ -1112,16 +1482,29 @@ export default function HomeScreen({ navigation }) {
                     activeOpacity={0.8}
                   >
                     <MaterialIcons name="checklist" size={16} color="#FFFFFF" />
-                    <Text style={styles.primaryCtaBtnText}>Prepare Bin (+10 Pts)</Text>
+                    <Text style={styles.primaryCtaBtnText}>
+                      Prepare Bin (+10 Pts)
+                    </Text>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.primaryCtaBtn, { backgroundColor: "#F1F5F9" }]}
+                    style={[
+                      styles.primaryCtaBtn,
+                      { backgroundColor: "#F1F5F9" },
+                    ]}
                     onPress={() => navigation.navigate("Calendar")}
                     activeOpacity={0.8}
                   >
-                    <MaterialIcons name="event-note" size={16} color="#475569" />
-                    <Text style={[styles.primaryCtaBtnText, { color: "#475569" }]}>View Schedule</Text>
+                    <MaterialIcons
+                      name="event-note"
+                      size={16}
+                      color="#475569"
+                    />
+                    <Text
+                      style={[styles.primaryCtaBtnText, { color: "#475569" }]}
+                    >
+                      View Schedule
+                    </Text>
                   </TouchableOpacity>
                 )}
 
@@ -1146,11 +1529,26 @@ export default function HomeScreen({ navigation }) {
                 }}
                 activeOpacity={0.7}
               >
-                <View style={[styles.quickGridIconWrap, { backgroundColor: "#ECFDF5" }]}>
-                  <MaterialIcons name={hasActiveTruckOrSchedule ? "photo-camera" : "campaign"} size={20} color="#059669" />
+                <View
+                  style={[
+                    styles.quickGridIconWrap,
+                    { backgroundColor: "#ECFDF5" },
+                  ]}
+                >
+                  <MaterialIcons
+                    name={
+                      hasActiveTruckOrSchedule ? "photo-camera" : "campaign"
+                    }
+                    size={20}
+                    color="#059669"
+                  />
                 </View>
-                <Text style={styles.quickGridLabel}>{hasActiveTruckOrSchedule ? "Daily Snap" : "Community"}</Text>
-                <Text style={styles.quickGridSub}>{hasActiveTruckOrSchedule ? "+10 Pts" : "Feed"}</Text>
+                <Text style={styles.quickGridLabel}>
+                  {hasActiveTruckOrSchedule ? "Daily Snap" : "Community"}
+                </Text>
+                <Text style={styles.quickGridSub}>
+                  {hasActiveTruckOrSchedule ? "+10 Pts" : "Feed"}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1158,7 +1556,12 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate("Map")}
                 activeOpacity={0.7}
               >
-                <View style={[styles.quickGridIconWrap, { backgroundColor: "#EFF6FF" }]}>
+                <View
+                  style={[
+                    styles.quickGridIconWrap,
+                    { backgroundColor: "#EFF6FF" },
+                  ]}
+                >
                   <MaterialIcons name="map" size={20} color="#2563EB" />
                 </View>
                 <Text style={styles.quickGridLabel}>Live GPS</Text>
@@ -1170,7 +1573,12 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate("Calendar")}
                 activeOpacity={0.7}
               >
-                <View style={[styles.quickGridIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                <View
+                  style={[
+                    styles.quickGridIconWrap,
+                    { backgroundColor: "#FEF3C7" },
+                  ]}
+                >
                   <MaterialIcons name="event-note" size={20} color="#D97706" />
                 </View>
                 <Text style={styles.quickGridLabel}>Schedule</Text>
@@ -1182,8 +1590,17 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate("Report")}
                 activeOpacity={0.7}
               >
-                <View style={[styles.quickGridIconWrap, { backgroundColor: "#FEE2E2" }]}>
-                  <MaterialIcons name="report-problem" size={20} color="#DC2626" />
+                <View
+                  style={[
+                    styles.quickGridIconWrap,
+                    { backgroundColor: "#FEE2E2" },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="report-problem"
+                    size={20}
+                    color="#DC2626"
+                  />
                 </View>
                 <Text style={styles.quickGridLabel}>Report</Text>
                 <Text style={styles.quickGridSub}>File Issue</Text>
@@ -1195,19 +1612,54 @@ export default function HomeScreen({ navigation }) {
               const isCritical = aqData?.status === "critical";
               const isModerate = aqData?.status === "moderate";
               const activeLevel = isCritical ? 3 : isModerate ? 2 : 1;
-              const statusLabel = isCritical ? "Poor Quality" : isModerate ? "Moderate" : "Clean Air";
-              const statusColor = isCritical ? "#DC2626" : isModerate ? "#D97706" : "#059669";
+              const statusLabel = isCritical
+                ? "Poor Quality"
+                : isModerate
+                  ? "Moderate"
+                  : "Clean Air";
+              const statusColor = isCritical
+                ? "#DC2626"
+                : isModerate
+                  ? "#D97706"
+                  : "#059669";
 
               return (
                 <View style={styles.compactCard}>
                   <View style={styles.cardHeaderRow}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
                       <MaterialIcons name="air" size={18} color="#475569" />
-                      <Text style={styles.compactCardTitle}>Air Quality (Barangay {user?.barangay || "Apas"})</Text>
+                      <Text style={styles.compactCardTitle}>
+                        Air Quality (Barangay {user?.barangay || "Apas"})
+                      </Text>
                     </View>
-                    <View style={[styles.aqStatusPill, { borderColor: statusColor, backgroundColor: isCritical ? "#FEF2F2" : isModerate ? "#FFFBEB" : "#ECFDF5" }]}>
-                      <View style={[styles.liveDot, { backgroundColor: statusColor }]} />
-                      <Text style={[styles.aqStatusText, { color: statusColor }]}>
+                    <View
+                      style={[
+                        styles.aqStatusPill,
+                        {
+                          borderColor: statusColor,
+                          backgroundColor: isCritical
+                            ? "#FEF2F2"
+                            : isModerate
+                              ? "#FFFBEB"
+                              : "#ECFDF5",
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.liveDot,
+                          { backgroundColor: statusColor },
+                        ]}
+                      />
+                      <Text
+                        style={[styles.aqStatusText, { color: statusColor }]}
+                      >
                         Level {activeLevel} • {statusLabel}
                       </Text>
                     </View>
@@ -1216,16 +1668,40 @@ export default function HomeScreen({ navigation }) {
                   {/* 7-Bar Sparkline Chart */}
                   <View style={styles.miniChartRow}>
                     {chartBars.map((bar, i) => (
-                      <View key={bar.id || i} style={[styles.miniBar, { height: bar.height, backgroundColor: bar.color }]} />
+                      <View
+                        key={bar.id || i}
+                        style={[
+                          styles.miniBar,
+                          { height: bar.height, backgroundColor: bar.color },
+                        ]}
+                      />
                     ))}
                   </View>
 
                   {/* 3-Level Breakdown */}
                   <View style={styles.aqLevelColumns}>
                     {[
-                      { level: 1, label: "Good", desc: "Clean", color: "#10B981", bg: "#ECFDF5" },
-                      { level: 2, label: "Moderate", desc: "Caution", color: "#F59E0B", bg: "#FFFBEB" },
-                      { level: 3, label: "Poor", desc: "Alert", color: "#EF4444", bg: "#FEF2F2" },
+                      {
+                        level: 1,
+                        label: "Good",
+                        desc: "Clean",
+                        color: "#10B981",
+                        bg: "#ECFDF5",
+                      },
+                      {
+                        level: 2,
+                        label: "Moderate",
+                        desc: "Caution",
+                        color: "#F59E0B",
+                        bg: "#FFFBEB",
+                      },
+                      {
+                        level: 3,
+                        label: "Poor",
+                        desc: "Alert",
+                        color: "#EF4444",
+                        bg: "#FEF2F2",
+                      },
                     ].map((lvl) => {
                       const isCur = activeLevel === lvl.level;
                       return (
@@ -1233,11 +1709,31 @@ export default function HomeScreen({ navigation }) {
                           key={lvl.level}
                           style={[
                             styles.aqLevelItem,
-                            isCur ? { backgroundColor: lvl.bg, borderColor: lvl.color, borderWidth: 1.5 } : styles.aqLevelItemInactive,
+                            isCur
+                              ? {
+                                  backgroundColor: lvl.bg,
+                                  borderColor: lvl.color,
+                                  borderWidth: 1.5,
+                                }
+                              : styles.aqLevelItemInactive,
                           ]}
                         >
-                          <Text style={[styles.aqLevelNum, { color: isCur ? lvl.color : "#94A3B8" }]}>Lvl {lvl.level}</Text>
-                          <Text style={[styles.aqLevelTitle, { color: isCur ? "#0F172A" : "#64748B" }]}>{lvl.label}</Text>
+                          <Text
+                            style={[
+                              styles.aqLevelNum,
+                              { color: isCur ? lvl.color : "#94A3B8" },
+                            ]}
+                          >
+                            Lvl {lvl.level}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.aqLevelTitle,
+                              { color: isCur ? "#0F172A" : "#64748B" },
+                            ]}
+                          >
+                            {lvl.label}
+                          </Text>
                         </View>
                       );
                     })}
@@ -1248,66 +1744,158 @@ export default function HomeScreen({ navigation }) {
 
             {/* Interactive Waste Segregation Guide (Compact Native Tabs) */}
             {(() => {
-              const currentTab = activeSegregationTab || (scheduledWasteType === "Di-Malata" ? "di_malata" : "malata");
+              const currentTab =
+                activeSegregationTab ||
+                (scheduledWasteType === "Di-Malata" ? "di_malata" : "malata");
               const isMalata = currentTab === "malata";
 
               return (
                 <View style={styles.compactCard}>
                   <View style={styles.cardHeaderRow}>
                     <View>
-                      <Text style={styles.compactCardTitle}>Waste Segregation Guide</Text>
-                      <Text style={styles.compactCardSub}>Cebu City Solid Waste Guidelines</Text>
+                      <Text style={styles.compactCardTitle}>
+                        Waste Segregation Guide
+                      </Text>
+                      <Text style={styles.compactCardSub}>
+                        Cebu City Solid Waste Guidelines
+                      </Text>
                     </View>
                     <View style={styles.streamBadge}>
-                      <Text style={styles.streamBadgeText}>Today: {scheduledWasteType}</Text>
+                      <Text style={styles.streamBadgeText}>
+                        Today: {scheduledWasteType}
+                      </Text>
                     </View>
                   </View>
 
                   {/* Segmented Tab Control */}
                   <View style={styles.segTabsContainer}>
                     <TouchableOpacity
-                      style={[styles.segTabButton, isMalata && styles.segTabButtonActiveMalata]}
+                      style={[
+                        styles.segTabButton,
+                        isMalata && styles.segTabButtonActiveMalata,
+                      ]}
                       onPress={() => setActiveSegregationTab("malata")}
                       activeOpacity={0.7}
                     >
-                      <MaterialIcons name="eco" size={14} color={isMalata ? "#047857" : "#64748B"} />
-                      <Text style={[styles.segTabText, isMalata && styles.segTabTextActiveMalata]}>Malata (Bio)</Text>
+                      <MaterialIcons
+                        name="eco"
+                        size={14}
+                        color={isMalata ? "#047857" : "#64748B"}
+                      />
+                      <Text
+                        style={[
+                          styles.segTabText,
+                          isMalata && styles.segTabTextActiveMalata,
+                        ]}
+                      >
+                        Malata (Bio)
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.segTabButton, !isMalata && styles.segTabButtonActiveDiMalata]}
+                      style={[
+                        styles.segTabButton,
+                        !isMalata && styles.segTabButtonActiveDiMalata,
+                      ]}
                       onPress={() => setActiveSegregationTab("di_malata")}
                       activeOpacity={0.7}
                     >
-                      <MaterialIcons name="recycling" size={14} color={!isMalata ? "#1D4ED8" : "#64748B"} />
-                      <Text style={[styles.segTabText, !isMalata && styles.segTabTextActiveDiMalata]}>Di-Malata (Dry)</Text>
+                      <MaterialIcons
+                        name="recycling"
+                        size={14}
+                        color={!isMalata ? "#1D4ED8" : "#64748B"}
+                      />
+                      <Text
+                        style={[
+                          styles.segTabText,
+                          !isMalata && styles.segTabTextActiveDiMalata,
+                        ]}
+                      >
+                        Di-Malata (Dry)
+                      </Text>
                     </TouchableOpacity>
                   </View>
 
                   {/* Two-Column Accept vs Reject List */}
                   <View style={styles.segSplitGrid}>
-                    <View style={[styles.segColBox, isMalata ? styles.segColBoxGreen : styles.segColBoxBlue]}>
+                    <View
+                      style={[
+                        styles.segColBox,
+                        isMalata ? styles.segColBoxGreen : styles.segColBoxBlue,
+                      ]}
+                    >
                       <View style={styles.segColHead}>
-                        <MaterialIcons name="check-circle" size={13} color={isMalata ? "#059669" : "#2563EB"} />
-                        <Text style={[styles.segColHeadText, { color: isMalata ? "#059669" : "#2563EB" }]}>
+                        <MaterialIcons
+                          name="check-circle"
+                          size={13}
+                          color={isMalata ? "#059669" : "#2563EB"}
+                        />
+                        <Text
+                          style={[
+                            styles.segColHeadText,
+                            { color: isMalata ? "#059669" : "#2563EB" },
+                          ]}
+                        >
                           {isMalata ? "PUT IN GREEN BIN" : "PUT IN DRY BIN"}
                         </Text>
                       </View>
-                      <Text style={styles.segItemText}>• {isMalata ? "Leftover food & rice" : "Plastic bottles & cups"}</Text>
-                      <Text style={styles.segItemText}>• {isMalata ? "Fruit & veggie peelings" : "Tin & soda cans"}</Text>
-                      <Text style={styles.segItemText}>• {isMalata ? "Fish & meat bones" : "Cardboard boxes"}</Text>
-                      <Text style={styles.segItemText}>• {isMalata ? "Garden leaves & twigs" : "Clean dry wrappers"}</Text>
+                      <Text style={styles.segItemText}>
+                        •{" "}
+                        {isMalata
+                          ? "Leftover food & rice"
+                          : "Plastic bottles & cups"}
+                      </Text>
+                      <Text style={styles.segItemText}>
+                        •{" "}
+                        {isMalata
+                          ? "Fruit & veggie peelings"
+                          : "Tin & soda cans"}
+                      </Text>
+                      <Text style={styles.segItemText}>
+                        • {isMalata ? "Fish & meat bones" : "Cardboard boxes"}
+                      </Text>
+                      <Text style={styles.segItemText}>
+                        •{" "}
+                        {isMalata
+                          ? "Garden leaves & twigs"
+                          : "Clean dry wrappers"}
+                      </Text>
                     </View>
 
                     <View style={[styles.segColBox, styles.segColBoxRed]}>
                       <View style={styles.segColHead}>
-                        <MaterialIcons name="cancel" size={13} color="#DC2626" />
-                        <Text style={[styles.segColHeadText, { color: "#DC2626" }]}>DO NOT MIX</Text>
+                        <MaterialIcons
+                          name="cancel"
+                          size={13}
+                          color="#DC2626"
+                        />
+                        <Text
+                          style={[styles.segColHeadText, { color: "#DC2626" }]}
+                        >
+                          DO NOT MIX
+                        </Text>
                       </View>
-                      <Text style={styles.segItemTextReject}>• {isMalata ? "Plastic wrappers & cups" : "Wet leftover food"}</Text>
-                      <Text style={styles.segItemTextReject}>• {isMalata ? "Tin cans & bottles" : "Oily & greasy waste"}</Text>
-                      <Text style={styles.segItemTextReject}>• {isMalata ? "Diapers & batteries" : "Garden soil & weeds"}</Text>
-                      <Text style={styles.segItemTextReject}>• {isMalata ? "Styrofoam packs" : "Animal & meat waste"}</Text>
+                      <Text style={styles.segItemTextReject}>
+                        •{" "}
+                        {isMalata
+                          ? "Plastic wrappers & cups"
+                          : "Wet leftover food"}
+                      </Text>
+                      <Text style={styles.segItemTextReject}>
+                        •{" "}
+                        {isMalata
+                          ? "Tin cans & bottles"
+                          : "Oily & greasy waste"}
+                      </Text>
+                      <Text style={styles.segItemTextReject}>
+                        •{" "}
+                        {isMalata
+                          ? "Diapers & batteries"
+                          : "Garden soil & weeds"}
+                      </Text>
+                      <Text style={styles.segItemTextReject}>
+                        • {isMalata ? "Styrofoam packs" : "Animal & meat waste"}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -1318,28 +1906,53 @@ export default function HomeScreen({ navigation }) {
       </ScrollView>
 
       {/* Prepare Bin Checklist Bottom Sheet Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheetContainer}>
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setModalVisible(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.modalSheetContainer}
+          >
             <View style={styles.sheetHandle} />
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
+            >
               <View style={styles.modalHeaderRow}>
                 <View style={styles.modalHeaderIconWrap}>
                   <MaterialIcons
-                    name={scheduledWasteType === "Di-Malata" ? "recycling" : "delete-outline"}
+                    name={
+                      scheduledWasteType === "Di-Malata"
+                        ? "recycling"
+                        : "delete-outline"
+                    }
                     size={20}
-                    color={scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#006A3B"}
+                    color={
+                      scheduledWasteType === "Di-Malata" ? "#1D4ED8" : "#006A3B"
+                    }
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitleText}>Prepare Your Bin</Text>
-                  <Text style={styles.modalSubText}>Today's Stream: {scheduledWasteType} Collection</Text>
+                  <Text style={styles.modalSubText}>
+                    Today's Stream: {scheduledWasteType} Collection
+                  </Text>
                 </View>
               </View>
 
               {/* Checklist Items */}
-              <Text style={styles.checklistSectionLabel}>Pre-Collection Checklist ({checkedCount}/{checklist.length})</Text>
+              <Text style={styles.checklistSectionLabel}>
+                Pre-Collection Checklist ({checkedCount}/{checklist.length})
+              </Text>
 
               {checklist.map((item) => (
                 <TouchableOpacity
@@ -1348,30 +1961,72 @@ export default function HomeScreen({ navigation }) {
                   onPress={() => toggleCheck(item.id)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.checkBox, item.checked && styles.checkBoxChecked]}>
-                    {item.checked && <MaterialIcons name="check" size={13} color="#FFFFFF" />}
+                  <View
+                    style={[
+                      styles.checkBox,
+                      item.checked && styles.checkBoxChecked,
+                    ]}
+                  >
+                    {item.checked && (
+                      <MaterialIcons name="check" size={13} color="#FFFFFF" />
+                    )}
                   </View>
-                  <Text style={[styles.checkLabel, item.checked && styles.checkLabelDone]}>{item.label}</Text>
+                  <Text
+                    style={[
+                      styles.checkLabel,
+                      item.checked && styles.checkLabelDone,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
 
               {/* Progress bar */}
               <View style={styles.sheetProgressTrack}>
-                <View style={[styles.sheetProgressFill, { width: `${(checkedCount / checklist.length) * 100}%` }]} />
+                <View
+                  style={[
+                    styles.sheetProgressFill,
+                    { width: `${(checkedCount / checklist.length) * 100}%` },
+                  ]}
+                />
               </View>
 
               {/* Camera Trigger */}
               {allChecked ? (
                 <View style={styles.snapBoxActive}>
-                  <Text style={styles.snapBoxTitle}>Take Proof Photo (+10 Eco Points)</Text>
-                  <Text style={styles.snapBoxSub}>All checked! Snap your sorted bin at the curb to earn points.</Text>
-                  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-                    <TouchableOpacity style={styles.snapCameraBtn} onPress={handleTakePhoto} activeOpacity={0.8}>
-                      <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                  <Text style={styles.snapBoxTitle}>
+                    Take Proof Photo (+10 Eco Points)
+                  </Text>
+                  <Text style={styles.snapBoxSub}>
+                    All checked! Snap your sorted bin at the curb to earn
+                    points.
+                  </Text>
+                  <View
+                    style={{ flexDirection: "row", gap: 10, marginTop: 10 }}
+                  >
+                    <TouchableOpacity
+                      style={styles.snapCameraBtn}
+                      onPress={handleTakePhoto}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name="photo-camera"
+                        size={16}
+                        color="#FFFFFF"
+                      />
                       <Text style={styles.snapCameraBtnText}>Take Photo</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.snapGalleryBtn} onPress={handlePickPhoto} activeOpacity={0.8}>
-                      <MaterialIcons name="photo-library" size={16} color="#006A3B" />
+                    <TouchableOpacity
+                      style={styles.snapGalleryBtn}
+                      onPress={handlePickPhoto}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name="photo-library"
+                        size={16}
+                        color="#006A3B"
+                      />
                       <Text style={styles.snapGalleryBtnText}>Gallery</Text>
                     </TouchableOpacity>
                   </View>
@@ -1379,7 +2034,10 @@ export default function HomeScreen({ navigation }) {
               ) : (
                 <View style={styles.snapBoxDisabled}>
                   <MaterialIcons name="lock" size={16} color="#94A3B8" />
-                  <Text style={styles.snapBoxDisabledText}>Check all {checklist.length} items above to unlock photo capture.</Text>
+                  <Text style={styles.snapBoxDisabledText}>
+                    Check all {checklist.length} items above to unlock photo
+                    capture.
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -1388,46 +2046,86 @@ export default function HomeScreen({ navigation }) {
       </Modal>
 
       {/* Story Preview Modal */}
-      <Modal visible={photoPreviewVisible} transparent animationType="fade" onRequestClose={() => setPhotoPreviewVisible(false)}>
+      <Modal
+        visible={photoPreviewVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoPreviewVisible(false)}
+      >
         <View style={styles.modalOverlayDark}>
           <View style={styles.storyModalCard}>
             <Text style={styles.storyTitle}>Disposal Verification</Text>
-            <Text style={styles.storySubtitle}>Submit to earn points and keep your streak!</Text>
+            <Text style={styles.storySubtitle}>
+              Submit to earn points and keep your streak!
+            </Text>
 
             {selectedPhoto && (
               <View style={styles.storyPhotoWrap}>
-                <Image source={{ uri: selectedPhoto }} style={styles.storyImg} resizeMode="cover" />
+                <Image
+                  source={{ uri: selectedPhoto }}
+                  style={styles.storyImg}
+                  resizeMode="cover"
+                />
                 <View style={styles.storyBadgeTop}>
-                  <Text style={styles.storyBadgeText}>📍 {user?.barangay || "Cebu City"} • {scheduledWasteType}</Text>
+                  <Text style={styles.storyBadgeText}>
+                    📍 {user?.barangay || "Cebu City"} • {scheduledWasteType}
+                  </Text>
                 </View>
               </View>
             )}
 
             {/* Motivation Chips */}
-            <Text style={styles.motivationLabel}>What motivated you to dispose your trash today?</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.motivationScroll}>
+            <Text style={styles.motivationLabel}>
+              What motivated you to dispose your trash today?
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.motivationScroll}
+            >
               {MOTIVATION_OPTIONS.map((opt) => {
                 const isSel = selectedMotivation === opt.label;
                 return (
                   <TouchableOpacity
                     key={opt.id}
-                    style={[styles.motivationChip, isSel && styles.motivationChipSelected]}
+                    style={[
+                      styles.motivationChip,
+                      isSel && styles.motivationChipSelected,
+                    ]}
                     onPress={() => setSelectedMotivation(opt.label)}
                     activeOpacity={0.7}
                   >
-                    <MaterialIcons name={opt.icon} size={13} color={isSel ? "#FFFFFF" : opt.color} />
-                    <Text style={[styles.motivationChipText, isSel && { color: "#FFFFFF" }]}>{opt.label}</Text>
+                    <MaterialIcons
+                      name={opt.icon}
+                      size={13}
+                      color={isSel ? "#FFFFFF" : opt.color}
+                    />
+                    <Text
+                      style={[
+                        styles.motivationChipText,
+                        isSel && { color: "#FFFFFF" },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
             <View style={styles.storyActionRow}>
-              <TouchableOpacity style={styles.retakeButton} onPress={handleTakePhoto} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.retakeButton}
+                onPress={handleTakePhoto}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.retakeButtonText}>Retake</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.submitButton, isSubmittingDisposal && { opacity: 0.7 }]}
+                style={[
+                  styles.submitButton,
+                  isSubmittingDisposal && { opacity: 0.7 },
+                ]}
                 onPress={handleShareOrSavePhoto}
                 disabled={isSubmittingDisposal}
                 activeOpacity={0.8}
@@ -1444,26 +2142,41 @@ export default function HomeScreen({ navigation }) {
       </Modal>
 
       {/* Celebration Modal */}
-      <Modal visible={celebrationVisible} transparent animationType="fade" onRequestClose={() => setCelebrationVisible(false)}>
+      <Modal
+        visible={celebrationVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCelebrationVisible(false)}
+      >
         <View style={styles.modalOverlayDark}>
           <ConfettiExplosion visible={celebrationVisible} />
           <View style={styles.celebrationBox}>
             <Text style={{ fontSize: 36, textAlign: "center" }}>🏆</Text>
             <Text style={styles.celebrationHeading}>Disposal Verified!</Text>
-            <Text style={styles.celebrationBody}>{celebrationData?.message}</Text>
+            <Text style={styles.celebrationBody}>
+              {celebrationData?.message}
+            </Text>
 
             <View style={styles.rewardPillRow}>
               <View style={styles.rewardPill}>
-                <Text style={styles.rewardPillVal}>🔥 {disposalStreak} Days</Text>
+                <Text style={styles.rewardPillVal}>
+                  🔥 {disposalStreak} Days
+                </Text>
                 <Text style={styles.rewardPillLbl}>Streak</Text>
               </View>
               <View style={styles.rewardPill}>
-                <Text style={styles.rewardPillVal}>🌟 +{celebrationData?.awardPoints || 10} Pts</Text>
+                <Text style={styles.rewardPillVal}>
+                  🌟 +{celebrationData?.awardPoints || 10} Pts
+                </Text>
                 <Text style={styles.rewardPillLbl}>Eco Points</Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.celebrationDoneBtn} onPress={() => setCelebrationVisible(false)} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.celebrationDoneBtn}
+              onPress={() => setCelebrationVisible(false)}
+              activeOpacity={0.8}
+            >
               <Text style={styles.celebrationDoneBtnText}>Great! 🌟</Text>
             </TouchableOpacity>
           </View>
@@ -2337,5 +3050,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+  avatarButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 17,
+    resizeMode: "cover",
   },
 });

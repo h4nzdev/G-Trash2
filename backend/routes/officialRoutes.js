@@ -5,6 +5,7 @@ const { authMiddleware } = require("../middleware/auth");
 
 // Officials auth & profile
 router.post("/login", officialController.login);
+router.post("/bootstrap-superadmin", officialController.bootstrapSuperadmin);
 router.get("/me", authMiddleware, officialController.getMe);
 router.patch("/signature", authMiddleware, officialController.updateSignature);
 router.put("/signature", authMiddleware, officialController.updateSignature);
