@@ -4,13 +4,28 @@ import { io } from 'socket.io-client';
 import { AlertTriangle, X, Map as MapIcon, Radio, Wind, Thermometer, Megaphone, CheckCircle, Mail, User } from 'lucide-react';
 import Sidebar from '../components/sidebar/Sidebar';
 import TopBar from '../components/shared/TopBar';
+import FirstLoginPasswordModal from '../components/FirstLoginPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import API from '../config';
 
 export default function DashboardLayout() {
   const [alerts, setAlerts] = useState([]);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const navigate = useNavigate();
   const { official } = useAuth();
+
+  useEffect(() => {
+    if (official) {
+      const id = official.id || official._id;
+      const isUpdated = localStorage.getItem(`gtrash_pw_updated_${id}`) === 'true';
+      const isSkipped = sessionStorage.getItem(`gtrash_pw_skipped_${id}`) === 'true';
+      const isFirst = official.isFirstLogin === true || localStorage.getItem(`gtrash_first_login_${id}`) === 'true';
+
+      if (!isUpdated && !isSkipped && isFirst) {
+        setShowPasswordModal(true);
+      }
+    }
+  }, [official]);
 
   useEffect(() => {
     const isScoped = official?.barangay && official.barangay !== 'All' && official?.role !== 'superadmin';
@@ -532,6 +547,13 @@ export default function DashboardLayout() {
           <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[3000] flex flex-col items-center gap-2.5 w-full max-w-lg px-4 pointer-events-none">
             {alerts.map(renderAlert)}
           </div>
+
+          {/* First Login Password Update Modal */}
+          <FirstLoginPasswordModal
+            official={official}
+            isOpen={showPasswordModal}
+            onClose={() => setShowPasswordModal(false)}
+          />
         </main>
       </div>
 

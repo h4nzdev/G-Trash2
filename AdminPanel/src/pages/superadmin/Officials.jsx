@@ -116,7 +116,10 @@ export default function Officials() {
         setToast({ msg: 'Official updated successfully!', type: 'success' });
         fetchOfficials();
       } else {
-        await axios.post(`${API}/api/officials`, formData);
+        const { data } = await axios.post(`${API}/api/officials`, formData);
+        if (data?._id || data?.id) {
+          localStorage.setItem(`gtrash_first_login_${data._id || data.id}`, 'true');
+        }
         setToast({ msg: 'Official created successfully!', type: 'success' });
         fetchOfficials();
       }

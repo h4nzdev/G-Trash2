@@ -8,6 +8,7 @@ const officialSchema = new mongoose.Schema({
   role: { type: String, enum: ["official", "superadmin", "chd"], default: "official" },
   status: { type: String, enum: ["active", "revoked"], default: "active" },
   signatureUrl: { type: String, default: null },
+  isFirstLogin: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 });
 

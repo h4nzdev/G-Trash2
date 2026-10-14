@@ -320,9 +320,41 @@ export default function Settings() {
   });
   const [language, setLanguage] = useState('English');
   const [showPwForm, setShowPwForm] = useState(false);
+  const [pwData, setPwData] = useState({ current: '', next: '', confirm: '' });
+  const [pwLoading, setPwLoading] = useState(false);
   const [sysPrefs, setSysPrefs] = useState({
     autoRefresh: true, darkMode: false, compactView: false, showAnimations: true,
   });
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!pwData.current || !pwData.next || !pwData.confirm) {
+      toast.error('All password fields are required');
+      return;
+    }
+    if (pwData.next.length < 6) {
+      toast.error('New password must be at least 6 characters');
+      return;
+    }
+    if (pwData.next !== pwData.confirm) {
+      toast.error('New password and confirmation do not match');
+      return;
+    }
+    setPwLoading(true);
+    try {
+      await axios.patch(`${API}/api/auth/change-password`, {
+        currentPassword: pwData.current,
+        newPassword: pwData.next,
+      });
+      toast.success('Password updated successfully!');
+      setPwData({ current: '', next: '', confirm: '' });
+      setShowPwForm(false);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to update password');
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   return (
     <div className="p-6">
@@ -501,21 +533,48 @@ export default function Settings() {
               </button>
 
               {showPwForm && (
-                <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                  {['Current Password', 'New Password', 'Confirm New Password'].map((label) => (
-                    <div key={label}>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">{label}</label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                  ))}
-                  <button className="w-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-800 to-emerald-700 rounded-xl hover:from-emerald-900 hover:to-emerald-800 transition-colors mt-2">
-                    Update Password
+                <form onSubmit={handleUpdatePassword} className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">Current Password</label>
+                    <input
+                      type="password"
+                      value={pwData.current}
+                      onChange={(e) => setPwData({ ...pwData, current: e.target.value })}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">New Password</label>
+                    <input
+                      type="password"
+                      value={pwData.next}
+                      onChange={(e) => setPwData({ ...pwData, next: e.target.value })}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={pwData.confirm}
+                      onChange={(e) => setPwData({ ...pwData, confirm: e.target.value })}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={pwLoading}
+                    className="w-full py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-800 to-emerald-700 rounded-xl hover:from-emerald-900 hover:to-emerald-800 transition-colors mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {pwLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Update Password'}
                   </button>
-                </div>
+                </form>
               )}
             </div>
           )}

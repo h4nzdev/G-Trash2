@@ -9,6 +9,9 @@ router.get("/me", authMiddleware, officialController.getMe);
 router.patch("/signature", authMiddleware, officialController.updateSignature);
 router.put("/signature", authMiddleware, officialController.updateSignature);
 router.put("/:id/signature", authMiddleware, officialController.updateSignature);
+router.patch("/password", authMiddleware, officialController.changePassword);
+router.patch("/change-password", authMiddleware, officialController.changePassword);
+router.post("/change-password", authMiddleware, officialController.changePassword);
 
 // Superadmin Officials management
 router.get("/admin/officials", authMiddleware, officialController.getOfficials);

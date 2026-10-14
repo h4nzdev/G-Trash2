@@ -201,3 +201,30 @@ exports.updateSignature = async (req, res, next) => {
     next(err);
   }
 };
+
+// Official updates their own password (current -> new)
+exports.changePassword = async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Current and new password are required" });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters" });
+  }
+  try {
+    const officialId = req.official?.id || req.official?._id || req.user?.id;
+    const official = await Official.findById(officialId);
+    if (!official) return res.status(404).json({ error: "Official not found" });
+
+    const match = await bcrypt.compare(currentPassword, official.passwordHash);
+    if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+
+    official.passwordHash = await bcrypt.hash(newPassword, 10);
+    official.isFirstLogin = false;
+    await official.save();
+
+    res.json({ ok: true, message: "Password updated successfully" });
+  } catch (err) {
+    next(err);
+  }
+};

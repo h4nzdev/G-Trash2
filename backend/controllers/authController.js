@@ -118,6 +118,7 @@ exports.login = async (req, res, next) => {
           email: official.email,
           barangay: official.barangay,
           role: official.role,
+          isFirstLogin: official.isFirstLogin ?? true,
           allowedPages: getAllowedPages(official.role),
         },
         user: {
@@ -126,6 +127,7 @@ exports.login = async (req, res, next) => {
           email: official.email,
           barangay: official.barangay,
           role: official.role,
+          isFirstLogin: official.isFirstLogin ?? true,
         },
       });
     }
@@ -193,6 +195,7 @@ exports.getMe = async (req, res, next) => {
             email: official.email,
             barangay: official.barangay,
             role: official.role,
+            isFirstLogin: official.isFirstLogin ?? false,
             allowedPages: getAllowedPages(official.role),
           }
         : {
@@ -203,6 +206,42 @@ exports.getMe = async (req, res, next) => {
         official: officialObj,
         user: officialObj,
       });
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Change Password (for current logged in official or resident)
+exports.changePassword = async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Current and new password are required" });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters" });
+  }
+  try {
+    const authData = req.official || req.user;
+    if (!authData) return res.status(401).json({ error: "Unauthorized" });
+
+    if (authData.role === "resident") {
+      const resident = await Resident.findById(authData.id);
+      if (!resident) return res.status(404).json({ error: "User not found" });
+      const match = await bcrypt.compare(currentPassword, resident.passwordHash);
+      if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+      resident.passwordHash = await bcrypt.hash(newPassword, 10);
+      await resident.save();
+      return res.json({ ok: true, message: "Password updated successfully" });
+    } else {
+      const official = await Official.findById(authData.id);
+      if (!official) return res.status(404).json({ error: "Official not found" });
+      const match = await bcrypt.compare(currentPassword, official.passwordHash);
+      if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+      official.passwordHash = await bcrypt.hash(newPassword, 10);
+      official.isFirstLogin = false;
+      await official.save();
+      return res.json({ ok: true, message: "Password updated successfully" });
     }
   } catch (err) {
     next(err);

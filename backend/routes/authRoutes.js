@@ -10,6 +10,8 @@ router.post("/resident/register", authController.registerResident);
 router.post("/login", authController.login);
 router.post("/resident/login", authController.loginResident);
 router.get("/me", authMiddleware, authController.getMe);
+router.patch("/change-password", authMiddleware, authController.changePassword);
+router.post("/change-password", authMiddleware, authController.changePassword);
 router.post("/contact-admin", authController.contactAdmin);
 router.get("/contact-requests", authMiddleware, authController.getContactRequests);
 
