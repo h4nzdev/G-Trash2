@@ -9,6 +9,7 @@ router.post("/register", authController.registerResident);
 router.post("/resident/register", authController.registerResident);
 router.post("/login", authController.login);
 router.post("/resident/login", authController.loginResident);
+router.post("/verify-2fa", authController.verify2FA);
 router.get("/me", authMiddleware, authController.getMe);
 router.patch("/change-password", authMiddleware, authController.changePassword);
 router.post("/change-password", authMiddleware, authController.changePassword);

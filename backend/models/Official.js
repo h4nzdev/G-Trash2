@@ -9,6 +9,7 @@ const officialSchema = new mongoose.Schema({
   status: { type: String, enum: ["active", "revoked"], default: "active" },
   signatureUrl: { type: String, default: null },
   isFirstLogin: { type: Boolean, default: true },
+  totpSecret: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

@@ -16,7 +16,7 @@ import PrivacyPolicyModal from "../components/PrivacyPolicyModal";
 import ContactAdminModal from "../components/ContactAdminModal";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, verify2FA } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,14 +26,20 @@ export default function LoginPage() {
   const [showPass, setShowPass] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [twoFactorData, setTwoFactorData] = useState(null);
+  const [otpCode, setOtpCode] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(email.trim(), password);
-      navigate("/dashboard", { replace: true });
+      const res = await login(email.trim(), password);
+      if (res?.requires2FA) {
+        setTwoFactorData(res);
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err) {
       setError(
         err?.response?.data?.error || "Login failed. Check your credentials.",
@@ -42,6 +48,81 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.length !== 6) {
+      setError("Please enter a 6-digit code");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      await verify2FA(twoFactorData.tempToken, otpCode);
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(
+        err?.response?.data?.error || "Invalid 6-digit authenticator code",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (twoFactorData) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm flex flex-col items-center text-center">
+          {error && (
+            <div className="mb-4 w-full bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm font-medium">
+              {error}
+            </div>
+          )}
+
+          <img
+            src={twoFactorData.qrCode}
+            alt="Authenticator QR Code"
+            className="w-56 h-56 border border-gray-200 rounded-2xl p-2 shadow-sm mb-6"
+          />
+
+          <form onSubmit={handleVerify2FA} className="w-full space-y-4">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              autoFocus
+              required
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="000000"
+              className="w-full text-center tracking-[0.5em] text-3xl font-mono py-3 px-4 border-2 border-gray-300 rounded-xl outline-none focus:border-emerald-600 transition"
+            />
+
+            <button
+              type="submit"
+              disabled={loading || otpCode.length !== 6}
+              className="w-full bg-[#006A3B] hover:bg-[#00522e] text-white font-semibold py-3.5 rounded-xl transition disabled:opacity-50"
+            >
+              {loading ? "Verifying..." : "Verify"}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTwoFactorData(null);
+              setOtpCode("");
+              setError("");
+            }}
+            className="mt-6 text-sm text-gray-400 hover:text-gray-600 underline"
+          >
+            Back to login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white">

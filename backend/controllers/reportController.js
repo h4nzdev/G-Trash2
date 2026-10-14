@@ -1114,10 +1114,8 @@ exports.updateReport = async (req, res, next) => {
       if (updateData.status === "resolved") {
         const existing = await Report.findById(req.params.id);
         const proof = req.body.resolutionImage || updateData.resolutionImage || existing?.resolutionImage;
-        if (!proof) {
-          return res.status(400).json({
-            error: "Clean-up photo evidence is required before marking this report as resolved.",
-          });
+        if (proof) {
+          updateData.resolutionImage = proof;
         }
         updateData.resolvedAt = new Date();
         updateData.resolvedBy = officialName;
@@ -1140,7 +1138,20 @@ exports.updateReport = async (req, res, next) => {
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     const io = getIO();
-    if (io) io.emit("report:updated", report);
+    if (io) {
+      io.emit("report:updated", report);
+      if (report.status === "resolved") {
+        io.emit("report:resolved", {
+          reportId: report._id,
+          title: report.title,
+          category: report.category,
+          barangay: report.barangay,
+          resolvedBy: report.resolvedBy,
+          resolvedAt: report.resolvedAt,
+          userId: report.userId,
+        });
+      }
+    }
 
     // If requested, broadcast an official update/announcement to the resident community
     if (req.body.postToCommunity || req.body.notifyCommunity) {

@@ -82,14 +82,16 @@ async function awardResidentPoints(residentId, points, action, description, repo
     if (resident) {
       const io = getIO();
       if (io) {
-        io.to(`resident:${residentId}`).emit("resident:points:update", {
-          residentId,
+        const payload = {
+          residentId: String(residentId),
           newTotal: resident.totalPoints,
           monthlyPoints: resident.monthlyPoints,
           pointsEarned: points,
           action,
           description,
-        });
+        };
+        io.to(`resident:${residentId}`).emit("resident:points:update", payload);
+        io.emit("resident:points:update", payload);
       }
     }
     return resident;

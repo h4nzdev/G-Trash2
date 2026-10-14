@@ -965,7 +965,7 @@ export default function ScheduleRoute() {
       {/* ── Add Schedule Modal ── */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[5000] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col p-5 sm:p-7 animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[94vh] flex flex-col p-5 sm:p-7 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center">
@@ -1101,7 +1101,7 @@ export default function ScheduleRoute() {
 
                         {/* Live Route Preview Map */}
                         {selectedSitios.length > 0 && (
-                          <div className="w-full h-64 sm:h-72 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
+                          <div className="w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative z-10 mt-3">
                             {/* Satellite / Default Layer Toggle */}
                             <div className="absolute top-2.5 right-2.5 z-[1000] flex bg-white/95 backdrop-blur-md p-0.5 rounded-xl shadow-md border border-slate-200 text-xs font-semibold">
                               <button
@@ -1225,7 +1225,7 @@ export default function ScheduleRoute() {
                             </div>
                             {searchError && <p className="text-[10px] text-red-600 font-medium">{searchError}</p>}
 
-                            <div className="w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-slate-200 shadow-md relative z-10 mt-1.5">
+                            <div className="w-full h-[520px] sm:h-[580px] lg:h-[620px] rounded-2xl overflow-hidden border border-slate-200 shadow-md relative z-10 mt-1.5">
                               {/* Satellite / Default Layer Toggle */}
                               <div className="absolute top-3 right-3 z-[1000] flex bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-slate-200 text-xs font-semibold">
                                 <button
@@ -2004,6 +2004,7 @@ function MapClickHandler({ onClick }) {
 function MapController({ center }) {
   const map = useMap();
   useEffect(() => {
+    map.invalidateSize();
     if (center && center[0] && center[1]) {
       map.setView(center, 15);
     }

@@ -1212,7 +1212,7 @@ exports.prepareBin = async (req, res, next) => {
     const date = new Date().toISOString().slice(0, 10);
     const existing = await BinStatus.findOne({ residentId, date });
     if (!existing || existing.status !== "prepared") {
-      awardResidentPoints(residentId, 2, "bin_prepared", "Prepared bin for active garbage collection").catch(() => {});
+      awardResidentPoints(residentId, 10, "bin_prepared", "Prepared bin for active garbage collection").catch(() => {});
     }
     await BinStatus.findOneAndUpdate(
       { residentId, date },
@@ -1222,7 +1222,7 @@ exports.prepareBin = async (req, res, next) => {
     const counts = await getBinCounts(barangay, date);
     const io = getIO();
     if (io) io.emit("bin:status:update", { barangay, date, ...counts });
-    res.json({ ok: true, pointsAwarded: !existing || existing.status !== "prepared" ? 2 : 0, ...counts });
+    res.json({ ok: true, pointsAwarded: !existing || existing.status !== "prepared" ? 10 : 0, ...counts });
   } catch (err) {
     next(err);
   }

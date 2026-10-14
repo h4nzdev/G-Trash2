@@ -28,9 +28,21 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/api/auth/login`, { email, password });
+    if (data.requires2FA) {
+      return data;
+    }
     localStorage.setItem(TOKEN_KEY, data.token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
     setOfficial(data.official);
+    return data;
+  };
+
+  const verify2FA = async (tempToken, code) => {
+    const { data } = await axios.post(`${API}/api/auth/verify-2fa`, { tempToken, code });
+    localStorage.setItem(TOKEN_KEY, data.token);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+    setOfficial(data.official);
+    return data;
   };
 
   const logout = () => {
@@ -40,7 +52,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ official, loading, login, logout }}>
+    <AuthContext.Provider value={{ official, loading, login, verify2FA, logout }}>
       {children}
     </AuthContext.Provider>
   );

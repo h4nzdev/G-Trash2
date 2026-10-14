@@ -33,6 +33,7 @@ import API_URL from "../config";
 import colors from "../constants/colors";
 import { HomeScreenSkeleton } from "../components/Skeleton";
 import { useTranslation } from "react-i18next";
+import { useFocusEffect } from "@react-navigation/native";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -305,26 +306,38 @@ export default function HomeScreen({ navigation }) {
   );
   const [communityPostsCount, setCommunityPostsCount] = useState(0);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    fetch(`${API_URL}/api/resident/${user.id}`)
+  const fetchUserData = useCallback(() => {
+    const uid = user?.id || user?._id;
+    if (!uid) return;
+    fetch(`${API_URL}/api/residents/${uid}`)
       .then((r) => r.json())
       .then((data) => {
         if (data) {
-          if (data.disposalStreak != null)
-            setDisposalStreak(data.disposalStreak);
-          if (data.totalPoints != null) setUserPoints(data.totalPoints);
+          const payload = data.user ?? data;
+          if (payload.disposalStreak != null)
+            setDisposalStreak(payload.disposalStreak);
+          if (payload.totalPoints != null) setUserPoints(payload.totalPoints);
         }
       })
       .catch(() => {});
 
-    fetch(`${API_URL}/api/reports?userId=${user.id}`)
+    fetch(`${API_URL}/api/reports?userId=${uid}`)
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data)) setCommunityPostsCount(data.length);
       })
       .catch(() => {});
-  }, [user]);
+  }, [user?.id, user?._id]);
+
+  useEffect(() => {
+    fetchUserData();
+  }, [fetchUserData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserData();
+    }, [fetchUserData])
+  );
 
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -856,7 +869,12 @@ export default function HomeScreen({ navigation }) {
 
     socket.on(
       "resident:points:update",
-      ({ pointsEarned, description, newTotal }) => {
+      ({ residentId, pointsEarned, description, newTotal }) => {
+        const myId = user?.id || user?._id;
+        if (residentId && myId && String(residentId) !== String(myId)) return;
+        if (newTotal != null) {
+          setUserPoints(newTotal);
+        }
         clearTimeout(pointsToastTimerRef.current);
         setPointsToast({ pointsEarned, description, newTotal });
         pointsToastTimerRef.current = setTimeout(

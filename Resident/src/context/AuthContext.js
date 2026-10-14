@@ -111,6 +111,11 @@ export const AuthProvider = ({ children }) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Login failed");
 
+      // 2FA required — return data so the UI can show QR + OTP input
+      if (data.requires2FA) {
+        return data;
+      }
+
       const payload = data.user ?? data;
       const userData = { ...payload, token: data.token };
       setUser(userData);
@@ -119,6 +124,31 @@ export const AuthProvider = ({ children }) => {
       return userData;
     } catch (error) {
       console.error("Login failed", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verify2FA = async (tempToken, code) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/verify-2fa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tempToken, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+
+      const payload = data.user ?? data;
+      const userData = { ...payload, token: data.token };
+      setUser(userData);
+      await AsyncStorage.setItem("@AuthData", JSON.stringify(userData));
+      registerAndSavePushToken(userData.id || userData._id, userData.token);
+      return userData;
+    } catch (error) {
+      console.error("2FA verification failed", error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -191,6 +221,36 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateUserPoints = (newTotal, monthlyPoints) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        totalPoints: newTotal != null ? newTotal : prev.totalPoints,
+        monthlyPoints: monthlyPoints != null ? monthlyPoints : prev.monthlyPoints,
+      };
+      AsyncStorage.setItem("@AuthData", JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  };
+
+  const refreshUser = async () => {
+    const uid = user?.id || user?._id;
+    if (!uid) return;
+    try {
+      const res = await fetch(`${API_URL}/api/residents/${uid}`, {
+        headers: user?.token ? { Authorization: `Bearer ${user.token}` } : {},
+      });
+      if (res.ok) {
+        const freshData = await res.json();
+        const freshPayload = freshData.user ?? freshData;
+        const mergedData = { ...user, ...freshPayload };
+        setUser(mergedData);
+        await AsyncStorage.setItem("@AuthData", JSON.stringify(mergedData));
+      }
+    } catch (_) {}
+  };
+
   const logout = async () => {
     try {
       setUser(null);
@@ -202,7 +262,17 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, login, register, updateProfile, logout, isLoading }}
+      value={{
+        user,
+        login,
+        verify2FA,
+        register,
+        updateProfile,
+        updateUserPoints,
+        refreshUser,
+        logout,
+        isLoading,
+      }}
     >
       {children}
     </AuthContext.Provider>

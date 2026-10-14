@@ -4,6 +4,8 @@ const { Resident, Official, AdminContactRequest, IoTAlert } = require("../models
 const { JWT_SECRET } = require("../middleware/auth");
 const { generateHouseholdId } = require("../utils/addressUtils");
 const { getIO } = require("../config/socket");
+const { generateSecret, generateURI, verifySync } = require("otplib");
+const qrcode = require("qrcode");
 
 const CHD_ALLOWED_PAGES = ["dashboard", "heatmap", "reports", "history"];
 function getAllowedPages(role) {
@@ -99,6 +101,96 @@ exports.login = async (req, res, next) => {
     // 1. Check Official / Superadmin / CHD
     const official = await Official.findOne({ email: cleanEmail });
     if (official && (await bcrypt.compare(password, official.passwordHash))) {
+      if (!official.totpSecret) {
+        official.totpSecret = generateSecret();
+        await official.save();
+      }
+      const otpUri = generateURI({
+        secret: official.totpSecret,
+        label: official.email,
+        issuer: "G-TRASH",
+      });
+      const qrCode = await qrcode.toDataURL(otpUri);
+      const tempToken = jwt.sign(
+        { id: official._id, type: "2fa_pending", userType: "official" },
+        JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      return res.json({
+        requires2FA: true,
+        tempToken,
+        qrCode,
+        email: official.email,
+        userType: "official",
+      });
+    }
+
+    // 2. Check Resident
+    const resident = await Resident.findOne({ email: cleanEmail });
+    if (resident && (await bcrypt.compare(password, resident.passwordHash))) {
+      if (!resident.totpSecret) {
+        resident.totpSecret = generateSecret();
+        await resident.save();
+      }
+      const otpUri = generateURI({
+        secret: resident.totpSecret,
+        label: resident.email,
+        issuer: "G-TRASH",
+      });
+      const qrCode = await qrcode.toDataURL(otpUri);
+      const tempToken = jwt.sign(
+        { id: resident._id, type: "2fa_pending", userType: "resident" },
+        JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      return res.json({
+        requires2FA: true,
+        tempToken,
+        qrCode,
+        email: resident.email,
+        userType: "resident",
+      });
+    }
+
+    return res.status(401).json({ error: "Invalid credentials" });
+  } catch (err) {
+    next(err);
+  }
+};
+exports.loginResident = exports.login;
+
+// Verify TOTP 2FA code and issue final token
+exports.verify2FA = async (req, res, next) => {
+  const { tempToken, code } = req.body;
+  if (!tempToken || !code) {
+    return res.status(400).json({ error: "Temporary token and 6-digit code are required" });
+  }
+
+  try {
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: "Session expired. Please log in again." });
+    }
+
+    if (decoded.type !== "2fa_pending") {
+      return res.status(400).json({ error: "Invalid 2FA session token" });
+    }
+
+    const cleanCode = String(code).trim().replace(/\s+/g, "");
+
+    if (decoded.userType === "official") {
+      const official = await Official.findById(decoded.id);
+      if (!official || !official.totpSecret) {
+        return res.status(404).json({ error: "Official account or 2FA secret not found" });
+      }
+
+      const result = verifySync({ token: cleanCode, secret: official.totpSecret, epochTolerance: 30 });
+      if (!result || !result.valid) {
+        return res.status(400).json({ error: "Invalid authenticator code. Please check your app." });
+      }
+
       const token = jwt.sign(
         {
           id: official._id,
@@ -110,6 +202,7 @@ exports.login = async (req, res, next) => {
         JWT_SECRET,
         { expiresIn: "30d" }
       );
+
       return res.json({
         token,
         official: {
@@ -130,11 +223,17 @@ exports.login = async (req, res, next) => {
           isFirstLogin: official.isFirstLogin ?? true,
         },
       });
-    }
+    } else {
+      const resident = await Resident.findById(decoded.id);
+      if (!resident || !resident.totpSecret) {
+        return res.status(404).json({ error: "Resident account or 2FA secret not found" });
+      }
 
-    // 2. Check Resident
-    const resident = await Resident.findOne({ email: cleanEmail });
-    if (resident && (await bcrypt.compare(password, resident.passwordHash))) {
+      const result = verifySync({ token: cleanCode, secret: resident.totpSecret, epochTolerance: 30 });
+      if (!result || !result.valid) {
+        return res.status(400).json({ error: "Invalid authenticator code. Please check your app." });
+      }
+
       const token = jwt.sign(
         {
           id: resident._id,
@@ -159,13 +258,10 @@ exports.login = async (req, res, next) => {
         },
       });
     }
-
-    return res.status(401).json({ error: "Invalid credentials" });
   } catch (err) {
     next(err);
   }
 };
-exports.loginResident = exports.login;
 
 // Get current authenticated user / official session
 exports.getMe = async (req, res, next) => {
@@ -260,6 +356,10 @@ exports.getResidentById = async (req, res, next) => {
       barangay: resident.barangay,
       address: `${resident.houseNo ? resident.houseNo + ", " : ""}${resident.street ? resident.street + ", " : ""}${resident.barangay}, Cebu City`,
       notificationsClearedAt: resident.notificationsClearedAt || null,
+      totalPoints: resident.totalPoints || 0,
+      monthlyPoints: resident.monthlyPoints || 0,
+      disposalStreak: resident.disposalStreak || 0,
+      profilePicture: resident.profilePicture || null,
     });
   } catch (err) {
     next(err);

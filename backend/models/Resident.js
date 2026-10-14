@@ -45,6 +45,7 @@ const residentSchema = new mongoose.Schema({
   disposalStreak: { type: Number, default: 0 },
   lastDisposalClaimAt: { type: Date, default: null },
   lastDisposalRunAt: { type: Date, default: null },
+  totpSecret: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

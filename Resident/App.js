@@ -91,7 +91,7 @@ function AnnouncementModal({ announcement, onDismiss }) {
 const LAYER_ORDER = { FAR: 1, MEDIUM: 2, NEAR: 3 };
 
 function AppNavigator() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, updateUserPoints } = useAuth();
   const [hasSeenSplash, setHasSeenSplash] = useState(null);
   const [hasSeenTour, setHasSeenTour] = useState(null);
   const [minAnimationPassed, setMinAnimationPassed] = useState(false);
@@ -181,6 +181,11 @@ function AppNavigator() {
     });
 
     s.on('resident:points:update', (data) => {
+      const myId = user?.id || user?._id;
+      if (data.residentId && myId && String(data.residentId) !== String(myId)) return;
+      if (data.newTotal != null && updateUserPoints) {
+        updateUserPoints(data.newTotal, data.monthlyPoints);
+      }
       if (data.pointsEarned > 0) {
         setAnnouncementQueue((q) => [...q, {
           title: `+${data.pointsEarned} points earned!`,

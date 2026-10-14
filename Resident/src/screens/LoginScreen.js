@@ -27,7 +27,9 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const { login, isLoading } = useAuth();
+  const { login, verify2FA, isLoading } = useAuth();
+  const [twoFactorData, setTwoFactorData] = useState(null);
+  const [otpCode, setOtpCode] = useState('');
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -36,11 +38,90 @@ export default function LoginScreen({ navigation }) {
     }
 
     try {
-      await login(email, password);
+      const res = await login(email, password);
+      if (res?.requires2FA) {
+        setTwoFactorData(res);
+      }
     } catch (error) {
       Alert.alert('Login Failed', error.message || 'Please check your credentials and try again.');
     }
   };
+
+  const handleVerify2FA = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      Alert.alert('Error', 'Please enter a 6-digit code');
+      return;
+    }
+    try {
+      await verify2FA(twoFactorData.tempToken, otpCode);
+    } catch (error) {
+      Alert.alert('Verification Failed', error.message || 'Invalid authenticator code.');
+    }
+  };
+
+  if (twoFactorData) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}>
+          <Image
+            source={{ uri: twoFactorData.qrCode }}
+            style={{ width: 220, height: 220, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 28 }}
+            resizeMode="contain"
+          />
+
+          <TextInput
+            value={otpCode}
+            onChangeText={(t) => setOtpCode(t.replace(/\D/g, ''))}
+            placeholder="000000"
+            placeholderTextColor="#9CA3AF"
+            maxLength={6}
+            keyboardType="number-pad"
+            autoFocus
+            style={{
+              width: '100%',
+              textAlign: 'center',
+              fontSize: 32,
+              fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+              letterSpacing: 12,
+              paddingVertical: 14,
+              borderWidth: 2,
+              borderColor: otpCode.length === 6 ? colors.primaryGreen : '#D1D5DB',
+              borderRadius: 14,
+              marginBottom: 20,
+              color: '#1B1C1C',
+            }}
+          />
+
+          <TouchableOpacity
+            style={{
+              width: '100%',
+              backgroundColor: colors.primaryGreen,
+              height: 54,
+              borderRadius: 16,
+              justifyContent: 'center',
+              alignItems: 'center',
+              opacity: isLoading || otpCode.length !== 6 ? 0.5 : 1,
+            }}
+            onPress={handleVerify2FA}
+            disabled={isLoading || otpCode.length !== 6}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '700' }}>Verify</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => { setTwoFactorData(null); setOtpCode(''); }}
+            style={{ marginTop: 24 }}
+          >
+            <Text style={{ color: '#9CA3AF', fontSize: 14, textDecorationLine: 'underline' }}>Back to login</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>

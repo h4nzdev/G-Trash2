@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import API_URL from '../config';
 
 const ACTION_META = {
@@ -16,7 +17,7 @@ const ACTION_META = {
   verify_resolution:     { icon: 'verified',        color: '#006A3B', label: 'Resolution Verified (+20)' },
   pickup_verified:       { icon: 'local-shipping',  color: '#0284C7', label: 'Pickup Verified (+10)' },
   disposal_verification: { icon: 'camera-alt',      color: '#10B981', label: 'Verified Disposal (+10)' },
-  bin_prepared:          { icon: 'delete-outline',  color: '#0284C7', label: 'Bin Prepared (+2)' },
+  bin_prepared:          { icon: 'delete-outline',  color: '#0284C7', label: 'Bin Prepared (+10)' },
   bin_pickedup:          { icon: 'check-circle',    color: '#059669', label: 'Trash Picked Up (+1)' },
   report_comment:        { icon: 'chat-bubble',     color: '#F59E0B', label: 'Comment Added' },
   correct_scan:          { icon: 'qr-code-scanner', color: '#64748B', label: 'AI Scan' },
@@ -69,6 +70,12 @@ export default function PointsHistoryScreen({ navigation }) {
   }, [uid]);
 
   useEffect(() => { fetchHistory(0); }, [fetchHistory]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory(0, true);
+    }, [fetchHistory])
+  );
 
   const loadMore = () => {
     if (!hasMore || loading) return;

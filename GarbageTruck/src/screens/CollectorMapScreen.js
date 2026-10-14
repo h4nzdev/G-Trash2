@@ -1036,6 +1036,13 @@ export default function CollectorMapScreen({ navigation }) {
   };
 
   const submitCleaningFlow = async () => {
+    if (!navigationActive) {
+      Alert.alert(
+        "Shift Not Started",
+        "Please start your shift before marking or checking collection areas as clean."
+      );
+      return;
+    }
     if (!activeFlowTask || isSubmittingFlow) return;
     setIsSubmittingFlow(true);
     try {
@@ -1046,6 +1053,13 @@ export default function CollectorMapScreen({ navigation }) {
   };
 
   const handleMarkStopClean = async (scheduleId, sitioName) => {
+    if (!navigationActive) {
+      Alert.alert(
+        "Shift Not Started",
+        "Please start your shift before marking or checking collection areas as clean."
+      );
+      return;
+    }
     if (!scheduleId || !sitioName) return;
     setClearingSitio(sitioName);
     try {
@@ -2491,9 +2505,16 @@ export default function CollectorMapScreen({ navigation }) {
                         <MaterialIcons name="fact-check" size={18} color="#2563EB" />
                         <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>Collection Route Stops</Text>
                       </View>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>
-                        {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s.status === 'completed' ? 1 : 0)), 0)} / {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.length : 1), 0)} Cleaned
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {!navigationActive && (
+                          <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#B45309' }}>Shift Inactive</Text>
+                          </View>
+                        )}
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>
+                          {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.filter(t => t.completed).length : (s.status === 'completed' ? 1 : 0)), 0)} / {todaySchedules.reduce((sum, s) => sum + (s.sitioTasks ? s.sitioTasks.length : 1), 0)} Cleaned
+                        </Text>
+                      </View>
                     </View>
 
                     <View style={{ gap: 10 }}>
@@ -2508,9 +2529,16 @@ export default function CollectorMapScreen({ navigation }) {
                           return (
                             <TouchableOpacity
                               key={`${sched._id}-${task.name}-${taskIdx}`}
-                              activeOpacity={isDone ? 0.9 : 0.65}
+                              activeOpacity={isDone ? 0.9 : (!navigationActive ? 0.8 : 0.65)}
                               onPress={() => {
                                 if (isDone || isBusy) return;
+                                if (!navigationActive) {
+                                  Alert.alert(
+                                    "Shift Not Started",
+                                    "Please start your shift before marking or checking collection areas as clean."
+                                  );
+                                  return;
+                                }
                                 setBeforeImage("");
                                 setAfterImage("");
                                 setFlowLocation(task.name);
@@ -2531,6 +2559,7 @@ export default function CollectorMapScreen({ navigation }) {
                                 backgroundColor: isDone ? '#F0FDF4' : '#FFFFFF',
                                 borderWidth: 1.5,
                                 borderColor: isDone ? '#86EFAC' : '#E2E8F0',
+                                opacity: isDone ? 1 : (!navigationActive ? 0.75 : 1),
                                 shadowColor: '#000',
                                 shadowOffset: { width: 0, height: 1 },
                                 shadowOpacity: 0.04,
@@ -2543,26 +2572,26 @@ export default function CollectorMapScreen({ navigation }) {
                                   width: 28,
                                   height: 28,
                                   borderRadius: 14,
-                                  backgroundColor: isDone ? '#DCFCE7' : '#F1F5F9',
+                                  backgroundColor: isDone ? '#DCFCE7' : (!navigationActive ? '#F8FAFC' : '#F1F5F9'),
                                   alignItems: 'center',
                                   justifyContent: 'center'
                                 }}>
                                   <MaterialIcons
                                     name={isDone ? "check" : "place"}
                                     size={16}
-                                    color={isDone ? "#16A34A" : "#64748B"}
+                                    color={isDone ? "#16A34A" : (!navigationActive ? "#94A3B8" : "#64748B")}
                                   />
                                 </View>
                                 <View style={{ flex: 1 }}>
                                   <Text style={{
                                     fontSize: 14,
                                     fontWeight: '700',
-                                    color: isDone ? '#166534' : '#1E293B',
+                                    color: isDone ? '#166534' : (!navigationActive ? '#475569' : '#1E293B'),
                                   }}>
                                     {task.name}
                                   </Text>
-                                  <Text style={{ fontSize: 11, color: isDone ? '#15803D' : '#64748B', marginTop: 1 }}>
-                                    {isDone ? 'Marked as Clean ✓' : 'Tap to mark as clean'}
+                                  <Text style={{ fontSize: 11, color: isDone ? '#15803D' : (!navigationActive ? '#94A3B8' : '#64748B'), marginTop: 1 }}>
+                                    {isDone ? 'Marked as Clean ✓' : (!navigationActive ? 'Start shift to mark clean' : 'Tap to mark as clean')}
                                   </Text>
                                 </View>
                               </View>
@@ -2587,12 +2616,16 @@ export default function CollectorMapScreen({ navigation }) {
                                     width: 26,
                                     height: 26,
                                     borderRadius: 7,
-                                    backgroundColor: '#F8FAFC',
+                                    backgroundColor: !navigationActive ? '#F1F5F9' : '#F8FAFC',
                                     borderWidth: 2,
-                                    borderColor: '#CBD5E1',
+                                    borderColor: !navigationActive ? '#E2E8F0' : '#CBD5E1',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                  }} />
+                                  }}>
+                                    {!navigationActive && (
+                                      <MaterialIcons name="lock" size={12} color="#CBD5E1" />
+                                    )}
+                                  </View>
                                 )}
                               </View>
                             </TouchableOpacity>

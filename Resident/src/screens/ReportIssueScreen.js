@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,22 @@ import { hasShownSurveyThisSession, markSurveyShownThisSession } from '../utils/
 import API_URL from '../config';
 const BACKEND_URL = API_URL;
 
-const BARANGAYS = ['Lahug', 'Apas', 'Mabolo', 'IT Park', 'Ayala', 'Banilad', 'Talamban', 'Ermita', 'Sto. Niño', 'Carbon Market', 'Colon'];
+const CEBU_BARANGAYS = [
+  "Adlaon","Agsungot","Apas","Babag","Bacayan","Banilad","Basak Pardo",
+  "Basak San Nicolas","Binaliw","Bonbon","Budla-an","Buhisan","Bulacao",
+  "Buot-Taup","Busay","Calamba","Cambinocot","Capitol Site","Carreta",
+  "Cogon Pardo","Cogon Ramos","Day-as","Duljo Fatima","Ermita",
+  "Guadalupe","Guba","Hippodromo","Inayawan","IT Park","Kalubihan",
+  "Kalunasan","Kamagayan","Kamputhaw","Kasambagan","Kinasang-an",
+  "Labangon","Lahug","Lorega San Miguel","Lusaran","Luz","Mabini",
+  "Mabolo","Malubog","Mambaling","Pahina Central","Pahina San Nicolas",
+  "Pardo","Pari-an","Paril","Pasil","Pit-os","Poblacion Pardo",
+  "Pulangbato","Pung-ol Sibugay","Punta Princesa","Quiot","Sambag I",
+  "Sambag II","San Antonio","San Jose","San Nicolas Proper","San Roque",
+  "Santa Cruz","Sapangdaku","Sawang Calero","Sinsin","Sirao",
+  "Suba","Sudlon I","Sudlon II","T. Padilla","Tabunan","Tagbao",
+  "Talamban","Taptap","Tejero","Tinago","Tisa","To-ong","Zapatera",
+];
 
 
 const MapPickerHTML = `
@@ -37,20 +52,38 @@ const MapPickerHTML = `
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; touch-action:none; -webkit-user-select:none; user-select:none; }
-    html, body { height:100%; width:100%; overflow:hidden; background:#f3f4f6; }
+    html, body { height:100%; width:100%; overflow:hidden; background:#e8ede8; }
     #map { height:100%; width:100%; }
+    #map .leaflet-tile {
+      filter: contrast(1.02) saturate(0.9) brightness(1.02);
+    }
     .center-crosshair {
       position:absolute; top:50%; left:50%;
       transform:translate(-50%, -100%);
       z-index:1000; pointer-events:none;
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+    }
+    .center-shadow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 14px;
+      height: 6px;
+      margin-left: -7px;
+      margin-top: -3px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.25);
+      pointer-events: none;
+      z-index: 999;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div class="center-shadow"></div>
   <div class="center-crosshair">
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-      <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#006A3B" stroke="white" stroke-width="2"/>
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#006A3B" stroke="#FFFFFF" stroke-width="2"/>
     </svg>
   </div>
   <script>
@@ -65,26 +98,27 @@ const MapPickerHTML = `
       touchZoom: true,
       scrollWheelZoom: false,
       doubleClickZoom: true,
-    }).setView([10.3157, 123.8854], 14);
+    }).setView([10.3157, 123.8854], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: ''
+      maxZoom: 19,
+      attribution: ''
     }).addTo(window.gtrashMap);
 
     function sendCenter() {
       var c = window.gtrashMap.getCenter();
-      window.ReactNativeWebView.postMessage(JSON.stringify({ lat: c.lat, lng: c.lng }));
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'location', lat: c.lat, lng: c.lng }));
     }
 
     window.gtrashMap.on('moveend', sendCenter);
-    setTimeout(sendCenter, 600);
+    setTimeout(sendCenter, 400);
 
-    // Listen for "center" messages sent from React Native (geocoding result)
+    // Listen for "center" messages sent from React Native
     function handleMessage(e) {
       try {
         var msg = JSON.parse(e.data);
         if (msg.type === 'center') {
-          window.gtrashMap.setView([msg.lat, msg.lng], 16, { animate: true });
+          window.gtrashMap.setView([msg.lat, msg.lng], 17, { animate: true });
         }
       } catch(err) {}
     }
@@ -133,65 +167,187 @@ export default function ReportIssueScreen({ navigation }) {
   const [imageBase64, setImageBase64] = useState(null);
   const [description, setDescription] = useState('');
   const [locationText, setLocationText] = useState('');
-  const [barangay, setBarangay] = useState(user?.barangay || 'Lahug');
+  const [locationAddress, setLocationAddress] = useState('');
+  const [barangay, setBarangay] = useState(user?.barangay || 'Apas');
   const [category, setCategory] = useState('Illegal Dumping');
   const [location, setLocation] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [surveyVisible, setSurveyVisible] = useState(false);
 
+  // Default to user's current barangay
+  useEffect(() => {
+    if (user?.barangay) {
+      setBarangay(user.barangay);
+    }
+  }, [user?.barangay]);
+
+  const [barangayModalVisible, setBarangayModalVisible] = useState(false);
+  const [barangaySearch, setBarangaySearch] = useState('');
+
+  const filteredBarangays = useMemo(() => {
+    if (!barangaySearch.trim()) return CEBU_BARANGAYS;
+    const term = barangaySearch.toLowerCase().trim();
+    return CEBU_BARANGAYS.filter((b) => b.toLowerCase().includes(term));
+  }, [barangaySearch]);
+
   const mapRef = useRef(null);
   const geocodeTimer = useRef(null);
+  const reverseGeocodeTimer = useRef(null);
   const [mapModalVisible, setMapModalVisible] = useState(false);
   const [pendingLocation, setPendingLocation] = useState(null);
+  const [pendingAddress, setPendingAddress] = useState('');
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [modalSearchText, setModalSearchText] = useState('');
   const [geocodeResults, setGeocodeResults] = useState([]);
   const [geocodeLoading, setGeocodeLoading] = useState(false);
+
+  // Auto-reverse geocode if location is set but address name is missing
+  useEffect(() => {
+    if (location && !locationAddress) {
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${location.latitude}&lon=${location.longitude}&format=json`,
+        {
+          headers: {
+            'User-Agent': 'GetTrash-ResidentApp/1.0 (contact@gettrash.org)',
+            'Accept-Language': 'en',
+          },
+        }
+      )
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.display_name) {
+            const parts = data.display_name.split(',').map((s) => s.trim());
+            const cleanAddr = parts.slice(0, 3).join(', ');
+            setLocationAddress(cleanAddr);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [location, locationAddress]);
 
   const searchAddress = (text) => {
     setModalSearchText(text);
     setGeocodeResults([]);
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
-    if (text.trim().length < 3) return;
+    const trimmed = text.trim();
+    if (trimmed.length < 2) return;
+
     geocodeTimer.current = setTimeout(async () => {
       setGeocodeLoading(true);
       try {
+        const query = trimmed.toLowerCase().includes('cebu')
+          ? trimmed
+          : `${trimmed}, Cebu City`;
+
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text + ', Cebu City, Philippines')}&format=json&limit=5&countrycodes=ph&viewbox=123.8,10.2,124.05,10.45&bounded=1`,
-          { headers: { 'Accept-Language': 'en' } }
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=ph`,
+          {
+            headers: {
+              'User-Agent': 'GetTrash-ResidentApp/1.0 (contact@gettrash.org)',
+              'Accept-Language': 'en',
+            },
+          }
         );
-        const data = await res.json();
-        setGeocodeResults(data);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setGeocodeResults(data);
+          } else {
+            // Fallback: search without "Cebu City" suffix in case of specific regional landmark
+            const fallbackRes = await fetch(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&countrycodes=ph`,
+              {
+                headers: {
+                  'User-Agent': 'GetTrash-ResidentApp/1.0 (contact@gettrash.org)',
+                  'Accept-Language': 'en',
+                },
+              }
+            );
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              if (Array.isArray(fallbackData)) setGeocodeResults(fallbackData);
+            }
+          }
+        }
       } catch (_) {}
       setGeocodeLoading(false);
-    }, 600);
+    }, 350);
   };
 
   const selectGeocode = (result) => {
     const lat = parseFloat(result.lat);
     const lng = parseFloat(result.lon);
-    const label = result.display_name.split(',').slice(0, 2).join(',').trim();
+    const parts = result.display_name.split(',').map((s) => s.trim());
+    const label = parts.slice(0, 3).join(', ');
     setModalSearchText(label);
+    setPendingAddress(label);
     setGeocodeResults([]);
     setPendingLocation({ latitude: lat, longitude: lng });
     if (mapRef.current) {
       mapRef.current.injectJavaScript(
-        `window.gtrashMap && window.gtrashMap.setView([${lat}, ${lng}], 17, { animate: true }); true;`
+        `if (window.gtrashMap) { window.gtrashMap.setView([${lat}, ${lng}], 17, { animate: true }); } true;`
       );
     }
   };
 
+  const handleMapLocationSelect = (coords) => {
+    const lat = coords.lat;
+    const lng = coords.lng;
+    setPendingLocation({ latitude: lat, longitude: lng });
+
+    // Reverse geocode when map center moves
+    if (reverseGeocodeTimer.current) clearTimeout(reverseGeocodeTimer.current);
+    reverseGeocodeTimer.current = setTimeout(async () => {
+      setIsResolvingAddress(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+          {
+            headers: {
+              'User-Agent': 'GetTrash-ResidentApp/1.0 (contact@gettrash.org)',
+              'Accept-Language': 'en',
+            },
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            const parts = data.display_name.split(',').map((s) => s.trim());
+            const cleanAddr = parts.slice(0, 3).join(', ');
+            setPendingAddress(cleanAddr);
+          }
+        }
+      } catch (_) {}
+      setIsResolvingAddress(false);
+    }, 450);
+  };
+
   const openMapModal = () => {
     setPendingLocation(location);
-    setModalSearchText('');
+    const initialAddr = locationAddress || locationText || '';
+    setPendingAddress(initialAddr);
+    setModalSearchText(initialAddr);
     setGeocodeResults([]);
     setMapModalVisible(true);
+
+    if (location && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.injectJavaScript(
+          `if (window.gtrashMap) { window.gtrashMap.setView([${location.latitude}, ${location.longitude}], 16, { animate: false }); } true;`
+        );
+      }, 350);
+    }
   };
 
   const confirmLocation = () => {
     if (pendingLocation) {
       setLocation(pendingLocation);
-      if (!locationText.trim() && modalSearchText.trim()) {
-        setLocationText(modalSearchText);
+      const chosenAddr = pendingAddress || modalSearchText || '';
+      if (chosenAddr) {
+        setLocationAddress(chosenAddr);
+        if (!locationText.trim()) {
+          setLocationText(chosenAddr);
+        }
       }
     }
     setMapModalVisible(false);
@@ -447,17 +603,21 @@ export default function ReportIssueScreen({ navigation }) {
           {/* Barangay Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('barangay')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryList}>
-              {BARANGAYS.map((b) => (
-                <TouchableOpacity
-                  key={b}
-                  style={[styles.categoryChip, barangay === b && styles.categoryChipActive]}
-                  onPress={() => setBarangay(b)}
-                >
-                  <Text style={[styles.categoryText, barangay === b && styles.categoryTextActive]}>{b}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <TouchableOpacity
+              style={styles.dropdownBtn}
+              onPress={() => setBarangayModalVisible(true)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.dropdownLeft}>
+                <View style={styles.dropdownIconWrap}>
+                  <MaterialIcons name="location-city" size={20} color="#006A3B" />
+                </View>
+                <Text style={styles.dropdownSelectedText}>
+                  {barangay || 'Select Barangay'}
+                </Text>
+              </View>
+              <MaterialIcons name="keyboard-arrow-down" size={24} color="#6B7280" />
+            </TouchableOpacity>
           </View>
 
           {/* Street / Address */}
@@ -489,20 +649,20 @@ export default function ReportIssueScreen({ navigation }) {
             <Text style={styles.sectionTitle}>Pin Location</Text>
             <TouchableOpacity style={styles.mapPickerBtn} onPress={openMapModal} activeOpacity={0.75}>
               <View style={styles.mapPickerIcon}>
-                <MaterialIcons name="map" size={24} color={colors.primaryGreen} />
+                <MaterialIcons name="map" size={24} color="#006A3B" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.mapPickerTitle}>
                   {location ? 'Location Pinned' : 'Open Map to Pin'}
                 </Text>
-                <Text style={styles.mapPickerSub} numberOfLines={1}>
+                <Text style={styles.mapPickerSub} numberOfLines={2}>
                   {location
-                    ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+                    ? (locationAddress || locationText || `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`)
                     : 'Tap to open full-screen map'}
                 </Text>
               </View>
               {location
-                ? <MaterialIcons name="check-circle" size={22} color={colors.primaryGreen} />
+                ? <MaterialIcons name="check-circle" size={22} color="#006A3B" />
                 : <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />}
             </TouchableOpacity>
           </View>
@@ -552,36 +712,52 @@ export default function ReportIssueScreen({ navigation }) {
 
           {/* Search bar */}
           <View style={styles.modalSearchWrap}>
-            <MaterialIcons name="search" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
+            <MaterialIcons name="search" size={20} color="#006A3B" style={{ marginLeft: 12 }} />
             <TextInput
               style={styles.modalSearchInput}
-              placeholder="Search address in Cebu City..."
+              placeholder="Search address or landmark in Cebu..."
               placeholderTextColor="#9CA3AF"
               value={modalSearchText}
               onChangeText={searchAddress}
+              onSubmitEditing={() => searchAddress(modalSearchText)}
               returnKeyType="search"
               clearButtonMode="while-editing"
             />
+            {modalSearchText.length > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  setModalSearchText('');
+                  setGeocodeResults([]);
+                }}
+                style={{ padding: 6, marginRight: 4 }}
+              >
+                <MaterialIcons name="cancel" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
             {geocodeLoading && (
-              <ActivityIndicator size="small" color={colors.primaryGreen} style={{ marginRight: 12 }} />
+              <ActivityIndicator size="small" color="#006A3B" style={{ marginRight: 12 }} />
             )}
           </View>
 
           {/* Geocode suggestions */}
           {geocodeResults.length > 0 && (
             <View style={styles.modalGeocodeList}>
-              {geocodeResults.map((result) => (
-                <TouchableOpacity
-                  key={result.place_id}
-                  style={styles.modalGeocodeItem}
-                  onPress={() => selectGeocode(result)}
-                >
-                  <MaterialIcons name="location-on" size={16} color={colors.primaryGreen} />
-                  <Text style={styles.modalGeocodeText} numberOfLines={2}>
-                    {result.display_name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled">
+                {geocodeResults.map((result) => (
+                  <TouchableOpacity
+                    key={result.place_id}
+                    style={styles.modalGeocodeItem}
+                    onPress={() => selectGeocode(result)}
+                  >
+                    <MaterialIcons name="location-on" size={18} color="#006A3B" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalGeocodeText} numberOfLines={2}>
+                        {result.display_name}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
 
@@ -589,21 +765,105 @@ export default function ReportIssueScreen({ navigation }) {
           <InteractiveMapPicker
             mapRef={mapRef}
             style={{ flex: 1, height: undefined, borderRadius: 0, borderWidth: 0 }}
-            onLocationSelect={(coords) =>
-              setPendingLocation({ latitude: coords.lat, longitude: coords.lng })
-            }
+            onLocationSelect={handleMapLocationSelect}
           />
 
-          {/* Coordinates bar */}
+          {/* Coordinates & Address bar */}
           <View style={styles.coordsBar}>
-            <MaterialIcons name="my-location" size={16} color={colors.primaryGreen} />
-            <Text style={styles.coordsText}>
-              {pendingLocation
-                ? `${pendingLocation.latitude.toFixed(5)}, ${pendingLocation.longitude.toFixed(5)}`
-                : 'Drag the map to pick a location'}
-            </Text>
+            <MaterialIcons name="place" size={20} color="#006A3B" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.coordsText} numberOfLines={2}>
+                {isResolvingAddress
+                  ? 'Finding address...'
+                  : (pendingAddress || (pendingLocation ? `${pendingLocation.latitude.toFixed(5)}, ${pendingLocation.longitude.toFixed(5)}` : 'Drag the map to pick a location'))}
+              </Text>
+            </View>
           </View>
         </SafeAreaView>
+      </Modal>
+
+      {/* Barangay Dropdown Modal */}
+      <Modal
+        visible={barangayModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setBarangayModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.dropdownBackdrop}
+          activeOpacity={1}
+          onPress={() => setBarangayModalVisible(false)}
+        >
+          <View style={styles.dropdownModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.dropdownModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MaterialIcons name="location-city" size={20} color="#006A3B" />
+                <Text style={styles.dropdownModalTitle}>Select Barangay</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setBarangayModalVisible(false)}
+                style={{ padding: 4 }}
+              >
+                <MaterialIcons name="close" size={22} color="#4B5563" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick search inside barangays */}
+            <View style={styles.dropdownSearchWrap}>
+              <MaterialIcons name="search" size={18} color="#006A3B" />
+              <TextInput
+                style={styles.dropdownSearchInput}
+                placeholder="Search barangay..."
+                placeholderTextColor="#9CA3AF"
+                value={barangaySearch}
+                onChangeText={setBarangaySearch}
+                autoCorrect={false}
+              />
+              {barangaySearch.length > 0 && (
+                <TouchableOpacity onPress={() => setBarangaySearch('')}>
+                  <MaterialIcons name="cancel" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView
+              style={styles.dropdownList}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              {filteredBarangays.map((b) => {
+                const isSelected = barangay === b;
+                return (
+                  <TouchableOpacity
+                    key={b}
+                    style={[
+                      styles.dropdownItem,
+                      isSelected && styles.dropdownItemSelected,
+                    ]}
+                    onPress={() => {
+                      setBarangay(b);
+                      setBarangaySearch('');
+                      setBarangayModalVisible(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownItemText,
+                        isSelected && styles.dropdownItemTextSelected,
+                      ]}
+                    >
+                      {b}
+                    </Text>
+                    {isSelected && (
+                      <MaterialIcons name="check-circle" size={18} color="#006A3B" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       <SurveyPopup
@@ -899,5 +1159,114 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#374151',
     fontWeight: '500',
+  },
+  // Barangay Dropdown styles
+  dropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  dropdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  dropdownIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropdownSelectedText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1B1C1C',
+  },
+  dropdownBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dropdownModalCard: {
+    width: '100%',
+    maxHeight: '75%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  dropdownModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1B1C1C',
+  },
+  dropdownSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  dropdownSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1B1C1C',
+    padding: 0,
+  },
+  dropdownList: {
+    paddingHorizontal: 10,
+    marginBottom: 12,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginVertical: 2,
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#F0FDF4',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  dropdownItemTextSelected: {
+    fontWeight: '700',
+    color: '#006A3B',
   },
 });

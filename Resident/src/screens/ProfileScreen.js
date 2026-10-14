@@ -21,6 +21,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import API_URL from "../config";
 import { Skeleton, ProfileReportsSkeleton } from "../components/Skeleton";
@@ -230,6 +231,13 @@ export default function ProfileScreen({ navigation }) {
     fetchReports();
     fetchPoints();
   }, [fetchReports, fetchPoints]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchReports();
+      fetchPoints();
+    }, [fetchReports, fetchPoints])
+  );
 
   const handleDeleteReport = async (reportId) => {
     Alert.alert("Delete Report", "Are you sure? This cannot be undone.", [

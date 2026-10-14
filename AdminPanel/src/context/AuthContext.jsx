@@ -20,6 +20,21 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/api/auth/login`, { email, password });
+    if (data.requires2FA) {
+      return data;
+    }
+    if (data.official.role !== 'superadmin') {
+      throw new Error('Unauthorized: Superadmin access required');
+    }
+    setUser(data.official);
+    localStorage.setItem('admin_token', data.token);
+    localStorage.setItem('admin_user', JSON.stringify(data.official));
+    axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+    return data.official;
+  };
+
+  const verify2FA = async (tempToken, code) => {
+    const { data } = await axios.post(`${API}/api/auth/verify-2fa`, { tempToken, code });
     if (data.official.role !== 'superadmin') {
       throw new Error('Unauthorized: Superadmin access required');
     }
@@ -38,7 +53,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, verify2FA, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
