@@ -10,7 +10,6 @@ module.exports = {
   SensorReading: require("./SensorReading.js"),
   IoTAlert: require("./IoTAlert.js"),
   Official: require("./Official.js"),
-  SuperadminBootstrap: require("./SuperadminBootstrap.js"),
   ErrorLog: require("./ErrorLog.js"),
   BugReport: require("./BugReport.js"),
   Resident: require("./Resident.js"),
