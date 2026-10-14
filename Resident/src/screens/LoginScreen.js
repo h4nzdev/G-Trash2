@@ -63,12 +63,18 @@ export default function LoginScreen({ navigation }) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}>
+          <Text style={{ fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4 }}>Two-Factor Authentication</Text>
+          <Text style={{ fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20, lineHeight: 20 }}>
+            Scan the QR code below with your authenticator app{'\n'}(Google Authenticator, Authy, etc.) then enter the 6-digit code.
+          </Text>
+
           <Image
             source={{ uri: twoFactorData.qrCode }}
-            style={{ width: 220, height: 220, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 28 }}
+            style={{ width: 220, height: 220, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 }}
             resizeMode="contain"
           />
 
+          <Text style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16 }}>Enter the code from your authenticator app</Text>
           <TextInput
             value={otpCode}
             onChangeText={(t) => setOtpCode(t.replace(/\D/g, ''))}

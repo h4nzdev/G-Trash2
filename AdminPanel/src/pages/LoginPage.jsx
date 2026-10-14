@@ -58,12 +58,19 @@ export default function LoginPage() {
             </div>
           )}
 
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Two-Factor Authentication</h2>
+          <p className="text-sm text-gray-500 mb-5 leading-relaxed">
+            Scan the QR code below with your authenticator app
+            <br />(Google Authenticator, Authy, etc.) then enter the 6-digit code.
+          </p>
+
           <img
             src={twoFactorData.qrCode}
             alt="Authenticator QR Code"
-            className="w-56 h-56 border border-gray-200 rounded-2xl p-2 shadow-sm mb-6"
+            className="w-56 h-56 border border-gray-200 rounded-2xl p-2 shadow-sm mb-4"
           />
 
+          <p className="text-xs text-gray-400 mb-5">Enter the code from your authenticator app</p>
           <form onSubmit={handleVerify2FA} className="w-full space-y-4">
             <input
               type="text"
